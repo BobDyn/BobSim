@@ -1,0 +1,1 @@
+# walk through every variant's metrics.yaml and write to a parquet table

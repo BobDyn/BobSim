@@ -1,0 +1,38 @@
+# DOE configuration
+# Each variable maps a dot-path to a Modelica block.param and a sampling range.
+
+baseline_mo: ../vehicle/OrionRecord.mo
+
+variables:
+  - path: front.stabar.bar_rate
+    block: pFrStabar
+    param: barRate
+    range: [100, 500]
+
+  - path: rear.stabar.bar_rate
+    block: pRrStabar
+    param: barRate
+    range: [200, 800]
+
+  - path: front.wheel.static_alpha
+    block: pFrPartialWheel
+    param: staticAlpha
+    range: [-3.0, 3.0]
+
+  - path: rear.wheel.static_alpha
+    block: pRrPartialWheel
+    param: staticAlpha
+    range: [-3.0, 3.0]
+
+  - path: front.wheel.static_gamma
+    block: pFrPartialWheel
+    param: staticGamma
+    range: [-4.0, 0.0]
+
+  - path: rear.wheel.static_gamma
+    block: pRrPartialWheel
+    param: staticGamma
+    range: [-4.0, 0.0]
+
+samples: 500
+seed: 42
