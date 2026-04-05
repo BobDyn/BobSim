@@ -1,7 +1,7 @@
 # DOE configuration
 # Each variable maps a dot-path to a Modelica block.param and a sampling range.
 
-baseline_mo: ../../../BobLib/Resources/VehicleDefn/OrionRecord.mo
+baseline_mo: ../vehicle/OrionRecord.mo
 
 variables:
   - path: front.stabar.bar_rate
