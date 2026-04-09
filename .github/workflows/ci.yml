@@ -36,7 +36,7 @@ jobs:
           allow-prereleases: true
 
       - name: Install dependencies
-        run: pip install mypy -r requirements.txt
+        run: pip install mypy types-PyYAML -r requirements.txt
 
       - name: Run mypy
         run: |
