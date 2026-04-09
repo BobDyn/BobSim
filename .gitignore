@@ -1,0 +1,60 @@
+# Python bytecode/cache
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+
+# Native extensions / compiled artifacts
+*.so
+*.pyd
+*.dll
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test, coverage, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Lint/format caches
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and runtime dumps
+*.log
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project-generated outputs
+DOE/results/
+DOE/population/
+
+# Keep directory placeholders when needed
+!DOE/.gitkeep
+!DOE/results/.gitkeep
+!DOE/population/.gitkeep
+
