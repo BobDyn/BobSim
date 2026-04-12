@@ -1,6 +1,5 @@
 # axle.py
 
-from scipy.interpolate import UnivariateSpline
 import subprocess
 import pathlib
 import pandas as pd

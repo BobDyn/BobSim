@@ -1,2 +1,6 @@
 PyYAML
 scipy
+pandas
+matplotlib
+
+ruff

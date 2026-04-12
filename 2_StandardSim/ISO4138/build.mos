@@ -1,0 +1,25 @@
+OpenModelica.Scripting.setCommandLineOptions(
+  "--simCodeTarget=C --maxSizeLinearTearing=5000"
+);
+
+clear();
+loadModel(Modelica);
+
+// Load BobLib
+loadFile("Utils/external/BobLib/package.mo");
+
+// Go to build dir
+cd("StandardSim/ISO4138/build");
+
+// Build
+res := buildModel(
+  BobLib.Standards.ISO4138,
+  startTime=0,
+  stopTime=10,
+  outputFormat="csv",
+  numberOfIntervals=0,
+  tolerance=1e-6,
+  cflags="-O3 -march=native -mtune=native"
+);
+
+getErrorString();

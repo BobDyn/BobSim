@@ -173,7 +173,7 @@ Generated:
 
             elif layout == "axle":
 
-                fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+                fig, axes = plt.subplots(1, 2, figsize=(11, 8.5))
                 vehicle_handles = []
 
                 for ax, axle_name in zip(axes, ["front", "rear"]):
@@ -273,7 +273,7 @@ Generated:
 
             else:
 
-                fig, ax = plt.subplots(figsize=(8, 5))
+                fig, ax = plt.subplots(figsize=(11, 8.5))
                 vehicle_handles = []
 
                 for vehicle in vehicles:

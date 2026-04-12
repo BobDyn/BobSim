@@ -1,0 +1,59 @@
+OpenModelica.Scripting.setCommandLineOptions(
+  "--simCodeTarget=C --maxSizeLinearTearing=5000"
+);
+
+clear();
+loadModel(Modelica);
+
+// Load BobLib
+loadFile("Utils/external/BobLib/package.mo");
+
+// Model build locations
+models := {"fr_build", "rr_build"};
+
+// get root directory
+root := OpenModelica.Scripting.cd();
+
+for name in models loop
+  buildDir := "StandardSim/KnC/build/" + name;
+
+  if not OpenModelica.Scripting.directoryExists(buildDir) then
+    OpenModelica.Scripting.mkdir(buildDir);
+  end if;
+
+  cd(buildDir);
+
+  print("=====================================\n");
+  print("Building: " + name + "\n");
+
+  if name == "fr_build" then
+
+    buildModel(
+      BobLib.Standards.FrKnC,
+      startTime=0,
+      stopTime=91,
+      outputFormat="csv",
+      numberOfIntervals=0,
+      tolerance=1e-6,
+      cflags="-O3 -march=native -mtune=native"
+    );
+
+  elseif name == "rr_build" then
+
+    buildModel(
+      BobLib.Standards.RrKnC,
+      startTime=0,
+      stopTime=91,
+      outputFormat="csv",
+      numberOfIntervals=0,
+      tolerance=1e-6,
+      cflags="-O3 -march=native -mtune=native"
+    );
+
+  end if;
+
+  print(getErrorString());
+
+  cd(root);
+
+end for;
