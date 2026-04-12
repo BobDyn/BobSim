@@ -6,10 +6,10 @@ clear();
 loadModel(Modelica);
 
 // Load BobLib
-loadFile("Utils/external/BobLib/package.mo");
+loadFile("_0_Utils/external/BobLib/package.mo");
 
 // Go to build dir
-cd("StandardSim/ISO4138/build");
+cd("_3_StandardSim/ISO4138/build");
 
 // Build
 res := buildModel(

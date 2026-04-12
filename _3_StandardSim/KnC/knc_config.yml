@@ -15,7 +15,7 @@ test:
   forceMagnitude: 1000
 
 report:
-  output_path: StandardSim/KnC/results/report.pdf
+  output_path: _3_StandardSim/KnC/results/report.pdf
 
 plots:
 

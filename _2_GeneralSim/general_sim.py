@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 
-from GeneralSim.output_schema import OutputSchema
+from _2_GeneralSim.output_schema import OutputSchema
 
 
 def _run_case_worker(
@@ -21,7 +21,7 @@ def _run_case_worker(
     simulation,
     cleanup,
 ):
-    sim = GeneralSim(
+    sim = _2_GeneralSim(
         build_dir=build_dir,
         exec_name=exec_name,
         simulation=simulation,
@@ -41,7 +41,7 @@ def _run_case_worker(
     return idx, out
 
 
-class GeneralSim:
+class _2_GeneralSim:
     def __init__(
         self,
         build_dir: str | Path,

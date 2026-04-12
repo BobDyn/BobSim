@@ -1,8 +1,8 @@
 from pathlib import Path
 import numpy as np
 
-from GeneralSim.general_sim import GeneralSim
-from StandardSim.ISO4138.iso4138_schema import ISO4138_SCHEMA
+from _2_GeneralSim.general_sim import _2_GeneralSim
+from _3_StandardSim.ISO4138.iso4138_schema import ISO4138_SCHEMA
 
 
 class ISO4138Sim:
@@ -12,7 +12,7 @@ class ISO4138Sim:
         build_dir = Path(__file__).parent / "build"
         exec_name = "BobLib.Standards.ISO4138"
 
-        self.sim = GeneralSim(
+        self.sim = _2_GeneralSim(
             build_dir=build_dir,
             exec_name=exec_name,
             simulation=config.get("simulation", {}),

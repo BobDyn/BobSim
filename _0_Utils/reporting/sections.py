@@ -94,7 +94,7 @@ def add_title_page(pdf, config):
     # ============================================================
     # LOGO
     # ============================================================
-    logo = plt.imread("Utils/reporting/media/bob.png")
+    logo = plt.imread("_0_Utils/reporting/media/bob.png")
 
     ax_logo = fig.add_axes([0.0, 0.74, 0.28, 0.20])
     ax_logo.imshow(logo, alpha=0.8)

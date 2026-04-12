@@ -6,7 +6,7 @@ clear();
 loadModel(Modelica);
 
 // Load BobLib
-loadFile("Utils/external/BobLib/package.mo");
+loadFile("_0_Utils/external/BobLib/package.mo");
 
 // Model build locations
 models := {"fr_build", "rr_build"};
@@ -15,7 +15,7 @@ models := {"fr_build", "rr_build"};
 root := OpenModelica.Scripting.cd();
 
 for name in models loop
-  buildDir := "StandardSim/KnC/build/" + name;
+  buildDir := "_3_StandardSim/KnC/build/" + name;
 
   if not OpenModelica.Scripting.directoryExists(buildDir) then
     OpenModelica.Scripting.mkdir(buildDir);
