@@ -54,8 +54,8 @@ class AxleKncReport:
         )
 
         self.data = None
-        self.spliced = {}
-        self.metrics = {}
+        # spliced: Dict[str, pd.DataFrame] = {}
+        # metrics: dict[str, float] = {}
 
     # -------------------------
     # Simulation

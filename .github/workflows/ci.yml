@@ -10,6 +10,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v5
 
@@ -22,15 +23,16 @@ jobs:
         run: pip install ruff
 
       - name: Run ruff
-        run: ruff check DOE/
+        run: ruff check .
 
   typecheck:
     name: Type check
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
           allow-prereleases: true
@@ -40,13 +42,6 @@ jobs:
 
       - name: Run mypy
         run: |
-          mypy \
-            DOE/aggregator.py \
-            DOE/batch.py \
-            DOE/compiler.py \
-            DOE/generator.py \
-            DOE/run_doe.py \
-            DOE/sampler.py \
-            DOE/search.py \
+          mypy . \
             --ignore-missing-imports \
             --no-strict-optional

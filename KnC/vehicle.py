@@ -47,8 +47,9 @@ class VehicleKncReport:
             extra_params=rear_params
         )
         
-        self.metrics = {}
-        self.tests = {}
+        # metrics: Dict[str, float] = {}
+        # tests: Dict[str, List[Tuple[float, float]]] = {}
+        
         self.output_dir = None
         self.pdf_path = None
 
