@@ -1,7 +1,9 @@
 PyYAML
 types-PyYAML
 scipy
+scipy-stubs
 pandas
+pandas-stubs
 matplotlib
 
 ruff

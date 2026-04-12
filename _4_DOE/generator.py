@@ -111,7 +111,7 @@ def generate_variants(
 
 
 if __name__ == "__main__":
-    from sampler import sample
+    from _4_DOE.sampler import sample
 
     config = Path(__file__).parent / "configs/doe_config.yaml"
     population = Path(__file__).parent / "population"

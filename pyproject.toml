@@ -1,12 +1,8 @@
 [tool.mypy]
-python_version = "3.14"
-ignore_missing_imports = true
-no_strict_optional = true
-
-mypy_path = [
-    "_0_Utils",
-    "_1_VisualSim",
-    "_2_GeneralSim",
-    "_3_StandardSim",
-    "_4_DOE",
-]
+explicit_package_bases = true
+files = ["_0_Utils", "_2_GeneralSim", "_3_StandardSim", "_4_DOE"]
+exclude = '''
+(^|/)build/
+|(^|/)__pycache__/
+|(^|/)\.venv/
+'''
