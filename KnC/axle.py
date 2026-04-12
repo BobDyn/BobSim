@@ -1,6 +1,5 @@
 # axle.py
 
-from scipy.interpolate import UnivariateSpline
 import subprocess
 import pathlib
 import pandas as pd
@@ -55,8 +54,8 @@ class AxleKncReport:
         )
 
         self.data = None
-        self.spliced = {}
-        self.metrics = {}
+        # spliced: Dict[str, pd.DataFrame] = {}
+        # metrics: dict[str, float] = {}
 
     # -------------------------
     # Simulation

@@ -1,0 +1,79 @@
+standard: KnC
+
+simulation:
+  solver: dassl
+  output_format: csv
+  no_grid: true
+
+execution:
+  parallel: false
+
+test:
+  steerMagnitude: 0.0
+  heaveMagnitude: 0.0381        # 1.5 in
+  rollMagnitude: 0.0349         # 2 deg
+  forceMagnitude: 1000
+
+report:
+  output_path: StandardSim/KnC/results/report.pdf
+
+plots:
+
+  camber:
+    layout: quad
+    title: "Camber Response"
+
+    subplots:
+      - title: "FR Left"
+        x: { key: time }
+        y: { key: fr_left_gamma }
+
+      - title: "FR Right"
+        x: { key: time }
+        y: { key: fr_right_gamma }
+
+      - title: "RR Left"
+        x: { key: time }
+        y: { key: rr_left_gamma }
+
+      - title: "RR Right"
+        x: { key: time }
+        y: { key: rr_right_gamma }
+
+  toe:
+    layout: quad
+    title: "Toe Response"
+
+    subplots:
+      - title: "FR Left"
+        x: { key: time }
+        y: { key: fr_left_toe }
+
+      - title: "FR Right"
+        x: { key: time }
+        y: { key: fr_right_toe }
+
+      - title: "RR Left"
+        x: { key: time }
+        y: { key: rr_left_toe }
+
+      - title: "RR Right"
+        x: { key: time }
+        y: { key: rr_right_toe }
+
+  inputs:
+    layout: triple
+    title: "Input Signals"
+
+    subplots:
+      - title: "Heave"
+        x: { key: time }
+        y: { key: heave }
+
+      - title: "Roll"
+        x: { key: time }
+        y: { key: roll }
+
+      - title: "Lateral Force"
+        x: { key: time }
+        y: { key: fy }

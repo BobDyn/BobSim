@@ -1,2 +1,8 @@
 PyYAML
+types-PyYAML
 scipy
+pandas
+matplotlib
+
+ruff
+mypy

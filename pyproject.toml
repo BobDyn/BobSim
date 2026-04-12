@@ -1,0 +1,11 @@
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+no_strict_optional = true
+
+mypy_path = [
+    "0_Utils",
+    "1_GeneralSim",
+    "2_StandardSim",
+    "3_DOE",
+]

@@ -1,0 +1,110 @@
+standard: ISO4138
+
+simulation:
+  solver: dassl
+  output_format: csv
+  log_level: LOG_STATS
+  no_grid: true
+  no_event_emit: false
+  # extra_overrides:
+  #   curvGain: 2
+  #   curvTi: 0.025
+  #   radErrorTol: 0.002
+  #   der_radErrorTol: 0.5
+
+execution:
+  parallel: true
+  max_workers: 4
+  cleanup: true
+
+sweep:
+  testVel: 15.0
+  n_cases: 10
+  r_min: 12.5
+  r_max: 100.0
+  radius_bias_power: 2.5
+
+fit:
+  ay_linear_max: 6.0
+
+report:
+  brand: BobSim
+  title: ISO4138 Vehicle Characterization
+  subtitle: 15 m/s Constant Velocity Test
+  output_path: StandardSim/ISO4138/results/report.pdf
+
+  notes:
+    - ISO4138 steady-state circular test performed
+    - Constant velocity maintained at 15 m/s
+    - Radius sweep from 12.5 m to 100 m (10 cases)
+    - Tire model: MF52
+    - Configuration: baseline_v3
+
+plots:
+
+  steering:
+    layout: dual
+    title: "Steering Behavior vs $a_y$"
+
+    subplots:
+
+      - title: "Roadwheel Angle $\\delta$"
+        style: line
+        fit: false
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: roadwheel, label: "$\\delta$ (rad)" }
+
+      - title: "Radius Tracking Error (with $v = 15$ m/s)"
+        style: scatter
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: radius_error_pct, label: "$\\Delta R / R_{cmd} \\times 100$ (%)" }
+
+  vehicle_states:
+    layout: triple
+    title: "Vehicle States vs $a_y$"
+
+    subplots:
+
+      - title: "Curvature $\\kappa$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: curvature, label: "$\\kappa$ (1/m)" }
+
+      - title: "Roll Angle $\\phi$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: roll, label: "$\\phi$ (rad)" }
+
+      - title: "Sideslip $\\beta$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: sideslip, label: "$\\beta$ (rad)" }
+
+  sensitivities:
+    layout: triple
+    title: "Response Sensitivities vs $a_y$"
+
+    subplots:
+
+      - title: "$d\\kappa/da_y$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: curvature_gradient, label: "$d\\kappa/da_y$" }
+
+      - title: "$d\\phi/da_y$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: roll_gradient, label: "$d\\phi/da_y$" }
+
+      - title: "$d\\beta/da_y$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: sideslip_gradient, label: "$d\\beta/da_y$" }
+
+  steering_effort:
+    layout: dual
+    title: "Steering Effort vs $a_y$"
+
+    subplots:
+
+      - title: "Steering Torque $T_{sw}$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: torque, label: "$T_{sw}$ (Nm)" }
+
+      - title: "Steering Sensitivity $d\\delta/da_y$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: steer_gradient, label: "$d\\delta/da_y$" }
