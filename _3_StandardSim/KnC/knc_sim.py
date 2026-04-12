@@ -1,10 +1,10 @@
-# StandardSim/KnC/KnCSim.py
+# _3_StandardSim/KnC/KnCSim.py
 
 from pathlib import Path
 import numpy as np
 
-from GeneralSim.general_sim import GeneralSim
-from StandardSim.KnC.knc_schema import KNC_SCHEMA
+from _2_GeneralSim.general_sim import _2_GeneralSim
+from _3_StandardSim.KnC.knc_schema import KNC_SCHEMA
 
 
 class KnCSim:
@@ -13,13 +13,13 @@ class KnCSim:
 
         base = Path(__file__).parent / "build"
 
-        self.sim_fr = GeneralSim(
+        self.sim_fr = _2_GeneralSim(
             build_dir=base / "fr_build",
             exec_name="BobLib.Standards.FrKnC",
             simulation=config.get("simulation", {}),
         )
 
-        self.sim_rr = GeneralSim(
+        self.sim_rr = _2_GeneralSim(
             build_dir=base / "rr_build",
             exec_name="BobLib.Standards.RrKnC",
             simulation=config.get("simulation", {}),

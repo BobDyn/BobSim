@@ -1,4 +1,4 @@
-from GeneralSim.output_schema import OutputSchema
+from _2_GeneralSim.output_schema import OutputSchema
 
 
 ISO4138_SCHEMA = OutputSchema(

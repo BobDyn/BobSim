@@ -31,7 +31,7 @@ report:
   brand: BobSim
   title: ISO4138 Vehicle Characterization
   subtitle: 15 m/s Constant Velocity Test
-  output_path: StandardSim/ISO4138/results/report.pdf
+  output_path: _3_StandardSim/ISO4138/results/report.pdf
 
   notes:
     - ISO4138 steady-state circular test performed

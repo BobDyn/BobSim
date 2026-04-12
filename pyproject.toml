@@ -4,8 +4,9 @@ ignore_missing_imports = true
 no_strict_optional = true
 
 mypy_path = [
-    "0_Utils",
-    "1_GeneralSim",
-    "2_StandardSim",
-    "3_DOE",
+    "_0_Utils",
+    "_1_VisualSim",
+    "_2_GeneralSim",
+    "_3_StandardSim",
+    "_4_DOE",
 ]

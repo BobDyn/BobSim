@@ -1,4 +1,4 @@
-# StandardSim/KnC/knc_schema.py
+# _3_StandardSim/KnC/knc_schema.py
 
 KNC_SCHEMA = [
     "time",
