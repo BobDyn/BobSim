@@ -1,4 +1,3 @@
-from re import sub
 import matplotlib.pyplot as plt
 
 

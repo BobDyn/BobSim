@@ -1,6 +1,5 @@
 from pathlib import Path
 import yaml
-import json
 
 from _3_StandardSim.KnC.knc_sim import KnCSim
 

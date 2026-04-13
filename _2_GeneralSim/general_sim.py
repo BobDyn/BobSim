@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import cmd
 import os
 import shutil
 import subprocess
