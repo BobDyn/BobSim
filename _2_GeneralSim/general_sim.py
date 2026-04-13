@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import cmd
 import os
 import shutil
 import subprocess
@@ -116,6 +117,9 @@ class _2_GeneralSim:
             f"-outputFormat={output_format}",
             f"-lv={log_level}",
         ]
+
+        if "stepSize" in sim_cfg:
+            cmd.append(f'-stepSize={sim_cfg["stepSize"]}')
 
         if no_grid:
             cmd.append("-noEquidistantTimeGrid")

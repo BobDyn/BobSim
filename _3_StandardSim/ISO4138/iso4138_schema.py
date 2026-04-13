@@ -11,5 +11,6 @@ ISO4138_SCHEMA = OutputSchema(
         "iso.sideslip",
         "iso.curvature",
         "iso.handwheelTorque",
-    ]
+    ],
+    mode="steady"
 )

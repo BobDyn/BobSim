@@ -1,25 +1,31 @@
-# _3_StandardSim/KnC/knc_schema.py
+from _2_GeneralSim.output_schema import OutputSchema
 
-KNC_SCHEMA = [
-    "time",
 
-    # inputs
-    "knc.heave",
-    "knc.roll",
-    "knc.fx",
-    "knc.fy",
+KNC_SCHEMA = OutputSchema(
+    signals=[
+        "knc.heave",
+        "knc.roll",
+        "knc.fx",
+        "knc.fy",
 
-    # geometry (left/right)
-    "knc.left.gamma",
-    "knc.left.toe",
-    "knc.left.caster",
-    "knc.left.kpi",
+        "knc.leftSpringLength",
+        "knc.leftGamma",
+        "knc.leftToe",
+        "knc.leftCaster",
+        "knc.leftKpi",
+        "knc.leftMechTrail",
+        "knc.leftMechScrub",
 
-    "knc.right.gamma",
-    "knc.right.toe",
-    "knc.right.caster",
-    "knc.right.kpi",
+        "knc.rightSpringLength",
+        "knc.rightGamma",
+        "knc.rightToe",
+        "knc.rightCaster",
+        "knc.rightKpi",
+        "knc.rightMechTrail",
+        "knc.rightMechScrub",
 
-    # forces
-    "knc.jackingForce",
-]
+        "knc.jackingForce",
+        "knc.stabarAngle",
+    ],
+    mode="raw",
+)

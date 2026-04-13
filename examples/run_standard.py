@@ -43,8 +43,5 @@ def main(path):
 
     ReportEngine(config).build(result)
 
-    print(result["summary"])
-
-
 if __name__ == "__main__":
     main(sys.argv[1])
