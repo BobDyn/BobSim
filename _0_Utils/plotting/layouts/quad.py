@@ -12,14 +12,9 @@ class QuadLayout:
             ax.plot(x, y)
 
             ax.set_title(sub["title"])
-            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]))
-            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]))
+            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
+            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)
             ax.grid(True)
-
-            xmin = result["series"]["ay_signed"].min()
-            xmax = result["series"]["ay_signed"].max()
-
-            ax.set_xlim(xmin, xmax)
 
         fig.suptitle(p_cfg.get("title", ""), fontsize=16, y=0.96)
         

@@ -36,7 +36,15 @@ class ReportEngine:
 
         with PdfPages(output_path) as pdf:
             add_title_page(pdf, self.config)
-            add_summary_page(pdf, result["summary"])
+            
+            standard = self.config["standard"]
+
+            if standard == "ISO4138":
+                add_summary_page(pdf, result["summary"])
+
+            elif standard == "KnC":
+                from _0_Utils.reporting.sections import add_knc_summary_page
+                add_knc_summary_page(pdf, result["summary"])
 
             if "plots" in self.config:
                 PlotEngine(self.config).run(result, pdf)

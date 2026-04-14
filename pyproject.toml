@@ -1,8 +1,18 @@
 [tool.mypy]
 explicit_package_bases = true
-files = ["_0_Utils", "_2_GeneralSim", "_3_StandardSim", "_4_DOE"]
+ignore_missing_imports = true
+files = ["_0_Utils", "_1_VisualSim", "_2_GeneralSim", "_3_StandardSim", "_4_DOE"]
+
 exclude = '''
 (^|/)build/
 |(^|/)__pycache__/
 |(^|/)\.venv/
 '''
+
+[[tool.mypy.overrides]]
+module = ["vtk.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyvista.*"]
+ignore_missing_imports = true
