@@ -26,6 +26,14 @@ clean:
 
 	@echo "Clean complete"
 
+clean_build:
+	@echo "Cleaning all build directories under _3_StandardSim..."
+	@find _3_StandardSim -type d -name "build" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
+
 ISO4138:
-	omc ./ISO4138/ISO4138.mos
-	python3 -m ISO4138.run_ISO4138
+	omc _3_StandardSim/ISO4138/build.mos
+	python3 -m _3_StandardSim.run_standard _3_StandardSim/ISO4138/iso4138_config.yml
+
+KnC:
+	omc _3_StandardSim/KnC/build.mos
+	python3 -m _3_StandardSim.run_standard _3_StandardSim/KnC/knc_config.yml

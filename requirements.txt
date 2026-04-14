@@ -6,5 +6,9 @@ pandas
 pandas-stubs
 matplotlib
 
+pyvista
+imageio
+imageio-ffmpeg
+
 ruff
 mypy

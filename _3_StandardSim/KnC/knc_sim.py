@@ -12,16 +12,22 @@ class KnCSim:
         # 🔥 ISO-style: build is implicit
         build_dir = Path(__file__).parent / "build"
 
+        knc_root = Path(__file__).parent
+        results_dir = knc_root / "results"
+
+        sim_cfg = config.get("simulation", {}).copy()
+        sim_cfg["results_dir"] = str(results_dir)
+
         self.sim_fr = _2_GeneralSim(
             build_dir=build_dir / "fr_build",
             exec_name="BobLib.Standards.FrKnC",
-            simulation=config.get("simulation", {}),
+            simulation=sim_cfg,
         )
 
         self.sim_rr = _2_GeneralSim(
             build_dir=build_dir / "rr_build",
             exec_name="BobLib.Standards.RrKnC",
-            simulation=config.get("simulation", {}),
+            simulation=sim_cfg,
         )
 
     # ============================================================

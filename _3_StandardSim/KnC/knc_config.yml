@@ -21,9 +21,11 @@ simulation:
   no_grid: false
   log_level: LOG_STATS,LOG_SOLVER,LOG_INIT
   stepSize: 0.05
+  visual: true
 
 execution:
   parallel: false
+  cleanup: true
 
 procedure:
   steerMagnitude: 0.0
@@ -35,7 +37,7 @@ report:
   brand: BobSim
   title: Suspension Kinematics and Compliance (KnC) Characterization
   subtitle: Heave and Roll Sweeps
-  output_path: _3_StandardSim/KnC/results/report.pdf
+  output_path: _3_StandardSim/KnC/results/knc_report.pdf
   notes:
     - "These results include heave and roll sweeps to evaluate key suspension parameters such as camber, toe, caster, KPI, trail, scrub, motion ratio, and jacking characteristics."
 

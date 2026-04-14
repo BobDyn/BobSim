@@ -12,10 +12,12 @@ class ISO4138Sim:
         build_dir = Path(__file__).parent / "build"
         exec_name = "BobLib.Standards.ISO4138"
 
+        sim_cfg = config.get("simulation", {}).copy()
+
         self.sim = _2_GeneralSim(
             build_dir=build_dir,
             exec_name=exec_name,
-            simulation=config.get("simulation", {}),
+            simulation=sim_cfg,
         )
 
     def build_cases(self):
@@ -47,7 +49,7 @@ class ISO4138Sim:
                 schema=ISO4138_SCHEMA,
                 cases=cases,
                 max_workers=exec_cfg.get("max_workers"),
-                cleanup=cleanup,              # 🔥 add this
+                cleanup=cleanup,
             )
             results = [r for r in results if r is not None]
         else:

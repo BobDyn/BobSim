@@ -1,0 +1,203 @@
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/rr_knc_visual.yml _3_StandardSim/KnC/results/raw_results/BobLib.Standards.RrKnC_run_0/BobLib.Standards.RrKnC_run_0_visual.npz --mp4 ./_1_VisualSim/results/rr_knc_test.mp4
+
+style:
+  joints:
+    radius: 0.015
+    color: red
+
+  links:
+    default:
+      radius: 0.010
+      color: black
+
+    groups:
+
+      lower: {radius: 0.010, color: black}
+      upper: {radius: 0.010, color: black}
+      tie:   {radius: 0.010, color: black}
+
+      upright: {radius: 0.012, color: "#444444"}
+      wheel:   {radius: 0.008, color: "#888888"}
+
+      bellcrank: {radius: 0.010, color: "#ff7f0e"}
+      pushrod:   {radius: 0.012, color: "#2ca02c"}
+      shock:     {radius: 0.010, color: "#d62728"}
+      arb:       {radius: 0.006, color: "#9467bd"}
+
+
+geometry:
+
+  # ============================================================
+  # POINTS
+  # ============================================================
+  points:
+
+    # ------------------------
+    # LEFT
+    # ------------------------
+    leftLowerFore_i: [signals/visleftlowerfore_i1, signals/visleftlowerfore_i2, signals/visleftlowerfore_i3]
+    leftLowerAft_i:  [signals/visleftloweraft_i1,  signals/visleftloweraft_i2,  signals/visleftloweraft_i3]
+    leftLower_o:     [signals/visleftlower_o1,     signals/visleftlower_o2,     signals/visleftlower_o3]
+
+    leftUpperFore_i: [signals/visleftupperfore_i1, signals/visleftupperfore_i2, signals/visleftupperfore_i3]
+    leftUpperAft_i:  [signals/visleftupperaft_i1,  signals/visleftupperaft_i2,  signals/visleftupperaft_i3]
+    leftUpper_o:     [signals/visleftupper_o1,     signals/visleftupper_o2,     signals/visleftupper_o3]
+
+    leftTie_i:       [signals/vislefttie_i1, signals/vislefttie_i2, signals/vislefttie_i3]
+    leftTie_o:       [signals/vislefttie_o1, signals/vislefttie_o2, signals/vislefttie_o3]
+
+    leftWheelCenter: [signals/visleftwheelcenter1, signals/visleftwheelcenter2, signals/visleftwheelcenter3]
+
+    # --- bellcrank system
+    leftBellcrankPivot:   [signals/visleftbellcrankpivot1, signals/visleftbellcrankpivot2, signals/visleftbellcrankpivot3]
+    leftBellcrankPickup1: [signals/visleftbellcrankpickup11, signals/visleftbellcrankpickup12, signals/visleftbellcrankpickup13]
+    leftBellcrankPickup2: [signals/visleftbellcrankpickup21, signals/visleftbellcrankpickup22, signals/visleftbellcrankpickup23]
+    leftBellcrankPickup3: [signals/visleftbellcrankpickup31, signals/visleftbellcrankpickup32, signals/visleftbellcrankpickup33]
+
+    leftRodMount:   [signals/visleftrodmount1, signals/visleftrodmount2, signals/visleftrodmount3]
+    leftShockMount: [signals/visleftshockmount1, signals/visleftshockmount2, signals/visleftshockmount3]
+
+    leftBarEnd: [signals/visleftbarend1, signals/visleftbarend2, signals/visleftbarend3]
+    leftArmEnd: [signals/visleftarmend1, signals/visleftarmend2, signals/visleftarmend3]
+
+
+    # ------------------------
+    # RIGHT
+    # ------------------------
+    rightLowerFore_i: [signals/visrightlowerfore_i1, signals/visrightlowerfore_i2, signals/visrightlowerfore_i3]
+    rightLowerAft_i:  [signals/visrightloweraft_i1,  signals/visrightloweraft_i2,  signals/visrightloweraft_i3]
+    rightLower_o:     [signals/visrightlower_o1,     signals/visrightlower_o2,     signals/visrightlower_o3]
+
+    rightUpperFore_i: [signals/visrightupperfore_i1, signals/visrightupperfore_i2, signals/visrightupperfore_i3]
+    rightUpperAft_i:  [signals/visrightupperaft_i1,  signals/visrightupperaft_i2,  signals/visrightupperaft_i3]
+    rightUpper_o:     [signals/visrightupper_o1,     signals/visrightupper_o2,     signals/visrightupper_o3]
+
+    rightTie_i:       [signals/visrighttie_i1, signals/visrighttie_i2, signals/visrighttie_i3]
+    rightTie_o:       [signals/visrighttie_o1, signals/visrighttie_o2, signals/visrighttie_o3]
+
+    rightWheelCenter: [signals/visrightwheelcenter1, signals/visrightwheelcenter2, signals/visrightwheelcenter3]
+
+    # --- bellcrank system
+    rightBellcrankPivot:   [signals/visrightbellcrankpivot1, signals/visrightbellcrankpivot2, signals/visrightbellcrankpivot3]
+    rightBellcrankPickup1: [signals/visrightbellcrankpickup11, signals/visrightbellcrankpickup12, signals/visrightbellcrankpickup13]
+    rightBellcrankPickup2: [signals/visrightbellcrankpickup21, signals/visrightbellcrankpickup22, signals/visrightbellcrankpickup23]
+    rightBellcrankPickup3: [signals/visrightbellcrankpickup31, signals/visrightbellcrankpickup32, signals/visrightbellcrankpickup33]
+
+    rightRodMount:   [signals/visrightrodmount1, signals/visrightrodmount2, signals/visrightrodmount3]
+    rightShockMount: [signals/visrightshockmount1, signals/visrightshockmount2, signals/visrightshockmount3]
+
+    rightBarEnd: [signals/visrightbarend1, signals/visrightbarend2, signals/visrightbarend3]
+    rightArmEnd: [signals/visrightarmend1, signals/visrightarmend2, signals/visrightarmend3]
+
+
+  # ============================================================
+  # LINKS
+  # ============================================================
+  links:
+
+    lower:
+      - [leftLowerFore_i, leftLower_o]
+      - [leftLowerAft_i,  leftLower_o]
+      - [rightLowerFore_i, rightLower_o]
+      - [rightLowerAft_i,  rightLower_o]
+
+    upper:
+      - [leftUpperFore_i, leftUpper_o]
+      - [leftUpperAft_i,  leftUpper_o]
+      - [rightUpperFore_i, rightUpper_o]
+      - [rightUpperAft_i,  rightUpper_o]
+
+    upright:
+      - [leftUpper_o, leftLower_o]
+      - [rightUpper_o, rightLower_o]
+
+    tie:
+      - [leftTie_i, leftTie_o]
+      - [rightTie_i, rightTie_o]
+
+    wheel:
+      - [leftLower_o, leftWheelCenter]
+      - [leftUpper_o, leftWheelCenter]
+      - [rightLower_o, rightWheelCenter]
+      - [rightUpper_o, rightWheelCenter]
+
+    # --- bellcrank polygon
+    bellcrank:
+      - [leftBellcrankPivot, leftBellcrankPickup1]
+      - [leftBellcrankPickup1, leftBellcrankPickup2]
+      - [leftBellcrankPickup2, leftBellcrankPickup3]
+      - [leftBellcrankPickup3, leftBellcrankPivot]
+
+      - [rightBellcrankPivot, rightBellcrankPickup1]
+      - [rightBellcrankPickup1, rightBellcrankPickup2]
+      - [rightBellcrankPickup2, rightBellcrankPickup3]
+      - [rightBellcrankPickup3, rightBellcrankPivot]
+
+    pushrod:
+      - [leftRodMount, leftBellcrankPickup1]
+      - [rightRodMount, rightBellcrankPickup1]
+
+    shock:
+      - [leftShockMount, leftBellcrankPickup2]
+      - [rightShockMount, rightBellcrankPickup2]
+
+    arb:
+      - [leftBarEnd, rightBarEnd]
+      - [leftBarEnd, leftArmEnd]
+      - [rightBarEnd, rightArmEnd]
+      - [leftArmEnd, leftBellcrankPickup3]
+      - [rightArmEnd, rightBellcrankPickup3]
+
+
+  # ============================================================
+  # TIRES
+  # ============================================================
+  tires:
+
+    left:
+      center: leftWheelCenter
+      x: [signals/vislefttire_ex1, signals/vislefttire_ex2, signals/vislefttire_ex3]
+      y: [signals/vislefttire_ey1, signals/vislefttire_ey2, signals/vislefttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+    right:
+      center: rightWheelCenter
+      x: [signals/visrighttire_ex1, signals/visrighttire_ex2, signals/visrighttire_ex3]
+      y: [signals/visrighttire_ey1, signals/visrighttire_ey2, signals/visrighttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+
+render:
+  show_signals: true
+  speed: 10
+
+
+plots:
+  - name: Heave
+    unit: m
+    x: time
+    y: signals/kncheave
+
+  - name: Roll
+    unit: rad
+    x: time
+    y: signals/kncroll
+
+
+camera:
+  attach_to: leftWheelCenter
+
+  origin_offset:
+    x: 0.0
+    y: -0.6096
+    z: 0.0
+
+  forward_pair: [leftLowerFore_i, leftLowerAft_i]
+
+  camera_offsets:
+    back: 3.5
+    height: 0.5
+
+  mode: yaw

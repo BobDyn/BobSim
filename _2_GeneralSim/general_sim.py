@@ -32,7 +32,7 @@ def _run_case_worker(
         overrides=case,
         tag=tag,
         cleanup=cleanup,
-        output_filter=schema.build_filter(),
+        output_filter=schema.build_filter() + "|vis.*",
     )
 
     schema.validate(sim, data)
@@ -52,7 +52,13 @@ class _2_GeneralSim:
         self.exec_name = exec_name
         self.simulation = simulation or {}
 
-        self.results_dir = self.build_dir.parent / "results"
+        results_override = self.simulation.get("results_dir")
+
+        if results_override is not None:
+            self.results_dir = Path(results_override).resolve()
+        else:
+            self.results_dir = self.build_dir.parent / "results"
+        
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         self.executable = self._resolve_executable()
@@ -60,6 +66,9 @@ class _2_GeneralSim:
 
         if not self.init_file.exists():
             raise FileNotFoundError(f"Missing init file: {self.init_file}")
+
+        self.visual_dir = self.results_dir / "raw_results"
+        self.visual_dir.mkdir(parents=True, exist_ok=True)
 
     def _resolve_executable(self) -> Path:
         exe = self.build_dir / self.exec_name
@@ -73,7 +82,14 @@ class _2_GeneralSim:
         raise FileNotFoundError(f"Executable not found: {exe}")
 
     def _norm(self, name: str) -> str:
-        return name.replace(".", "").replace("[", "").replace("]", "").replace('"', "")
+        return (
+            name
+            .replace(".", "")
+            .replace("[", "")
+            .replace("]", "")
+            .replace('"', "")
+            .lower()
+        )
 
     def _make_run_dir(self, tag: Optional[str]) -> Path:
         pid = os.getpid()
@@ -151,6 +167,9 @@ class _2_GeneralSim:
 
         out = self._load_csv(csv_file, keep)
 
+        if self.simulation.get("visual", False):
+            self._export_visual_bundle(out, run_dir, result_name)
+
         if cleanup:
             csv_file.unlink(missing_ok=True)
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -224,7 +243,7 @@ class _2_GeneralSim:
             overrides=overrides,
             tag=tag,
             cleanup=cleanup,
-            output_filter=schema.build_filter(),
+            output_filter=schema.build_filter() + "|vis.*",
         )
         schema.validate(self, data)
         return schema.extract(self, data)
@@ -290,3 +309,89 @@ class _2_GeneralSim:
                         raise
 
         return results
+    
+    def _export_visual_bundle(
+        self,
+        data: Dict[str, np.ndarray],
+        run_dir: Path,
+        name: str,
+    ):
+        import numpy as np
+
+        # ============================================================
+        # FIND TIME VECTOR (robust to normalization / casing)
+        # ============================================================
+        time_key = None
+        for k in data:
+            if k.lower() == "time":
+                time_key = k
+                break
+
+        if time_key is None:
+            print("⚠️ No time vector, skipping visual export")
+            return
+
+        time = data[time_key]
+
+        # Guard against bad runs
+        if len(time) < 2:
+            print("⚠️ Not enough time points, skipping visual export")
+            return
+
+        N = len(time)
+
+        # ============================================================
+        # PLACEHOLDER CONTAINERS
+        # ============================================================
+        points: Dict[str, np.ndarray] = {}
+        signals: Dict[str, np.ndarray] = {}
+
+        # ============================================================
+        # EXTRACT POINTS FROM SCHEMA
+        # ============================================================
+        schema = self.simulation.get("visual_schema")
+
+        if schema is not None:
+            points = schema.extract_points(data, self)
+
+        # ============================================================
+        # EXTRACT VALID SIGNALS (match time length only)
+        # ============================================================
+        for k, v in data.items():
+
+            # Skip time itself
+            if k == time_key:
+                continue
+
+            if isinstance(v, np.ndarray) and v.ndim == 1 and len(v) == N:
+                signals[k] = v
+
+        # ============================================================
+        # (FUTURE) POINT EXTRACTION GOES HERE
+        # ============================================================
+        # Example:
+        # points["upper_ball"] = np.column_stack([
+        #     data["frupperball1"],
+        #     data["frupperball2"],
+        #     data["frupperball3"],
+        # ])
+
+        # ============================================================
+        # BUILD VISUAL RUN DIR (mirrors run_dir)
+        # ============================================================
+        visual_run_dir = self.visual_dir / name
+        visual_run_dir.mkdir(parents=True, exist_ok=True)
+
+        out_path = visual_run_dir / f"{name}_visual.npz"
+
+        bundle = {"time": time}
+
+        for k, v in points.items():
+            bundle[f"points/{k}"] = v
+
+        for k, v in signals.items():
+            bundle[f"signals/{k}"] = v
+
+        np.savez(out_path, **bundle)
+
+        print(f"🎥 Visual bundle saved: {out_path}")
