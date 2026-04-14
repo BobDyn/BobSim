@@ -50,11 +50,11 @@ htmlcov/
 Thumbs.db
 
 # Project-generated outputs
-DOE/results/
-DOE/population/
+_4_DOE/results/
+_4_DOE/population/
 
 # Keep directory placeholders when needed
-!DOE/.gitkeep
-!DOE/results/.gitkeep
-!DOE/population/.gitkeep
-
+!_4_DOE/.gitkeep
+!_4_DOE/results/.gitkeep
+!_4_DOE/population/.gitkeep
+_4_DOE/boblib_ref/
