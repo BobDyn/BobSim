@@ -1,0 +1,10 @@
+services:
+  doe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/bobsim
+    working_dir: /bobsim/_4_DOE
+    stdin_open: true
+    tty: true

@@ -1,4 +1,3 @@
-@"
 FROM openmodelica/openmodelica:v1.26.3-ompython
 
 ENV DEBIAN_FRONTEND=noninteractive
