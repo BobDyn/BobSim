@@ -392,6 +392,6 @@ class _2_GeneralSim:
         for k, v in signals.items():
             bundle[f"signals/{k}"] = v
 
-        np.savez(out_path, **bundle)
+        np.savez(out_path, **bundle)  # type: ignore[arg-type]
 
         print(f"🎥 Visual bundle saved: {out_path}")

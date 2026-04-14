@@ -1,22 +1,29 @@
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
 import numpy as np
+from numpy.typing import NDArray
 import pyvista as pv
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from PIL import Image
 import imageio.v2 as imageio
 import vtk
+
+
+ArrayF = NDArray[np.float64]
+ArrayU8 = NDArray[np.uint8]
 
 
 # ============================================================
 # HELPERS
 # ============================================================
 def safe_normalize(
-    v: np.ndarray,
-    fallback: np.ndarray | None = None,
-) -> np.ndarray:
+    v: ArrayF,
+    fallback: ArrayF | None = None,
+) -> ArrayF:
     if fallback is None:
         fallback = np.array([1.0, 0.0, 0.0], dtype=float)
 
@@ -26,15 +33,15 @@ def safe_normalize(
     return v / n
 
 
-def set_vtk_matrix(mat: vtk.vtkMatrix4x4, T: np.ndarray) -> None:
+def set_vtk_matrix(mat: vtk.vtkMatrix4x4, T: ArrayF) -> None:
     for i in range(4):
         for j in range(4):
             mat.SetElement(i, j, float(T[i, j]))
 
 
 def make_frame_from_x(
-    x_axis: np.ndarray,
-) -> np.ndarray:
+    x_axis: ArrayF,
+) -> ArrayF:
     x = safe_normalize(x_axis)
 
     ref = np.array([0.0, 0.0, 1.0], dtype=float)
@@ -51,9 +58,9 @@ def make_frame_from_x(
 
 
 def make_link_transform(
-    p1: np.ndarray,
-    p2: np.ndarray,
-) -> np.ndarray:
+    p1: ArrayF,
+    p2: ArrayF,
+) -> ArrayF:
     d = p2 - p1
     L = np.linalg.norm(d)
 
@@ -97,12 +104,16 @@ print(f"[bobvis] MP4:    {mp4_path}")
 # LOAD
 # ============================================================
 with open(cfg_path, "r", encoding="utf-8") as f:
-    cfg = yaml.safe_load(f)
+    cfg: dict[str, Any] = yaml.safe_load(f)
 
-npz = np.load(npz_path)
+npz_file = np.load(npz_path)
+npz: dict[str, ArrayF] = {
+    key: np.asarray(npz_file[key], dtype=float)
+    for key in npz_file.files
+}
 
 time_arr = np.asarray(npz["time"], dtype=float)
-show_signals = cfg.get("render", {}).get("show_signals", False)
+show_signals = bool(cfg.get("render", {}).get("show_signals", False))
 
 # Optional stride knob.
 # Default is 1 so behavior is unchanged unless you explicitly set it.
@@ -114,8 +125,9 @@ if input_stride > 1:
 # ============================================================
 # BUILD POINTS
 # ============================================================
-points: dict[str, np.ndarray] = {}
-for name, cols in cfg["geometry"]["points"].items():
+points: dict[str, ArrayF] = {}
+for name, cols_any in cfg["geometry"]["points"].items():
+    cols = cast(list[str], cols_any)
     arr = np.stack([np.asarray(npz[c], dtype=float) for c in cols], axis=1)
     if input_stride > 1:
         arr = arr[::input_stride]
@@ -127,8 +139,8 @@ names = list(points.keys())
 # ============================================================
 # CAMERA
 # ============================================================
-cam_cfg = cfg.get("camera", {})
-attach_name = cam_cfg.get("attach_to", None)
+cam_cfg = cast(dict[str, Any], cfg.get("camera", {}))
+attach_name = cast(str | None, cam_cfg.get("attach_to", None))
 
 origin_offset = np.array(
     [
@@ -139,7 +151,7 @@ origin_offset = np.array(
     dtype=float,
 )
 
-cam_offs = cam_cfg.get("camera_offsets", {})
+cam_offs = cast(dict[str, Any], cam_cfg.get("camera_offsets", {}))
 
 
 def update_camera(i: int) -> None:
@@ -149,11 +161,13 @@ def update_camera(i: int) -> None:
     if "forward_pair" not in cam_cfg:
         return
 
+    forward_pair = cast(list[str], cam_cfg["forward_pair"])
+
     # ============================================================
     # VEHICLE FRAME (yaw-only)
     # ============================================================
-    p1 = points[cam_cfg["forward_pair"][0]][i]
-    p2 = points[cam_cfg["forward_pair"][1]][i]
+    p1 = points[forward_pair[0]][i]
+    p2 = points[forward_pair[1]][i]
 
     f = safe_normalize(np.array([
         p2[0] - p1[0],
@@ -177,8 +191,8 @@ def update_camera(i: int) -> None:
     # ============================================================
     # CAMERA POSITION (still in vehicle frame)
     # ============================================================
-    back = cam_offs.get("back", 2.5)
-    height = cam_offs.get("height", 1.5)
+    back = float(cam_offs.get("back", 2.5))
+    height = float(cam_offs.get("height", 1.5))
 
     cam_offset_body = np.array([
         -back,   # behind
@@ -202,17 +216,17 @@ def update_camera(i: int) -> None:
 joint_radius = float(cfg.get("style", {}).get("joints", {}).get("radius", 0.02))
 joint_color = cfg.get("style", {}).get("joints", {}).get("color", "red")
 
-link_style = cfg.get("style", {}).get("links", {})
-default_link = link_style.get("default", {"radius": 0.01, "color": "black"})
-group_styles = link_style.get("groups", {})
+link_style = cast(dict[str, Any], cfg.get("style", {}).get("links", {}))
+default_link = cast(dict[str, Any], link_style.get("default", {"radius": 0.01, "color": "black"}))
+group_styles = cast(dict[str, dict[str, Any]], link_style.get("groups", {}))
 
 
 # ============================================================
 # PLOTTER
 # ============================================================
 plotter = pv.Plotter(off_screen=True, window_size=[640, 640])
-plotter.set_background("white")
-plotter.add_axes()
+plotter.set_background("white")  # type: ignore[arg-type]
+plotter.add_axes()  # type: ignore[call-arg]
 plotter.camera.clipping_range = (0.01, 2000)
 
 
@@ -259,7 +273,7 @@ plotter.camera.clipping_range = (0.01, 2000)
 # ============================================================
 joint_mesh = pv.Sphere(radius=joint_radius)
 
-actors: dict[str, object] = {
+actors: dict[str, Any] = {
     n: plotter.add_mesh(joint_mesh.copy(), color=joint_color)
     for n in names
 }
@@ -268,10 +282,11 @@ actors: dict[str, object] = {
 # ============================================================
 # LINKS
 # ============================================================
-links: list[dict[str, object]] = []
+links: list[dict[str, Any]] = []
 
-for group, group_links in cfg["geometry"]["links"].items():
-    style = group_styles.get(group, default_link)
+for group, group_links_any in cfg["geometry"]["links"].items():
+    group_links = cast(list[list[str]], group_links_any)
+    style = cast(dict[str, Any], group_styles.get(group, default_link))
     radius = float(style["radius"])
     color = style["color"]
 
@@ -307,27 +322,32 @@ for group, group_links in cfg["geometry"]["links"].items():
 # ============================================================
 # TIRES
 # ============================================================
-tire_actors: list[dict[str, object]] = []
+tire_actors: list[dict[str, Any]] = []
 
-for tire_cfg in cfg["geometry"].get("tires", {}).values():
-    data = {
-        "center": tire_cfg["center"],
-        "x": np.stack([np.asarray(npz[c], dtype=float) for c in tire_cfg["x"]], axis=1),
-        "y": np.stack([np.asarray(npz[c], dtype=float) for c in tire_cfg["y"]], axis=1),
+for tire_cfg_any in cast(dict[str, Any], cfg["geometry"].get("tires", {})).values():
+    tire_cfg = cast(dict[str, Any], tire_cfg_any)
+
+    x_cols = cast(list[str], tire_cfg["x"])
+    y_cols = cast(list[str], tire_cfg["y"])
+
+    data: dict[str, Any] = {
+        "center": cast(str, tire_cfg["center"]),
+        "x": np.stack([np.asarray(npz[c], dtype=float) for c in x_cols], axis=1),
+        "y": np.stack([np.asarray(npz[c], dtype=float) for c in y_cols], axis=1),
         "radius": float(tire_cfg["radius"]),
         "width": float(tire_cfg["width"]),
     }
 
     if input_stride > 1:
-        data["x"] = data["x"][::input_stride]
-        data["y"] = data["y"][::input_stride]
+        data["x"] = cast(ArrayF, data["x"])[::input_stride]
+        data["y"] = cast(ArrayF, data["y"])[::input_stride]
 
     outer = plotter.add_mesh(
         pv.Cylinder(
             direction=(0, 1, 0),
-            radius=data["radius"],
-            height=data["width"],
-            resolution=48,  # smoother = fewer edge artifacts
+            radius=float(data["radius"]),
+            height=float(data["width"]),
+            resolution=48,
         ),
         color=(0.1, 0.1, 0.1),
         opacity=0.6,
@@ -337,8 +357,8 @@ for tire_cfg in cfg["geometry"].get("tires", {}).values():
     rim = plotter.add_mesh(
         pv.Cylinder(
             direction=(0, 1, 0),
-            radius=0.6 * data["radius"],
-            height=0.9 * data["width"],
+            radius=0.6 * float(data["radius"]),
+            height=0.9 * float(data["width"]),
             resolution=32,
         ),
         color=(0.8, 0.8, 0.8),
@@ -347,7 +367,7 @@ for tire_cfg in cfg["geometry"].get("tires", {}).values():
     )
 
     vtk_outer = vtk.vtkMatrix4x4()
-    vtk_rim   = vtk.vtkMatrix4x4()
+    vtk_rim = vtk.vtkMatrix4x4()
 
     outer.SetUserMatrix(vtk_outer)
     rim.SetUserMatrix(vtk_rim)
@@ -367,8 +387,12 @@ for tire_cfg in cfg["geometry"].get("tires", {}).values():
 # ============================================================
 # SIGNAL PLOT
 # ============================================================
+fig: Figure | None
+cursors: list[Any]
+
 if show_signals:
-    n_plots = len(cfg["plots"])
+    plots_cfg = cast(list[dict[str, Any]], cfg["plots"])
+    n_plots = len(plots_cfg)
 
     fig, axes = plt.subplots(
         n_plots,
@@ -382,9 +406,9 @@ if show_signals:
 
     cursors = []
 
-    for ax, p in zip(axes, cfg["plots"]):
-        x = np.asarray(npz[p["x"]], dtype=float)
-        y = np.asarray(npz[p["y"]], dtype=float)
+    for ax, p in zip(axes, plots_cfg):
+        x = np.asarray(npz[cast(str, p["x"])], dtype=float)
+        y = np.asarray(npz[cast(str, p["y"])], dtype=float)
 
         ax.plot(
             x,
@@ -393,7 +417,7 @@ if show_signals:
             color="#1f77b4",
         )
 
-        ax.set_ylabel(p["name"], fontsize=10)
+        ax.set_ylabel(cast(str, p["name"]), fontsize=10)
         ax.grid(True, which="major", linestyle="--", linewidth=0.5, alpha=0.5)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -428,10 +452,10 @@ def update_frame(i: int) -> None:
         actors[name].SetPosition(*points[name][i])
 
     for link in links:
-        a = link["a"]
-        b = link["b"]
+        a = cast(str, link["a"])
+        b = cast(str, link["b"])
         actor = link["actor"]
-        vtk_mat = link["vtk_mat"]
+        vtk_mat = cast(vtk.vtkMatrix4x4, link["vtk_mat"])
 
         p1 = points[a][i]
         p2 = points[b][i]
@@ -441,17 +465,22 @@ def update_frame(i: int) -> None:
         actor.Modified()
 
     for tire in tire_actors:
-        data = tire["data"]
+        data = cast(dict[str, Any], tire["data"])
         outer = tire["outer"]
-        rim   = tire["rim"]
+        rim = tire["rim"]
 
-        vtk_outer = tire["vtk_outer"]
-        vtk_rim   = tire["vtk_rim"]
+        vtk_outer = cast(vtk.vtkMatrix4x4, tire["vtk_outer"])
+        vtk_rim = cast(vtk.vtkMatrix4x4, tire["vtk_rim"])
 
-        C = points[data["center"]][i]
+        center_name = cast(str, data["center"])
+        x_arr = cast(ArrayF, data["x"])
+        y_arr = cast(ArrayF, data["y"])
+        radius = float(data["radius"])
 
-        x = safe_normalize(data["x"][i])
-        y_raw = data["y"][i]
+        C = points[center_name][i]
+
+        x = safe_normalize(x_arr[i])
+        y_raw = y_arr[i]
         y = safe_normalize(
             y_raw - np.dot(y_raw, x) * x,
             fallback=np.array([0.0, 1.0, 0.0], dtype=float),
@@ -463,10 +492,10 @@ def update_frame(i: int) -> None:
 
         if i > 0:
             dt = time_arr[i] - time_arr[i - 1]
-            v = (C - points[data["center"]][i - 1]) / max(dt, 1e-6)
-            tire["theta"] += np.dot(v, x) / data["radius"] * dt
+            v = (C - points[center_name][i - 1]) / max(dt, 1e-6)
+            tire["theta"] = float(tire["theta"]) + float(np.dot(v, x)) / radius * dt
 
-        theta = tire["theta"]
+        theta = float(tire["theta"])
 
         Ry = np.array(
             [
@@ -518,10 +547,15 @@ writer = imageio.get_writer(mp4_path, fps=fps)
 plot_target_w: int | None = None
 plot_target_h: int | None = None
 
-for i in indices:
-    update_frame(int(i))
+for i_raw in indices:
+    i = int(i_raw)
+    update_frame(i)
 
-    img = plotter.screenshot(return_img=True)
+    img_pv = plotter.screenshot(return_img=True)
+    if img_pv is None:
+        continue
+
+    img: ArrayU8 = np.asarray(img_pv, dtype=np.uint8)
 
     if show_signals and fig is not None:
         for cursor in cursors:
@@ -529,18 +563,22 @@ for i in indices:
 
         fig.canvas.draw()
 
-        buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
-        plot_img = buf.reshape((plot_canvas_h, plot_canvas_w, 4))[:, :, :3]
+        buf = np.frombuffer(
+            fig.canvas.buffer_rgba(),  # type: ignore[attr-defined]
+            dtype=np.uint8,
+        )
+        plot_img: ArrayU8 = buf.reshape((plot_canvas_h, plot_canvas_w, 4))[:, :, :3]
 
         if plot_target_w is None or plot_target_h is None:
-            plot_target_h = img.shape[0]
+            plot_target_h = int(img.shape[0])
             plot_target_w = int(plot_img.shape[1] * (plot_target_h / plot_img.shape[0]))
 
-        plot_img = np.array(
+        plot_img = np.asarray(
             Image.fromarray(plot_img).resize(
                 (plot_target_w, plot_target_h),
                 resample=Image.Resampling.BILINEAR,
-            )
+            ),
+            dtype=np.uint8,
         )
 
         img = np.hstack([img, plot_img])
