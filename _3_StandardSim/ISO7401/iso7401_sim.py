@@ -365,11 +365,14 @@ class ISO7401Sim:
             ay_10 = 0.1 * ay_ss
             ay_90 = 0.9 * ay_ss
 
-            try:
-                t10 = t[np.where(ay >= ay_10)[0][0]]
-                t90 = t[np.where(ay >= ay_90)[0][0]]
+            idx10 = np.where(ay >= ay_10)[0]
+            idx90 = np.where(ay >= ay_90)[0]
+
+            if len(idx10) > 0 and len(idx90) > 0:
+                t10 = t[idx10[0]]
+                t90 = t[idx90[0]]
                 rise_time = t90 - t10
-            except:
+            else:
                 rise_time = np.nan
 
             # steady-state gain
@@ -486,12 +489,9 @@ class ISO7401Sim:
 
         # phase via FFT
         def phase(x, y):
-            dt = np.mean(np.diff(t))
-            n = len(t)
 
             X = np.fft.rfft(x - np.mean(x))
             Y = np.fft.rfft(y - np.mean(y))
-            freqs = np.fft.rfftfreq(n, dt)
 
             idx = np.argmax(np.abs(X))
             phi = np.angle(Y[idx]) - np.angle(X[idx])
