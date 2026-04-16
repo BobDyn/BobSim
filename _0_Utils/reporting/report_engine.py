@@ -26,7 +26,7 @@ class ReportEngine:
         output_path = Path(
             report_cfg.get(
                 "output_path",
-                "_3_StandardSim/ISO4138/results/report.pdf"
+                ""
             )
         )
 
@@ -41,6 +41,10 @@ class ReportEngine:
 
             if standard == "ISO4138":
                 add_summary_page(pdf, result["summary"])
+
+            elif standard == "ISO7401":
+                from _0_Utils.reporting.sections import add_iso7401_summary_page
+                add_iso7401_summary_page(pdf, result["summary"])
 
             elif standard == "KnC":
                 from _0_Utils.reporting.sections import add_knc_summary_page

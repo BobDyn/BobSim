@@ -1,0 +1,149 @@
+standard: ISO7401
+
+simulation:
+  solver: dassl
+  output_format: csv
+  log_level: LOG_STATS
+  no_grid: true
+  no_event_emit: false
+  visual: true
+
+execution:
+  parallel: true
+  max_workers: 4
+  cleanup: true
+
+test:
+  testVel: 10.0
+  stepTime: 1.0
+
+  run_step: true
+  run_sine_one_period: true
+  run_continuous_sine: true
+
+  directions: [left, right]
+
+  representative_step_deg: 10.0
+  representative_step_direction: left
+
+  representative_one_freq_hz: 1.0
+  representative_one_amp_deg: 10.0
+  representative_one_direction: left
+
+  representative_cont_freq_hz: 1.0
+  representative_cont_amp_deg: 10.0
+  representative_cont_direction: left
+
+  # steerStep_deg: [5.0, 10.0, 15.0]
+  steerStep_deg: []
+
+  # sine_freq_hz: [0.5, 1.0]
+  # sine_amp_deg: [5.0, 10.0, 15.0]
+  sine_freq_hz: []
+  sine_amp_deg: []
+
+  # sweep_freq_hz: [0.5, 0.75, 1.0, 1.5, 2.0]
+  # sweep_amp_deg: [4.0]
+  sweep_freq_hz: [0.5]
+  sweep_amp_deg: [30.0]
+
+  n_cycles: 5
+  analyze_cycles_after: 1
+
+  freq_response_amp_deg: 30.0
+  freq_response_direction: left
+
+report:
+  brand: BobSim
+  title: ISO7401 Lateral Transient Response
+  subtitle: Comprehensive Open-Loop Characterization
+  output_path: _3_StandardSim/ISO7401/results/iso7401_report.pdf
+
+  notes:
+    - Step input (time-domain)
+    - One-period sinusoidal input
+    - Continuous sinusoidal response
+    - Frequency response computed from fixed-amplitude, single-direction sine sweep
+    - Steering shown in degrees for readability
+    - Representative plots use deterministic reference cases
+
+plots:
+
+  step_response:
+    layout: triple
+    title: "Step Input Response (ISO7401)"
+
+    subplots:
+      - title: "Steering Wheel Angle $\\delta_H$"
+        x: { key: step_time, label: "Time [s]" }
+        y: { key: step_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+
+      - title: "Lateral Acceleration $a_y$"
+        x: { key: step_time, label: "Time [s]" }
+        y: { key: step_ay, label: "$a_y$ [m/s^2]" }
+
+      - title: "Yaw Velocity $r$"
+        x: { key: step_time, label: "Time [s]" }
+        y: { key: step_yaw, label: "$r$ [rad/s]" }
+
+  sine_one_period:
+    layout: triple
+    title: "One-Period Sinusoidal Response (ISO7401)"
+
+    subplots:
+      - title: "Steering Wheel Angle $\\delta_H$"
+        x: { key: one_time, label: "Time [s]" }
+        y: { key: one_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+
+      - title: "Lateral Acceleration $a_y$"
+        x: { key: one_time, label: "Time [s]" }
+        y: { key: one_ay, label: "$a_y$ [m/s^2]" }
+
+      - title: "Yaw Velocity $r$"
+        x: { key: one_time, label: "Time [s]" }
+        y: { key: one_yaw, label: "$r$ [rad/s]" }
+
+  sine_five_period:
+    layout: triple
+    title: "Continuous Sinusoidal Response"
+
+    subplots:
+      - title: "Steering Wheel Angle $\\delta_H$"
+        x: { key: cont_time, label: "Time [s]" }
+        y: { key: cont_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+
+      - title: "Lateral Acceleration $a_y$"
+        x: { key: cont_time, label: "Time [s]" }
+        y: { key: cont_ay, label: "$a_y$ [m/s^2]" }
+
+      - title: "Yaw Velocity $r$"
+        x: { key: cont_time, label: "Time [s]" }
+        y: { key: cont_yaw, label: "$r$ [rad/s]" }
+
+  freq_response_gain:
+    layout: dual
+    title: "Frequency Response — Gain (ISO7401)"
+    xscale: log
+
+    subplots:
+      - title: "$|a_y / \\delta_{HWA}|$"
+        x: { key: freq, label: "$f$ [Hz]" }
+        y: { key: ay_gain, label: "$|a_y / \\delta_{HWA}|$ [(m/s^2)/rad]" }
+
+      - title: "$|r / \\delta_{HWA}|$"
+        x: { key: freq, label: "$f$ [Hz]" }
+        y: { key: yaw_gain, label: "$|r / \\delta_{HWA}|$ [(rad/s)/rad]" }
+
+  freq_response_phase:
+    layout: dual
+    title: "Frequency Response — Phase (ISO7401)"
+    xscale: log
+
+    subplots:
+      - title: "Phase: $a_y$ vs $\\delta_{HWA}$"
+        x: { key: freq, label: "$f$ [Hz]" }
+        y: { key: ay_phase, label: "Phase [deg]" }
+
+      - title: "Phase: $r$ vs $\\delta_{HWA}$"
+        x: { key: freq, label: "$f$ [Hz]" }
+        y: { key: yaw_phase, label: "Phase [deg]" }

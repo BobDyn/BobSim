@@ -1,5 +1,6 @@
 from datetime import datetime
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def add_summary_page(pdf, summary):
@@ -186,6 +187,72 @@ def add_knc_summary_page(pdf, summary):
             ("Total Front", "elastic_roll_stiffness_front_Nm_per_rad", "Nm/rad", "{:.0f}"),
             ("Total Rear", "elastic_roll_stiffness_rear_Nm_per_rad", "Nm/rad", "{:.0f}"),
         ])
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def add_iso7401_summary_page(pdf, summary):
+
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(11, 8.5))
+    plt.axis("off")
+
+    # Title
+    plt.text(0.5, 0.92, "ISO7401 Metrics Summary",
+             ha="center", fontsize=18, weight="bold")
+
+    rows = [
+        # ======================
+        # STEP RESPONSE
+        # ======================
+        ("Peak $a_y$", "ay_peak", "m/s²", "{:.2f}"),
+        ("Steady-State $a_y$", "ay_ss", "m/s²", "{:.2f}"),
+        ("Steady-State Gain", "ay_gain_ss", "(m/s²)/rad", "{:.2f}"),
+        ("Overshoot", "overshoot_pct", "%", "{:.1f}"),
+        ("Rise Time (10–90%)", "rise_time_s", "s", "{:.2f}"),
+        ("Settling Time", "settling_time_s", "s", "{:.2f}"),
+
+        ("", "", "", ""),
+
+        # ======================
+        # FREQUENCY RESPONSE
+        # ======================
+        ("Low-Freq Gain", "ay_gain_lowfreq", "(m/s²)/rad", "{:.2f}"),
+        ("Peak Gain", "ay_gain_peak", "(m/s²)/rad", "{:.2f}"),
+        ("Peak Freq", "ay_gain_peak_freq", "Hz", "{:.2f}"),
+        ("Bandwidth (-3 dB)", "bandwidth_hz", "Hz", "{:.2f}"),
+        ("Phase @ 1 Hz", "ay_phase_1hz", "deg", "{:.1f}"),
+
+        ("", "", "", ""),
+
+        # ======================
+        # YAW RESPONSE
+        # ======================
+        ("Peak $|r/\\delta_H|$", "yaw_gain_peak", "(rad/s)/rad", "{:.2f}"),
+        ("Peak Freq (r)", "yaw_gain_peak_freq", "Hz", "{:.2f}"),
+    ]
+
+    x_label = 0.2
+    x_val = 0.65
+    x_unit = 0.82
+
+    y_top = 0.8
+    row_h = 0.055
+
+    for i, (label, key, unit, fmt) in enumerate(rows):
+        y = y_top - i * row_h
+
+        if label == "":
+            continue
+
+        val = summary.get(key, None)
+        val_str = "—" if val is None or np.isnan(val) else fmt.format(val)
+
+        plt.text(x_label, y, label, fontsize=12)
+        plt.text(x_val, y, val_str, fontsize=12, ha="right")
+        plt.text(x_unit, y, unit, fontsize=12)
 
     pdf.savefig(fig)
     plt.close(fig)
