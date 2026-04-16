@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class TripleLayout:
@@ -9,20 +10,36 @@ class TripleLayout:
         for ax, sub in zip(axes, p_cfg["subplots"]):
             x, y = plotter.get_xy(result, sub)
 
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+
+            xscale = sub.get("xscale", p_cfg.get("xscale", "linear"))
+            yscale = sub.get("yscale", p_cfg.get("yscale", "linear"))
+            ax.set_xscale(xscale)
+            ax.set_yscale(yscale)
+
+            # Empty data
+            if x.size == 0 or y.size == 0:
+                ax.text(0.5, 0.5, "No Data",
+                        ha="center", va="center", fontsize=10)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                continue
+
             ax.plot(x, y, linewidth=2)
 
-            ax.set_title(sub["title"], fontsize=12)
-            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]))
-            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]))
-            ax.grid(True)
+            ax.set_xlim(np.min(x), np.max(x))
 
-            xmin = result["series"]["ay_signed"].min()
-            xmax = result["series"]["ay_signed"].max()
-            ax.set_xlim(xmin, xmax)
+            ax.set_title(sub["title"], fontsize=12)
+            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
+            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)
+
+            ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+            ax.tick_params(labelsize=10)
 
         fig.suptitle(p_cfg.get("title", ""), fontsize=16, y=0.965)
+        fig.align_ylabels()
 
-        # 🔥 Landscape margins (balanced)
         fig.subplots_adjust(
             left=1.25 / 11,
             right=1 - 0.9 / 11,

@@ -47,6 +47,7 @@ geometry:
     flTie_o:       [signals/vislefttie_o1, signals/vislefttie_o2, signals/vislefttie_o3]
 
     flWheelCenter: [signals/visleftwheelcenter1, signals/visleftwheelcenter2, signals/visleftwheelcenter3]
+    flCP: [signals/visleftcp1, signals/visleftcp2, signals/visleftcp3]
 
     # --- bellcrank system
     flBellcrankPivot:   [signals/visleftbellcrankpivot1, signals/visleftbellcrankpivot2, signals/visleftbellcrankpivot3]
@@ -76,6 +77,7 @@ geometry:
     frTie_o:       [signals/visrighttie_o1, signals/visrighttie_o2, signals/visrighttie_o3]
 
     frWheelCenter: [signals/visrightwheelcenter1, signals/visrightwheelcenter2, signals/visrightwheelcenter3]
+    frCP: [signals/visrightcp1, signals/visrightcp2, signals/visrightcp3]
 
     # --- bellcrank system
     frBellcrankPivot:   [signals/visrightbellcrankpivot1, signals/visrightbellcrankpivot2, signals/visrightbellcrankpivot3]
@@ -168,10 +170,29 @@ geometry:
       radius: 0.2032
       width: 0.1778
 
+  vectors:
+
+    contact_patch:
+
+      flCPForce:
+        origin: flCP
+        direction: [signals/visleftcpforce1, signals/visleftcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
+
+      frCPForce:
+        origin: frCP
+        direction: [signals/visrightcpforce1, signals/visrightcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
 
 render:
   show_signals: true
-  speed: 10
+  speed: 5
 
 
 plots:
@@ -184,6 +205,11 @@ plots:
     unit: rad
     x: time
     y: signals/kncroll
+  
+  - name: Left Inclination Angle
+    unit: rad
+    x: time
+    y: signals/kncleftgamma
 
 
 camera:
