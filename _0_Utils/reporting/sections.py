@@ -195,7 +195,6 @@ def add_knc_summary_page(pdf, summary):
 def add_iso7401_step_page(pdf, summary):
 
     import matplotlib.pyplot as plt
-    import numpy as np
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
@@ -261,7 +260,6 @@ def add_iso7401_step_page(pdf, summary):
 def add_iso7401_frequency_page(pdf, summary):
 
     import matplotlib.pyplot as plt
-    import numpy as np
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
