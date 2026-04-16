@@ -1,227 +1,157 @@
-# BobSim Knowledge: GeneralSim and StandardSim
+# BobSim Knowledge
 
-This document captures the current state of the refactored simulation stack in:
+This document is a current map of the Python side of BobSim after the recent refactor.
+It focuses on what is implemented in `_2_GeneralSim` and `_3_StandardSim`, with short notes on the other top-level folders.
 
+## 1) Repository layout (high level)
+
+- `_0_Utils/`
+  - plotting/report helpers used by standard simulations
+  - `external/BobLib/` is a git submodule that contains the Modelica library
+- `_1_VisualSim/`
+  - visual post-processing pipeline (`run_visual.py`) that renders MP4 from NPZ bundles
 - `_2_GeneralSim/`
+  - simulation runtime engine that executes compiled OpenModelica binaries and extracts outputs
 - `_3_StandardSim/`
+  - standard-specific orchestrators (`ISO4138`, `KnC`) plus build scripts/configs
+- `_4_DOE/`
+  - DOE scaffold exists, but major parts are still placeholders
 
-It focuses on what exists today (interfaces, flow, and assumptions), not idealized behavior.
+## 2) Main execution path for standard runs
 
-## 1) High-level architecture
+Entry points:
 
-The simulation flow is layered:
+- `_3_StandardSim/run_standard.py`
+- `examples/run_standard.py`
 
-1. Load YAML config (`_2_GeneralSim/config.py`).
-2. Select a standard-specific simulator from `_3_StandardSim/registry.py`.
-3. Standard simulator builds one or more simulation cases and calls the generic runner (`_2_GeneralSim/general_sim.py`).
-4. Standard simulator post-processes raw signals into:
-   - `summary` (scalar metrics)
-   - `series` (arrays for plotting/reporting)
-5. Report generation is triggered by `examples/run_standard.py` via `_0_Utils/reporting/report_engine.py`.
+Flow:
 
-## 2) `_2_GeneralSim/` contents
+1. Load YAML config via `_2_GeneralSim/config.py:load_config`.
+2. Instantiate simulator from `_3_StandardSim/registry.py` using `STANDARD_REGISTRY[config["standard"]]`.
+3. Call simulator `.run()`.
+4. Build PDF report with `_0_Utils/reporting/report_engine.py`.
 
-### `_2_GeneralSim/general_sim.py`
-
-Core runner class: `_2_GeneralSim`.
-
-What it does:
-
-- Resolves compiled executable in a `build/` folder (`<exec_name>` or `<exec_name>.exe`).
-- Requires `<exec_name>_init.xml` to exist.
-- Runs OpenModelica-generated executable with runtime flags:
-  - `-override=...`
-  - `-r=<csv output path>`
-  - `-s=<solver>`
-  - `-outputFormat=<format>`
-  - `-lv=<log level>`
-  - optional: `-noEquidistantTimeGrid`, `-noEventEmit`, `-variableFilter`
-- Stores run outputs under sibling `results/` folders (`<build parent>/results`).
-- Loads CSV into `dict[str, np.ndarray]` with normalized keys (dots/brackets/quotes removed).
-
-Primary APIs:
-
-- `run_raw(overrides, tag=None, timeout=None, cleanup=False, output_filter=None, keep=None)`
-  - Lowest-level execution + CSV loading.
-- `run_case(schema, overrides, tag=None, cleanup=False)`
-  - Runs one case with `OutputSchema` filter/validation/extraction.
-- `run_cases(schema, cases, cleanup=False)`
-  - Sequential multi-case execution.
-- `run_cases_parallel(schema, cases, max_workers=None, fail_fast=False, cleanup=False)`
-  - Multiprocess multi-case execution using `ProcessPoolExecutor`.
-
-Helper methods:
-
-- `get(data, key)` lookup with normalized key handling.
-- `steady(data, key, window=10, tol=1e-2)` tail-mean with convergence check.
-- `last(data, key)` last sample.
-
-### `_2_GeneralSim/output_schema.py`
-
-Defines dataclass `OutputSchema`:
-
-- `signals: list[str]` required signals.
-- optional `validator(sim, data)`.
-- optional `extractor(sim, data)`.
-
-Behavior:
-
-- `build_filter()` returns `time|<signal1>|<signal2>|...` for Modelica variable filtering.
-- `extract()` defaults to steady-state extraction (`sim.steady`) for each signal when no custom extractor is given.
-
-### `_2_GeneralSim/config.py`
-
-- `load_config(path)` reads YAML via `yaml.safe_load`.
-
-### `_2_GeneralSim/schema.py`
-
-- Minimal config validation: currently only asserts key `standard` exists.
-
-## 3) `_3_StandardSim/` contents
-
-### `_3_StandardSim/registry.py`
-
-Maps standard name to simulator class:
+Current registry targets:
 
 - `ISO4138 -> ISO4138Sim`
 - `KnC -> KnCSim`
 
-This is the dispatch point used by `examples/run_standard.py`.
+## 3) `_2_GeneralSim` details
 
----
+Core file: `_2_GeneralSim/general_sim.py`
 
-### ISO4138 standard (`_3_StandardSim/ISO4138/`)
+Main class:
 
-Files:
+- `_2_GeneralSim`
 
-- `iso4138_sim.py`
-- `iso4138_schema.py`
-- `iso4138_config.yml`
-- `build.mos`
+What it does:
 
-#### `iso4138_sim.py`
+- Resolves executable from `build_dir` (`name` or `name.exe`).
+- Runs executable with OpenModelica CLI args and override string.
+- Reads CSV output with NumPy and normalizes channel names.
+- Supports single case, serial case list, and process-pool parallel execution.
+- Optionally exports visual bundles (`.npz`) when `simulation.visual` is enabled.
 
-`ISO4138Sim`:
+Key public methods used by standards:
 
-- Uses one executable:
-  - build dir: `_3_StandardSim/ISO4138/build`
-  - exec: `BobLib.Standards.ISO4138`
-- Builds sweep cases from config:
-  - logarithmic radius sweep between `r_min` and `r_max`
-  - biased by `radius_bias_power`
-  - mirrored to positive/negative radii
-  - each case includes `testVel` and `testRad`
-- Executes cases sequentially or in parallel based on `execution.parallel`.
-- Summarizes into standard output format (`summary`, `series`).
+- `run_case(schema, overrides, ...)`
+- `run_cases(schema, cases, ...)`
+- `run_cases_parallel(schema, cases, ...)`
+- helpers for extraction: `get`, `steady`, `last`
 
-Summary logic includes:
+Schema abstraction:
 
-- signed lateral acceleration ordering (`ay_signed`)
-- roadwheel fit (`polyfit`)
-- curvature-based actual radius and tracking error
-- sensitivity gradients (`np.gradient`)
-- scalar metrics such as understeer gradient and radius error statistics
+- `_2_GeneralSim/output_schema.py` defines `OutputSchema` with:
+  - `signals`
+  - `mode` (`steady`, `raw`, `last`)
+  - optional custom `validator` and `extractor`
 
-#### `iso4138_schema.py`
+Note on earlier mismatch concern:
 
-Defines `ISO4138_SCHEMA` as an `OutputSchema` with required ISO signals:
+- `KnCSim` now calls `run_cases(...)` (not `self.sim.run()`).
+- `KNC_SCHEMA` is now an `OutputSchema` object.
+- The two specific interface mismatch issues previously called out appear resolved in current code.
 
-- steering angles, lateral acceleration, roll, sideslip, curvature, steering torque
+## 4) `_3_StandardSim` details
 
-#### `iso4138_config.yml`
-
-Contains:
-
-- simulation runtime options
-- execution options (`parallel`, `max_workers`, `cleanup`)
-- sweep definition (`testVel`, `n_cases`, `r_min`, `r_max`, `radius_bias_power`)
-- report metadata + plot specifications
-
-#### `build.mos`
-
-OpenModelica script to compile `BobLib.Standards.ISO4138` into `_3_StandardSim/ISO4138/build`.
-
----
-
-### KnC standard (`_3_StandardSim/KnC/`)
+### ISO4138
 
 Files:
 
-- `knc_sim.py`
-- `knc_schema.py`
-- `knc_config.yml`
-- `build.mos`
+- `_3_StandardSim/ISO4138/iso4138_sim.py`
+- `_3_StandardSim/ISO4138/iso4138_schema.py`
+- `_3_StandardSim/ISO4138/iso4138_config.yml`
+- `_3_StandardSim/ISO4138/build.mos`
 
-#### `knc_sim.py`
+Behavior:
 
-`KnCSim`:
+- Builds signed radius sweep cases (`+R` and `-R`).
+- Executes serial or parallel depending on `execution.parallel`.
+- Extracts steady metrics via `ISO4138_SCHEMA`.
+- Produces summary metrics and plotting series (understeer, roll, curvature, radius tracking).
 
-- Uses two executables:
-  - front: `_3_StandardSim/KnC/build/fr_build` (`BobLib.Standards.FrKnC`)
-  - rear: `_3_StandardSim/KnC/build/rr_build` (`BobLib.Standards.RrKnC`)
-- Builds a single overrides dict from `test` config (`steerMagnitude`, `heaveMagnitude`, `rollMagnitude`, `forceMagnitude`).
-- Runs front and rear models, then merges outputs into `summary` + `series`.
+Expected build location from script:
 
-Summary includes:
+- `_3_StandardSim/ISO4138/build/`
 
-- time span
-- camber range (`gamma_range`)
-- toe range (`toe_range`)
-- full front/rear time-series for reporting
+### KnC
 
-#### `knc_schema.py`
+Files:
 
-Current schema is a plain `list[str]` (`KNC_SCHEMA`) of required signals, not an `OutputSchema` object.
+- `_3_StandardSim/KnC/knc_sim.py`
+- `_3_StandardSim/KnC/knc_schema.py`
+- `_3_StandardSim/KnC/knc_config.yml`
+- `_3_StandardSim/KnC/build.mos`
 
-#### `knc_config.yml`
+Behavior:
 
-Contains:
+- Creates two simulation objects:
+  - front: `build/fr_build`, executable `BobLib.Standards.FrKnC`
+  - rear: `build/rr_build`, executable `BobLib.Standards.RrKnC`
+- Executes one case each (raw mode schema) and fuses front/rear data.
+- Computes engineered summary + dense series:
+  - geometry gains (camber/toe/caster/KPI/trail/scrub)
+  - anti metrics (heave and roll)
+  - jacking curves
+  - motion ratios (spring and stabar)
+  - LLTD estimate and stiffness breakdown
 
-- simulation options
-- test magnitudes
-- report output path
-- plot definitions for camber, toe, and inputs
+Expected build locations from script:
 
-#### `build.mos`
+- `_3_StandardSim/KnC/build/fr_build/`
+- `_3_StandardSim/KnC/build/rr_build/`
 
-OpenModelica script that loops over `fr_build` and `rr_build` and builds:
+## 5) Current observed filesystem state (from this checkout)
 
-- `BobLib.Standards.FrKnC`
-- `BobLib.Standards.RrKnC`
+- `_3_StandardSim/KnC/build/` exists, but only `results/` is present.
+- `_3_StandardSim/KnC/build/fr_build/` and `_3_StandardSim/KnC/build/rr_build/` are not currently present.
+- `_3_StandardSim/ISO4138/build/` is not currently present.
 
-## 4) Entry point and runtime contract
+Implication: compiled executables are not currently visible in expected build folders in this working tree snapshot.
 
-`examples/run_standard.py` currently does:
+## 6) Reporting and visualization
 
-1. `config = load_config(path)`
-2. `sim = STANDARD_REGISTRY[config["standard"]](config)`
-3. `result = sim.run()`
-4. `ReportEngine(config).build(result)`
-5. print `result["summary"]`
+- `_0_Utils/reporting/report_engine.py` writes PDF to config `report.output_path`.
+- `ISO4138` and `KnC` have dedicated summary-page handling.
+- `_2_GeneralSim` can export visual NPZ bundles into `results/raw_results/...` when enabled.
+- `_1_VisualSim/run_visual.py` consumes a visual YAML template + NPZ and writes MP4.
 
-So each standard simulator is expected to provide:
+## 7) DOE area status
 
-- constructor signature: `__init__(config)`
-- method: `run()` returning dict with keys:
-  - `summary` (serializable scalars)
-  - `series` (arrays keyed by plot config)
+- `_4_DOE/` has many files, but key files like `run_doe.py` and `batch.py` are placeholders.
+- Treat DOE as in-progress scaffolding, not a stable pipeline yet.
 
-## 5) Current-state notes after refactor
+## 8) BobLib submodule policy
 
-These are important for anyone extending or debugging:
+`_0_Utils/external/BobLib` is configured and tracked as a git submodule:
 
-- `KnCSim.run()` calls `self.sim_fr.run(...)` / `self.sim_rr.run(...)`, but `_2_GeneralSim` currently exposes `run_case`, `run_cases`, `run_cases_parallel`, and `run_raw` (no `run` method).
-- `KNC_SCHEMA` is a `list[str]`, while `_2_GeneralSim` methods expect an `OutputSchema` object when using `run_case(s)` paths.
+- `.gitmodules` contains `_0_Utils/external/BobLib`
+- git index mode is `160000` for that path (gitlink)
+- submodule has `.git` pointer to `.git/modules/_0_Utils/external/BobLib`
 
-Implication: KnC likely needs interface alignment to the refactored `_2_GeneralSim` API.
+Recommendation:
 
-## 6) Quick extension guide
-
-To add a new standard under `_3_StandardSim/`:
-
-1. Add `<StandardName>/<standard>_sim.py` implementing `run()`.
-2. Define signal contract (prefer `OutputSchema`).
-3. Add build script (`build.mos`) and config YAML.
-4. Register class in `_3_StandardSim/registry.py`.
-5. Ensure `run()` returns `{"summary": ..., "series": ...}` for reporting.
+- Do not ignore the submodule path in root `.gitignore`.
+- Keep the gitlink tracked in the super-repo, and manage BobLib changes via submodule commit updates.
+- If you want to suppress dirty-submodule noise only, use git config options (for example, `status.submoduleSummary` or ignore settings in `.gitmodules`), not `.gitignore`.
 

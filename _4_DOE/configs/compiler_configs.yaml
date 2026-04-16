@@ -1,0 +1,30 @@
+# DOE compiler configuration
+# To add a new standard: uncomment or add a block under `standards`.
+# No Python changes required.
+
+boblib_path: ../_0_Utils/external/BobLib/package.mo
+
+standards:
+  ISO4138:
+    model: BobLib.Standards.ISO4138
+    start_time: 0
+    stop_time: 100
+    intervals: 0
+    tolerance: 1e-6
+    solver: dassl
+
+  # KnC_Fr:
+  #   model: BobLib.Standards.FrKnC
+  #   start_time: 0
+  #   stop_time: 91
+  #   intervals: 0
+  #   tolerance: 1e-6
+  #   solver: dassl
+
+  # KnC_Rr:
+  #   model: BobLib.Standards.RrKnC
+  #   start_time: 0
+  #   stop_time: 91
+  #   intervals: 0
+  #   tolerance: 1e-6
+  #   solver: dassl
