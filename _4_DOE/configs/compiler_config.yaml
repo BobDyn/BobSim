@@ -2,7 +2,7 @@
 # To add a new standard: uncomment or add a block under `standards`.
 # No Python changes required.
 
-boblib_path: ../_0_Utils/external/BobLib/package.mo
+boblib_path: ../../_0_Utils/external/BobLib/package.mo
 
 standards:
   ISO4138:

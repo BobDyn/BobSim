@@ -1,0 +1,23 @@
+OpenModelica.Scripting.setCommandLineOptions(
+  "--simCodeTarget=C --maxSizeLinearTearing=5000"
+);
+
+clear();
+loadModel(Modelica);
+loadFile("{boblib_path}");
+loadFile("{variant_mo_path}");
+
+cd("{build_dir}");
+
+buildModel(
+  {model},
+  startTime={start_time},
+  stopTime={stop_time},
+  outputFormat="csv",
+  numberOfIntervals={intervals},
+  tolerance={tolerance},
+  method="{solver}",
+  cflags="-O3 -march=native -mtune=native"
+);
+
+print(getErrorString());

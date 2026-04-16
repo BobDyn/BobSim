@@ -1,4 +1,6 @@
 services:
+
+  # DOE pipeline — sampler, generator, compiler, batch, aggregator, search
   doe:
     build:
       context: .
@@ -6,5 +8,16 @@ services:
     volumes:
       - .:/bobsim
     working_dir: /bobsim/_4_DOE
+    stdin_open: true
+    tty: true
+
+  # Standard sims — ISO4138, KnC, etc.
+  standard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/bobsim
+    working_dir: /bobsim/_3_StandardSim
     stdin_open: true
     tty: true
