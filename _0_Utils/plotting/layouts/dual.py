@@ -18,14 +18,44 @@ class DualLayout:
             else:
                 ax.plot(x, y)
 
+            # ============================================================
+            # FIT
+            # ============================================================
             fit = plotter.compute_fit(x, y, sub)
             if fit is not None:
                 ax.plot(x, fit, "--", linewidth=2)
 
+            # ============================================================
+            # 🔥 REFERENCE LINES (NEW)
+            # ============================================================
+            refs = sub.get("reference")
+
+            if refs:
+                # allow single dict OR list
+                if isinstance(refs, dict):
+                    refs = [refs]
+
+                for ref in refs:
+                    if ref["type"] == "horizontal":
+                        ax.axhline(
+                            y=ref["y"],
+                            linestyle=":",
+                            linewidth=2,
+                            color=ref.get("color", "black"),
+                            label=ref.get("label", None),
+                        )
+
+            # ============================================================
+            # AXIS FORMATTING
+            # ============================================================
             ax.set_title(sub["title"], fontsize=12)
-            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]))
-            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]))
+            ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
+            ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)
             ax.grid(True)
+
+            # Only show legend if something requested it
+            if ax.get_legend_handles_labels()[0]:
+                ax.legend()
 
         fig.suptitle(p_cfg.get("title", ""), fontsize=16, y=0.96)
 

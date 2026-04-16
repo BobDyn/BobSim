@@ -9,7 +9,7 @@ loadModel(Modelica);
 loadFile("_0_Utils/external/BobLib/package.mo");
 
 // Model build locations
-models := {"fr_build", "rr_build"};
+models := {"fr_build", "rr_build"}
 
 // get root directory
 root := OpenModelica.Scripting.cd();

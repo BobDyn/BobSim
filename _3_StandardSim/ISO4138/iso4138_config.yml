@@ -6,6 +6,7 @@ simulation:
   log_level: LOG_STATS
   no_grid: true
   no_event_emit: false
+  visual: true
   # extra_overrides:
   #   curvGain: 2
   #   curvTi: 0.025
@@ -31,7 +32,7 @@ report:
   brand: BobSim
   title: ISO4138 Vehicle Characterization
   subtitle: 15 m/s Constant Velocity Test
-  output_path: _3_StandardSim/ISO4138/results/report.pdf
+  output_path: _3_StandardSim/ISO4138/results/iso4138_report.pdf
 
   notes:
     - ISO4138 steady-state circular test performed

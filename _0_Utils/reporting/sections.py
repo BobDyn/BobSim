@@ -76,6 +76,121 @@ def add_summary_page(pdf, summary):
     plt.close(fig)
 
 
+def add_knc_summary_page(pdf, summary):
+
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(11, 8.5))
+    plt.axis("off")
+
+    # Title
+    plt.text(0.5, 0.96, "KnC Metrics Summary",
+             ha="center", fontsize=18, weight="bold")
+
+    # Column anchors
+    x_left_label  = 0.10
+    x_left_val    = 0.38
+    x_left_unit   = 0.46
+
+    x_right_label = 0.58
+    x_right_val   = 0.82
+    x_right_unit  = 0.90
+
+    y_top = 0.88
+
+    def add_section(x_label, x_val, x_unit, y, title, rows):
+        plt.text(x_label, y, title, fontsize=13, weight="bold")
+        y -= 0.045
+
+        for label, key, unit, fmt in rows:
+            val = summary.get(key, None)
+            val_str = "—" if val is None else fmt.format(val)
+
+            plt.text(x_label, y, label, fontsize=11)
+            plt.text(x_val, y, val_str, fontsize=11)
+            plt.text(x_unit, y, unit, fontsize=11)
+
+            y -= 0.035
+
+        return y - 0.04
+
+    # ============================================================
+    # LEFT COLUMN
+    # ============================================================
+    y_left = y_top
+
+    # --------------------------
+    # HEAVE GAINS
+    # --------------------------
+    y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
+        "Heave Gains", [
+            ("Camber", "camber_gain_heave_rad_per_m", "rad/m", "{:.4f}"),
+            ("Toe", "toe_gain_heave_rad_per_m", "rad/m", "{:.4f}"),
+            ("Caster", "caster_gain_heave_rad_per_m", "rad/m", "{:.4f}"),
+            ("KPI", "kpi_gain_heave_rad_per_m", "rad/m", "{:.4f}"),
+            ("Trail", "trail_gain_heave_m_per_m", "m/m", "{:.4f}"),
+            ("Scrub", "scrub_gain_heave_m_per_m", "m/m", "{:.4f}"),
+        ])
+
+    # --------------------------
+    # ANTI & BALANCE
+    # --------------------------
+    y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
+        "Anti & Balance", [
+            ("Anti-Dive", "avg_anti_dive_pct", "%", "{:.1f}"),
+            ("Anti-Squat", "avg_anti_squat_pct", "%", "{:.1f}"),
+            ("Front Anti-Roll", "avg_anti_roll_front_pct", "%", "{:.1f}"),
+            ("Rear Anti-Roll", "avg_anti_roll_rear_pct", "%", "{:.1f}"),
+            ("Anti Balance (F/R)", "avg_anti_balance", "-", "{:.2f}"),
+            ("LLTD (Front)", "avg_lltd_front_pct", "%", "{:.1f}"),
+        ])
+
+    # ============================================================
+    # RIGHT COLUMN
+    # ============================================================
+    y_right = y_top
+
+    # --------------------------
+    # ROLL GAINS (NOW FULLY SYMMETRIC)
+    # --------------------------
+    y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
+        "Roll Gains", [
+            ("Camber", "camber_gain_roll_rad_per_rad", "rad/rad", "{:.4f}"),
+            ("Toe", "toe_gain_roll_rad_per_rad", "rad/rad", "{:.4f}"),
+            ("Caster", "caster_gain_roll_rad_per_rad", "rad/rad", "{:.4f}"),
+            ("KPI", "kpi_gain_roll_rad_per_rad", "rad/rad", "{:.4f}"),
+            ("Trail", "trail_gain_roll_m_per_rad", "m/rad", "{:.4f}"),
+            ("Scrub", "scrub_gain_roll_m_per_rad", "m/rad", "{:.4f}"),
+        ])
+
+    # --------------------------
+    # MOTION RATIOS
+    # --------------------------
+    y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
+        "Motion Ratios", [
+            ("Front MR", "avg_motion_ratio_front", "-", "{:.3f}"),
+            ("Rear MR", "avg_motion_ratio_rear", "-", "{:.3f}"),
+            ("Front Bar MR", "avg_stabar_motion_ratio_front", "-", "{:.3f}"),
+            ("Rear Bar MR", "avg_stabar_motion_ratio_rear", "-", "{:.3f}"),
+        ])
+
+    # --------------------------
+    # ROLL STIFFNESS
+    # --------------------------
+    y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
+        "Roll Stiffness", [
+            ("Spring Front", "spring_roll_stiffness_front_Nm_per_rad", "Nm/rad", "{:.0f}"),
+            ("Spring Rear", "spring_roll_stiffness_rear_Nm_per_rad", "Nm/rad", "{:.0f}"),
+            ("ARB Front", "arb_roll_stiffness_front_Nm_per_rad", "Nm/rad", "{:.0f}"),
+            ("ARB Rear", "arb_roll_stiffness_rear_Nm_per_rad", "Nm/rad", "{:.0f}"),
+            ("Total Front", "elastic_roll_stiffness_front_Nm_per_rad", "Nm/rad", "{:.0f}"),
+            ("Total Rear", "elastic_roll_stiffness_rear_Nm_per_rad", "Nm/rad", "{:.0f}"),
+        ])
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def add_title_page(pdf, config):
 
     fig, ax = plt.subplots(figsize=(11, 8.5))
