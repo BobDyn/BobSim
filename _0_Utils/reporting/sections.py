@@ -192,67 +192,183 @@ def add_knc_summary_page(pdf, summary):
     plt.close(fig)
 
 
-def add_iso7401_summary_page(pdf, summary):
+def add_iso7401_step_page(pdf, summary):
 
     import matplotlib.pyplot as plt
+    import numpy as np
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
-    # Title
-    plt.text(0.5, 0.92, "ISO7401 Metrics Summary",
+    # ============================================================
+    # TITLE
+    # ============================================================
+
+    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
              ha="center", fontsize=18, weight="bold")
 
+    plt.text(0.5, 0.90, "Time Domain — Step Response",
+             ha="center", fontsize=13)
+
+    # ============================================================
+    # ROW DEFINITIONS
+    # ============================================================
+
     rows = [
-        # ======================
-        # STEP RESPONSE
-        # ======================
+
+        ("STEP RESPONSE", "", "", ""),
+
         ("Peak $a_y$", "ay_peak", "m/s²", "{:.2f}"),
         ("Steady-State $a_y$", "ay_ss", "m/s²", "{:.2f}"),
         ("Steady-State Gain", "ay_gain_ss", "(m/s²)/rad", "{:.2f}"),
-        ("Overshoot", "overshoot_pct", "%", "{:.1f}"),
+        ("Overshoot ($a_y$)", "overshoot_pct", "%", "{:.1f}"),
         ("Rise Time (10–90%)", "rise_time_s", "s", "{:.2f}"),
         ("Settling Time", "settling_time_s", "s", "{:.2f}"),
 
-        ("", "", "", ""),
-
-        # ======================
-        # FREQUENCY RESPONSE
-        # ======================
-        ("Low-Freq Gain", "ay_gain_lowfreq", "(m/s²)/rad", "{:.2f}"),
-        ("Peak Gain", "ay_gain_peak", "(m/s²)/rad", "{:.2f}"),
-        ("Peak Freq", "ay_gain_peak_freq", "Hz", "{:.2f}"),
-        ("Bandwidth (-3 dB)", "bandwidth_hz", "Hz", "{:.2f}"),
-        ("Phase @ 1 Hz", "ay_phase_1hz", "deg", "{:.1f}"),
-
-        ("", "", "", ""),
-
-        # ======================
-        # YAW RESPONSE
-        # ======================
-        ("Peak $|r/\\delta_H|$", "yaw_gain_peak", "(rad/s)/rad", "{:.2f}"),
-        ("Peak Freq (r)", "yaw_gain_peak_freq", "Hz", "{:.2f}"),
+        ("Yaw Overshoot", "yaw_overshoot_pct", "%", "{:.1f}"),
     ]
 
-    x_label = 0.2
-    x_val = 0.65
-    x_unit = 0.82
+    # ============================================================
+    # LAYOUT
+    # ============================================================
 
-    y_top = 0.8
+    x_label = 0.18
+    x_val   = 0.70
+    x_unit  = 0.86
+
+    y_top = 0.82
     row_h = 0.055
 
     for i, (label, key, unit, fmt) in enumerate(rows):
         y = y_top - i * row_h
 
-        if label == "":
+        if key == "" and label != "":
+            plt.text(x_label, y, label,
+                     fontsize=13, weight="bold")
             continue
 
         val = summary.get(key, None)
-        val_str = "—" if val is None or np.isnan(val) else fmt.format(val)
+        val_str = "—" if val is None or (isinstance(val, float) and np.isnan(val)) else fmt.format(val)
 
-        plt.text(x_label, y, label, fontsize=12)
-        plt.text(x_val, y, val_str, fontsize=12, ha="right")
-        plt.text(x_unit, y, unit, fontsize=12)
+        plt.text(x_label, y, label, fontsize=11)
+        plt.text(x_val, y, val_str, fontsize=11, ha="right")
+        plt.text(x_unit, y, unit, fontsize=11)
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def add_iso7401_frequency_page(pdf, summary):
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig = plt.figure(figsize=(11, 8.5))
+    plt.axis("off")
+
+    # ============================================================
+    # TITLE
+    # ============================================================
+
+    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
+             ha="center", fontsize=18, weight="bold")
+
+    plt.text(0.5, 0.90, "Frequency Domain — Sustained Sine",
+             ha="center", fontsize=13)
+
+    # ============================================================
+    # ROWS (split into two columns)
+    # ============================================================
+
+    left_rows = [
+
+        ("FREQUENCY RESPONSE — CORE", "", "", ""),
+
+        ("DC Gain ($a_y/\\delta_H$)", "ay_gain_dc", "(m/s²)/rad", "{:.2f}"),
+        ("DC Gain ($r/\\delta_H$)", "yaw_gain_dc", "(rad/s)/rad", "{:.2f}"),
+
+        ("Peak Gain ($a_y$)", "ay_gain_peak", "(m/s²)/rad", "{:.2f}"),
+        ("Peak Freq ($a_y$)", "ay_gain_peak_freq", "Hz", "{:.2f}"),
+
+        ("Bandwidth (-3 dB)", "bandwidth_hz", "Hz", "{:.2f}"),
+
+        ("Phase @ 1 Hz ($a_y$)", "ay_phase_1hz", "deg", "{:.1f}"),
+        ("Phase @ 1 Hz ($r$)", "yaw_phase_1hz", "deg", "{:.1f}"),
+
+        ("Lag @ 1 Hz ($a_y$)", "ay_lag_1hz", "s", "{:.3f}"),
+        ("Lag @ 1 Hz ($r$)", "yaw_lag_1hz", "s", "{:.3f}"),
+    ]
+
+    right_rows = [
+
+        ("DYNAMIC CHARACTER", "", "", ""),
+
+        ("Gain Slope ($a_y$)", "ay_gain_slope", "dB/dec", "{:.2f}"),
+        ("Gain Slope ($r$)", "yaw_gain_slope", "dB/dec", "{:.2f}"),
+
+        ("Phase Slope ($a_y$)", "ay_phase_slope", "deg/Hz", "{:.2f}"),
+        ("Phase Slope ($r$)", "yaw_phase_slope", "deg/Hz", "{:.2f}"),
+
+        ("Phase = -45° ($a_y$)", "ay_phase_45_freq", "Hz", "{:.2f}"),
+        ("Phase = -45° ($r$)", "yaw_phase_45_freq", "Hz", "{:.2f}"),
+
+        ("", "", "", ""),
+
+        ("RESPONSE COUPLING", "", "", ""),
+
+        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_time_lag", "s", "{:.3f}"),
+        ("Lag: $\\delta_H \\rightarrow r$", "yaw_time_lag", "s", "{:.3f}"),
+        ("Lag: $r \\rightarrow a_y$", "yaw_to_ay_lag", "s", "{:.3f}"),
+
+        ("$r/a_y$ Ratio", "yaw_to_ay_ratio", "(rad/s)/(m/s²)", "{:.3f}"),
+
+        ("", "", "", ""),
+
+        ("QUALITY / VALIDITY", "", "", ""),
+
+        ("$a_y$ Fit Error", "ay_fit_error", "-", "{:.2e}"),
+        ("Yaw Fit Error", "yaw_fit_error", "-", "{:.2e}"),
+
+        ("Gain Variation", "gain_variation_pct", "%", "{:.1f}"),
+    ]
+
+    # ============================================================
+    # LAYOUT
+    # ============================================================
+
+    # LEFT COLUMN
+    x_left_label  = 0.05   # was 0.08
+    x_left_val    = 0.32   # was 0.36
+    x_left_unit   = 0.38   # was 0.42
+
+    # RIGHT COLUMN
+    x_right_label = 0.55   # was 0.60
+    x_right_val   = 0.82   # was 0.88
+    x_right_unit  = 0.88   # was 0.94
+
+    y_top = 0.82
+    row_h = 0.045
+
+    def render_column(rows, x_label, x_val, x_unit):
+        for i, (label, key, unit, fmt) in enumerate(rows):
+            y = y_top - i * row_h
+
+            if key == "" and label != "":
+                plt.text(x_label, y, label, fontsize=13, weight="bold")
+                continue
+
+            if label == "":
+                continue
+
+            val = summary.get(key, None)
+            val_str = "—" if val is None or (isinstance(val, float) and np.isnan(val)) else fmt.format(val)
+
+            plt.text(x_label, y, label, fontsize=11)
+            plt.text(x_val, y, val_str, fontsize=11, ha="right")
+            plt.text(x_unit, y, unit, fontsize=11)
+
+    render_column(left_rows, x_left_label, x_left_val, x_left_unit)
+    render_column(right_rows, x_right_label, x_right_val, x_right_unit)
 
     pdf.savefig(fig)
     plt.close(fig)

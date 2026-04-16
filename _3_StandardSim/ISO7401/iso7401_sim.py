@@ -186,90 +186,61 @@ class ISO7401Sim:
             and self._close(r["steerAmp"], target_sign * target_amp)
         )
 
-    # ============================================================
-    # SUMMARIZATION
-    # ============================================================
+    # Summary
     def summarize(self, results):
+        
         series = {
-            # =========================
-            # STEP
-            # =========================
             "step_time": [],
             "step_steer": [],
             "step_ay": [],
             "step_yaw": [],
-            # =========================
-            # ONE PERIOD
-            # =========================
+
             "one_time": [],
             "one_steer": [],
             "one_ay": [],
             "one_yaw": [],
-            # =========================
-            # CONTINUOUS (for plotting)
-            # =========================
+
             "cont_time": [],
             "cont_steer": [],
             "cont_ay": [],
             "cont_yaw": [],
-            # =========================
-            # FREQUENCY RESPONSE
-            # =========================
+
             "freq": [],
             "ay_gain": [],
             "yaw_gain": [],
             "ay_phase": [],
             "yaw_phase": [],
+
+            # NEW
+            "ay_fit_error": [],
+            "yaw_fit_error": [],
         }
 
-        summary = {
-            "n_cases": len(results),
-        }
+        summary = {"n_cases": len(results)}
 
-        step_found = False
-        one_found = False
-        cont_found = False
+        step_found = one_found = cont_found = False
 
+        # ============================================================
+        # COLLECT
+        # ============================================================
         for r in results:
             t = np.array(r["time"])
             steer = np.array(r["iso.handwheelAngle"])
             ay = np.array(r["iso.accY"])
             yaw = np.array(r["iso.yawVel"])
 
-            # =========================
-            # STEP REPRESENTATIVE
-            # =========================
-            if (not step_found) and self._is_representative_step(r):
-                series["step_time"] = t
-                series["step_steer"] = steer
-                series["step_ay"] = ay
-                series["step_yaw"] = yaw
+            if (not step_found) and r.get("is_step", False):
+                series["step_time"], series["step_steer"], series["step_ay"], series["step_yaw"] = t, steer, ay, yaw
                 step_found = True
 
-            # =========================
-            # ONE PERIOD REPRESENTATIVE
-            # =========================
-            if (not one_found) and self._is_representative_one_period(r):
-                series["one_time"] = t
-                series["one_steer"] = steer
-                series["one_ay"] = ay
-                series["one_yaw"] = yaw
+            if (not one_found) and r.get("is_one_period", False):
+                series["one_time"], series["one_steer"], series["one_ay"], series["one_yaw"] = t, steer, ay, yaw
                 one_found = True
 
-            # =========================
-            # CONTINUOUS REPRESENTATIVE
-            # =========================
-            if (not cont_found) and self._is_representative_continuous(r):
-                series["cont_time"] = t
-                series["cont_steer"] = steer
-                series["cont_ay"] = ay
-                series["cont_yaw"] = yaw
+            if (not cont_found) and r.get("is_continuous", False):
+                series["cont_time"], series["cont_steer"], series["cont_ay"], series["cont_yaw"] = t, steer, ay, yaw
                 cont_found = True
 
-            # =========================
-            # CONTINUOUS METRICS
-            # Only include fixed amplitude / fixed direction
-            # =========================
             if self._include_in_freq_response(r):
                 metrics = self._continuous_metrics(r)
 
@@ -279,103 +250,49 @@ class ISO7401Sim:
                 series["ay_phase"].append(metrics["ay_phase"])
                 series["yaw_phase"].append(metrics["yaw_phase"])
 
-        # ============================================================
-        # FALLBACKS
-        # ============================================================
-        if not step_found:
-            for r in results:
-                if r["mode"] == "step":
-                    series["step_time"] = np.array(r["time"])
-                    series["step_steer"] = np.array(r["iso.handwheelAngle"])
-                    series["step_ay"] = np.array(r["iso.accY"])
-                    series["step_yaw"] = np.array(r["iso.yawVel"])
-                    break
-
-        if not one_found:
-            for r in results:
-                if r["mode"] == "sine_one_period":
-                    series["one_time"] = np.array(r["time"])
-                    series["one_steer"] = np.array(r["iso.handwheelAngle"])
-                    series["one_ay"] = np.array(r["iso.accY"])
-                    series["one_yaw"] = np.array(r["iso.yawVel"])
-                    break
-
-        if not cont_found:
-            for r in results:
-                if r["mode"] == "continuous_sine":
-                    series["cont_time"] = np.array(r["time"])
-                    series["cont_steer"] = np.array(r["iso.handwheelAngle"])
-                    series["cont_ay"] = np.array(r["iso.accY"])
-                    series["cont_yaw"] = np.array(r["iso.yawVel"])
-                    break
+                # NEW
+                series["ay_fit_error"].append(metrics.get("ay_fit_error", np.nan))
+                series["yaw_fit_error"].append(metrics.get("yaw_fit_error", np.nan))
 
         # ============================================================
-        # SORT / UNWRAP FREQUENCY RESPONSE
+        # SORT + WRAP
         # ============================================================
         for k in ["freq", "ay_gain", "yaw_gain", "ay_phase", "yaw_phase"]:
             series[k] = np.array(series[k], dtype=float)
 
         if len(series["freq"]) > 0:
             idx = np.argsort(series["freq"])
-
-            # ============================================================
-            # SORT / WRAP FREQUENCY RESPONSE
-            # ============================================================
             for k in ["freq", "ay_gain", "yaw_gain", "ay_phase", "yaw_phase"]:
-                series[k] = np.array(series[k], dtype=float)
+                series[k] = series[k][idx]
 
-            if len(series["freq"]) > 0:
-                idx = np.argsort(series["freq"])
+            def wrap(phi):
+                return (phi + 180.0) % 360.0 - 180.0
 
-                for k in ["freq", "ay_gain", "yaw_gain", "ay_phase", "yaw_phase"]:
-                    series[k] = series[k][idx]
+            series["ay_phase"] = wrap(series["ay_phase"])
+            series["yaw_phase"] = wrap(series["yaw_phase"])
 
-                # --------------------------------------------------------
-                # PHASE WRAPPING (preferred for readability)
-                # Wrap to [-180, 180]
-                # --------------------------------------------------------
-                def wrap_phase_deg(phi):
-                    return (phi + 180.0) % 360.0 - 180.0
-
-                series["ay_phase"] = wrap_phase_deg(series["ay_phase"])
-                series["yaw_phase"] = wrap_phase_deg(series["yaw_phase"])
-        
-        # -------------------------
+        # ============================================================
         # STEP METRICS
-        # -------------------------
+        # ============================================================
         if len(series["step_time"]) > 0:
             t = series["step_time"]
             ay = series["step_ay"]
             steer = series["step_steer"]
 
             ay_ss = np.mean(ay[-20:])
-            ay_peak = np.max(ay)
+            ay_peak = np.max(np.abs(ay))
 
-            overshoot = (ay_peak - ay_ss) / ay_ss * 100 if ay_ss != 0 else np.nan
+            overshoot = (ay_peak - abs(ay_ss)) / abs(ay_ss) * 100 if abs(ay_ss) > 1e-8 else np.nan
 
-            # settling time (5%)
             tol = 0.05 * abs(ay_ss)
-            settling_time = np.nan
-            for i in range(len(ay)):
-                if np.all(np.abs(ay[i:] - ay_ss) < tol):
-                    settling_time = t[i]
-                    break
+            settling_time = next((t[i] for i in range(len(ay)) if np.all(np.abs(ay[i:] - ay_ss) < tol)), np.nan)
 
-            # rise time (10–90%)
-            ay_10 = 0.1 * ay_ss
-            ay_90 = 0.9 * ay_ss
-
+            ay_10, ay_90 = 0.1 * ay_ss, 0.9 * ay_ss
             idx10 = np.where(ay >= ay_10)[0]
             idx90 = np.where(ay >= ay_90)[0]
 
-            if len(idx10) > 0 and len(idx90) > 0:
-                t10 = t[idx10[0]]
-                t90 = t[idx90[0]]
-                rise_time = t90 - t10
-            else:
-                rise_time = np.nan
+            rise_time = (t[idx90[0]] - t[idx10[0]]) if len(idx10) and len(idx90) else np.nan
 
-            # steady-state gain
             steer_ss = np.mean(steer[-20:])
             gain_ss = ay_ss / steer_ss if abs(steer_ss) > 1e-8 else np.nan
 
@@ -387,54 +304,109 @@ class ISO7401Sim:
                 "rise_time_s": float(rise_time),
                 "ay_gain_ss": float(gain_ss),
             })
-        
-        # -------------------------
+
+        # ============================================================
         # FREQUENCY METRICS
-        # -------------------------
+        # ============================================================
         if len(series["freq"]) > 0:
             f = series["freq"]
             ay_gain = series["ay_gain"]
             yaw_gain = series["yaw_gain"]
             ay_phase = series["ay_phase"]
+            yaw_phase = series["yaw_phase"]
 
             idx_peak_ay = np.argmax(ay_gain)
             idx_peak_yaw = np.argmax(yaw_gain)
-
             idx_1hz = np.argmin(np.abs(f - 1.0))
-            idx_low = 0  # lowest freq (0.05 Hz)
+            idx_low = 0
 
-            # bandwidth (-3 dB ≈ 0.707 of peak)
-            peak = ay_gain[idx_peak_ay]
-            target = 0.707 * peak
+            # --- gains
+            ay_gain_dc = ay_gain[idx_low]
+            yaw_gain_dc = yaw_gain[idx_low]
 
-            bandwidth = np.nan
-            for i in range(len(f)):
-                if ay_gain[i] <= target:
-                    bandwidth = f[i]
-                    break
+            # --- bandwidth
+            target = 0.707 * ay_gain[idx_peak_ay]
+            bandwidth = next((f[i] for i in range(idx_peak_ay, len(f)) if ay_gain[i] <= target), np.nan)
+
+            # --- lag
+            def phase_to_lag(phi, freq):
+                return -phi / 360.0 / freq if freq > 0 else np.nan
+
+            ay_lag = phase_to_lag(ay_phase[idx_1hz], f[idx_1hz])
+            yaw_lag = phase_to_lag(yaw_phase[idx_1hz], f[idx_1hz])
+
+            # --- slopes
+            def safe_log_slope(x, y):
+                mask = (x > 0) & (y > 0)
+                if np.sum(mask) < 2:
+                    return np.nan
+                lx = np.log10(x[mask])
+                ly = y[mask]
+                return np.polyfit(lx, ly, 1)[0]
+
+            ay_gain_slope = safe_log_slope(f, 20*np.log10(ay_gain))
+            yaw_gain_slope = safe_log_slope(f, 20*np.log10(yaw_gain))
+
+            ay_phase_slope = safe_log_slope(f, np.abs(ay_phase))
+            yaw_phase_slope = safe_log_slope(f, np.abs(yaw_phase))
+
+            # --- phase crossover
+            def closest_cross(x, y, target):
+                idx = np.argmin(np.abs(y - target))
+                return x[idx]
+
+            ay_cross = closest_cross(f, ay_phase, -45.0)
+            yaw_cross = closest_cross(f, yaw_phase, -45.0)
+
+            # --- coupling
+            yaw_to_ay_ratio = yaw_gain[idx_1hz] / ay_gain[idx_1hz] if ay_gain[idx_1hz] > 1e-8 else np.nan
+            yaw_to_ay_lag = ay_lag - yaw_lag
+
+            # --- fit quality
+            summary["ay_fit_error"] = float(np.nanmean(series["ay_fit_error"]))
+            summary["yaw_fit_error"] = float(np.nanmean(series["yaw_fit_error"]))
 
             summary.update({
+                "ay_gain_dc": float(ay_gain_dc),
+                "yaw_gain_dc": float(yaw_gain_dc),
+
                 "ay_gain_peak": float(ay_gain[idx_peak_ay]),
                 "ay_gain_peak_freq": float(f[idx_peak_ay]),
+
                 "yaw_gain_peak": float(yaw_gain[idx_peak_yaw]),
                 "yaw_gain_peak_freq": float(f[idx_peak_yaw]),
 
-                "ay_gain_lowfreq": float(ay_gain[idx_low]),
-                "ay_phase_1hz": float(ay_phase[idx_1hz]),
-
                 "bandwidth_hz": float(bandwidth),
+
+                "ay_phase_1hz": float(ay_phase[idx_1hz]),
+                "yaw_phase_1hz": float(yaw_phase[idx_1hz]),
+
+                "ay_lag_1hz": float(ay_lag),
+                "yaw_lag_1hz": float(yaw_lag),
+
+                "ay_phase_45_freq": float(ay_cross),
+                "yaw_phase_45_freq": float(yaw_cross),
+
+                "ay_gain_slope": float(ay_gain_slope),
+                "yaw_gain_slope": float(yaw_gain_slope),
+
+                "ay_phase_slope": float(ay_phase_slope),
+                "yaw_phase_slope": float(yaw_phase_slope),
+
+                "yaw_to_ay_lag": float(yaw_to_ay_lag),
+                "yaw_to_ay_ratio": float(yaw_to_ay_ratio),
             })
 
-        return {
-            "summary": summary,
-            "series": series,
-        }
+        return {"summary": summary, "series": series}
 
     # ============================================================
     # CONTINUOUS METRICS (ISO-CORRECT)
     # ============================================================
 
     def _continuous_metrics(self, r):
+
+        import numpy as np
+
         t = np.array(r["time"])
         steer = np.array(r["iso.handwheelAngle"])
         ay = np.array(r["iso.accY"])
@@ -442,30 +414,22 @@ class ISO7401Sim:
 
         freq = r["steerFreq"]
         step_time = r["stepTime"]
-
         period = 1.0 / freq
         n_cycles = r["nCycles"]
 
-        # Window selection logic
-        period = 1.0 / freq
-        n_cycles = r["nCycles"]
+        # ============================================================
+        # WINDOW SELECTION (clean steady-state cycles)
+        # ============================================================
 
-        # how many cycles to use for FFT
-        cycles_to_use = 2  # tune
+        cycles_to_use = 2
 
-        # compute ideal end time
         end = step_time + n_cycles * period
-
-        # snap end to nearest full cycle boundary
         end = step_time + np.floor((end - step_time) / period) * period
-
-        # take last N full cycles
         start = end - cycles_to_use * period
 
         mask = (t >= start) & (t <= end)
 
         if np.sum(mask) < 10:
-            # fallback: use last two periods
             mask = t >= (t[-1] - 2 * period)
 
         t = t[mask]
@@ -473,10 +437,37 @@ class ISO7401Sim:
         ay = ay[mask]
         yaw = yaw[mask]
 
-        # amplitudes
-        steer_amp = (np.max(steer) - np.min(steer)) / 2
-        ay_amp = (np.max(ay) - np.min(ay)) / 2
-        yaw_amp = (np.max(yaw) - np.min(yaw)) / 2
+        # shift time for conditioning
+        t = t - t[0]
+
+        # ============================================================
+        # SINE FIT (WITH DC OFFSET TERM)
+        # ============================================================
+
+        def sine_fit(x, t, freq):
+            omega = 2 * np.pi * freq
+
+            s = np.sin(omega * t)
+            c = np.cos(omega * t)
+
+            # include DC offset term
+            M = np.vstack([s, c, np.ones_like(t)]).T
+
+            coeffs, _, _, _ = np.linalg.lstsq(M, x, rcond=None)
+            a, b, c0 = coeffs
+
+            amp = np.sqrt(a**2 + b**2)
+            phase = np.degrees(np.arctan2(b, a))
+
+            # reconstructed signal
+            fit = a * s + b * c + c0
+
+            # normalized fit error (very useful metric)
+            err = np.linalg.norm(x - fit) / np.linalg.norm(x)
+
+            return amp, phase, fit, err
+
+        steer_amp, steer_phase, steer_fit, steer_err = sine_fit(steer, t, freq)
 
         if steer_amp <= 1e-12:
             return {
@@ -487,21 +478,29 @@ class ISO7401Sim:
                 "yaw_phase": np.nan,
             }
 
-        # phase via FFT
-        def phase(x, y):
+        ay_amp, ay_phase, ay_fit, ay_err = sine_fit(ay, t, freq)
+        yaw_amp, yaw_phase, yaw_fit, yaw_err = sine_fit(yaw, t, freq)
 
-            X = np.fft.rfft(x - np.mean(x))
-            Y = np.fft.rfft(y - np.mean(y))
+        # ============================================================
+        # RELATIVE PHASE
+        # ============================================================
 
-            idx = np.argmax(np.abs(X))
-            phi = np.angle(Y[idx]) - np.angle(X[idx])
+        ay_phase -= steer_phase
+        yaw_phase -= steer_phase
 
-            return np.degrees(phi)
+        def wrap(p):
+            return (p + 180) % 360 - 180
+
+        ay_phase = wrap(ay_phase)
+        yaw_phase = wrap(yaw_phase)
 
         return {
             "freq": freq,
             "ay_gain": ay_amp / steer_amp,
             "yaw_gain": yaw_amp / steer_amp,
-            "ay_phase": phase(steer, ay),
-            "yaw_phase": phase(steer, yaw),
+            "ay_phase": ay_phase,
+            "yaw_phase": yaw_phase,
+            # optional but HIGHLY useful:
+            "ay_fit_error": ay_err,
+            "yaw_fit_error": yaw_err,
         }

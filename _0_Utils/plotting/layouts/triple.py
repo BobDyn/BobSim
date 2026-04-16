@@ -10,10 +10,21 @@ class TripleLayout:
         for ax, sub in zip(axes, p_cfg["subplots"]):
             x, y = plotter.get_xy(result, sub)
 
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+
             xscale = sub.get("xscale", p_cfg.get("xscale", "linear"))
             yscale = sub.get("yscale", p_cfg.get("yscale", "linear"))
             ax.set_xscale(xscale)
             ax.set_yscale(yscale)
+
+            # Empty data
+            if x.size == 0 or y.size == 0:
+                ax.text(0.5, 0.5, "No Data",
+                        ha="center", va="center", fontsize=10)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                continue
 
             ax.plot(x, y, linewidth=2)
 

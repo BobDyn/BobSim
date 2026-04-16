@@ -14,7 +14,7 @@ execution:
   cleanup: true
 
 test:
-  testVel: 10.0
+  testVel: 20.0
   stepTime: 1.0
 
   run_step: true
@@ -23,34 +23,25 @@ test:
 
   directions: [left, right]
 
-  representative_step_deg: 10.0
+  representative_step_deg: 5.0
   representative_step_direction: left
+  steerStep_deg: [5.0]
 
   representative_one_freq_hz: 1.0
-  representative_one_amp_deg: 10.0
+  representative_one_amp_deg: 5.0
   representative_one_direction: left
+  sine_freq_hz: [0.5]
+  sine_amp_deg: [5.0]
 
   representative_cont_freq_hz: 1.0
-  representative_cont_amp_deg: 10.0
+  representative_cont_amp_deg: 5.0
   representative_cont_direction: left
-
-  # steerStep_deg: [5.0, 10.0, 15.0]
-  steerStep_deg: []
-
-  # sine_freq_hz: [0.5, 1.0]
-  # sine_amp_deg: [5.0, 10.0, 15.0]
-  sine_freq_hz: []
-  sine_amp_deg: []
-
-  # sweep_freq_hz: [0.5, 0.75, 1.0, 1.5, 2.0]
-  # sweep_amp_deg: [4.0]
-  sweep_freq_hz: [0.5]
-  sweep_amp_deg: [30.0]
-
+  sweep_freq_hz: [0.5, 0.75, 1.0, 1.5, 2.0]
+  sweep_amp_deg: [5.0]
   n_cycles: 5
   analyze_cycles_after: 1
 
-  freq_response_amp_deg: 30.0
+  freq_response_amp_deg: 5.0
   freq_response_direction: left
 
 report:
