@@ -19,6 +19,12 @@ RUN pip install \
     pyyaml \
     scipy \
     pandas \
-    pyarrow
+    pyarrow \
+    numpy \
+    matplotlib
 
-RUN echo 'installPackage(Modelica, "3.2.3+maint.om", exactMatch=true);' > /tmp/setup.mo
+# Write and run a .mos script to install Modelica standard library
+# omc treats files ending in .mos as scripting files, not Modelica source
+RUN printf 'updatePackageIndex();\ninstallPackage(Modelica, "3.2.3+maint.om", exactMatch=true);\ngetErrorString();\n' > /tmp/setup.mos \
+    && omc /tmp/setup.mos \
+    && rm /tmp/setup.mos

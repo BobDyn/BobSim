@@ -1,11 +1,12 @@
 """compiler.py — Generate build.mos per variant and compile via OMC.
 
 Reads standards and paths from configs/compiler_config.yaml.
-To add a new standard, add an entry there — no Python changes needed.
+Uses configs/build_template.mos as the OMC script template.
+To add a new standard, add an entry in compiler_config.yaml — no Python changes needed.
 
 For each variant_XXXX/ in population/:
-  1. Generate a build.mos that loads BobLib + variant.mo and calls buildModel
-  2. Run omc inside variant_XXXX/build/<standard>/
+  1. Fill in build_template.mos and write to variant_XXXX/build_<standard>.mos
+  2. Run omc on it with build dir set to variant_XXXX/build/<standard>/
   3. Verify executable exists
   4. Write compile_error_<standard>.log on failure
 """
@@ -19,56 +20,37 @@ from pathlib import Path
 import yaml
 
 # ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+DOE_DIR = Path(__file__).parent
+DEFAULT_COMPILER_CONFIG = DOE_DIR / "configs/compiler_config.yaml"
+DEFAULT_MOS_TEMPLATE = DOE_DIR / "configs/build_template.mos"
+
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONFIG = Path(__file__).parent / "configs/compiler_config.yaml"
-
-
-def load_compiler_config(config_path: Path = DEFAULT_CONFIG) -> dict:
+def load_compiler_config(config_path: Path = DEFAULT_COMPILER_CONFIG) -> dict:
     with open(config_path) as f:
         return yaml.safe_load(f)
 
 
 # ---------------------------------------------------------------------------
-# build.mos template
+# build.mos generation
 # ---------------------------------------------------------------------------
-
-_MOS_TEMPLATE = """\
-OpenModelica.Scripting.setCommandLineOptions(
-  "--simCodeTarget=C --maxSizeLinearTearing=5000"
-);
-
-clear();
-loadModel(Modelica);
-loadFile("{boblib_path}");
-loadFile("{variant_mo_path}");
-
-cd("{build_dir}");
-
-buildModel(
-  {model},
-  startTime={start_time},
-  stopTime={stop_time},
-  outputFormat="csv",
-  numberOfIntervals={intervals},
-  tolerance={tolerance},
-  method="{solver}",
-  cflags="-O3 -march=native -mtune=native"
-);
-
-print(getErrorString());
-"""
-
 
 def generate_mos(
         variant_mo: Path,
         build_dir: Path,
         boblib_path: Path,
         standard_cfg: dict,
+        template_path: Path = DEFAULT_MOS_TEMPLATE,
 ) -> str:
-    """Return a filled-in build.mos string for one variant + standard."""
-    return _MOS_TEMPLATE.format(
+    """Fill in build_template.mos for one variant + standard."""
+    template = template_path.read_text()
+    return template.format(
         boblib_path=boblib_path.resolve().as_posix(),
         variant_mo_path=variant_mo.resolve().as_posix(),
         build_dir=build_dir.resolve().as_posix(),
@@ -90,6 +72,7 @@ def compile_variant(
         standard: str,
         standard_cfg: dict,
         boblib_path: Path,
+        template_path: Path = DEFAULT_MOS_TEMPLATE,
 ) -> bool:
     """Compile one variant for one standard.
 
@@ -104,7 +87,9 @@ def compile_variant(
     build_dir = variant_dir / "build" / standard
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    mos_content = generate_mos(variant_mo, build_dir, boblib_path, standard_cfg)
+    mos_content = generate_mos(
+        variant_mo, build_dir, boblib_path, standard_cfg, template_path
+    )
     mos_path = variant_dir / f"build_{standard}.mos"
     mos_path.write_text(mos_content)
 
@@ -119,7 +104,7 @@ def compile_variant(
         _write_error(variant_dir, standard, "omc not found on PATH")
         return False
 
-    # OMC exits 0 even on soft failures — check executable exists
+    # OMC exits 0 even on soft failures — verify executable actually exists
     exe = _find_exe(build_dir, standard_cfg)
     if exe is None:
         error_msg = (result.stdout + "\n" + result.stderr).strip()
@@ -149,7 +134,8 @@ def _write_error(variant_dir: Path, standard: str, message: str) -> None:
 
 def compile_all(
         population_dir: Path,
-        compiler_config_path: Path = DEFAULT_CONFIG,
+        compiler_config_path: Path = DEFAULT_COMPILER_CONFIG,
+        template_path: Path = DEFAULT_MOS_TEMPLATE,
 ) -> dict[str, list[Path]]:
     """Compile all variants in population_dir for all standards in config.
 
@@ -169,6 +155,9 @@ def compile_all(
             f"Run: git submodule update --init --recursive"
         )
 
+    if not template_path.exists():
+        raise FileNotFoundError(f"build_template.mos not found at {template_path}")
+
     variant_dirs = sorted(population_dir.glob("variant_????"))
     if not variant_dirs:
         raise RuntimeError(f"No variant dirs found in {population_dir}")
@@ -179,7 +168,7 @@ def compile_all(
     for i, variant_dir in enumerate(variant_dirs, 1):
         for standard, standard_cfg in standards.items():
             success = compile_variant(
-                variant_dir, standard, standard_cfg, boblib_path
+                variant_dir, standard, standard_cfg, boblib_path, template_path
             )
             status = "ok" if success else "FAILED"
             print(f"[{i:>4}/{total}] {variant_dir.name} / {standard}: {status}")
@@ -201,11 +190,12 @@ def compile_all(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    population = Path(__file__).parent / "population"
-    config = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_CONFIG
+    population = DOE_DIR / "population"
+    config = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_COMPILER_CONFIG
 
-    print(f"Compiler config: {config}")
-    print(f"Population dir:  {population}")
+    print(f"Compiler config:  {config}")
+    print(f"MOS template:     {DEFAULT_MOS_TEMPLATE}")
+    print(f"Population dir:   {population}")
 
     results = compile_all(population, compiler_config_path=config)
     total_ok = sum(len(v) for v in results.values())
