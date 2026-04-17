@@ -41,6 +41,23 @@ clean-doe:
 		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete && \
 		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
+clean-doe-population:
+	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/population ]; then \
+		find _4_DOE/population -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/population -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe-results:
+	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/results ]; then \
+		find _4_DOE/results -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/results -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe: clean-doe-population clean-doe-results
+	@true
+
 clean:
 	$(DOCKER_RUN) bash -c "\
 		find /bobsim -type d -name '__pycache__' -exec rm -rf {} + ; \
