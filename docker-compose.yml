@@ -34,5 +34,7 @@ services:
     volumes:
       - .:/bobsim
     working_dir: /bobsim/_3_StandardSim
+    environment:
+      - PYTHONPATH=/bobsim
     stdin_open: true
     tty: true
