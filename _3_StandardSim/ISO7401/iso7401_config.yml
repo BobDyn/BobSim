@@ -30,7 +30,7 @@ test:
   representative_one_freq_hz: 1.0
   representative_one_amp_deg: 5.0
   representative_one_direction: left
-  sine_freq_hz: [0.5]
+  sine_freq_hz: [1.0]
   sine_amp_deg: [5.0]
 
   representative_cont_freq_hz: 1.0

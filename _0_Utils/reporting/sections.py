@@ -314,8 +314,8 @@ def add_iso7401_frequency_page(pdf, summary):
 
         ("RESPONSE COUPLING", "", "", ""),
 
-        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_time_lag", "s", "{:.3f}"),
-        ("Lag: $\\delta_H \\rightarrow r$", "yaw_time_lag", "s", "{:.3f}"),
+        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_lag_1hz", "s", "{:.3f}"),
+        ("Lag: $\\delta_H \\rightarrow r$", "yaw_lag_1hz", "s", "{:.3f}"),
         ("Lag: $r \\rightarrow a_y$", "yaw_to_ay_lag", "s", "{:.3f}"),
 
         ("$r/a_y$ Ratio", "yaw_to_ay_ratio", "(rad/s)/(m/s²)", "{:.3f}"),
