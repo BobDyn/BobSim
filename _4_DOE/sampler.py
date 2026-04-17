@@ -32,12 +32,13 @@ def parse_mo_blocks(mo_path: str | Path) -> dict[str, dict[str, str]]:
             i = paren_start + 1
             continue
 
+        # Track depth over (, {, [ to find matching close
         depth = 1
         k = paren_start + 1
         while k < n and depth > 0:
-            if text[k] in "({":
+            if text[k] in "({[":
                 depth += 1
-            elif text[k] in ")}":
+            elif text[k] in ")}]":
                 depth -= 1
             k += 1
 
@@ -57,10 +58,10 @@ def _parse_params(body: str) -> dict[str, str]:
     current: list[str] = []
 
     for ch in body + ",":
-        if ch in "({":
+        if ch in "({[":
             depth += 1
             current.append(ch)
-        elif ch in ")}":
+        elif ch in ")}]":
             depth -= 1
             current.append(ch)
         elif ch == "," and depth == 0:
@@ -75,6 +76,25 @@ def _parse_params(body: str) -> dict[str, str]:
     return params
 
 
+def _parse_float(raw: str) -> float:
+    """Safely parse a float from a Modelica parameter value string.
+
+    Handles simple expressions like 0.2045*0.625 but rejects anything
+    that looks like a vector, matrix, or nested record.
+    """
+    raw = raw.strip()
+    if any(c in raw for c in "{}[]()"):
+        raise ValueError(f"Cannot parse non-scalar value as float: {raw!r}")
+    try:
+        # Only allow basic arithmetic on numeric literals
+        allowed = set("0123456789eE.+-*/() ")
+        if not all(c in allowed for c in raw):
+            raise ValueError(f"Unexpected characters in value: {raw!r}")
+        return float(eval(raw))  # safe: only numeric literals + arithmetic
+    except Exception as e:
+        raise ValueError(f"Could not parse float from {raw!r}: {e}")
+
+
 def load_config(config_path: str | Path) -> dict:
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -84,8 +104,14 @@ def read_baseline(mo_path: str | Path, variables: list[dict]) -> dict[str, float
     blocks = parse_mo_blocks(mo_path)
     baseline: dict[str, float] = {}
     for var in variables:
-        raw = blocks[var["block"]][var["param"]]
-        baseline[var["path"]] = float(eval(raw))
+        block = var["block"]
+        param = var["param"]
+        if block not in blocks:
+            raise KeyError(f"Block '{block}' not found in {mo_path}. Check doe_config.yaml.")
+        if param not in blocks[block]:
+            raise KeyError(f"Param '{param}' not found in block '{block}'. Check doe_config.yaml.")
+        raw = blocks[block][param]
+        baseline[var["path"]] = _parse_float(raw)
     return baseline
 
 
@@ -99,10 +125,15 @@ def sample(config_path: str | Path) -> list[dict[str, float]]:
     config_dir = Path(config_path).resolve().parent
     mo_path = (config_dir / cfg["baseline_mo"]).resolve()
 
+    if not mo_path.exists():
+        raise FileNotFoundError(
+            f"baseline_mo not found at {mo_path}. "
+            f"Check doe_config.yaml and ensure submodules are initialized."
+        )
+
     baseline = read_baseline(mo_path, variables)
 
-    lhs = LatinHypercube(d=len(variables),
-                         seed=seed)  # latin hypercube is a way to sample without needing a ton of data
+    lhs = LatinHypercube(d=len(variables), seed=seed)
     unit_samples = lhs.random(n=n_samples)  # shape (n_samples, d)
 
     variants: list[dict[str, float]] = [baseline.copy()]  # index 0 = baseline

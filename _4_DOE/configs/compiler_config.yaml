@@ -4,6 +4,12 @@
 
 boblib_path: ../../_0_Utils/external/BobLib/package.mo
 
+# Number of variants to compile in parallel.
+# Each worker runs a separate OMC process.
+# OMC itself is already multithreaded, so don't set this too high.
+# 2-4 is a good starting point on a laptop, more on TACC.
+max_workers: 2
+
 standards:
   ISO4138:
     model: BobLib.Standards.ISO4138

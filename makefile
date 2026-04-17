@@ -1,4 +1,6 @@
-.PHONY: setup shell-doe shell-standard sim-doe sim-knc sim-iso clean
+SHELL := bash.exe
+
+.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-iso clean clean-doe clean-doe-population clean-doe-results
 
 # ── Setup ──────────────────────────────────────────────────────────────────
 # Init submodules (BobLib) then build the Docker image
@@ -40,6 +42,23 @@ sim-iso:
 # Removes Python artifacts, simulation outputs, and OMC temp files
 # Does NOT delete compile_error_*.log files so failures are preserved for debugging
 
+clean-doe-population:
+	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/population ]; then \
+		find _4_DOE/population -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/population -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe-results:
+	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/results ]; then \
+		find _4_DOE/results -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/results -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe: clean-doe-population clean-doe-results
+	@true
+
 clean:
 	@echo "Cleaning Python + simulation artifacts..."
 	find . -type d -name "__pycache__" -exec rm -rf {} +
@@ -50,7 +69,7 @@ clean:
 	rm -rf build dist *.egg-info
 	find . -type f -name "*.csv" -delete
 	find . -type f -name "*.mat" -delete
-	rm -rf _4_DOE/population/* _4_DOE/results/*
+	$(MAKE) clean-doe
 	rm -rf _3_StandardSim/ISO4138/build _3_StandardSim/KnC/build
 	rm -rf ~/.openmodelica/tmp/* 2>/dev/null || true
 	@echo "Clean complete"
