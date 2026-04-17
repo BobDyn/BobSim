@@ -34,3 +34,7 @@ standards:
   #   intervals: 0
   #   tolerance: 1e-6
   #   solver: dassl
+
+batch:
+  max_workers: 2
+  timeout: 300
