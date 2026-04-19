@@ -58,6 +58,10 @@ _4_DOE/population/
 !_0_Utils/external/BobLib/
 
 # Keep directory placeholders when needed
-!_4_DOE/.gitkeep
-!_4_DOE/results/.gitkeep
-!_4_DOE/population/.gitkeep
+!DOE/.gitkeep
+!DOE/results/.gitkeep
+!DOE/population/.gitkeep
+
+# Animations
+*.gif
+*.mp4

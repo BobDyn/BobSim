@@ -306,15 +306,15 @@ render:
 # PLOTS
 # ============================================================
 plots:
-  - name: Handwheel Angle (rad)
+  - name: "Handwheel Angle ($rad$)"
     unit: rad
     x: time
     y: signals/isohandwheelangle
-  - name: Lateral Accel (m/s^2)
+  - name: "Lateral Accel ($m/s^2$)"
     unit: m/s^2
     x: time
     y: signals/isoaccy
-  - name: Yaw Rate (rad/s)
+  - name: "Yaw Rate ($rad/s$)"
     unit: rad/s
     x: time
     y: signals/isoyawvel

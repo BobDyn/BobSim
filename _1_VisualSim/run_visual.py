@@ -272,7 +272,7 @@ plotter.camera.clipping_range = (0.01, 2000)
 # # ============================================================
 # # GROUND (WORLD-FIXED)
 # # ============================================================
-# ground_size = 200.0
+# ground_size = 300.0
 
 # # --- solid ground plane
 # ground = pv.Plane(
@@ -294,14 +294,14 @@ plotter.camera.clipping_range = (0.01, 2000)
 #     direction=(0, 0, 1),
 #     i_size=ground_size,
 #     j_size=ground_size,
-#     i_resolution=100,
-#     j_resolution=100,
+#     i_resolution=200,
+#     j_resolution=200,
 # )
 
 # plotter.add_mesh(
 #     grid,
 #     style="wireframe",
-#     color=(0.3, 0.3, 0.3),
+#     color=(0, 1, 0),
 #     line_width=1.5,
 #     lighting=False,
 # )
