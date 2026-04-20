@@ -1,47 +1,75 @@
-.PHONY: clean
+SHELL := bash.exe
+
+.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-iso clean clean-doe clean-doe-population clean-doe-results
+
+# ── Setup ──────────────────────────────────────────────────────────────────
+# Init submodules (BobLib) then build the Docker image
+
+init:
+	git submodule update --init --recursive
+
+setup:
+	docker compose build
+
+rebuild:
+	docker compose build --no-cache
+
+# ── Shells ─────────────────────────────────────────────────────────────────
+# Drop into a bash terminal inside the container for debugging/manual runs
+# make shell-doe     → bash inside _4_DOE
+# make shell-standard → bash inside _3_StandardSim
+
+shell-doe:
+	docker compose run --rm doe bash
+
+shell-standard:
+	docker compose run --rm standard bash
+
+# ── DOE ────────────────────────────────────────────────────────────────────
+
+sim-doe:
+	docker compose run --rm doe python run_doe.py configs/doe_config.yaml
+
+# ── Standard sims ──────────────────────────────────────────────────────────
+
+sim-knc:
+	docker compose run --rm standard python run_standard.py KnC/knc_config.yml
+
+sim-iso:
+	docker compose run --rm standard python run_standard.py ISO4138/iso4138_config.yml
+
+# ── Clean ──────────────────────────────────────────────────────────────────
+# Removes Python artifacts, simulation outputs, and OMC temp files
+# Does NOT delete compile_error_*.log files so failures are preserved for debugging
+
+clean-doe-population:
+	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/population ]; then \
+		find _4_DOE/population -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/population -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe-results:
+	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
+	@if [ -d _4_DOE/results ]; then \
+		find _4_DOE/results -mindepth 1 -type f ! -name ".gitkeep" -delete; \
+		find _4_DOE/results -mindepth 1 -type d -empty -delete; \
+	fi
+
+clean-doe: clean-doe-population clean-doe-results
+	@true
 
 clean:
 	@echo "Cleaning Python + simulation artifacts..."
-
-	# Python caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
-
-	# Test / coverage
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
 	rm -rf .coverage htmlcov
-
-	# Build artifacts
 	rm -rf build dist *.egg-info
-
-	# Modelica / sim outputs
-	rm -rf results
 	find . -type f -name "*.csv" -delete
 	find . -type f -name "*.mat" -delete
-	find . -type f -name "*.log" -delete
-
-	# OpenModelica temp junk (very helpful)
+	$(MAKE) clean-doe
+	rm -rf _3_StandardSim/ISO4138/build _3_StandardSim/KnC/build
 	rm -rf ~/.openmodelica/tmp/* 2>/dev/null || true
-
 	@echo "Clean complete"
-
-clean_build:
-	@echo "Cleaning all build directories under _3_StandardSim..."
-	@find _3_StandardSim -type d -name "build" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
-
-clean_results:
-	@echo "Cleaning all result directories under _3_StandardSim..."
-	@find _3_StandardSim -type d -name "results" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
-
-ISO4138:
-	omc _3_StandardSim/ISO4138/build.mos
-	python3 -m _3_StandardSim.run_standard _3_StandardSim/ISO4138/iso4138_config.yml
-
-KnC:
-	omc _3_StandardSim/KnC/build.mos
-	python3 -m _3_StandardSim.run_standard _3_StandardSim/KnC/knc_config.yml
-
-ISO7401:
-	omc _3_StandardSim/ISO7401/build.mos
-	python3 -m _3_StandardSim.run_standard _3_StandardSim/ISO7401/iso7401_config.yml

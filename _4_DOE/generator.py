@@ -1,4 +1,4 @@
-"""generator.py — Take variant dicts from sampler, write variant.yaml for each into population/."""
+"""generator.py — Take variant dicts from sampler, write variant.mo for each into population/."""
 
 from pathlib import Path
 
@@ -71,7 +71,7 @@ def generate_variants(
         variants: list[dict[str, float]],
         population_dir: str | Path,
 ) -> list[Path]:
-    """Write one variant.yaml per variant dict into population/variant_N/."""
+    """Write one variant.mo per variant dict into population/variant_N/."""
 
     config_path = Path(config_path).resolve()
     population_dir = Path(population_dir).resolve()
@@ -102,7 +102,7 @@ def generate_variants(
             param = var_lookup[path]["param"]
             text = substitute_param(text, block, param, value)
 
-        out_path = variant_dir / "variant.yaml"
+        out_path = variant_dir / "variant.mo"
         out_path.write_text(text)
         written.append(out_path)
 
@@ -111,7 +111,7 @@ def generate_variants(
 
 
 if __name__ == "__main__":
-    from _4_DOE.sampler import sample
+    from sampler import sample
 
     config = Path(__file__).parent / "configs/doe_config.yaml"
     population = Path(__file__).parent / "population"
