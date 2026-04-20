@@ -1,0 +1,340 @@
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/iso7401_visual.yml ./_1_VisualSim/BobLib.Standards.ISO7401_run_5_visual.npz --mp4 ./_1_VisualSim/results/iso7401_test.mp4
+
+style:
+  joints:
+    radius: 0.012
+    color: red
+
+  links:
+    default:
+      radius: 0.010
+      color: black
+
+    groups:
+
+      lower:
+        radius: 0.010
+        color: black
+
+      upper:
+        radius: 0.010
+        color: black
+
+      tie:
+        radius: 0.010
+        color: black
+
+      upright:
+        radius: 0.012
+        color: "#444444"
+
+      wheel:
+        radius: 0.008
+        color: "#888888"
+
+      bellcrank:
+        radius: 0.010
+        color: "#ff7f0e"
+
+      pushrod:
+        radius: 0.012
+        color: "#2ca02c"
+
+      shock:
+        radius: 0.010
+        color: "#d62728"
+
+      arb:
+        radius: 0.006
+        color: "#9467bd"
+
+
+geometry:
+
+  # ============================================================
+  # POINTS (BASE + ENHANCED)
+  # ============================================================
+  points:
+
+    # ========================
+    # FRONT LEFT (fl)
+    # ========================
+    flLowerFore_i: [signals/visfrontaxleleftlowerfore_i1, signals/visfrontaxleleftlowerfore_i2, signals/visfrontaxleleftlowerfore_i3]
+    flLowerAft_i:  [signals/visfrontaxleleftloweraft_i1,  signals/visfrontaxleleftloweraft_i2,  signals/visfrontaxleleftloweraft_i3]
+    flLower_o:     [signals/visfrontaxleleftlower_o1,     signals/visfrontaxleleftlower_o2,     signals/visfrontaxleleftlower_o3]
+
+    flUpperFore_i: [signals/visfrontaxleleftupperfore_i1, signals/visfrontaxleleftupperfore_i2, signals/visfrontaxleleftupperfore_i3]
+    flUpperAft_i:  [signals/visfrontaxleleftupperaft_i1,  signals/visfrontaxleleftupperaft_i2,  signals/visfrontaxleleftupperaft_i3]
+    flUpper_o:     [signals/visfrontaxleleftupper_o1,     signals/visfrontaxleleftupper_o2,     signals/visfrontaxleleftupper_o3]
+
+    flTie_i:       [signals/visfrontaxlelefttie_i1, signals/visfrontaxlelefttie_i2, signals/visfrontaxlelefttie_i3]
+    flTie_o:       [signals/visfrontaxlelefttie_o1, signals/visfrontaxlelefttie_o2, signals/visfrontaxlelefttie_o3]
+
+    flWheelCenter: [signals/visfrontaxleleftwheelcenter1, signals/visfrontaxleleftwheelcenter2, signals/visfrontaxleleftwheelcenter3]
+
+    # --- enhanced
+    flBellcrankPivot:   [signals/visfrontaxleleftbellcrankpivot1, signals/visfrontaxleleftbellcrankpivot2, signals/visfrontaxleleftbellcrankpivot3]
+    flBellcrankPickup1: [signals/visfrontaxleleftbellcrankpickup11, signals/visfrontaxleleftbellcrankpickup12, signals/visfrontaxleleftbellcrankpickup13]
+    flBellcrankPickup2: [signals/visfrontaxleleftbellcrankpickup21, signals/visfrontaxleleftbellcrankpickup22, signals/visfrontaxleleftbellcrankpickup23]
+    flBellcrankPickup3: [signals/visfrontaxleleftbellcrankpickup31, signals/visfrontaxleleftbellcrankpickup32, signals/visfrontaxleleftbellcrankpickup33]
+
+    flRodMount:   [signals/visfrontaxleleftrodmount1, signals/visfrontaxleleftrodmount2, signals/visfrontaxleleftrodmount3]
+    flShockMount: [signals/visfrontaxleleftshockmount1, signals/visfrontaxleleftshockmount2, signals/visfrontaxleleftshockmount3]
+
+    flBarEnd: [signals/visfrontaxleleftbarend1, signals/visfrontaxleleftbarend2, signals/visfrontaxleleftbarend3]
+    flArmEnd: [signals/visfrontaxleleftarmend1, signals/visfrontaxleleftarmend2, signals/visfrontaxleleftarmend3]
+
+
+    # ========================
+    # FRONT RIGHT (fr)
+    # ========================
+    frLowerFore_i: [signals/visfrontaxlerightlowerfore_i1, signals/visfrontaxlerightlowerfore_i2, signals/visfrontaxlerightlowerfore_i3]
+    frLowerAft_i:  [signals/visfrontaxlerightloweraft_i1,  signals/visfrontaxlerightloweraft_i2,  signals/visfrontaxlerightloweraft_i3]
+    frLower_o:     [signals/visfrontaxlerightlower_o1,     signals/visfrontaxlerightlower_o2,     signals/visfrontaxlerightlower_o3]
+
+    frUpperFore_i: [signals/visfrontaxlerightupperfore_i1, signals/visfrontaxlerightupperfore_i2, signals/visfrontaxlerightupperfore_i3]
+    frUpperAft_i:  [signals/visfrontaxlerightupperaft_i1,  signals/visfrontaxlerightupperaft_i2,  signals/visfrontaxlerightupperaft_i3]
+    frUpper_o:     [signals/visfrontaxlerightupper_o1,     signals/visfrontaxlerightupper_o2,     signals/visfrontaxlerightupper_o3]
+
+    frTie_i:       [signals/visfrontaxlerighttie_i1, signals/visfrontaxlerighttie_i2, signals/visfrontaxlerighttie_i3]
+    frTie_o:       [signals/visfrontaxlerighttie_o1, signals/visfrontaxlerighttie_o2, signals/visfrontaxlerighttie_o3]
+
+    frWheelCenter: [signals/visfrontaxlerightwheelcenter1, signals/visfrontaxlerightwheelcenter2, signals/visfrontaxlerightwheelcenter3]
+
+    frBellcrankPivot:   [signals/visfrontaxlerightbellcrankpivot1, signals/visfrontaxlerightbellcrankpivot2, signals/visfrontaxlerightbellcrankpivot3]
+    frBellcrankPickup1: [signals/visfrontaxlerightbellcrankpickup11, signals/visfrontaxlerightbellcrankpickup12, signals/visfrontaxlerightbellcrankpickup13]
+    frBellcrankPickup2: [signals/visfrontaxlerightbellcrankpickup21, signals/visfrontaxlerightbellcrankpickup22, signals/visfrontaxlerightbellcrankpickup23]
+    frBellcrankPickup3: [signals/visfrontaxlerightbellcrankpickup31, signals/visfrontaxlerightbellcrankpickup32, signals/visfrontaxlerightbellcrankpickup33]
+
+    frRodMount:   [signals/visfrontaxlerightrodmount1, signals/visfrontaxlerightrodmount2, signals/visfrontaxlerightrodmount3]
+    frShockMount: [signals/visfrontaxlerightshockmount1, signals/visfrontaxlerightshockmount2, signals/visfrontaxlerightshockmount3]
+
+    frBarEnd: [signals/visfrontaxlerightbarend1, signals/visfrontaxlerightbarend2, signals/visfrontaxlerightbarend3]
+    frArmEnd: [signals/visfrontaxlerightarmend1, signals/visfrontaxlerightarmend2, signals/visfrontaxlerightarmend3]
+
+
+    # ========================
+    # REAR LEFT (rl)
+    # ========================
+    rlLowerFore_i: [signals/visrearaxleleftlowerfore_i1, signals/visrearaxleleftlowerfore_i2, signals/visrearaxleleftlowerfore_i3]
+    rlLowerAft_i:  [signals/visrearaxleleftloweraft_i1,  signals/visrearaxleleftloweraft_i2,  signals/visrearaxleleftloweraft_i3]
+    rlLower_o:     [signals/visrearaxleleftlower_o1,     signals/visrearaxleleftlower_o2,     signals/visrearaxleleftlower_o3]
+
+    rlUpperFore_i: [signals/visrearaxleleftupperfore_i1, signals/visrearaxleleftupperfore_i2, signals/visrearaxleleftupperfore_i3]
+    rlUpperAft_i:  [signals/visrearaxleleftupperaft_i1,  signals/visrearaxleleftupperaft_i2,  signals/visrearaxleleftupperaft_i3]
+    rlUpper_o:     [signals/visrearaxleleftupper_o1,     signals/visrearaxleleftupper_o2,     signals/visrearaxleleftupper_o3]
+
+    rlTie_i:       [signals/visrearaxlelefttie_i1, signals/visrearaxlelefttie_i2, signals/visrearaxlelefttie_i3]
+    rlTie_o:       [signals/visrearaxlelefttie_o1, signals/visrearaxlelefttie_o2, signals/visrearaxlelefttie_o3]
+
+    rlWheelCenter: [signals/visrearaxleleftwheelcenter1, signals/visrearaxleleftwheelcenter2, signals/visrearaxleleftwheelcenter3]
+
+    rlBellcrankPivot:   [signals/visrearaxleleftbellcrankpivot1, signals/visrearaxleleftbellcrankpivot2, signals/visrearaxleleftbellcrankpivot3]
+    rlBellcrankPickup1: [signals/visrearaxleleftbellcrankpickup11, signals/visrearaxleleftbellcrankpickup12, signals/visrearaxleleftbellcrankpickup13]
+    rlBellcrankPickup2: [signals/visrearaxleleftbellcrankpickup21, signals/visrearaxleleftbellcrankpickup22, signals/visrearaxleleftbellcrankpickup23]
+    rlBellcrankPickup3: [signals/visrearaxleleftbellcrankpickup31, signals/visrearaxleleftbellcrankpickup32, signals/visrearaxleleftbellcrankpickup33]
+
+    rlRodMount:   [signals/visrearaxleleftrodmount1, signals/visrearaxleleftrodmount2, signals/visrearaxleleftrodmount3]
+    rlShockMount: [signals/visrearaxleleftshockmount1, signals/visrearaxleleftshockmount2, signals/visrearaxleleftshockmount3]
+
+    rlBarEnd: [signals/visrearaxleleftbarend1, signals/visrearaxleleftbarend2, signals/visrearaxleleftbarend3]
+    rlArmEnd: [signals/visrearaxleleftarmend1, signals/visrearaxleleftarmend2, signals/visrearaxleleftarmend3]
+
+
+    # ========================
+    # REAR RIGHT (rr)
+    # ========================
+    rrLowerFore_i: [signals/visrearaxlerightlowerfore_i1, signals/visrearaxlerightlowerfore_i2, signals/visrearaxlerightlowerfore_i3]
+    rrLowerAft_i:  [signals/visrearaxlerightloweraft_i1,  signals/visrearaxlerightloweraft_i2,  signals/visrearaxlerightloweraft_i3]
+    rrLower_o:     [signals/visrearaxlerightlower_o1,     signals/visrearaxlerightlower_o2,     signals/visrearaxlerightlower_o3]
+
+    rrUpperFore_i: [signals/visrearaxlerightupperfore_i1, signals/visrearaxlerightupperfore_i2, signals/visrearaxlerightupperfore_i3]
+    rrUpperAft_i:  [signals/visrearaxlerightupperaft_i1,  signals/visrearaxlerightupperaft_i2,  signals/visrearaxlerightupperaft_i3]
+    rrUpper_o:     [signals/visrearaxlerightupper_o1,     signals/visrearaxlerightupper_o2,     signals/visrearaxlerightupper_o3]
+
+    rrTie_i:       [signals/visrearaxlerighttie_i1, signals/visrearaxlerighttie_i2, signals/visrearaxlerighttie_i3]
+    rrTie_o:       [signals/visrearaxlerighttie_o1, signals/visrearaxlerighttie_o2, signals/visrearaxlerighttie_o3]
+
+    rrWheelCenter: [signals/visrearaxlerightwheelcenter1, signals/visrearaxlerightwheelcenter2, signals/visrearaxlerightwheelcenter3]
+
+    rrBellcrankPivot:   [signals/visrearaxlerightbellcrankpivot1, signals/visrearaxlerightbellcrankpivot2, signals/visrearaxlerightbellcrankpivot3]
+    rrBellcrankPickup1: [signals/visrearaxlerightbellcrankpickup11, signals/visrearaxlerightbellcrankpickup12, signals/visrearaxlerightbellcrankpickup13]
+    rrBellcrankPickup2: [signals/visrearaxlerightbellcrankpickup21, signals/visrearaxlerightbellcrankpickup22, signals/visrearaxlerightbellcrankpickup23]
+    rrBellcrankPickup3: [signals/visrearaxlerightbellcrankpickup31, signals/visrearaxlerightbellcrankpickup32, signals/visrearaxlerightbellcrankpickup33]
+
+    rrRodMount:   [signals/visrearaxlerightrodmount1, signals/visrearaxlerightrodmount2, signals/visrearaxlerightrodmount3]
+    rrShockMount: [signals/visrearaxlerightshockmount1, signals/visrearaxlerightshockmount2, signals/visrearaxlerightshockmount3]
+
+    rrBarEnd: [signals/visrearaxlerightbarend1, signals/visrearaxlerightbarend2, signals/visrearaxlerightbarend3]
+    rrArmEnd: [signals/visrearaxlerightarmend1, signals/visrearaxlerightarmend2, signals/visrearaxlerightarmend3]
+
+
+  # ============================================================
+  # LINKS
+  # ============================================================
+  links:
+
+    lower:
+      - [flLowerFore_i, flLower_o]
+      - [flLowerAft_i,  flLower_o]
+      - [frLowerFore_i, frLower_o]
+      - [frLowerAft_i,  frLower_o]
+      - [rlLowerFore_i, rlLower_o]
+      - [rlLowerAft_i,  rlLower_o]
+      - [rrLowerFore_i, rrLower_o]
+      - [rrLowerAft_i,  rrLower_o]
+
+    upper:
+      - [flUpperFore_i, flUpper_o]
+      - [flUpperAft_i,  flUpper_o]
+      - [frUpperFore_i, frUpper_o]
+      - [frUpperAft_i,  frUpper_o]
+      - [rlUpperFore_i, rlUpper_o]
+      - [rlUpperAft_i,  rlUpper_o]
+      - [rrUpperFore_i, rrUpper_o]
+      - [rrUpperAft_i,  rrUpper_o]
+
+    upright:
+      - [flUpper_o, flLower_o]
+      - [frUpper_o, frLower_o]
+      - [rlUpper_o, rlLower_o]
+      - [rrUpper_o, rrLower_o]
+
+    tie:
+      - [flTie_i, flTie_o]
+      - [frTie_i, frTie_o]
+      - [rlTie_i, rlTie_o]
+      - [rrTie_i, rrTie_o]
+
+    wheel:
+      - [flLower_o, flWheelCenter]
+      - [flUpper_o, flWheelCenter]
+      - [frLower_o, frWheelCenter]
+      - [frUpper_o, frWheelCenter]
+      - [rlLower_o, rlWheelCenter]
+      - [rlUpper_o, rlWheelCenter]
+      - [rrLower_o, rrWheelCenter]
+      - [rrUpper_o, rrWheelCenter]
+
+    bellcrank:
+      - [flBellcrankPivot, flBellcrankPickup1]
+      - [flBellcrankPickup1, flBellcrankPickup2]
+      - [flBellcrankPickup2, flBellcrankPickup3]
+      - [flBellcrankPickup3, flBellcrankPivot]
+      - [frBellcrankPivot, frBellcrankPickup1]
+      - [frBellcrankPickup1, frBellcrankPickup2]
+      - [frBellcrankPickup2, frBellcrankPickup3]
+      - [frBellcrankPickup3, frBellcrankPivot]
+      - [rlBellcrankPivot, rlBellcrankPickup1]
+      - [rlBellcrankPickup1, rlBellcrankPickup2]
+      - [rlBellcrankPickup2, rlBellcrankPickup3]
+      - [rlBellcrankPickup3, rlBellcrankPivot]
+      - [rrBellcrankPivot, rrBellcrankPickup1]
+      - [rrBellcrankPickup1, rrBellcrankPickup2]
+      - [rrBellcrankPickup2, rrBellcrankPickup3]
+      - [rrBellcrankPickup3, rrBellcrankPivot]
+
+    pushrod:
+      - [flRodMount, flBellcrankPickup2]
+      - [frRodMount, frBellcrankPickup2]
+      - [rlRodMount, rlBellcrankPickup1]
+      - [rrRodMount, rrBellcrankPickup1]
+
+    shock:
+      - [flShockMount, flBellcrankPickup3]
+      - [frShockMount, frBellcrankPickup3]
+      - [rlShockMount, rlBellcrankPickup2]
+      - [rrShockMount, rrBellcrankPickup2]
+
+    arb:
+      - [flBarEnd, frBarEnd]
+      - [flBarEnd, flArmEnd]
+      - [frBarEnd, frArmEnd]
+      - [flArmEnd, flBellcrankPickup1]
+      - [frArmEnd, frBellcrankPickup1]
+      - [rlBarEnd, rrBarEnd]
+      - [rlBarEnd, rlArmEnd]
+      - [rrBarEnd, rrArmEnd]
+      - [rlArmEnd, rlBellcrankPickup3]
+      - [rrArmEnd, rrBellcrankPickup3]
+      
+
+
+  # ============================================================
+  # TIRES
+  # ============================================================
+  tires:
+
+    fl:
+      center: flWheelCenter
+      x: [signals/visfrontaxlelefttire_ex1, signals/visfrontaxlelefttire_ex2, signals/visfrontaxlelefttire_ex3]
+      y: [signals/visfrontaxlelefttire_ey1, signals/visfrontaxlelefttire_ey2, signals/visfrontaxlelefttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+    fr:
+      center: frWheelCenter
+      x: [signals/visfrontaxlerighttire_ex1, signals/visfrontaxlerighttire_ex2, signals/visfrontaxlerighttire_ex3]
+      y: [signals/visfrontaxlerighttire_ey1, signals/visfrontaxlerighttire_ey2, signals/visfrontaxlerighttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+    rl:
+      center: rlWheelCenter
+      x: [signals/visrearaxlelefttire_ex1, signals/visrearaxlelefttire_ex2, signals/visrearaxlelefttire_ex3]
+      y: [signals/visrearaxlelefttire_ey1, signals/visrearaxlelefttire_ey2, signals/visrearaxlelefttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+    rr:
+      center: rrWheelCenter
+      x: [signals/visrearaxlerighttire_ex1, signals/visrearaxlerighttire_ex2, signals/visrearaxlerighttire_ex3]
+      y: [signals/visrearaxlerighttire_ey1, signals/visrearaxlerighttire_ey2, signals/visrearaxlerighttire_ey3]
+      radius: 0.2032
+      width: 0.1778
+
+
+# ============================================================
+# RENDER
+# ============================================================
+render:
+  show_signals: true
+  speed: 1
+
+
+# ============================================================
+# PLOTS
+# ============================================================
+plots:
+  - name: Handwheel Angle (rad)
+    unit: rad
+    x: time
+    y: signals/isohandwheelangle
+  - name: Lateral Accel (m/s^2)
+    unit: m/s^2
+    x: time
+    y: signals/isoaccy
+  - name: Yaw Rate (rad/s)
+    unit: rad/s
+    x: time
+    y: signals/isoyawvel
+
+
+# ============================================================
+# CAMERA
+# ============================================================
+camera:
+  attach_to: rlWheelCenter
+
+  origin_offset:
+    x: 0.6096
+    y: 0.6096
+    z: 0.0
+
+  forward_pair: [rlWheelCenter, flWheelCenter]
+
+  camera_offsets:
+    back: 3.0
+    height: 2.0
+
+  mode: yaw

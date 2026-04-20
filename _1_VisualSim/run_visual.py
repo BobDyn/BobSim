@@ -137,6 +137,45 @@ names = list(points.keys())
 
 
 # ============================================================
+# BUILD VECTORS (NEW)
+# ============================================================
+vectors_cfg = cast(dict[str, Any], cfg["geometry"].get("vectors", {}))
+
+vectors: list[dict[str, Any]] = []
+
+for group in vectors_cfg.values():
+    for name, vcfg_any in group.items():
+        vcfg = cast(dict[str, Any], vcfg_any)
+
+        dir_cols = vcfg["direction"]
+
+        dir_components = []
+        for c in dir_cols:
+            if isinstance(c, str):
+                dir_components.append(np.asarray(npz[c], dtype=float))
+            else:
+                # constant → broadcast to time length
+                dir_components.append(np.full_like(time_arr, float(c)))
+
+        dir_arr = np.stack(dir_components, axis=1)
+
+        if input_stride > 1:
+            dir_arr = dir_arr[::input_stride]
+
+        vectors.append(
+            {
+                "name": name,
+                "origin": cast(str, vcfg["origin"]),
+                "direction": dir_arr,
+                "scale": float(vcfg.get("scale", 1.0)),
+                "color": vcfg.get("color", "black"),
+                "shaft_radius": float(vcfg.get("shaft_radius", 0.02)),
+                "tip_radius": float(vcfg.get("tip_radius", 0.04)),
+            }
+        )
+
+
+# ============================================================
 # CAMERA
 # ============================================================
 cam_cfg = cast(dict[str, Any], cfg.get("camera", {}))
@@ -385,6 +424,35 @@ for tire_cfg_any in cast(dict[str, Any], cfg["geometry"].get("tires", {})).value
 
 
 # ============================================================
+# VECTORS (ARROWS)
+# ============================================================
+vector_actors: list[dict[str, Any]] = []
+
+for v in vectors:
+    arrow = plotter.add_mesh(
+        pv.Arrow(
+            start=(0, 0, 0),
+            direction=(1, 0, 0),
+            tip_length=0.3,
+            tip_radius=v["tip_radius"],
+            shaft_radius=v["shaft_radius"],
+        ),
+        color=v["color"],
+    )
+
+    vtk_mat = vtk.vtkMatrix4x4()
+    arrow.SetUserMatrix(vtk_mat)
+
+    vector_actors.append(
+        {
+            "cfg": v,
+            "actor": arrow,
+            "vtk_mat": vtk_mat,
+        }
+    )
+
+
+# ============================================================
 # SIGNAL PLOT
 # ============================================================
 fig: Figure | None
@@ -517,6 +585,46 @@ def update_frame(i: int) -> None:
 
         set_vtk_matrix(vtk_rim, T)
         rim.Modified()
+    
+    for v in vector_actors:
+        cfg_v = v["cfg"]
+        actor = v["actor"]
+        vtk_mat = cast(vtk.vtkMatrix4x4, v["vtk_mat"])
+
+        origin_name = cast(str, cfg_v["origin"])
+        d_arr = cast(ArrayF, cfg_v["direction"])
+        scale = float(cfg_v["scale"])
+
+        p = points[origin_name][i]
+        d = d_arr[i]
+
+        L = np.linalg.norm(d)
+
+        # ============================================================
+        # ZERO FORCE → collapse arrow (no NaNs, no flicker)
+        # ============================================================
+        if L < 1e-6:
+            T = np.eye(4)
+            T[:3, :3] = 0.0      # 🔥 collapse geometry
+            T[:3, 3] = p
+            set_vtk_matrix(vtk_mat, T)
+            actor.Modified()
+            continue
+
+        # ============================================================
+        # NORMAL CASE
+        # ============================================================
+        x = d / L
+        R = make_frame_from_x(x)
+
+        S = np.diag([L * scale, 1.0, 1.0])
+
+        T = np.eye(4)
+        T[:3, :3] = R @ S
+        T[:3, 3] = p
+
+        set_vtk_matrix(vtk_mat, T)
+        actor.Modified()
 
     update_camera(i)
     plotter.render()

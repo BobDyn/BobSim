@@ -71,7 +71,8 @@ geometry:
     flTie_o:       [signals/visfrontaxlelefttie_o1, signals/visfrontaxlelefttie_o2, signals/visfrontaxlelefttie_o3]
 
     flWheelCenter: [signals/visfrontaxleleftwheelcenter1, signals/visfrontaxleleftwheelcenter2, signals/visfrontaxleleftwheelcenter3]
-
+    flCP: [signals/visfrontaxleleftcp1, signals/visfrontaxleleftcp2, signals/visfrontaxleleftcp3]
+    
     # --- enhanced
     flBellcrankPivot:   [signals/visfrontaxleleftbellcrankpivot1, signals/visfrontaxleleftbellcrankpivot2, signals/visfrontaxleleftbellcrankpivot3]
     flBellcrankPickup1: [signals/visfrontaxleleftbellcrankpickup11, signals/visfrontaxleleftbellcrankpickup12, signals/visfrontaxleleftbellcrankpickup13]
@@ -100,6 +101,7 @@ geometry:
     frTie_o:       [signals/visfrontaxlerighttie_o1, signals/visfrontaxlerighttie_o2, signals/visfrontaxlerighttie_o3]
 
     frWheelCenter: [signals/visfrontaxlerightwheelcenter1, signals/visfrontaxlerightwheelcenter2, signals/visfrontaxlerightwheelcenter3]
+    frCP: [signals/visfrontaxlerightcp1, signals/visfrontaxlerightcp2, signals/visfrontaxlerightcp3]
 
     frBellcrankPivot:   [signals/visfrontaxlerightbellcrankpivot1, signals/visfrontaxlerightbellcrankpivot2, signals/visfrontaxlerightbellcrankpivot3]
     frBellcrankPickup1: [signals/visfrontaxlerightbellcrankpickup11, signals/visfrontaxlerightbellcrankpickup12, signals/visfrontaxlerightbellcrankpickup13]
@@ -128,6 +130,7 @@ geometry:
     rlTie_o:       [signals/visrearaxlelefttie_o1, signals/visrearaxlelefttie_o2, signals/visrearaxlelefttie_o3]
 
     rlWheelCenter: [signals/visrearaxleleftwheelcenter1, signals/visrearaxleleftwheelcenter2, signals/visrearaxleleftwheelcenter3]
+    rlCP: [signals/visrearaxleleftcp1, signals/visrearaxleleftcp2, signals/visrearaxleleftcp3]
 
     rlBellcrankPivot:   [signals/visrearaxleleftbellcrankpivot1, signals/visrearaxleleftbellcrankpivot2, signals/visrearaxleleftbellcrankpivot3]
     rlBellcrankPickup1: [signals/visrearaxleleftbellcrankpickup11, signals/visrearaxleleftbellcrankpickup12, signals/visrearaxleleftbellcrankpickup13]
@@ -156,6 +159,7 @@ geometry:
     rrTie_o:       [signals/visrearaxlerighttie_o1, signals/visrearaxlerighttie_o2, signals/visrearaxlerighttie_o3]
 
     rrWheelCenter: [signals/visrearaxlerightwheelcenter1, signals/visrearaxlerightwheelcenter2, signals/visrearaxlerightwheelcenter3]
+    rrCP: [signals/visrearaxlerightcp1, signals/visrearaxlerightcp2, signals/visrearaxlerightcp3]
 
     rrBellcrankPivot:   [signals/visrearaxlerightbellcrankpivot1, signals/visrearaxlerightbellcrankpivot2, signals/visrearaxlerightbellcrankpivot3]
     rrBellcrankPickup1: [signals/visrearaxlerightbellcrankpickup11, signals/visrearaxlerightbellcrankpickup12, signals/visrearaxlerightbellcrankpickup13]
@@ -293,13 +297,48 @@ geometry:
       radius: 0.2032
       width: 0.1778
 
+  vectors:
+
+    contact_patch:
+
+      flCPForce:
+        origin: flCP
+        direction: [signals/visfrontaxleleftcpforce1, signals/visfrontaxleleftcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
+
+      frCPForce:
+        origin: frCP
+        direction: [signals/visfrontaxlerightcpforce1, signals/visfrontaxlerightcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
+      
+      rlCPForce:
+        origin: rlCP
+        direction: [signals/visrearaxleleftcpforce1, signals/visrearaxleleftcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
+
+      rrCPForce:
+        origin: rrCP
+        direction: [signals/visrearaxlerightcpforce1, signals/visrearaxlerightcpforce2, 0]
+        scale: 0.001
+        color: green
+        shaft_radius: 0.01
+        tip_radius: 0.02
 
 # ============================================================
 # RENDER
 # ============================================================
 render:
   show_signals: true
-  speed: 0.25
+  speed: 0.5
 
 
 # ============================================================

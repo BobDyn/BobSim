@@ -8,8 +8,8 @@ class SignalPlot:
         x_cfg = p_cfg["x"]
         y_cfg = p_cfg["y"]
 
-        x = s[x_cfg["key"]]
-        y = s[y_cfg["key"]]
+        x = np.asarray(s[x_cfg["key"]], dtype=float)
+        y = np.asarray(s[y_cfg["key"]], dtype=float)
 
         # Scaling
         x = x * x_cfg.get("scale", 1.0)

@@ -118,7 +118,12 @@ class _2_GeneralSim:
         extra_overrides = sim_cfg.get("extra_overrides", {})
         merged = {**overrides, **extra_overrides}
 
-        override_str = ",".join(f"{k}={v}" for k, v in merged.items())
+        def _format_override(v):
+            if isinstance(v, bool):
+                return str(v).lower()
+            return v
+
+        override_str = ",".join(f"{k}={_format_override(v)}" for k, v in merged.items())
 
         result_name = f"{self.exec_name}_{tag}" if tag else self.exec_name
         run_dir = self._make_run_dir(tag)
