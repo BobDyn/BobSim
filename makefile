@@ -41,16 +41,10 @@ clean-doe:
 		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete && \
 		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
-clean-doe-population:
-	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
-	docker compose run --rm doe find /bobsim/_4_DOE/population -mindepth 1 ! -name ".gitkeep" -delete
-
-clean-doe-results:
-	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
-	docker compose run --rm doe find /bobsim/_4_DOE/results -mindepth 1 ! -name ".gitkeep" -delete
-
-clean-doe: clean-doe-population clean-doe-results
-	@true
+clean-doe:
+	$(DOCKER_RUN) bash -c "\
+		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete && \
+		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
 clean:
 	$(DOCKER_RUN) bash -c "\
