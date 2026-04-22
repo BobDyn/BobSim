@@ -43,17 +43,11 @@ clean-doe:
 
 clean-doe-population:
 	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
-	@if [ -d _4_DOE/population ]; then \
-		find _4_DOE/population -mindepth 1 -type f ! -name ".gitkeep" -delete; \
-		find _4_DOE/population -mindepth 1 -type d -empty -delete; \
-	fi
+	docker compose run --rm doe find /bobsim/_4_DOE/population -mindepth 1 ! -name ".gitkeep" -delete
 
 clean-doe-results:
 	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
-	@if [ -d _4_DOE/results ]; then \
-		find _4_DOE/results -mindepth 1 -type f ! -name ".gitkeep" -delete; \
-		find _4_DOE/results -mindepth 1 -type d -empty -delete; \
-	fi
+	docker compose run --rm doe find /bobsim/_4_DOE/results -mindepth 1 ! -name ".gitkeep" -delete
 
 clean-doe: clean-doe-population clean-doe-results
 	@true
