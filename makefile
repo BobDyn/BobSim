@@ -28,7 +28,7 @@ shell-standard:
 # ── DOE ────────────────────────────────────────────────────────────────────
 
 sim-doe:
-	docker compose run --rm doe python run_doe.py configs/doe_config.yaml
+	docker compose run --rm doe python run_doe.py
 
 # ── Standard sims ──────────────────────────────────────────────────────────
 
@@ -39,22 +39,16 @@ sim-iso:
 	docker compose run --rm standard python run_standard.py ISO4138/iso4138_config.yml
 
 # ── Clean ──────────────────────────────────────────────────────────────────
-# Removes Python artifacts, simulation outputs, and OMC temp files
-# Does NOT delete compile_error_*.log files so failures are preserved for debugging
+# Delegate into Docker so root-owned files created by the container can be deleted.
+# Does NOT delete compile_error_*.log files so failures are preserved for debugging.
 
 clean-doe-population:
 	@echo "Cleaning DOE population contents (preserving .gitkeep)..."
-	@if [ -d _4_DOE/population ]; then \
-		find _4_DOE/population -mindepth 1 -type f ! -name ".gitkeep" -delete; \
-		find _4_DOE/population -mindepth 1 -type d -empty -delete; \
-	fi
+	docker compose run --rm doe find /bobsim/_4_DOE/population -mindepth 1 ! -name ".gitkeep" -delete
 
 clean-doe-results:
 	@echo "Cleaning DOE results contents (preserving .gitkeep)..."
-	@if [ -d _4_DOE/results ]; then \
-		find _4_DOE/results -mindepth 1 -type f ! -name ".gitkeep" -delete; \
-		find _4_DOE/results -mindepth 1 -type d -empty -delete; \
-	fi
+	docker compose run --rm doe find /bobsim/_4_DOE/results -mindepth 1 ! -name ".gitkeep" -delete
 
 clean-doe: clean-doe-population clean-doe-results
 	@true
@@ -67,8 +61,8 @@ clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache
 	rm -rf .coverage htmlcov
 	rm -rf build dist *.egg-info
-	find . -type f -name "*.csv" -delete
-	find . -type f -name "*.mat" -delete
+	find _4_DOE/population -type f -name "*.csv" -delete
+	find _4_DOE/population -type f -name "*.mat" -delete
 	$(MAKE) clean-doe
 	rm -rf _3_StandardSim/ISO4138/build _3_StandardSim/KnC/build
 	rm -rf ~/.openmodelica/tmp/* 2>/dev/null || true
