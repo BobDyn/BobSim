@@ -8,7 +8,7 @@ boblib_path: ../../_0_Utils/external/BobLib/package.mo
 # Each worker runs a separate OMC process.
 # OMC itself is already multithreaded, so don't set this too high.
 # 2-4 is a good starting point on a laptop, more on TACC.
-max_workers: 2
+max_workers: 4
 
 standards:
   ISO4138:
@@ -36,5 +36,5 @@ standards:
   #   solver: dassl
 
 batch:
-  max_workers: 2
+  max_workers: 4
   timeout: 300
