@@ -5,12 +5,14 @@ scipy-stubs
 pandas
 pandas-stubs
 matplotlib
-
 pyvista
 pyqt6
 pyvistaqt
 imageio
 imageio-ffmpeg
-
 ruff
 mypy
+fmpy
+pyside6
+typing-extensions
+plotly
