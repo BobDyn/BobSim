@@ -28,6 +28,7 @@ from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 
 
 G = 9.80665
@@ -35,6 +36,9 @@ IN_TO_M = 0.0254
 LB_TO_KG = 0.45359237
 LBF_PER_IN_TO_N_PER_M = 175.12683524647636
 MPH_TO_MPS = 0.44704
+
+
+FloatArray = NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -109,9 +113,9 @@ class GGVConfig:
 @dataclass
 class GGVEnvelope:
     speed: float
-    ay: np.ndarray
-    ax_accel: np.ndarray
-    ax_brake: np.ndarray
+    ay: FloatArray
+    ax_accel: FloatArray
+    ax_brake: FloatArray
 
 
 def force_to_aero_area(
@@ -156,7 +160,7 @@ def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, floa
     return front_downforce, rear_downforce, drag
 
 
-def tire_mu_x(vehicle: VehicleParams, fz: np.ndarray) -> np.ndarray:
+def tire_mu_x(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
     """
     Approximate longitudinal peak friction from .tir PDX terms.
 
@@ -176,7 +180,7 @@ def tire_mu_x(vehicle: VehicleParams, fz: np.ndarray) -> np.ndarray:
     return np.maximum(mu, vehicle.mu_min)
 
 
-def tire_mu_y(vehicle: VehicleParams, fz: np.ndarray) -> np.ndarray:
+def tire_mu_y(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
     """
     Approximate lateral peak friction from .tir PDY terms.
 
@@ -202,7 +206,7 @@ def wheel_loads(
     speed: float,
     ax: float,
     ay: float,
-) -> np.ndarray:
+) -> FloatArray:
     """
     Estimate individual wheel normal loads.
 
@@ -234,9 +238,7 @@ def wheel_loads(
     # Lateral load transfer split by LLTD.
     total_lat_transfer_moment = vehicle.mass * ay * vehicle.cg_height
 
-    front_lat_transfer = (
-        vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
-    )
+    front_lat_transfer = vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
     rear_lat_transfer = (
         (1.0 - vehicle.lltd) * total_lat_transfer_moment / vehicle.track_rear
     )
@@ -250,7 +252,7 @@ def wheel_loads(
     return np.array([fl, fr, rl, rr], dtype=float)
 
 
-def distribute_lateral_force(vehicle: VehicleParams, ay: float) -> np.ndarray:
+def distribute_lateral_force(vehicle: VehicleParams, ay: float) -> FloatArray:
     """
     Distribute lateral force demand to each tire.
 
@@ -280,7 +282,7 @@ def distribute_longitudinal_force(
     vehicle: VehicleParams,
     fx_total: float,
     mode: Literal["drive", "brake"],
-) -> np.ndarray:
+) -> FloatArray:
     """
     Distribute longitudinal force demand to the tires.
 
@@ -313,10 +315,10 @@ def distribute_longitudinal_force(
 
 def tire_usage(
     vehicle: VehicleParams,
-    fz: np.ndarray,
-    fx: np.ndarray,
-    fy: np.ndarray,
-) -> np.ndarray:
+    fz: FloatArray,
+    fx: FloatArray,
+    fy: FloatArray,
+) -> FloatArray:
     """
     Elliptical combined tire usage at each tire.
 
@@ -397,7 +399,7 @@ def solve_ax_limit(
     vehicle: VehicleParams,
     speed: float,
     ay: float,
-    ax_grid: np.ndarray,
+    ax_grid: FloatArray,
     mode: Literal["drive", "brake"],
 ) -> float:
     """
@@ -705,9 +707,9 @@ def plot_ggv_surface(
 
     n_perimeter = 240
 
-    speed_values = []
-    ay_loops = []
-    ax_loops = []
+    speed_values: list[float] = []
+    ay_loops: list[FloatArray] = []
+    ax_loops: list[FloatArray] = []
 
     for env in envelopes:
         ay_g = env.ay / G
@@ -842,10 +844,10 @@ def plot_ggv_metrics(
     if not envelopes:
         raise ValueError("No GGV envelopes provided.")
 
-    speeds = []
-    max_cornering_g = []
-    max_accel_g = []
-    max_braking_g = []
+    speeds_list: list[float] = []
+    max_cornering_g_list: list[float] = []
+    max_accel_g_list: list[float] = []
+    max_braking_g_list: list[float] = []
 
     for env in envelopes:
         ay_g = env.ay / G
@@ -857,55 +859,55 @@ def plot_ggv_metrics(
         finite_any = finite_accel | finite_brake
 
         if np.any(finite_any):
-            ay_cap = np.nanmax(np.abs(ay_g[finite_any]))
+            ay_cap: float = float(np.nanmax(np.abs(ay_g[finite_any])))
         else:
-            ay_cap = np.nan
+            ay_cap = float("nan")
 
         if np.any(finite_accel):
-            accel_cap = np.nanmax(ax_accel_g[finite_accel])
+            accel_cap: float = float(np.nanmax(ax_accel_g[finite_accel]))
         else:
-            accel_cap = np.nan
+            accel_cap = float("nan")
 
         if np.any(finite_brake):
-            brake_cap = np.abs(np.nanmin(ax_brake_g[finite_brake]))
+            brake_cap: float = float(np.abs(np.nanmin(ax_brake_g[finite_brake])))
         else:
-            brake_cap = np.nan
+            brake_cap = float("nan")
 
-        speeds.append(env.speed)
-        max_cornering_g.append(ay_cap)
-        max_accel_g.append(accel_cap)
-        max_braking_g.append(brake_cap)
+        speeds_list.append(float(env.speed))
+        max_cornering_g_list.append(ay_cap)
+        max_accel_g_list.append(accel_cap)
+        max_braking_g_list.append(brake_cap)
 
-    speeds = np.asarray(speeds, dtype=float)
-    max_cornering_g = np.asarray(max_cornering_g, dtype=float)
-    max_accel_g = np.asarray(max_accel_g, dtype=float)
-    max_braking_g = np.asarray(max_braking_g, dtype=float)
+    speeds_arr = np.asarray(speeds_list, dtype=np.float64)
+    max_cornering_g_arr = np.asarray(max_cornering_g_list, dtype=np.float64)
+    max_accel_g_arr = np.asarray(max_accel_g_list, dtype=np.float64)
+    max_braking_g_arr = np.asarray(max_braking_g_list, dtype=np.float64)
 
-    sort_idx = np.argsort(speeds)
-    speeds = speeds[sort_idx]
-    max_cornering_g = max_cornering_g[sort_idx]
-    max_accel_g = max_accel_g[sort_idx]
-    max_braking_g = max_braking_g[sort_idx]
+    sort_idx = np.argsort(speeds_arr)
+    speeds_sorted = speeds_arr[sort_idx]
+    max_cornering_g_sorted = max_cornering_g_arr[sort_idx]
+    max_accel_g_sorted = max_accel_g_arr[sort_idx]
+    max_braking_g_sorted = max_braking_g_arr[sort_idx]
 
     fig, ax = plt.subplots(figsize=(11.0, 8.0))
 
     ax.plot(
-        speeds,
-        max_cornering_g,
+        speeds_sorted,
+        max_cornering_g_sorted,
         marker="o",
         linewidth=2.0,
         label=r"Max Cornering, $\max |a_y|$",
     )
     ax.plot(
-        speeds,
-        max_accel_g,
+        speeds_sorted,
+        max_accel_g_sorted,
         marker="o",
         linewidth=2.0,
         label=r"Max Acceleration, $\max a_x$",
     )
     ax.plot(
-        speeds,
-        max_braking_g,
+        speeds_sorted,
+        max_braking_g_sorted,
         marker="o",
         linewidth=2.0,
         label=r"Max Braking, $|\min a_x|$",
@@ -932,7 +934,7 @@ def save_ggv_csv(envelopes: list[GGVEnvelope], output_path: str | Path) -> None:
         speed_mps, ay_mps2, ax_accel_mps2, ax_brake_mps2,
         accel_feasible, brake_feasible
     """
-    rows = []
+    rows: list[list[float]] = []
 
     for env in envelopes:
         for ay, ax_accel, ax_brake in zip(env.ay, env.ax_accel, env.ax_brake):
@@ -1030,7 +1032,7 @@ def main() -> None:
         max_drive_power=80_000.0,
         max_drive_force=3_735.0,
         max_brake_force=14_000.0,
-        drive_distribution_front=0.0,   # RWD
+        drive_distribution_front=0.0,  # RWD
         brake_distribution_front=0.62,
 
         # Tire model from .tir
@@ -1059,8 +1061,14 @@ def main() -> None:
 
     print("\nTire peak model:")
     print(f"  FNOMIN = {vehicle.fz_ref:.1f} N")
-    print(f"  mu_x(FNOMIN) ≈ {tire_mu_x(vehicle, np.array([vehicle.fz_ref]))[0]:.3f}")
-    print(f"  mu_y(FNOMIN) ≈ {tire_mu_y(vehicle, np.array([vehicle.fz_ref]))[0]:.3f}")
+    print(
+        f"  mu_x(FNOMIN) ≈ "
+        f"{tire_mu_x(vehicle, np.array([vehicle.fz_ref], dtype=np.float64))[0]:.3f}"
+    )
+    print(
+        f"  mu_y(FNOMIN) ≈ "
+        f"{tire_mu_y(vehicle, np.array([vehicle.fz_ref], dtype=np.float64))[0]:.3f}"
+    )
     print(
         f"  valid Fz range = "
         f"{vehicle.fz_min_valid:.1f} to {vehicle.fz_max_valid:.1f} N"

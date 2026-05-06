@@ -28,16 +28,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from scipy.spatial import ConvexHull
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from numpy.typing import NDArray
+from scipy.spatial import ConvexHull
 
 
 G = 9.80665
 IN_TO_M = 0.0254
 MPH_TO_MPS = 0.44704
+
+
+FloatArray = NDArray[np.float64]
+BoolArray = NDArray[np.bool_]
 
 
 @dataclass(frozen=True)
@@ -110,16 +115,16 @@ class YMDConfig:
 @dataclass
 class YMDResult:
     speed: float
-    beta: np.ndarray
-    hwa: np.ndarray
-    ay: np.ndarray
-    mz: np.ndarray
-    converged: np.ndarray
+    beta: FloatArray
+    hwa: FloatArray
+    ay: FloatArray
+    mz: FloatArray
+    converged: BoolArray
 
 
 @dataclass
 class YMDSpeedSweepResult:
-    speeds: np.ndarray
+    speeds: FloatArray
     results: list[YMDResult]
 
 
@@ -164,7 +169,7 @@ def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, floa
     return front_downforce, rear_downforce, drag
 
 
-def tire_mu_y(vehicle: VehicleParams, fz: np.ndarray) -> np.ndarray:
+def tire_mu_y(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
     """
     Approximate lateral peak friction from .tir PDY terms.
 
@@ -186,8 +191,8 @@ def tire_mu_y(vehicle: VehicleParams, fz: np.ndarray) -> np.ndarray:
 
 def tire_cornering_stiffness_y(
     vehicle: VehicleParams,
-    fz: np.ndarray,
-) -> np.ndarray:
+    fz: FloatArray,
+) -> FloatArray:
     """
     Approximate lateral cornering stiffness from .tir PKY terms.
 
@@ -210,9 +215,9 @@ def tire_cornering_stiffness_y(
 
 def saturated_lateral_force(
     vehicle: VehicleParams,
-    fz: np.ndarray,
-    alpha: np.ndarray,
-) -> np.ndarray:
+    fz: FloatArray,
+    alpha: FloatArray,
+) -> FloatArray:
     """
     Smooth lateral tire force model.
 
@@ -232,7 +237,7 @@ def saturated_lateral_force(
     return fy_capacity * np.tanh(c_alpha * alpha / fy_capacity)
 
 
-def wheel_positions(vehicle: VehicleParams) -> tuple[np.ndarray, np.ndarray]:
+def wheel_positions(vehicle: VehicleParams) -> tuple[FloatArray, FloatArray]:
     """
     Wheel coordinates relative to CG.
 
@@ -249,7 +254,7 @@ def wheel_positions(vehicle: VehicleParams) -> tuple[np.ndarray, np.ndarray]:
     # Distance from CG to rear axle
     b = vehicle.front_static_frac * vehicle.wheelbase
 
-    x = np.array([a, a, -b, -b], dtype=float)
+    x = np.array([a, a, -b, -b], dtype=np.float64)
 
     y = np.array(
         [
@@ -258,7 +263,7 @@ def wheel_positions(vehicle: VehicleParams) -> tuple[np.ndarray, np.ndarray]:
             vehicle.track_rear / 2.0,
             -vehicle.track_rear / 2.0,
         ],
-        dtype=float,
+        dtype=np.float64,
     )
 
     return x, y
@@ -269,7 +274,7 @@ def wheel_loads(
     speed: float,
     ax: float,
     ay: float,
-) -> np.ndarray:
+) -> FloatArray:
     """
     Estimate individual wheel normal loads.
 
@@ -300,9 +305,7 @@ def wheel_loads(
     # Lateral load transfer.
     total_lat_transfer_moment = vehicle.mass * ay * vehicle.cg_height
 
-    front_lat_transfer = (
-        vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
-    )
+    front_lat_transfer = vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
     rear_lat_transfer = (
         (1.0 - vehicle.lltd) * total_lat_transfer_moment / vehicle.track_rear
     )
@@ -312,7 +315,7 @@ def wheel_loads(
     rl = 0.5 * fz_rear - 0.5 * rear_lat_transfer
     rr = 0.5 * fz_rear + 0.5 * rear_lat_transfer
 
-    return np.array([fl, fr, rl, rr], dtype=float)
+    return np.array([fl, fr, rl, rr], dtype=np.float64)
 
 
 def tire_slip_angles(
@@ -321,7 +324,7 @@ def tire_slip_angles(
     beta: float,
     hwa: float,
     yaw_rate: float = 0.0,
-) -> np.ndarray:
+) -> FloatArray:
     """
     Compute tire slip angles for a simple planar 4-wheel model.
 
@@ -353,7 +356,7 @@ def tire_slip_angles(
 
     wheel_heading = np.array(
         [delta_roadwheel, delta_roadwheel, 0.0, 0.0],
-        dtype=float,
+        dtype=np.float64,
     )
 
     velocity_angle = np.arctan2(vy, vx)
@@ -383,8 +386,8 @@ def ymd_point(
 
     x, y = wheel_positions(vehicle)
 
-    fy_body = np.zeros(4)
-    fx_body = np.zeros(4)
+    fy_body = np.zeros(4, dtype=np.float64)
+    fx_body = np.zeros(4, dtype=np.float64)
 
     delta_roadwheel = hwa / vehicle.steering_ratio
 
@@ -413,7 +416,7 @@ def ymd_point(
         # Rear tires have steer = 0.
         wheel_heading = np.array(
             [delta_roadwheel, delta_roadwheel, 0.0, 0.0],
-            dtype=float,
+            dtype=np.float64,
         )
 
         fx_body = -fy_tire * np.sin(wheel_heading)
@@ -455,8 +458,8 @@ def generate_ymd(
         np.linspace(config.hwa_min_deg, config.hwa_max_deg, config.hwa_points)
     )
 
-    ay_grid = np.full((config.beta_points, config.hwa_points), np.nan)
-    mz_grid = np.full((config.beta_points, config.hwa_points), np.nan)
+    ay_grid = np.full((config.beta_points, config.hwa_points), np.nan, dtype=np.float64)
+    mz_grid = np.full((config.beta_points, config.hwa_points), np.nan, dtype=np.float64)
     converged_grid = np.zeros((config.beta_points, config.hwa_points), dtype=bool)
 
     if config.verbose:
@@ -515,8 +518,8 @@ def generate_ymd(
 def warn_if_tire_loads_outside_tir_range(
     vehicle: VehicleParams,
     config: YMDConfig,
-    beta_vals: np.ndarray,
-    hwa_vals: np.ndarray,
+    beta_vals: FloatArray,
+    hwa_vals: FloatArray,
 ) -> None:
     """
     Scan approximate finite YMD points and warn if wheel loads exceed .tir range.
@@ -573,7 +576,13 @@ def value_to_blue_red(
     normalized = 0.5 + 0.5 * value / max_abs_value
     normalized = float(np.clip(normalized, 0.0, 1.0))
 
-    return plt.get_cmap("coolwarm")(normalized)
+    rgba = plt.get_cmap("coolwarm")(normalized)
+    return (
+        float(rgba[0]),
+        float(rgba[1]),
+        float(rgba[2]),
+        float(rgba[3]),
+    )
 
 
 def plot_ymd(
@@ -595,10 +604,10 @@ def plot_ymd(
         - place labels away from the pinched endpoints
     """
 
-    def nearest_index(values: np.ndarray, target: float) -> int:
+    def nearest_index(values: FloatArray, target: float) -> int:
         return int(np.argmin(np.abs(values - target)))
 
-    def selected_integer_degree_indices(values_deg: np.ndarray) -> list[int]:
+    def selected_integer_degree_indices(values_deg: FloatArray) -> list[int]:
         """
         Select indices corresponding to integer-degree values in the available range.
         Each integer degree is matched to the nearest grid index.
@@ -616,8 +625,8 @@ def plot_ymd(
 
     def label_line(
         ax,
-        x: np.ndarray,
-        y: np.ndarray,
+        x: FloatArray,
+        y: FloatArray,
         text: str,
         frac: float,
         color: str,
@@ -824,7 +833,7 @@ def plot_ymd_beta_slices(
             ax.plot(
                 ay_g[i, mask],
                 mz[i, mask],
-                color=value_to_blue_red(beta, max_abs_beta),
+                color=value_to_blue_red(float(beta), max_abs_beta),
                 linewidth=1.8,
                 label=fr"$\beta={beta:.1f}^\circ$",
             )
@@ -919,7 +928,7 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
         speed_mps,beta_rad,beta_deg,hwa_rad,hwa_deg,
         ay_mps2,ay_g,mz_nm,converged
     """
-    rows = []
+    rows: list[list[float]] = []
 
     for i, beta in enumerate(result.beta):
         for j, hwa in enumerate(result.hwa):
@@ -928,15 +937,15 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
 
             rows.append(
                 [
-                    result.speed,
-                    beta,
-                    np.rad2deg(beta),
-                    hwa,
-                    np.rad2deg(hwa),
-                    ay,
-                    ay / G if np.isfinite(ay) else np.nan,
-                    mz,
-                    int(result.converged[i, j]),
+                    float(result.speed),
+                    float(beta),
+                    float(np.rad2deg(beta)),
+                    float(hwa),
+                    float(np.rad2deg(hwa)),
+                    float(ay),
+                    float(ay / G if np.isfinite(ay) else np.nan),
+                    float(mz),
+                    float(int(result.converged[i, j])),
                 ]
             )
 
@@ -954,7 +963,7 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
 def generate_ymd_speed_sweep(
     vehicle: VehicleParams,
     base_config: YMDConfig,
-    speeds: np.ndarray,
+    speeds: FloatArray,
 ) -> YMDSpeedSweepResult:
     """
     Generate YMD carpets across multiple velocities.
@@ -992,7 +1001,7 @@ def generate_ymd_speed_sweep(
     print("=" * 72, flush=True)
 
     return YMDSpeedSweepResult(
-        speeds=np.asarray(speeds, dtype=float),
+        speeds=np.asarray(speeds, dtype=np.float64),
         results=results,
     )
 
@@ -1126,10 +1135,7 @@ def plot_ymd_speed_sweep_surface(
     fig = plt.figure(figsize=(11.0, 8.0))
     ax = fig.add_subplot(111, projection="3d")
 
-    max_abs_mz = max(
-        float(np.nanmax(np.abs(result.mz)))
-        for result in sweep.results
-    )
+    max_abs_mz = max(float(np.nanmax(np.abs(result.mz))) for result in sweep.results)
 
     cmap = plt.get_cmap("coolwarm")
 
@@ -1218,7 +1224,7 @@ def plot_ymd_speed_sweep_hull_surfaces(
     # -------------------------------------------------------------------------
     # Collect all finite points for convex hull
     # -------------------------------------------------------------------------
-    point_blocks = []
+    point_blocks: list[FloatArray] = []
 
     for result in sweep.results:
         ay_g = result.ay / G
@@ -1275,7 +1281,7 @@ def plot_ymd_speed_sweep_hull_surfaces(
     beta_vals = sweep.results[0].beta
     hwa_vals = sweep.results[0].hwa
 
-    def interior_indices(n: int, count: int) -> np.ndarray:
+    def interior_indices(n: int, count: int) -> NDArray[np.int_]:
         """
         Return evenly spaced interior indices, excluding the boundary indices.
 
@@ -1303,26 +1309,30 @@ def plot_ymd_speed_sweep_hull_surfaces(
     # Blue surfaces: beta fixed, sweep hwa and speed
     # -------------------------------------------------------------------------
     for beta_idx in beta_indices:
-        ay_surface = []
-        mz_surface = []
-        speed_surface = []
+        ay_surface_list: list[FloatArray] = []
+        mz_surface_list: list[FloatArray] = []
+        speed_surface_list: list[FloatArray] = []
 
         for result in sweep.results:
-            ay_surface.append(result.ay[beta_idx, :] / G)
-            mz_surface.append(result.mz[beta_idx, :])
-            speed_surface.append(np.full_like(result.hwa, result.speed, dtype=float))
+            ay_surface_list.append(result.ay[beta_idx, :] / G)
+            mz_surface_list.append(result.mz[beta_idx, :])
+            speed_surface_list.append(
+                np.full_like(result.hwa, result.speed, dtype=float)
+            )
 
-        ay_surface = np.vstack(ay_surface)
-        mz_surface = np.vstack(mz_surface)
-        speed_surface = np.vstack(speed_surface)
+        ay_surface_arr = np.vstack(ay_surface_list)
+        mz_surface_arr = np.vstack(mz_surface_list)
+        speed_surface_arr = np.vstack(speed_surface_list)
 
-        if np.all(~np.isfinite(ay_surface)) or np.all(~np.isfinite(mz_surface)):
+        if np.all(~np.isfinite(ay_surface_arr)) or np.all(
+            ~np.isfinite(mz_surface_arr)
+        ):
             continue
 
         ax.plot_surface(
-            ay_surface,
-            mz_surface,
-            speed_surface,
+            ay_surface_arr,
+            mz_surface_arr,
+            speed_surface_arr,
             color="blue",
             alpha=surface_alpha,
             linewidth=0.15,
@@ -1333,40 +1343,44 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
         if show_slice_wireframes:
             ax.plot_wireframe(
-                ay_surface,
-                mz_surface,
-                speed_surface,
+                ay_surface_arr,
+                mz_surface_arr,
+                speed_surface_arr,
                 color="blue",
                 linewidth=0.45,
                 alpha=0.35,
                 rstride=1,
-                cstride=max(1, ay_surface.shape[1] // 8),
+                cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
     # -------------------------------------------------------------------------
     # Red surfaces: hwa fixed, sweep beta and speed
     # -------------------------------------------------------------------------
     for hwa_idx in hwa_indices:
-        ay_surface = []
-        mz_surface = []
-        speed_surface = []
+        hwa_ay_surface_list: list[FloatArray] = []
+        hwa_mz_surface_list: list[FloatArray] = []
+        hwa_speed_surface_list: list[FloatArray] = []
 
         for result in sweep.results:
-            ay_surface.append(result.ay[:, hwa_idx] / G)
-            mz_surface.append(result.mz[:, hwa_idx])
-            speed_surface.append(np.full_like(result.beta, result.speed, dtype=float))
+            hwa_ay_surface_list.append(result.ay[:, hwa_idx] / G)
+            hwa_mz_surface_list.append(result.mz[:, hwa_idx])
+            hwa_speed_surface_list.append(
+                np.full_like(result.beta, result.speed, dtype=float)
+            )
 
-        ay_surface = np.vstack(ay_surface)
-        mz_surface = np.vstack(mz_surface)
-        speed_surface = np.vstack(speed_surface)
+        ay_surface_arr = np.vstack(hwa_ay_surface_list)
+        mz_surface_arr = np.vstack(hwa_mz_surface_list)
+        speed_surface_arr = np.vstack(hwa_speed_surface_list)
 
-        if np.all(~np.isfinite(ay_surface)) or np.all(~np.isfinite(mz_surface)):
+        if np.all(~np.isfinite(ay_surface_arr)) or np.all(
+            ~np.isfinite(mz_surface_arr)
+        ):
             continue
 
         ax.plot_surface(
-            ay_surface,
-            mz_surface,
-            speed_surface,
+            ay_surface_arr,
+            mz_surface_arr,
+            speed_surface_arr,
             color="red",
             alpha=surface_alpha,
             linewidth=0.15,
@@ -1377,14 +1391,14 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
         if show_slice_wireframes:
             ax.plot_wireframe(
-                ay_surface,
-                mz_surface,
-                speed_surface,
+                ay_surface_arr,
+                mz_surface_arr,
+                speed_surface_arr,
                 color="red",
                 linewidth=0.45,
                 alpha=0.35,
                 rstride=1,
-                cstride=max(1, ay_surface.shape[1] // 8),
+                cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
     # -------------------------------------------------------------------------
@@ -1570,10 +1584,13 @@ def main() -> None:
 
     print("\nTire lateral model:")
     print(f"  FNOMIN          = {vehicle.fz_ref:.1f} N")
-    print(f"  mu_y(FNOMIN)    ≈ {tire_mu_y(vehicle, np.array([vehicle.fz_ref]))[0]:.3f}")
+    print(
+        f"  mu_y(FNOMIN)    ≈ "
+        f"{tire_mu_y(vehicle, np.array([vehicle.fz_ref], dtype=np.float64))[0]:.3f}"
+    )
     print(
         f"  C_alpha(FNOMIN) ≈ "
-        f"{tire_cornering_stiffness_y(vehicle, np.array([vehicle.fz_ref]))[0]:.1f} N/rad"
+        f"{tire_cornering_stiffness_y(vehicle, np.array([vehicle.fz_ref], dtype=np.float64))[0]:.1f} N/rad"
     )
     print(
         f"  valid Fz range  = "

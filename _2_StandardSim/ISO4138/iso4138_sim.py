@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import matplotlib as mpl
 import numpy as np
@@ -54,7 +54,10 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if config is None:
         raise ValueError(f"Config file is empty: {path}")
 
-    return config
+    if not isinstance(config, dict):
+        raise TypeError(f"Expected YAML config to contain a mapping at top level: {path}")
+
+    return cast(dict[str, Any], config)
 
 
 class ISO4138Sim:
@@ -304,8 +307,13 @@ class ISO4138Sim:
         # This is the source of truth used by both the PDF report and the
         # CSV metric export below.
         # --------------------------------------------------------
-        summary = {
-            "Ay_range": (float(ay_signed.min()), float(ay_signed.max())),
+        ay_range: tuple[float, float] = (
+            float(ay_signed.min()),
+            float(ay_signed.max()),
+        )
+
+        summary: dict[str, Any] = {
+            "Ay_range": ay_range,
             "understeer_gradient_rad_per_mps2": float(understeer_gradient),
             "understeer_gradient_deg_per_g": float(
                 understeer_gradient * 57.2958 * 9.81
@@ -323,14 +331,14 @@ class ISO4138Sim:
             "mean_radius_error_pct": float(np.nanmean(np.abs(radius_error_pct))),
         }
 
-        ay_min, ay_max = summary["Ay_range"]
+        ay_min, ay_max = ay_range
 
         # --------------------------------------------------------
         # CSV metric rows.
         #
         # Add/remove/reorder exported metrics here.
         # --------------------------------------------------------
-        metrics = [
+        metrics: list[dict[str, Any]] = [
             {
                 "standard": "ISO4138",
                 "metric": "ay_min",
