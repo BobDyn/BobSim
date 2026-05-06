@@ -1226,28 +1226,43 @@ class BobVisWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _build_menu(self) -> None:
         mb = self.menuBar()
+        if mb is None:
+            return
 
         # File
         file_menu = mb.addMenu("&File")
-        open_act  = QAction("&Open…", self, shortcut=QKeySequence.StandardKey.Open)
-        export_act= QAction("Export MP4…", self)
-        quit_act  = QAction("&Quit", self, shortcut=QKeySequence.StandardKey.Quit)
-        quit_act.triggered.connect(self.close)
-        file_menu.addActions([open_act, export_act])
-        file_menu.addSeparator()
-        file_menu.addAction(quit_act)
+        if file_menu is not None:
+            open_act = QAction("&Open…", self)
+            open_act.setShortcut(QKeySequence.StandardKey.Open)
+
+            export_act = QAction("Export MP4…", self)
+
+            quit_act = QAction("&Quit", self)
+            quit_act.setShortcut(QKeySequence.StandardKey.Quit)
+            quit_act.triggered.connect(self.close)
+
+            file_menu.addActions([open_act, export_act])
+            file_menu.addSeparator()
+            file_menu.addAction(quit_act)
 
         # View
-        view_menu  = mb.addMenu("&View")
-        reset_act  = QAction("Reset camera", self, shortcut="R")
-        reset_act.triggered.connect(self._on_reset_camera)
-        view_menu.addAction(reset_act)
+        view_menu = mb.addMenu("&View")
+        if view_menu is not None:
+            reset_act = QAction("Reset camera", self)
+            reset_act.setShortcut(QKeySequence("R"))
+            reset_act.triggered.connect(self._reset_camera_from_menu)
+            view_menu.addAction(reset_act)
 
         # Help
         help_menu = mb.addMenu("&Help")
-        about_act = QAction("About BobVis", self)
-        help_menu.addAction(about_act)
+        if help_menu is not None:
+            about_act = QAction("About BobVis", self)
+            help_menu.addAction(about_act)
 
+    def _reset_camera_from_menu(self) -> None:
+        if self._scene is not None:
+            self._scene.set_view_iso()
+            
     # ------------------------------------------------------------------
     def _wire_signals(self) -> None:
         """Connect toolbar + timeline signals to scene / worker."""
@@ -1363,10 +1378,6 @@ class BobVisWindow(QMainWindow):
         rotate_func = dispatch.get(axis)
         if rotate_func is not None:
             rotate_func(deg)
-
-    def _on_reset_camera(self) -> None:
-        if self._scene is not None:
-            self._scene.set_view_iso()
 
     # ──────────────────────────────────────────────────────────────────
     def closeEvent(self, event: Any) -> None:
