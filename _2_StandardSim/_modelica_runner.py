@@ -330,6 +330,10 @@ class ModelicaRunner:
         if solver:
             cmd.append(f"-s={solver}")
 
+        tolerance = self.simulation.get("tolerance")
+        if tolerance:
+            cmd.append(f"-tolerance={float(tolerance)}")
+
         log_level = self.simulation.get("log_level")
         if log_level:
             cmd.append(f"-lv={log_level}")

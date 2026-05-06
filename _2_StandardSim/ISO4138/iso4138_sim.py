@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import sys
 from pathlib import Path
 from typing import Any
@@ -164,6 +165,46 @@ class ISO4138Sim:
         return self.summarize(results)
 
     # ============================================================
+    # METRICS CSV
+    # ============================================================
+
+    def write_metrics_csv(self, metrics: list[dict[str, Any]]) -> Path:
+        """
+        Write one ISO4138 metrics CSV beside the PDF report.
+
+        This intentionally exports only the report-level metric rows, not
+        sweep data and not raw case data.
+        """
+        report_cfg = self.config.get("report", {})
+
+        report_path = Path(
+            report_cfg.get(
+                "output_path",
+                "_2_StandardSim/results/iso4138_report.pdf",
+            )
+        )
+
+        output_dir = report_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = output_dir / f"{report_path.stem}_metrics.csv"
+
+        fieldnames = [
+            "standard",
+            "metric",
+            "value",
+            "units",
+            "description",
+        ]
+
+        with output_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(metrics)
+
+        return output_path
+
+    # ============================================================
     # SUMMARY
     # ============================================================
 
@@ -257,43 +298,148 @@ class ISO4138Sim:
         else:
             roll_gradient = np.polyfit(ay_signed, roll, 1)[0]
 
+        # --------------------------------------------------------
+        # Report summary metrics.
+        #
+        # This is the source of truth used by both the PDF report and the
+        # CSV metric export below.
+        # --------------------------------------------------------
+        summary = {
+            "Ay_range": (float(ay_signed.min()), float(ay_signed.max())),
+            "understeer_gradient_rad_per_mps2": float(understeer_gradient),
+            "understeer_gradient_deg_per_g": float(
+                understeer_gradient * 57.2958 * 9.81
+            ),
+            "roll_gradient_deg_per_g": float(roll_gradient * 57.2958 * 9.81),
+            "handwheel_torque_min_Nm": float(np.nanmin(torque)),
+            "handwheel_torque_max_Nm": float(np.nanmax(torque)),
+            "max_curvature_error_pct": float(
+                np.nanmax(np.abs(curvature_error_pct))
+            ),
+            "mean_curvature_error_pct": float(
+                np.nanmean(np.abs(curvature_error_pct))
+            ),
+            "max_radius_error_pct": float(np.nanmax(np.abs(radius_error_pct))),
+            "mean_radius_error_pct": float(np.nanmean(np.abs(radius_error_pct))),
+        }
+
+        ay_min, ay_max = summary["Ay_range"]
+
+        # --------------------------------------------------------
+        # CSV metric rows.
+        #
+        # Add/remove/reorder exported metrics here.
+        # --------------------------------------------------------
+        metrics = [
+            {
+                "standard": "ISO4138",
+                "metric": "ay_min",
+                "value": ay_min,
+                "units": "m/s^2",
+                "description": "Minimum signed lateral acceleration",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "ay_max",
+                "value": ay_max,
+                "units": "m/s^2",
+                "description": "Maximum signed lateral acceleration",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "understeer_gradient_rad_per_mps2",
+                "value": summary["understeer_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Linear-region understeer gradient",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "understeer_gradient_deg_per_g",
+                "value": summary["understeer_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Linear-region understeer gradient",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "roll_gradient_deg_per_g",
+                "value": summary["roll_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Linear-region roll gradient",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "max_curvature_error_pct",
+                "value": summary["max_curvature_error_pct"],
+                "units": "%",
+                "description": "Maximum absolute curvature tracking error",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "mean_curvature_error_pct",
+                "value": summary["mean_curvature_error_pct"],
+                "units": "%",
+                "description": "Mean absolute curvature tracking error",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "max_radius_error_pct",
+                "value": summary["max_radius_error_pct"],
+                "units": "%",
+                "description": "Maximum absolute radius tracking error",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "mean_radius_error_pct",
+                "value": summary["mean_radius_error_pct"],
+                "units": "%",
+                "description": "Mean absolute radius tracking error",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "handwheel_torque_min",
+                "value": summary["handwheel_torque_min_Nm"],
+                "units": "N*m",
+                "description": "Minimum handwheel torque over ISO4138 sweep",
+            },
+            {
+                "standard": "ISO4138",
+                "metric": "handwheel_torque_max",
+                "value": summary["handwheel_torque_max_Nm"],
+                "units": "N*m",
+                "description": "Maximum handwheel torque over ISO4138 sweep",
+            },
+        ]
+
+        metrics_csv_path = self.write_metrics_csv(metrics)
+
+        print(f"📊 ISO4138 metrics CSV written: {metrics_csv_path}")
+
+        series = {
+            "ay_signed": ay_signed,
+            "roadwheel": roadwheel,
+            "curvature": curvature,
+            "curvature_cmd": kappa_cmd,
+            "curvature_error_pct": curvature_error_pct,
+            "roll": roll,
+            "sideslip": beta,
+            "torque": torque,
+            "radius_cmd": radius_cmd,
+            "radius_actual": radius_actual,
+            "radius_error_pct": radius_error_pct,
+            "speed": speed,
+            "yaw": yaw,
+            "steer_fit": steer_fit,
+            "steer_gradient": steer_grad,
+            "curvature_gradient": curv_grad,
+            "sideslip_gradient": beta_grad,
+            "roll_gradient": roll_grad,
+        }
+
         return {
-            "summary": {
-                "Ay_range": (float(ay_signed.min()), float(ay_signed.max())),
-                "understeer_gradient_rad_per_mps2": float(understeer_gradient),
-                "understeer_gradient_deg_per_g": float(
-                    understeer_gradient * 57.2958 * 9.81
-                ),
-                "roll_gradient_deg_per_g": float(roll_gradient * 57.2958 * 9.81),
-                "max_curvature_error_pct": float(
-                    np.nanmax(np.abs(curvature_error_pct))
-                ),
-                "mean_curvature_error_pct": float(
-                    np.nanmean(np.abs(curvature_error_pct))
-                ),
-                "max_radius_error_pct": float(np.nanmax(np.abs(radius_error_pct))),
-                "mean_radius_error_pct": float(np.nanmean(np.abs(radius_error_pct))),
-            },
-            "series": {
-                "ay_signed": ay_signed,
-                "roadwheel": roadwheel,
-                "curvature": curvature,
-                "curvature_cmd": kappa_cmd,
-                "curvature_error_pct": curvature_error_pct,
-                "roll": roll,
-                "sideslip": beta,
-                "torque": torque,
-                "radius_cmd": radius_cmd,
-                "radius_actual": radius_actual,
-                "radius_error_pct": radius_error_pct,
-                "speed": speed,
-                "yaw": yaw,
-                "steer_fit": steer_fit,
-                "steer_gradient": steer_grad,
-                "curvature_gradient": curv_grad,
-                "sideslip_gradient": beta_grad,
-                "roll_gradient": roll_grad,
-            },
+            "summary": summary,
+            "metrics": metrics,
+            "metrics_csv_path": metrics_csv_path,
+            "series": series,
             "cases": results,
         }
 

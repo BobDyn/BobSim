@@ -1,0 +1,12 @@
+standard,metric,value,units,description
+ISO4138,ay_min,-17.83100341657783,m/s^2,Minimum signed lateral acceleration
+ISO4138,ay_max,17.7888315699707,m/s^2,Maximum signed lateral acceleration
+ISO4138,understeer_gradient_rad_per_mps2,0.006915218454790602,rad/(m/s^2),Linear-region understeer gradient
+ISO4138,understeer_gradient_deg_per_g,3.8868492704469353,deg/g,Linear-region understeer gradient
+ISO4138,roll_gradient_deg_per_g,1.2282299312766518,deg/g,Linear-region roll gradient
+ISO4138,max_curvature_error_pct,0.19651585077619038,%,Maximum absolute curvature tracking error
+ISO4138,mean_curvature_error_pct,0.048191974675395245,%,Mean absolute curvature tracking error
+ISO4138,max_radius_error_pct,0.19690279598091817,%,Maximum absolute radius tracking error
+ISO4138,mean_radius_error_pct,0.048221311456892665,%,Mean absolute radius tracking error
+ISO4138,handwheel_torque_min,-16.50469789221622,N*m,Minimum handwheel torque over ISO4138 sweep
+ISO4138,handwheel_torque_max,15.75267790177563,N*m,Maximum handwheel torque over ISO4138 sweep

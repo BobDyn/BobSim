@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import sys
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import matplotlib as mpl
 import numpy as np
 import yaml
 
-from _2_StandardSim.modelica_runner import ModelicaRunner
+from _2_StandardSim._modelica_runner import ModelicaRunner
 from _0_Utils.reporting.report_engine import ReportEngine
 
 
@@ -26,18 +27,42 @@ mpl.rcParams.update({
 })
 
 
+# Unified VehicleModel exposes scalar outputs directly.
 ISO7401_SIGNALS = [
-    "iso.handwheelAngle",
-    "iso.leftSteerAngle",
-    "iso.rightSteerAngle",
-    "iso.velX",
-    "iso.velY",
-    "iso.yawVel",
-    "iso.sideslip",
-    "iso.accX",
-    "iso.accY",
-    "iso.roll",
-    "iso.handwheelTorque",
+    "handwheelAngle",
+    "leftSteerAngle",
+    "rightSteerAngle",
+    "velX",
+    "velY",
+    "yawVel",
+    "sideslip",
+    "accX",
+    "accY",
+    "roll",
+    "handwheelTorque",
+]
+
+
+# These are Python/report metadata fields.
+# They should NOT all be sent to Modelica as overrides.
+CASE_METADATA_KEYS = [
+    "mode",
+    "useMode",
+    "initialVel",
+    "targetVel",
+    "testVel",
+    "stepTime",
+    "steerStart",
+    "sinusoidal",
+    "steerStep",
+    "frRampSteerHeight",
+    "frRampSteerDuration",
+    "steerAmp",
+    "steerFreq",
+    "nCycles",
+    "analyze_cycles_after",
+    "directionSign",
+    "stopTime",
 ]
 
 
@@ -48,106 +73,14 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
-def make_table_overrides(name, t, y, num_points):
-    t = np.asarray(t, dtype=float)
-    y = np.asarray(y, dtype=float)
-
-    if t.ndim != 1 or y.ndim != 1:
-        raise ValueError(f"{name}: t and y must be 1D")
-
-    if len(t) != len(y):
-        raise ValueError(f"{name}: t and y must have the same length")
-
-    if len(t) < 2:
-        raise ValueError(f"{name}: table must have at least 2 points")
-
-    if np.any(np.diff(t) <= 0):
-        raise ValueError(f"{name}: time vector must be strictly increasing")
-
-    t_grid = np.linspace(float(t[0]), float(t[-1]), int(num_points))
-    y_grid = np.interp(t_grid, t, y)
-
-    overrides = {}
-
-    for i, (ti, yi) in enumerate(zip(t_grid, y_grid), start=1):
-        overrides[f"{name}[{i},1]"] = float(ti)
-        overrides[f"{name}[{i},2]"] = float(yi)
-
-    return overrides
-
-
-def constant_table(name, value, stop_time, num_points):
-    return make_table_overrides(
-        name=name,
-        t=[0.0, float(stop_time)],
-        y=[float(value), float(value)],
-        num_points=num_points,
-    )
-
-
-def zero_table(name, stop_time, num_points):
-    return constant_table(
-        name=name,
-        value=0.0,
-        stop_time=stop_time,
-        num_points=num_points,
-    )
-
-
-def step_profile(amplitude, step_time, stop_time, eps=1e-3):
-    t = np.array([0.0, step_time, step_time + eps, stop_time], dtype=float)
-    y = np.array([0.0, 0.0, amplitude, amplitude], dtype=float)
-    return t, y
-
-
-def one_period_sine_profile(
-    amplitude,
-    freq_hz,
-    step_time,
-    stop_time,
-    n_points=1000,
-):
-    t = np.linspace(0.0, stop_time, n_points)
-    y = np.zeros_like(t)
-
-    period = 1.0 / freq_hz
-    active = (t >= step_time) & (t <= step_time + period)
-
-    tau = t[active] - step_time
-    y[active] = amplitude * np.sin(2.0 * np.pi * freq_hz * tau)
-
-    return t, y
-
-
-def continuous_sine_profile(
-    amplitude,
-    freq_hz,
-    step_time,
-    n_cycles,
-    stop_time,
-    n_points=1000,
-):
-    t = np.linspace(0.0, stop_time, n_points)
-    y = np.zeros_like(t)
-
-    period = 1.0 / freq_hz
-    active = (t >= step_time) & (t <= step_time + n_cycles * period)
-
-    tau = t[active] - step_time
-    y[active] = amplitude * np.sin(2.0 * np.pi * freq_hz * tau)
-
-    return t, y
-
-
 class ISO7401Sim:
     def __init__(self, config):
         self.config = config
         self.runner = ModelicaRunner.from_config(config)
 
         sim_cfg = config.get("simulation", {})
-        self.num_points = int(sim_cfg.get("num_points", 1000))
 
-        # If stop_time is omitted, derive a safe stop time from test settings.
+        # Fallback only. Individual cases should set their own stopTime.
         self.stop_time = float(
             sim_cfg.get("stop_time", self._default_stop_time(config))
         )
@@ -167,7 +100,7 @@ class ISO7401Sim:
 
     @staticmethod
     def _close(a: float, b: float, tol: float = 1e-6) -> bool:
-        return abs(a - b) <= tol
+        return abs(float(a) - float(b)) <= tol
 
     @staticmethod
     def _wrap_phase(phi):
@@ -181,6 +114,22 @@ class ISO7401Sim:
         return float(np.nanmean(x))
 
     @staticmethod
+    def _as_list(x):
+        if isinstance(x, (list, tuple)):
+            return list(x)
+        return [x]
+
+    @staticmethod
+    def _csv_value(value):
+        if isinstance(value, np.generic):
+            value = value.item()
+
+        if isinstance(value, float) and not np.isfinite(value):
+            return ""
+
+        return value
+
+    @staticmethod
     def _default_stop_time(config):
         test = config.get("test", {})
 
@@ -191,14 +140,68 @@ class ISO7401Sim:
             freqs = test.get("sweep_freq_hz", [1.0])
             f_min = min(float(f) for f in freqs)
             n_cycles = int(test.get("n_cycles", 5))
-            stop_time = max(stop_time, step_time + n_cycles / f_min + 1.0)
+            stop_time = max(stop_time, step_time + n_cycles / f_min)
 
         if test.get("run_sine_one_period", False):
             freqs = test.get("sine_freq_hz", [1.0])
             f_min = min(float(f) for f in freqs)
-            stop_time = max(stop_time, step_time + 1.0 / f_min + 2.0)
+            stop_time = max(stop_time, step_time + 1.0 / f_min)
 
         return stop_time
+
+    @staticmethod
+    def _step_stop_time(step_time: float) -> float:
+        # Fallback stop time. VehicleModel useMode=2 may terminate earlier
+        # using its internal QSS detector.
+        return step_time + 5.0
+
+    @staticmethod
+    def _one_period_stop_time(step_time: float, freq_hz: float) -> float:
+        # No buffer here: VehicleModel useMode=1 keeps generating sine.
+        # Stop exactly after one period.
+        return step_time + 1.0 / freq_hz
+
+    @staticmethod
+    def _continuous_stop_time(
+        step_time: float,
+        freq_hz: float,
+        n_cycles: int,
+    ) -> float:
+        # No buffer here: VehicleModel useMode=1 keeps generating sine.
+        # Stop exactly after nCycles.
+        return step_time + n_cycles / freq_hz
+
+    @staticmethod
+    def _attach_case_metadata(results, metadata):
+        """
+        ModelicaRunner returns signal data, but may not preserve case metadata.
+
+        The summary code needs mode/frequency/amplitude information, so we
+        reattach the non-Modelica case metadata here.
+
+        IMPORTANT:
+        `metadata` is intentionally separate from the runner-facing `cases`.
+        The runner-facing cases should contain only actual VehicleModel
+        override parameters plus runner-special keys like stopTime.
+        """
+        if len(results) != len(metadata):
+            raise RuntimeError(
+                f"Result/metadata count mismatch: got {len(results)} results "
+                f"for {len(metadata)} metadata entries."
+            )
+
+        merged = []
+
+        for result, meta in zip(results, metadata):
+            out = dict(result)
+
+            for key in CASE_METADATA_KEYS:
+                if key in meta and key not in out:
+                    out[key] = meta[key]
+
+            merged.append(out)
+
+        return merged
 
     # ============================================================
     # CASE GENERATION
@@ -214,47 +217,74 @@ class ISO7401Sim:
         step_time = float(test["stepTime"])
 
         cases = []
+        metadata = []
 
-        # STEP
-        if test.get("run_step", True):
-            for step in test["steerStep_deg"]:
+        # --------------------------------------------------------
+        # STEP / FINITE-RATE STEP
+        #
+        # VehicleModel:
+        #   useMode = 2 -> ramp/step steer + closed-loop velocity
+        # --------------------------------------------------------
+        if test.get("run_step", False):
+            step_steer_deg_values = self._as_list(
+                test.get(
+                    "steerStep_deg",
+                    test.get("step_steer_deg", [5.0]),
+                )
+            )
+
+            ramp_duration = float(
+                test.get(
+                    "frRampSteerDuration",
+                    test.get("step_ramp_duration", 0.02),
+                )
+            )
+
+            for amp in step_steer_deg_values:
                 for s in signs:
-                    step_deg = float(step)
-                    steer_step = s * np.deg2rad(step_deg)
-
-                    t_steer, steer = step_profile(
-                        amplitude=steer_step,
-                        step_time=step_time,
-                        stop_time=self.stop_time,
-                    )
+                    amp_deg = float(amp)
+                    steer_step = s * np.deg2rad(amp_deg)
+                    stop_time_case = self._step_stop_time(step_time)
 
                     case = self._base_case(
-                        mode="step",
+                        use_mode=2,
                         test_vel=test_vel,
                         step_time=step_time,
                     )
 
                     case.update({
+                        "frRampSteerHeight": steer_step,
+                        "frRampSteerDuration": ramp_duration,
+                        "stopTime": stop_time_case,
+                    })
+
+                    meta = {
+                        "mode": "step",
+                        "useMode": 2,
+                        "testVel": test_vel,
+                        "targetVel": test_vel,
+                        "stepTime": step_time,
+                        "steerStart": step_time,
                         "sinusoidal": False,
                         "steerStep": steer_step,
+                        "frRampSteerHeight": steer_step,
+                        "frRampSteerDuration": ramp_duration,
                         "steerAmp": 0.0,
                         "steerFreq": 0.0,
                         "nCycles": 0,
                         "directionSign": s,
-                    })
-
-                    case.update(
-                        make_table_overrides(
-                            "steerTimeTable",
-                            t_steer,
-                            steer,
-                            self.num_points,
-                        )
-                    )
+                        "stopTime": stop_time_case,
+                    }
 
                     cases.append(case)
+                    metadata.append(meta)
 
-        # ONE PERIOD SINE
+        # --------------------------------------------------------
+        # ONE-PERIOD SINE
+        #
+        # VehicleModel:
+        #   useMode = 1 -> open-loop sine steer + closed-loop speed
+        # --------------------------------------------------------
         if test.get("run_sine_one_period", True):
             for f in test["sine_freq_hz"]:
                 for amp in test["sine_amp_deg"]:
@@ -263,41 +293,48 @@ class ISO7401Sim:
                         amp_deg = float(amp)
                         steer_amp = s * np.deg2rad(amp_deg)
 
-                        t_steer, steer = one_period_sine_profile(
-                            amplitude=steer_amp,
-                            freq_hz=freq,
+                        stop_time_case = self._one_period_stop_time(
                             step_time=step_time,
-                            stop_time=self.stop_time,
-                            n_points=self.num_points,
+                            freq_hz=freq,
                         )
 
                         case = self._base_case(
-                            mode="sine_one_period",
+                            use_mode=1,
                             test_vel=test_vel,
                             step_time=step_time,
                         )
 
                         case.update({
+                            "steerAmp": steer_amp,
+                            "steerFreq": freq,
+                            "stopTime": stop_time_case,
+                        })
+
+                        meta = {
+                            "mode": "sine_one_period",
+                            "useMode": 1,
+                            "testVel": test_vel,
+                            "targetVel": test_vel,
+                            "stepTime": step_time,
+                            "steerStart": step_time,
                             "sinusoidal": True,
                             "steerStep": 0.0,
                             "steerAmp": steer_amp,
                             "steerFreq": freq,
                             "nCycles": 1,
                             "directionSign": s,
-                        })
-
-                        case.update(
-                            make_table_overrides(
-                                "steerTimeTable",
-                                t_steer,
-                                steer,
-                                self.num_points,
-                            )
-                        )
+                            "stopTime": stop_time_case,
+                        }
 
                         cases.append(case)
+                        metadata.append(meta)
 
+        # --------------------------------------------------------
         # CONTINUOUS SINE
+        #
+        # VehicleModel:
+        #   useMode = 1 -> open-loop sine steer + closed-loop speed
+        # --------------------------------------------------------
         if test.get("run_continuous_sine", True):
             for f in test["sweep_freq_hz"]:
                 for amp in test["sweep_amp_deg"]:
@@ -307,27 +344,31 @@ class ISO7401Sim:
                         steer_amp = s * np.deg2rad(amp_deg)
                         n_cycles = int(test["n_cycles"])
 
-                        stop_time_case = max(
-                            self.stop_time,
-                            step_time + n_cycles / freq + 1.0,
-                        )
-
-                        t_steer, steer = continuous_sine_profile(
-                            amplitude=steer_amp,
-                            freq_hz=freq,
+                        stop_time_case = self._continuous_stop_time(
                             step_time=step_time,
+                            freq_hz=freq,
                             n_cycles=n_cycles,
-                            stop_time=stop_time_case,
-                            n_points=self.num_points,
                         )
 
                         case = self._base_case(
-                            mode="continuous_sine",
+                            use_mode=1,
                             test_vel=test_vel,
                             step_time=step_time,
                         )
 
                         case.update({
+                            "steerAmp": steer_amp,
+                            "steerFreq": freq,
+                            "stopTime": stop_time_case,
+                        })
+
+                        meta = {
+                            "mode": "continuous_sine",
+                            "useMode": 1,
+                            "testVel": test_vel,
+                            "targetVel": test_vel,
+                            "stepTime": step_time,
+                            "steerStart": step_time,
                             "sinusoidal": True,
                             "steerStep": 0.0,
                             "steerAmp": steer_amp,
@@ -338,68 +379,48 @@ class ISO7401Sim:
                             ),
                             "directionSign": s,
                             "stopTime": stop_time_case,
-                        })
-
-                        case.update(
-                            make_table_overrides(
-                                "steerTimeTable",
-                                t_steer,
-                                steer,
-                                self.num_points,
-                            )
-                        )
+                        }
 
                         cases.append(case)
+                        metadata.append(meta)
 
-        return cases
+        return cases, metadata
 
-    def _base_case(self, mode, test_vel, step_time):
-        case = {
-            "mode": mode,
+    def _base_case(self, use_mode, test_vel, step_time):
+        """
+        Build the runner-facing case dictionary.
 
-            # Unified VehicleModel mode:
-            # ISO7401 = open-loop steering, closed-loop speed.
-            "closedLoopRadius": False,
-            "closedLoopVelocity": True,
+        IMPORTANT:
+        This dictionary is passed to ModelicaRunner, and ModelicaRunner appears
+        to push most case keys into the -override string. Therefore, this must
+        contain only real VehicleModel parameters, plus runner-special keys
+        added later such as stopTime.
 
-            "initialVel": test_vel,
-            "testVel": test_vel,
-            "stepTime": step_time,
+        Do NOT include report metadata here:
+          mode
+          testVel
+          stepTime
+          sinusoidal
+          steerStep
+          directionSign
+          nCycles
+          etc.
+
+        Do NOT include initialVel here either. The current generated model
+        reports that initialVel is not overrideable.
+        """
+        return {
+            "useMode": use_mode,
+            "targetVel": test_vel,
+            "steerStart": step_time,
         }
-
-        case.update(
-            constant_table(
-                "velTimeTable",
-                test_vel,
-                self.stop_time,
-                self.num_points,
-            )
-        )
-
-        case.update(
-            zero_table(
-                "curvTimeTable",
-                self.stop_time,
-                self.num_points,
-            )
-        )
-
-        case.update(
-            zero_table(
-                "driveTorqueTimeTable",
-                self.stop_time,
-                self.num_points,
-            )
-        )
-
-        return case
 
     # ============================================================
     # RUN
     # ============================================================
 
     def run(self):
-        cases = self.build_cases()
+        cases, metadata = self.build_cases()
 
         results = self.runner.run(
             signals=ISO7401_SIGNALS,
@@ -407,6 +428,8 @@ class ISO7401Sim:
             cases=cases,
             execution=self.config.get("execution", {}),
         )
+
+        results = self._attach_case_metadata(results, metadata)
 
         return self.summarize(results)
 
@@ -416,42 +439,55 @@ class ISO7401Sim:
 
     def _is_representative_step(self, r) -> bool:
         test = self.config["test"]
-        target_step = np.deg2rad(test.get("representative_step_deg", 4.0))
+
+        step_steer_deg_values = self._as_list(
+            test.get(
+                "steerStep_deg",
+                test.get("step_steer_deg", [5.0]),
+            )
+        )
+
+        default_step_deg = float(step_steer_deg_values[0])
+
+        target_step = np.deg2rad(
+            test.get("representative_step_deg", default_step_deg)
+        )
+
         target_sign = self._direction_sign(
             test.get("representative_step_direction", "left")
         )
 
         return (
-            r["mode"] == "step"
-            and self._close(r["steerStep"], target_sign * target_step)
+            r.get("mode") == "step"
+            and self._close(r.get("steerStep", np.nan), target_sign * target_step)
         )
 
     def _is_representative_one_period(self, r) -> bool:
         test = self.config["test"]
-        target_freq = test.get("representative_one_freq_hz", 1.0)
+        target_freq = float(test.get("representative_one_freq_hz", 1.0))
         target_amp = np.deg2rad(test.get("representative_one_amp_deg", 4.0))
         target_sign = self._direction_sign(
             test.get("representative_one_direction", "left")
         )
 
         return (
-            r["mode"] == "sine_one_period"
-            and self._close(r["steerFreq"], target_freq)
-            and self._close(r["steerAmp"], target_sign * target_amp)
+            r.get("mode") == "sine_one_period"
+            and self._close(r.get("steerFreq", np.nan), target_freq)
+            and self._close(r.get("steerAmp", np.nan), target_sign * target_amp)
         )
 
     def _is_representative_continuous(self, r) -> bool:
         test = self.config["test"]
-        target_freq = test.get("representative_cont_freq_hz", 1.0)
+        target_freq = float(test.get("representative_cont_freq_hz", 1.0))
         target_amp = np.deg2rad(test.get("representative_cont_amp_deg", 2.0))
         target_sign = self._direction_sign(
             test.get("representative_cont_direction", "left")
         )
 
         return (
-            r["mode"] == "continuous_sine"
-            and self._close(r["steerFreq"], target_freq)
-            and self._close(r["steerAmp"], target_sign * target_amp)
+            r.get("mode") == "continuous_sine"
+            and self._close(r.get("steerFreq", np.nan), target_freq)
+            and self._close(r.get("steerAmp", np.nan), target_sign * target_amp)
         )
 
     def _include_in_freq_response(self, r) -> bool:
@@ -462,9 +498,73 @@ class ISO7401Sim:
         )
 
         return (
-            r["mode"] == "continuous_sine"
-            and self._close(r["steerAmp"], target_sign * target_amp)
+            r.get("mode") == "continuous_sine"
+            and self._close(r.get("steerAmp", np.nan), target_sign * target_amp)
         )
+
+    # ============================================================
+    # SIGNAL ACCESS
+    # ============================================================
+
+    @staticmethod
+    def _signal(r, key):
+        """
+        New VehicleModel exposes scalar outputs directly, e.g. accY.
+
+        This helper also supports legacy iso.* keys if an older result sneaks
+        through, which makes the transition less brittle.
+        """
+        if key in r:
+            return np.array(r[key], dtype=float)
+
+        legacy_key = f"iso.{key}"
+        if legacy_key in r:
+            return np.array(r[legacy_key], dtype=float)
+
+        raise KeyError(
+            f"Missing signal '{key}' in result. Available keys: {sorted(r.keys())}"
+        )
+
+    # ============================================================
+    # METRICS CSV
+    # ============================================================
+
+    def write_metrics_csv(self, metrics) -> Path:
+        """
+        Write one ISO7401 metrics CSV beside the PDF report.
+
+        This intentionally exports only report-level metric rows, not time
+        histories and not raw case data.
+        """
+        report_cfg = self.config.get("report", {})
+
+        report_path = Path(
+            report_cfg.get(
+                "output_path",
+                "_2_StandardSim/results/iso7401_report.pdf",
+            )
+        )
+
+        output_dir = report_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_path = output_dir / f"{report_path.stem}_metrics.csv"
+
+        fieldnames = [
+            "standard",
+            "group",
+            "metric",
+            "value",
+            "units",
+            "description",
+        ]
+
+        with output_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(metrics)
+
+        return output_path
 
     # ============================================================
     # SUMMARY
@@ -501,9 +601,9 @@ class ISO7401Sim:
 
         for r in results:
             t = np.array(r["time"], dtype=float)
-            steer = np.array(r["iso.handwheelAngle"], dtype=float)
-            ay = np.array(r["iso.accY"], dtype=float)
-            yaw = np.array(r["iso.yawVel"], dtype=float)
+            steer = self._signal(r, "handwheelAngle")
+            ay = self._signal(r, "accY")
+            yaw = self._signal(r, "yawVel")
 
             if (not step_found) and self._is_representative_step(r):
                 series["step_time"] = t
@@ -812,7 +912,303 @@ class ISO7401Sim:
                 "gain_variation_pct": float(gain_variation),
             })
 
-        return {"summary": summary, "series": series}
+        # --------------------------------------------------------
+        # CSV metric rows.
+        #
+        # Add/remove/reorder exported metrics here.
+        # --------------------------------------------------------
+        metrics = [
+            {
+                "standard": "ISO7401",
+                "group": "general",
+                "metric": "n_cases",
+                "value": summary.get("n_cases", np.nan),
+                "units": "count",
+                "description": "Number of simulation cases included in ISO7401 run",
+            },
+
+            # Step response metrics.
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "ay_peak",
+                "value": summary.get("ay_peak", np.nan),
+                "units": "m/s^2",
+                "description": "Peak absolute lateral acceleration during representative step steer response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "ay_ss",
+                "value": summary.get("ay_ss", np.nan),
+                "units": "m/s^2",
+                "description": "Steady-state lateral acceleration from representative step steer response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "ay_gain_ss",
+                "value": summary.get("ay_gain_ss", np.nan),
+                "units": "(m/s^2)/rad",
+                "description": "Steady-state lateral acceleration gain from handwheel angle",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "overshoot_pct",
+                "value": summary.get("overshoot_pct", np.nan),
+                "units": "%",
+                "description": "Lateral acceleration overshoot in representative step steer response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "rise_time_s",
+                "value": summary.get("rise_time_s", np.nan),
+                "units": "s",
+                "description": "Lateral acceleration 10-90 percent rise time",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "settling_time_s",
+                "value": summary.get("settling_time_s", np.nan),
+                "units": "s",
+                "description": "Lateral acceleration settling time using 5 percent steady-state band",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "yaw_peak",
+                "value": summary.get("yaw_peak", np.nan),
+                "units": "rad/s",
+                "description": "Peak absolute yaw velocity during representative step steer response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "yaw_ss",
+                "value": summary.get("yaw_ss", np.nan),
+                "units": "rad/s",
+                "description": "Steady-state yaw velocity from representative step steer response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "step",
+                "metric": "yaw_overshoot_pct",
+                "value": summary.get("yaw_overshoot_pct", np.nan),
+                "units": "%",
+                "description": "Yaw velocity overshoot in representative step steer response",
+            },
+
+            # Frequency response metrics.
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_gain_dc",
+                "value": summary.get("ay_gain_dc", np.nan),
+                "units": "(m/s^2)/rad",
+                "description": "Low-frequency lateral acceleration gain from handwheel angle",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_gain_dc",
+                "value": summary.get("yaw_gain_dc", np.nan),
+                "units": "(rad/s)/rad",
+                "description": "Low-frequency yaw velocity gain from handwheel angle",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_gain_peak",
+                "value": summary.get("ay_gain_peak", np.nan),
+                "units": "(m/s^2)/rad",
+                "description": "Peak lateral acceleration frequency response gain",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_gain_peak_freq",
+                "value": summary.get("ay_gain_peak_freq", np.nan),
+                "units": "Hz",
+                "description": "Frequency at peak lateral acceleration gain",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_gain_peak",
+                "value": summary.get("yaw_gain_peak", np.nan),
+                "units": "(rad/s)/rad",
+                "description": "Peak yaw velocity frequency response gain",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_gain_peak_freq",
+                "value": summary.get("yaw_gain_peak_freq", np.nan),
+                "units": "Hz",
+                "description": "Frequency at peak yaw velocity gain",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "bandwidth_hz",
+                "value": summary.get("bandwidth_hz", np.nan),
+                "units": "Hz",
+                "description": "Approximate -3 dB lateral acceleration bandwidth",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_phase_1hz",
+                "value": summary.get("ay_phase_1hz", np.nan),
+                "units": "deg",
+                "description": "Lateral acceleration phase relative to handwheel angle near 1 Hz",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_phase_1hz",
+                "value": summary.get("yaw_phase_1hz", np.nan),
+                "units": "deg",
+                "description": "Yaw velocity phase relative to handwheel angle near 1 Hz",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_lag_1hz",
+                "value": summary.get("ay_lag_1hz", np.nan),
+                "units": "s",
+                "description": "Equivalent lateral acceleration time lag near 1 Hz",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_lag_1hz",
+                "value": summary.get("yaw_lag_1hz", np.nan),
+                "units": "s",
+                "description": "Equivalent yaw velocity time lag near 1 Hz",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "lag_steer_to_ay",
+                "value": summary.get("lag_steer_to_ay", np.nan),
+                "units": "s",
+                "description": "Handwheel angle to lateral acceleration lag",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "lag_steer_to_yaw",
+                "value": summary.get("lag_steer_to_yaw", np.nan),
+                "units": "s",
+                "description": "Handwheel angle to yaw velocity lag",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_to_ay_lag",
+                "value": summary.get("yaw_to_ay_lag", np.nan),
+                "units": "s",
+                "description": "Additional lateral acceleration lag relative to yaw velocity",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_phase_45_freq",
+                "value": summary.get("ay_phase_45_freq", np.nan),
+                "units": "Hz",
+                "description": "Frequency closest to -45 degree lateral acceleration phase",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_phase_45_freq",
+                "value": summary.get("yaw_phase_45_freq", np.nan),
+                "units": "Hz",
+                "description": "Frequency closest to -45 degree yaw velocity phase",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_gain_slope",
+                "value": summary.get("ay_gain_slope", np.nan),
+                "units": "dB/dec",
+                "description": "Lateral acceleration gain slope versus log frequency",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_gain_slope",
+                "value": summary.get("yaw_gain_slope", np.nan),
+                "units": "dB/dec",
+                "description": "Yaw velocity gain slope versus log frequency",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "ay_phase_slope",
+                "value": summary.get("ay_phase_slope", np.nan),
+                "units": "deg/dec",
+                "description": "Lateral acceleration phase slope versus log frequency",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_phase_slope",
+                "value": summary.get("yaw_phase_slope", np.nan),
+                "units": "deg/dec",
+                "description": "Yaw velocity phase slope versus log frequency",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "yaw_to_ay_ratio",
+                "value": summary.get("yaw_to_ay_ratio", np.nan),
+                "units": "(rad/s)/(m/s^2)",
+                "description": "Yaw velocity to lateral acceleration gain ratio near 1 Hz",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "frequency",
+                "metric": "gain_variation_pct",
+                "value": summary.get("gain_variation_pct", np.nan),
+                "units": "%",
+                "description": "Lateral acceleration gain variation over low-frequency sweep",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "quality",
+                "metric": "ay_fit_error",
+                "value": summary.get("ay_fit_error", np.nan),
+                "units": "normalized error",
+                "description": "Mean normalized sine-fit error for lateral acceleration frequency response",
+            },
+            {
+                "standard": "ISO7401",
+                "group": "quality",
+                "metric": "yaw_fit_error",
+                "value": summary.get("yaw_fit_error", np.nan),
+                "units": "normalized error",
+                "description": "Mean normalized sine-fit error for yaw velocity frequency response",
+            },
+        ]
+
+        for row in metrics:
+            row["value"] = self._csv_value(row["value"])
+
+        metrics_csv_path = self.write_metrics_csv(metrics)
+
+        print(f"📊 ISO7401 metrics CSV written: {metrics_csv_path}")
+
+        return {
+            "summary": summary,
+            "metrics": metrics,
+            "metrics_csv_path": metrics_csv_path,
+            "series": series,
+        }
 
     # ============================================================
     # CONTINUOUS METRICS
@@ -820,9 +1216,9 @@ class ISO7401Sim:
 
     def _continuous_metrics(self, r):
         t = np.array(r["time"], dtype=float)
-        steer = np.array(r["iso.handwheelAngle"], dtype=float)
-        ay = np.array(r["iso.accY"], dtype=float)
-        yaw = np.array(r["iso.yawVel"], dtype=float)
+        steer = self._signal(r, "handwheelAngle")
+        ay = self._signal(r, "accY")
+        yaw = self._signal(r, "yawVel")
 
         freq = float(r["steerFreq"])
         step_time = float(r["stepTime"])
@@ -919,12 +1315,23 @@ class ISO7401Sim:
             "yaw_fit_error": yaw_err,
         }
 
-if __name__ == "__main__":
-    DEFAULT_CONFIG_PATH = Path("_2_StandardSim/ISO7401/iso7401_config.yml")
 
-    config = load_config(DEFAULT_CONFIG_PATH)
+def main(config_path: str | Path | None = None):
+    if config_path is None:
+        config_path = Path("_2_StandardSim/ISO7401/iso7401_config.yml")
+    else:
+        config_path = Path(config_path)
+
+    config = load_config(config_path)
 
     result = ISO7401Sim(config).run()
 
     if config.get("report", {}).get("enabled", True):
         ReportEngine(config).build(result)
+
+    return result
+
+
+if __name__ == "__main__":
+    path = sys.argv[1] if len(sys.argv) > 1 else None
+    main(path)

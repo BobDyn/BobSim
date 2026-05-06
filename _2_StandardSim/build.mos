@@ -1,3 +1,6 @@
+// Start clean
+clear();
+
 // Generate C simulation code
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
 
@@ -21,14 +24,14 @@ OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
 // OpenModelica.Scripting.setCommandLineOptions("-d=optdaedump");
 // OpenModelica.Scripting.setCommandLineOptions("-d=dumpSimCode");
 
-// Start clean
-clear();
-
 // Load Modelica Standard Library
 loadModel(Modelica);
 
 // Load BobLib
 loadFile("_0_Utils/external/BobLib/package.mo");
+
+// Create build directory if it doesn't exist
+system("mkdir -p _2_StandardSim/Build");
 
 // Go to build directory
 cd("_2_StandardSim/Build");
@@ -39,6 +42,7 @@ res := buildModel(
   startTime = 0,
   stopTime = 5,
   tolerance = 1e-6,
+  cflags="-O3 -march=native -mtune=native",
   outputFormat = "csv"
 );
 

@@ -1,3 +1,5 @@
+standard: ISO4138
+
 simulation:
   backend: modelica
   build_dir: _2_StandardSim/Build
@@ -17,20 +19,20 @@ simulation:
 
 execution:
   parallel: true
-  max_workers: 4
+  max_workers: 8
   cleanup: false
   stream_logs: false
 
 sweep:
-  testVel: 10.0
+  testVel: 15.0
   n_cases: 10
-  r_min: 20
+  r_min: 12.5
   r_max: 100.0
   radius_bias_power: 2.5
 
 controller:
-  curv_kp: 10.0
-  curv_ti: 0.3
+  curv_kp: 3
+  curv_ti: 0.02
 
   vel_kp: 200.0
   vel_ti: 1.0

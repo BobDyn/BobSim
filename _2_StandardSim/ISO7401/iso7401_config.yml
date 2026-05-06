@@ -10,7 +10,7 @@ simulation:
 
 execution:
   parallel: true
-  max_workers: 4
+  max_workers: 8
   cleanup: true
   stream_logs: false
 
@@ -24,6 +24,7 @@ test:
 
   directions: [left, right]
 
+  # Kept for future useMode=2 step support.
   representative_step_deg: 5.0
   representative_step_direction: left
   steerStep_deg: [5.0]
@@ -46,29 +47,29 @@ test:
   freq_response_direction: left
 
 report:
+  enabled: true
   brand: BobSim
   title: ISO7401 Lateral Transient Response
   subtitle: Comprehensive Open-Loop Characterization
-  output_path: _3_StandardSim/results/iso7401_report.pdf
+  output_path: _2_StandardSim/results/iso7401_report.pdf
 
   notes:
-    - Step input (time-domain)
     - One-period sinusoidal input
     - Continuous sinusoidal response
     - Frequency response computed from fixed-amplitude, single-direction sine sweep
     - Steering shown in degrees for readability
     - Representative plots use deterministic reference cases
+    - Step input support pending VehicleModel useMode=2
 
 plots:
-
   step_response:
     layout: triple
-    title: "Step Input Response (ISO7401)"
+    title: "Step Steer Response (ISO7401)"
 
     subplots:
       - title: "Steering Wheel Angle $\\delta_H$"
         x: { key: step_time, label: "Time [s]" }
-        y: { key: step_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+        y: { key: step_steer, label: "$\\delta_{HWA}$ [deg]", scale: 57.3 }
 
       - title: "Lateral Acceleration $a_y$"
         x: { key: step_time, label: "Time [s]" }
@@ -85,7 +86,7 @@ plots:
     subplots:
       - title: "Steering Wheel Angle $\\delta_H$"
         x: { key: one_time, label: "Time [s]" }
-        y: { key: one_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+        y: { key: one_steer, label: "$\\delta_{HWA}$ [deg]", scale: 57.3 }
 
       - title: "Lateral Acceleration $a_y$"
         x: { key: one_time, label: "Time [s]" }
@@ -102,7 +103,7 @@ plots:
     subplots:
       - title: "Steering Wheel Angle $\\delta_H$"
         x: { key: cont_time, label: "Time [s]" }
-        y: { key: cont_steer, label: "$$\\delta_{HWA}$ [deg]", scale: 57.3 }
+        y: { key: cont_steer, label: "$\\delta_{HWA}$ [deg]", scale: 57.3 }
 
       - title: "Lateral Acceleration $a_y$"
         x: { key: cont_time, label: "Time [s]" }
