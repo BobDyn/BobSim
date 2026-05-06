@@ -25,16 +25,3 @@ services:
       - PYTHONPATH=/bobsim
     stdin_open: true
     tty: true
-
-  # Standard sims — ISO4138, KnC, etc.
-  standard:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/bobsim
-    working_dir: /bobsim/_3_StandardSim
-    environment:
-      - PYTHONPATH=/bobsim
-    stdin_open: true
-    tty: true
