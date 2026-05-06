@@ -31,10 +31,10 @@ loadModel(Modelica);
 loadFile("_0_Utils/external/BobLib/package.mo");
 
 // Create build directory if it doesn't exist
-system("mkdir -p _2_StandardSim/Build");
+system("mkdir -p _3_StandardSim/Build");
 
 // Go to build directory
-cd("_2_StandardSim/Build");
+cd("_3_StandardSim/Build");
 
 // Build executable
 res := buildModel(

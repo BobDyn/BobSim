@@ -51,7 +51,7 @@ report:
   brand: BobSim
   title: ISO7401 Lateral Transient Response
   subtitle: Comprehensive Open-Loop Characterization
-  output_path: _2_StandardSim/results/iso7401_report.pdf
+  output_path: _3_StandardSim/results/iso7401_report.pdf
 
   notes:
     - One-period sinusoidal input

@@ -23,7 +23,7 @@ class ReportEngine:
         output_path = Path(
             report_cfg.get(
                 "output_path",
-                "_2_StandardSim/results/report.pdf",
+                "_3_StandardSim/results/report.pdf",
             )
         )
 

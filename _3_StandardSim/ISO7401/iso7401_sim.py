@@ -8,7 +8,7 @@ import matplotlib as mpl
 import numpy as np
 import yaml
 
-from _2_StandardSim._modelica_runner import ModelicaRunner
+from _3_StandardSim._modelica_runner import ModelicaRunner
 from _0_Utils.reporting.report_engine import ReportEngine
 
 
@@ -541,7 +541,7 @@ class ISO7401Sim:
         report_path = Path(
             report_cfg.get(
                 "output_path",
-                "_2_StandardSim/results/iso7401_report.pdf",
+                "_3_StandardSim/results/iso7401_report.pdf",
             )
         )
 
@@ -1318,7 +1318,7 @@ class ISO7401Sim:
 
 def main(config_path: str | Path | None = None):
     if config_path is None:
-        config_path = Path("_2_StandardSim/ISO7401/iso7401_config.yml")
+        config_path = Path("_3_StandardSim/ISO7401/iso7401_config.yml")
     else:
         config_path = Path(config_path)
 

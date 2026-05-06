@@ -9,7 +9,7 @@ import matplotlib as mpl
 import numpy as np
 import yaml
 
-from _2_StandardSim._modelica_runner import ModelicaRunner
+from _3_StandardSim._modelica_runner import ModelicaRunner
 from _0_Utils.reporting.report_engine import ReportEngine
 
 
@@ -28,7 +28,7 @@ mpl.rcParams.update({
 })
 
 
-DEFAULT_CONFIG_PATH = Path("_2_StandardSim/ISO4138/iso4138_config.yml")
+DEFAULT_CONFIG_PATH = Path("_3_StandardSim/ISO4138/iso4138_config.yml")
 
 
 ISO4138_SIGNALS = [
@@ -183,7 +183,7 @@ class ISO4138Sim:
         report_path = Path(
             report_cfg.get(
                 "output_path",
-                "_2_StandardSim/results/iso4138_report.pdf",
+                "_3_StandardSim/results/iso4138_report.pdf",
             )
         )
 
