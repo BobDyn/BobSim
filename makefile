@@ -7,17 +7,6 @@ DOCKER_RUN := docker run --rm -v "$(CURDIR):/bobsim" openmodelica/openmodelica:v
 init:
 	git submodule update --init --recursive
 
-msl-setup:
-	mkdir -p ~/.openmodelica/libraries
-
-	curl -L \
-	--retry 10 \
-	--retry-delay 5 \
-	--connect-timeout 60 \
-	--max-time 600 \
-	-o ~/.openmodelica/libraries/index.json \
-	https://libraries.openmodelica.org/index/v1/index.json
-
 setup:
 	docker compose build
 
@@ -26,22 +15,16 @@ rebuild:
 
 # ── Shells ─────────────────────────────────────────────────────────────────
 
+shell-bobsim:
+	docker compose run --rm bobsim bash
+
 shell-doe:
 	docker compose run --rm doe bash
-
-shell-standard:
-	docker compose run --rm standard bash
 
 # ── Sims ───────────────────────────────────────────────────────────────────
 
 sim-doe:
 	docker compose run --rm doe python run_doe.py
-
-sim-knc:
-	docker compose run --rm standard python run_standard.py KnC/knc_config.yml
-
-sim-iso:
-	docker compose run --rm standard python run_standard.py ISO4138/iso4138_config.yml
 
 # ── Clean ──────────────────────────────────────────────────────────────────
 # Uses docker run directly (not compose) to avoid Windows TTY hang.
