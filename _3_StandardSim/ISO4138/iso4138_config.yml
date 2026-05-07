@@ -19,7 +19,7 @@ simulation:
 
 execution:
   parallel: true
-  max_workers: 4
+  max_workers: 8
   cleanup: false
   stream_logs: false
 

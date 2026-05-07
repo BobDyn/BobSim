@@ -28,10 +28,25 @@ RUN python3 -m venv "${VIRTUAL_ENV}" \
     && python -m pip install --upgrade pip \
     && python -m pip install -r /tmp/requirements.txt
 
-# BobLib and the Modelica Standard Library are loaded from
-# _0_Utils/external/ at runtime through the mounted repository.
-#
-# This avoids relying on libraries.openmodelica.org during Docker builds
-# or user simulation runs.
+# Pre-download the OpenModelica package index with a longer curl timeout.
+# This avoids relying on OpenModelica's shorter internal curl timeout.
+RUN mkdir -p /root/.openmodelica/libraries \
+    && curl -L \
+        --retry 10 \
+        --retry-delay 5 \
+        --connect-timeout 60 \
+        --max-time 600 \
+        -o /root/.openmodelica/libraries/index.json \
+        https://libraries.openmodelica.org/index/v1/index.json
+
+# Install the Modelica Standard Library version expected by BobLib.
+# The package index has already been cached above.
+RUN printf '\
+installPackage(Complex, "3.2.3+maint.om", exactMatch=true);\n\
+installPackage(ModelicaServices, "3.2.3+maint.om", exactMatch=true);\n\
+installPackage(Modelica, "3.2.3+maint.om", exactMatch=true);\n\
+getErrorString();\n' > /tmp/setup.mos \
+    && omc /tmp/setup.mos \
+    && rm /tmp/setup.mos
 
 CMD ["/bin/bash"]

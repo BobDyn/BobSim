@@ -7,6 +7,17 @@ DOCKER_RUN := docker run --rm -v "$(CURDIR):/bobsim" openmodelica/openmodelica:v
 init:
 	git submodule update --init --recursive
 
+msl-setup:
+	mkdir -p ~/.openmodelica/libraries
+
+	curl -L \
+	--retry 10 \
+	--retry-delay 5 \
+	--connect-timeout 60 \
+	--max-time 600 \
+	-o ~/.openmodelica/libraries/index.json \
+	https://libraries.openmodelica.org/index/v1/index.json
+
 setup:
 	docker compose build
 
@@ -35,11 +46,6 @@ sim-iso:
 # ── Clean ──────────────────────────────────────────────────────────────────
 # Uses docker run directly (not compose) to avoid Windows TTY hang.
 # compile_error_*.log files are preserved for debugging.
-
-clean-doe:
-	$(DOCKER_RUN) bash -c "\
-		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete && \
-		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
 clean-doe:
 	$(DOCKER_RUN) bash -c "\

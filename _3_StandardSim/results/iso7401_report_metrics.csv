@@ -1,35 +1,35 @@
 standard,group,metric,value,units,description
 ISO7401,general,n_cases,14,count,Number of simulation cases included in ISO7401 run
-ISO7401,step,ay_peak,5.689189764773255,m/s^2,Peak absolute lateral acceleration during representative step steer response
-ISO7401,step,ay_ss,5.314070493395821,m/s^2,Steady-state lateral acceleration from representative step steer response
-ISO7401,step,ay_gain_ss,60.894762261316764,(m/s^2)/rad,Steady-state lateral acceleration gain from handwheel angle
-ISO7401,step,overshoot_pct,7.058981845341003,%,Lateral acceleration overshoot in representative step steer response
-ISO7401,step,rise_time_s,0.12036567192948988,s,Lateral acceleration 10-90 percent rise time
-ISO7401,step,settling_time_s,1.259342348591432,s,Lateral acceleration settling time using 5 percent steady-state band
-ISO7401,step,yaw_peak,0.2963778375913266,rad/s,Peak absolute yaw velocity during representative step steer response
-ISO7401,step,yaw_ss,0.26638071897267324,rad/s,Steady-state yaw velocity from representative step steer response
-ISO7401,step,yaw_overshoot_pct,11.260994689983777,%,Yaw velocity overshoot in representative step steer response
-ISO7401,frequency,ay_gain_dc,61.346351843194284,(m/s^2)/rad,Low-frequency lateral acceleration gain from handwheel angle
-ISO7401,frequency,yaw_gain_dc,3.0808578478362736,(rad/s)/rad,Low-frequency yaw velocity gain from handwheel angle
-ISO7401,frequency,ay_gain_peak,61.346351843194284,(m/s^2)/rad,Peak lateral acceleration frequency response gain
+ISO7401,step,ay_peak,5.689185650518088,m/s^2,Peak absolute lateral acceleration during representative step steer response
+ISO7401,step,ay_ss,5.313616820935586,m/s^2,Steady-state lateral acceleration from representative step steer response
+ISO7401,step,ay_gain_ss,60.889563557866204,(m/s^2)/rad,Steady-state lateral acceleration gain from handwheel angle
+ISO7401,step,overshoot_pct,7.068045029193034,%,Lateral acceleration overshoot in representative step steer response
+ISO7401,step,rise_time_s,0.12045240822815506,s,Lateral acceleration 10-90 percent rise time
+ISO7401,step,settling_time_s,1.259344768470636,s,Lateral acceleration settling time using 5 percent steady-state band
+ISO7401,step,yaw_peak,0.2963767235766049,rad/s,Peak absolute yaw velocity during representative step steer response
+ISO7401,step,yaw_ss,0.2663855205431489,rad/s,Steady-state yaw velocity from representative step steer response
+ISO7401,step,yaw_overshoot_pct,11.258571026047202,%,Yaw velocity overshoot in representative step steer response
+ISO7401,frequency,ay_gain_dc,61.4237908518473,(m/s^2)/rad,Low-frequency lateral acceleration gain from handwheel angle
+ISO7401,frequency,yaw_gain_dc,3.08144138691429,(rad/s)/rad,Low-frequency yaw velocity gain from handwheel angle
+ISO7401,frequency,ay_gain_peak,61.4237908518473,(m/s^2)/rad,Peak lateral acceleration frequency response gain
 ISO7401,frequency,ay_gain_peak_freq,0.5,Hz,Frequency at peak lateral acceleration gain
-ISO7401,frequency,yaw_gain_peak,3.20829126751589,(rad/s)/rad,Peak yaw velocity frequency response gain
+ISO7401,frequency,yaw_gain_peak,3.2050890886857077,(rad/s)/rad,Peak yaw velocity frequency response gain
 ISO7401,frequency,yaw_gain_peak_freq,2.0,Hz,Frequency at peak yaw velocity gain
 ISO7401,frequency,bandwidth_hz,2.0,Hz,Approximate -3 dB lateral acceleration bandwidth
-ISO7401,frequency,ay_phase_1hz,-18.446331015849495,deg,Lateral acceleration phase relative to handwheel angle near 1 Hz
-ISO7401,frequency,yaw_phase_1hz,-11.93787632684905,deg,Yaw velocity phase relative to handwheel angle near 1 Hz
-ISO7401,frequency,ay_lag_1hz,0.05123980837735971,s,Equivalent lateral acceleration time lag near 1 Hz
-ISO7401,frequency,yaw_lag_1hz,0.033160767574580696,s,Equivalent yaw velocity time lag near 1 Hz
-ISO7401,frequency,lag_steer_to_ay,0.05123980837735971,s,Handwheel angle to lateral acceleration lag
-ISO7401,frequency,lag_steer_to_yaw,0.033160767574580696,s,Handwheel angle to yaw velocity lag
-ISO7401,frequency,yaw_to_ay_lag,0.018079040802779014,s,Additional lateral acceleration lag relative to yaw velocity
+ISO7401,frequency,ay_phase_1hz,-18.41649701428537,deg,Lateral acceleration phase relative to handwheel angle near 1 Hz
+ISO7401,frequency,yaw_phase_1hz,-11.946683748594978,deg,Yaw velocity phase relative to handwheel angle near 1 Hz
+ISO7401,frequency,ay_lag_1hz,0.05115693615079269,s,Equivalent lateral acceleration time lag near 1 Hz
+ISO7401,frequency,yaw_lag_1hz,0.03318523263498605,s,Equivalent yaw velocity time lag near 1 Hz
+ISO7401,frequency,lag_steer_to_ay,0.05115693615079269,s,Handwheel angle to lateral acceleration lag
+ISO7401,frequency,lag_steer_to_yaw,0.03318523263498605,s,Handwheel angle to yaw velocity lag
+ISO7401,frequency,yaw_to_ay_lag,0.01797170351580664,s,Additional lateral acceleration lag relative to yaw velocity
 ISO7401,frequency,ay_phase_45_freq,2.0,Hz,Frequency closest to -45 degree lateral acceleration phase
 ISO7401,frequency,yaw_phase_45_freq,2.0,Hz,Frequency closest to -45 degree yaw velocity phase
-ISO7401,frequency,ay_gain_slope,-1.0126423666623008,dB/dec,Lateral acceleration gain slope versus log frequency
-ISO7401,frequency,yaw_gain_slope,0.5590221229334412,dB/dec,Yaw velocity gain slope versus log frequency
-ISO7401,frequency,ay_phase_slope,53.03329775849202,deg/dec,Lateral acceleration phase slope versus log frequency
-ISO7401,frequency,yaw_phase_slope,31.413755032012137,deg/dec,Yaw velocity phase slope versus log frequency
-ISO7401,frequency,yaw_to_ay_ratio,0.050892258125293875,(rad/s)/(m/s^2),Yaw velocity to lateral acceleration gain ratio near 1 Hz
-ISO7401,frequency,gain_variation_pct,7.628049012894437,%,Lateral acceleration gain variation over low-frequency sweep
-ISO7401,quality,ay_fit_error,0.010808177528412543,normalized error,Mean normalized sine-fit error for lateral acceleration frequency response
-ISO7401,quality,yaw_fit_error,0.004305576461447971,normalized error,Mean normalized sine-fit error for yaw velocity frequency response
+ISO7401,frequency,ay_gain_slope,-1.0247142370719724,dB/dec,Lateral acceleration gain slope versus log frequency
+ISO7401,frequency,yaw_gain_slope,0.5476904433174763,dB/dec,Yaw velocity gain slope versus log frequency
+ISO7401,frequency,ay_phase_slope,53.16102633935341,deg/dec,Lateral acceleration phase slope versus log frequency
+ISO7401,frequency,yaw_phase_slope,31.464306339725606,deg/dec,Yaw velocity phase slope versus log frequency
+ISO7401,frequency,yaw_to_ay_ratio,0.050900111823247066,(rad/s)/(m/s^2),Yaw velocity to lateral acceleration gain ratio near 1 Hz
+ISO7401,frequency,gain_variation_pct,7.738182994073439,%,Lateral acceleration gain variation over low-frequency sweep
+ISO7401,quality,ay_fit_error,0.010863068761470982,normalized error,Mean normalized sine-fit error for lateral acceleration frequency response
+ISO7401,quality,yaw_fit_error,0.004271177887720903,normalized error,Mean normalized sine-fit error for yaw velocity frequency response
