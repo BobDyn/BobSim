@@ -16,19 +16,16 @@ OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
 // Enable analytic Jacobians for nonlinear strong components.
 OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
 
-// ---------------------------------------------------------------------------
-// Debug-only flags. Leave OFF for production/runtime benchmarking.
-// ---------------------------------------------------------------------------
-// OpenModelica.Scripting.setCommandLineOptions("-d=initialization");
-// OpenModelica.Scripting.setCommandLineOptions("-d=bltdump");
-// OpenModelica.Scripting.setCommandLineOptions("-d=optdaedump");
-// OpenModelica.Scripting.setCommandLineOptions("-d=dumpSimCode");
+// Disable automatic loading of libraries. All libraries are present as submodules
+OpenModelica.Scripting.setCommandLineOptions("--loadMissingLibraries=false");
 
-// Load Modelica Standard Library
-loadModel(Modelica);
+// Load vendored dependencies explicitly.
+loadFile("_0_Utils/external/ModelicaStandardLibrary/Complex.mo", uses=false);
+loadFile("_0_Utils/external/ModelicaStandardLibrary/Modelica/package.mo", uses=false);
+loadFile("_0_Utils/external/ModelicaStandardLibrary/ModelicaServices/package.mo", uses=false);
 
-// Load BobLib
-loadFile("_0_Utils/external/BobLib/package.mo");
+// Load BobLib.
+loadFile("_0_Utils/external/BobLib/package.mo", uses=false);
 
 // Create build directory if it doesn't exist
 system("mkdir -p _3_StandardSim/Build");

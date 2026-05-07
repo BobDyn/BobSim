@@ -1,27 +1,17 @@
 services:
+  bobsim: &bobsim-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bobdyn/bobsim:latest
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
+    stdin_open: true
+    tty: true
 
-  # DOE pipeline — sampler, generator, compiler, batch, aggregator, search
   doe:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/bobsim
-    working_dir: /bobsim/_4_DOE
-    environment:
-      - PYTHONPATH=/bobsim
-    stdin_open: true
-    tty: true
-
-  # Standard sims — ISO4138, KnC, etc.
-  standard:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/bobsim
-    working_dir: /bobsim/_3_StandardSim
-    environment:
-      - PYTHONPATH=/bobsim
-    stdin_open: true
-    tty: true
+    <<: *bobsim-base
+    working_dir: /workspace/_4_DOE
