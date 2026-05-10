@@ -27,6 +27,8 @@ ROOT = Path(__file__).parent
 DOE_CONFIG = ROOT / "configs/doe_config.yaml"
 COMPILER_CONFIG = ROOT / "configs/compiler_config.yaml"
 POPULATION_DIR = ROOT / "population"
+AGGREGATOR_CONFIG = ROOT / "configs/aggregator_config.yaml"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,7 +79,7 @@ def run() -> None:
     # 5. Aggregate
     _stage("5 / 5  —  Aggregating results")
     t = time.time()
-    df = aggregate(POPULATION_DIR, DOE_CONFIG)
+    df = aggregate(POPULATION_DIR, DOE_CONFIG, AGGREGATOR_CONFIG)
     print(f"Done  ({_elapsed(t)})")
 
     print(f"\n{'='*60}")

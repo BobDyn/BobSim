@@ -1,0 +1,47 @@
+# aggregator_config.yaml — defines which signals to extract per standard
+#
+# Each standard has its own steady_state_metrics block.
+# key:   output column name in parquet (prefixed with standard e.g. ISO4138_yaw_rate_ss)
+# value: exact signal name from OMC results CSV
+#
+# To add a metric: add one line under the standard. Nothing else changes.
+# To add a standard: add a new block. Nothing else changes.
+
+standards:
+
+  ISO4138:
+    steady_state_metrics:
+
+      # --- Vehicle dynamics ---
+      yaw_rate_ss:    "iso.yawVel"
+      roll_ss:        "iso.roll"
+      sideslip_ss:    "iso.sideslip"
+      acc_y_ss:       "iso.accY"
+      acc_x_ss:       "iso.accX"
+      vel_x_ss:       "iso.velX"
+      vel_y_ss:       "iso.velY"
+
+      # --- Steering ---
+      handwheel_angle_ss:   "iso.handwheelAngle"
+      handwheel_torque_ss:  "iso.handwheelTorque"
+      curvature_ss:         "iso.curvature"
+
+      # --- Tire slip angles ---
+      alpha_fl_ss:    "vehicle.chassis.frAxleDW.leftTire.alpha"
+      alpha_fr_ss:    "vehicle.chassis.frAxleDW.rightTire.alpha"
+      alpha_rl_ss:    "vehicle.chassis.rrAxleDW.leftTire.alpha"
+      alpha_rr_ss:    "vehicle.chassis.rrAxleDW.rightTire.alpha"
+
+      # --- Tire lateral forces ---
+      fy_fl_ss:       "vehicle.chassis.frAxleDW.leftTire.Fy"
+      fy_fr_ss:       "vehicle.chassis.frAxleDW.rightTire.Fy"
+      fy_rl_ss:       "vehicle.chassis.rrAxleDW.leftTire.Fy"
+      fy_rr_ss:       "vehicle.chassis.rrAxleDW.rightTire.Fy"
+
+      # --- Sway bar torques ---
+      stabar_torque_fr_ss:  "vehicle.chassis.frAxleDW.stabar.spring.tau"
+      stabar_torque_rr_ss:  "vehicle.chassis.rrAxleDW.stabar.spring.tau"
+
+  # KnC:
+  #   steady_state_metrics:
+  #     some_metric: "some.signal"

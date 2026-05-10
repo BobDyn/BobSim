@@ -34,5 +34,5 @@ variables:
     param: staticGamma
     range: [-4.0, 0.0]
 
-samples: 3
+samples: 7
 seed: 42
