@@ -1,8 +1,5 @@
-<<<<<<<< HEAD:_2_StandardSim/ISO4138/iso4138_config.yml
-========
 standard: SteadyStateEval
 
->>>>>>>> f93a0aa (Mass rename):_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml
 simulation:
   backend: modelica
   build_dir: _3_StandardSim/Build
@@ -18,15 +15,15 @@ simulation:
   no_grid: true
   no_event_emit: true
 
-  # Optional explicit Modelica overrides. Here for transparency but redundant
+  # Optional explicit Modelica overrides. Here for transparency but currently redundant
   init_parameters:
     useMode: 0
 
     curvatureGain: 3.2
-    curvatureTi: 0.04
+    curvatureTi: 0.03
     ayRampDuration: 1.5
     ayErrorTol: 0.01
-    steadyHoldDuration: 0.15
+    steadyHoldDuration: 0.5
 
     velGain: 200.0
     velTi: 1.0
@@ -34,7 +31,7 @@ simulation:
 execution:
   parallel: true
   max_workers: 8
-  cleanup: false
+  cleanup: true
   stream_logs: false
 
 sweep:
@@ -75,7 +72,6 @@ report:
     - Ay tracking error is plotted against analytical signed Ay
 
 plots:
-
   roadwheel:
     layout: dual
     title: "Steering Angle vs $a_y$"

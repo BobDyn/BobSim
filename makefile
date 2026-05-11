@@ -36,15 +36,6 @@ clean-doe:
 		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
 clean:
-<<<<<<< HEAD
-	$(DOCKER_RUN) bash -c "\
-		find /bobsim -type d -name '__pycache__' -exec rm -rf {} + ; \
-		find /bobsim -type f -name '*.pyc' -delete ; \
-		find /bobsim -type f -name '*.pyo' -delete ; \
-		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete ; \
-		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete ; \
-		find /bobsim/_3_StandardSim    -type d -name 'build' -exec rm -rf {} +"
-
 	# Python caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
