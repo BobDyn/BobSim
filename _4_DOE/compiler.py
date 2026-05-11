@@ -5,10 +5,11 @@ Uses configs/build_template.mos as the OMC script template.
 To add a new standard, add an entry in compiler_config.yaml — no Python changes needed.
 
 For each variant_XXXX/ in population/:
-  1. Fill in build_template.mos and write to variant_XXXX/build_<standard>.mos
-  2. Run omc on it with build dir set to variant_XXXX/build/<standard>/
-  3. Verify executable exists (named after full model path e.g. BobLib.Standards.ISO4138)
-  4. Write compile_error_<standard>.log on failure
+  1. Skip if already compiled and inputs unchanged
+  2. Fill in build_template.mos and write to variant_XXXX/build_<standard>.mos
+  3. Run omc on it with build dir set to variant_XXXX/build/<standard>/
+  4. Verify executable exists (named after full model path e.g. BobLib.Standards.ISO4138)
+  5. Write compile_error_<standard>.log on failure
 
 Compilation runs in parallel across variants using ProcessPoolExecutor.
 max_workers is configurable in compiler_config.yaml.
@@ -23,6 +24,13 @@ from pathlib import Path
 
 import yaml
 
+from _pipeline_hash import (
+    check_pipeline_hash,
+    write_pipeline_hash,
+    write_variant_hash,
+    variant_is_stale,
+)
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -30,6 +38,7 @@ import yaml
 DOE_DIR = Path(__file__).parent
 DEFAULT_COMPILER_CONFIG = DOE_DIR / "configs/compiler_config.yaml"
 DEFAULT_MOS_TEMPLATE = DOE_DIR / "configs/build_template.mos"
+DEFAULT_DOE_CONFIG = DOE_DIR / "configs/doe_config.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +124,9 @@ def compile_variant(
         _write_error(variant_dir, standard, error_msg)
         return False
 
+    # Write variant hash after successful compile
+    write_variant_hash(variant_dir)
+
     return True
 
 
@@ -134,6 +146,20 @@ def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
 def _write_error(variant_dir: Path, standard: str, message: str) -> None:
     log = variant_dir / f"compile_error_{standard}.log"
     log.write_text(message)
+
+
+def _should_compile(variant_dir: Path, standard: str, standard_cfg: dict) -> bool:
+    """Return True if this variant needs compilation.
+
+    Skip if exe exists AND variant.mo hasn't changed since last compile.
+    Recompile if exe is missing OR variant.mo is stale.
+    """
+    exe = _find_exe(variant_dir / "build" / standard, standard_cfg)
+    if exe is None:
+        return True
+    if variant_is_stale(variant_dir):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +183,11 @@ def compile_all(
         population_dir: Path,
         compiler_config_path: Path = DEFAULT_COMPILER_CONFIG,
         template_path: Path = DEFAULT_MOS_TEMPLATE,
+        doe_config_path: Path = DEFAULT_DOE_CONFIG,
 ) -> dict[str, list[Path]]:
     """Compile all variants in population_dir for all standards in config.
 
+    Skips variants that are already compiled and whose inputs haven't changed.
     Runs variants in parallel using ProcessPoolExecutor.
     Returns dict mapping standard -> list of successful exe paths.
     Failed variants are logged and skipped.
@@ -181,6 +209,9 @@ def compile_all(
     if not template_path.exists():
         raise FileNotFoundError(f"build_template.mos not found at {template_path}")
 
+    # Check pipeline hash — raises if inputs changed since last run
+    check_pipeline_hash(population_dir, doe_config_path, compiler_config_path, boblib_path)
+
     variant_dirs = sorted(population_dir.glob("variant_????"))
     if not variant_dirs:
         raise RuntimeError(f"No variant dirs found in {population_dir}")
@@ -188,16 +219,31 @@ def compile_all(
     total = len(variant_dirs)
     results: dict[str, list[Path]] = {s: [] for s in standards}
 
-    # Build all work items: one per (variant, standard) pair
+    # Skip already-compiled variants whose inputs haven't changed
     work_items = [
         (str(vdir), standard, standard_cfg, str(boblib_path), str(template_path))
         for vdir in variant_dirs
         for standard, standard_cfg in standards.items()
+        if _should_compile(vdir, standard, standard_cfg)
     ]
 
+    n_skipped = (total * len(standards)) - len(work_items)
+
+    # Collect already-compiled exes into results
+    for vdir in variant_dirs:
+        for standard, standard_cfg in standards.items():
+            if not _should_compile(vdir, standard, standard_cfg):
+                exe = _find_exe(vdir / "build" / standard, standard_cfg)
+                if exe:
+                    results[standard].append(exe)
+
+    if not work_items:
+        print(f"All {total} variants already compiled — nothing to do\n")
+        return results
+
     completed = 0
-    print(f"Compiling {total} variants × {len(standards)} standard(s) "
-          f"with {max_workers} workers...\n")
+    print(f"Compiling {len(work_items)} of {total * len(standards)} variant/standard pair(s) "
+          f"({n_skipped} skipped, {max_workers} workers)...\n")
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(_compile_worker, item): item for item in work_items}
@@ -218,6 +264,9 @@ def compile_all(
         n_ok = len(results[standard])
         n_fail = total - n_ok
         print(f"{standard}: {n_ok}/{total} compiled ok, {n_fail} failed")
+
+    # Write pipeline hash after successful compile run
+    write_pipeline_hash(population_dir, doe_config_path, compiler_config_path, boblib_path)
 
     return results
 

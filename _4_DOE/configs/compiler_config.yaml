@@ -35,6 +35,7 @@ standards:
   #   tolerance: 1e-6
   #   solver: dassl
 
+# sim runner
 batch:
   max_workers: 4
   timeout: 300
