@@ -129,3 +129,17 @@ plots:
       - title: "$d\\beta/da_y$"
         x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
         y: { key: sideslip_gradient, label: "$d\\beta/da_y$" }
+
+  steering_effort:
+    layout: dual
+    title: "Steering Effort and Sensitivity vs $a_y$"
+
+    subplots:
+
+      - title: "Steering Torque $T_{sw}$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: torque, label: "$T_{sw}$ (Nm)" }
+
+      - title: "Steering Sensitivity $d\\delta/da_y$"
+        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
+        y: { key: steer_gradient, label: "$d\\delta/da_y$" }
