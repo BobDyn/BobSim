@@ -1,6 +1,6 @@
 DOCKER_RUN := docker run --rm -v "$(CURDIR):/bobsim" openmodelica/openmodelica:v1.26.3-ompython
 
-.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-iso clean-doe clean
+.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-transient clean-doe clean
 
 # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -71,5 +71,5 @@ clean_results:
 SteadyStateEval:
 	python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
 
-ISO7401:
-	python3 -m _3_StandardSim.ISO7401.iso7401_sim
+TransientEval:
+	python3 -m _3_StandardSim.TransientEval.transient_eval_sim

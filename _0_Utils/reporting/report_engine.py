@@ -36,7 +36,7 @@ class ReportEngine:
         if standard is None:
             raise KeyError(
                 "Missing standard in config. Add `standard: SteadyStateEval`, "
-                "`standard: ISO7401`, or `standard: KnC` at the top level "
+                "`standard: TransientEval`, or `standard: KnC` at the top level "
                 "of the YAML."
             )
 
@@ -46,14 +46,14 @@ class ReportEngine:
             if standard == "SteadyStateEval":
                 add_summary_page(pdf, result["summary"])
 
-            elif standard == "ISO7401":
+            elif standard == "TransientEval":
                 from _0_Utils.reporting.sections import (
-                    add_iso7401_step_page,
-                    add_iso7401_frequency_page,
+                    add_transient_eval_step_page,
+                    add_transient_eval_frequency_page,
                 )
 
-                add_iso7401_step_page(pdf, result["summary"])
-                add_iso7401_frequency_page(pdf, result["summary"])
+                add_transient_eval_step_page(pdf, result["summary"])
+                add_transient_eval_frequency_page(pdf, result["summary"])
 
             elif standard == "KnC":
                 from _0_Utils.reporting.sections import add_knc_summary_page

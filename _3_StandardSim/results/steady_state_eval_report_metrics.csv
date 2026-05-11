@@ -1,0 +1,18 @@
+standard,metric,value,units,description
+SteadyStateEval,ay_min,-17.989636580768384,m/s^2,Minimum signed lateral acceleration
+SteadyStateEval,ay_max,17.991999177488122,m/s^2,Maximum signed lateral acceleration
+SteadyStateEval,understeer_gradient_rad_per_mps2,0.007259065224287508,rad/(m/s^2),Linear-region roadwheel understeer gradient
+SteadyStateEval,understeer_gradient_deg_per_g,4.080115842414553,deg/g,Linear-region roadwheel understeer gradient
+SteadyStateEval,handwheel_understeer_gradient_rad_per_mps2,0.0298703530826504,rad/(m/s^2),Linear-region handwheel understeer gradient
+SteadyStateEval,handwheel_understeer_gradient_deg_per_g,16.789283064060154,deg/g,Linear-region handwheel understeer gradient
+SteadyStateEval,roll_gradient_deg_per_g,1.248355935849583,deg/g,Linear-region roll gradient
+SteadyStateEval,max_curvature_error_pct,1.0238383536822007,%,Maximum absolute curvature tracking error
+SteadyStateEval,mean_curvature_error_pct,0.3103461544815373,%,Mean absolute curvature tracking error
+SteadyStateEval,max_radius_error_pct,1.0134621395969674,%,Maximum absolute radius tracking error
+SteadyStateEval,mean_radius_error_pct,0.3081356667144011,%,Mean absolute radius tracking error
+SteadyStateEval,max_abs_ay_error_raw,0.0093271683664202,m/s^2,Maximum absolute final lateral acceleration tracking error
+SteadyStateEval,mean_abs_ay_error_raw,0.004514608817112185,m/s^2,Mean absolute final lateral acceleration tracking error
+SteadyStateEval,max_abs_ay_error_pct,0.08777341649470909,%,Maximum absolute final lateral acceleration tracking error vs analytical Ay
+SteadyStateEval,mean_abs_ay_error_pct,0.04250553521693014,%,Mean absolute final lateral acceleration tracking error vs analytical Ay
+SteadyStateEval,handwheel_torque_min,-16.619224822855834,N*m,Minimum handwheel torque over SteadyStateEval sweep
+SteadyStateEval,handwheel_torque_max,16.26148068168736,N*m,Maximum handwheel torque over SteadyStateEval sweep

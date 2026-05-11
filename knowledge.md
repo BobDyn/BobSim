@@ -18,7 +18,7 @@ currently live.
   - this replaces the older `_2_GeneralSim` area in the tracked tree
 - `_3_StandardSim/`
   - standard maneuver orchestration and shared simulation runners
-  - current active standards are SteadyStateEval and ISO7401
+  - current active standards are SteadyStateEval and TransientEval
   - KnC code still exists, but currently points at removed `_2_GeneralSim`
     imports
 - `_4_DOE/`
@@ -45,7 +45,7 @@ Current shared runtime files:
 Current active standard modules:
 
 - `_3_StandardSim/SteadyStateEval/steady_state_eval_sim.py`
-- `_3_StandardSim/ISO7401/iso7401_sim.py`
+- `_3_StandardSim/TransientEval/transient_eval_sim.py`
 
 Active build artifact location:
 
@@ -66,12 +66,12 @@ previous versions of this file.
 The most reliable entry points today are module entry points:
 
 - `python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim`
-- `python3 -m _3_StandardSim.ISO7401.iso7401_sim`
+- `python3 -m _3_StandardSim.TransientEval.transient_eval_sim`
 
 The makefile exposes matching targets:
 
 - `make SteadyStateEval`
-- `make ISO7401`
+- `make TransientEval`
 
 The intended containerized flow is:
 
@@ -83,7 +83,7 @@ The intended containerized flow is:
 
 Important caveat:
 
-- `make sim-iso` and `make sim-knc` call `python run_standard.py ...` from
+- `make sim-transient` and `make sim-knc` call `python run_standard.py ...` from
   the `_3_StandardSim` working directory, but `_3_StandardSim/run_standard.py`
   is not present in this tracked checkout.
 - `examples/run_standard.py` still imports `_2_GeneralSim.config` and
@@ -125,7 +125,7 @@ Supported extraction modes:
 ## 5) `_3_StandardSim/_fmu_runner.py`
 
 `FMURunner` is present as an FMI 2.0 Model Exchange runner. It is not currently
-used by SteadyStateEval or ISO7401, but it mirrors the public runner shape of
+used by SteadyStateEval or TransientEval, but it mirrors the public runner shape of
 `ModelicaRunner`.
 
 What it does:
@@ -208,12 +208,12 @@ Extraction and summary:
 - builds a PDF when `report.enabled` is true:
   - `_3_StandardSim/results/steady_state_eval_report.pdf`
 
-## 7) ISO7401 current behavior
+## 7) TransientEval current behavior
 
 Files:
 
-- `_3_StandardSim/ISO7401/iso7401_sim.py`
-- `_3_StandardSim/ISO7401/iso7401_config.yml`
+- `_3_StandardSim/TransientEval/transient_eval_sim.py`
+- `_3_StandardSim/TransientEval/transient_eval_config.yml`
 
 Backend:
 
@@ -245,9 +245,9 @@ Extraction and summary:
 - summary computes step response metrics, gain/phase metrics, fit errors, and
   plotting series
 - writes a metrics CSV beside the report:
-  - `_3_StandardSim/results/iso7401_report_metrics.csv`
+  - `_3_StandardSim/results/transient_eval_report_metrics.csv`
 - builds a PDF when `report.enabled` is true:
-  - `_3_StandardSim/results/iso7401_report.pdf`
+  - `_3_StandardSim/results/transient_eval_report.pdf`
 
 ## 8) KnC status
 
@@ -297,7 +297,7 @@ Plot engine:
 Supported report standards:
 
 - `SteadyStateEval`
-- `ISO7401`
+- `TransientEval`
 - `KnC`
 
 Report behavior:
@@ -335,7 +335,7 @@ Inputs:
 Templates currently present:
 
 - `_1_VisualSim/visual_templates/steady_state_eval_visual.yml`
-- `_1_VisualSim/visual_templates/iso7401_visual.yml`
+- `_1_VisualSim/visual_templates/transient_eval_visual.yml`
 - `_1_VisualSim/visual_templates/fr_knc_visual.yml`
 - `_1_VisualSim/visual_templates/rr_knc_visual.yml`
 
@@ -474,14 +474,14 @@ Useful make targets:
 - `make shell-standard`: shell in the standard service
 - `make shell-doe`: shell in the DOE service
 - `make SteadyStateEval`: run SteadyStateEval module directly on host
-- `make ISO7401`: run ISO7401 module directly on host
+- `make TransientEval`: run TransientEval module directly on host
 - `make clean`: remove common Python/build/simulation artifacts
 - `make clean_build`: empty `_3_StandardSim/**/Build` directories
 - `make clean_results`: empty `_3_StandardSim/**/results` directories
 
 Caveats:
 
-- `make sim-iso` and `make sim-knc` reference a missing
+- `make sim-transient` and `make sim-knc` reference a missing
   `_3_StandardSim/run_standard.py` entry point.
 - The clean target removes all `*.csv`, `*.mat`, and `*.log` files under the
   repo, so be careful if generated metrics are still needed.
@@ -499,8 +499,8 @@ Observed standard outputs:
 
 - `_3_StandardSim/results/steady_state_eval_report.pdf`
 - `_3_StandardSim/results/steady_state_eval_report_metrics.csv`
-- `_3_StandardSim/results/iso7401_report.pdf`
-- `_3_StandardSim/results/iso7401_report_metrics.csv`
+- `_3_StandardSim/results/transient_eval_report.pdf`
+- `_3_StandardSim/results/transient_eval_report_metrics.csv`
 
 Observed missing or stale paths:
 
@@ -525,7 +525,7 @@ The following references should be cleaned up when the team has bandwidth:
 - `pyproject.toml`
   - mypy `files` still includes `_2_GeneralSim`
 - `makefile`
-  - `sim-iso` and `sim-knc` reference missing `run_standard.py`
+  - `sim-transient` and `sim-knc` reference missing `run_standard.py`
 
 Possible cleanup direction:
 

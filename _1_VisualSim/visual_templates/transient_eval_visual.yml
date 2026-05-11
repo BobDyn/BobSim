@@ -1,4 +1,4 @@
-# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/iso7401_visual.yml ./_1_VisualSim/BobLib.Standards.ISO7401_run_5_visual.npz --mp4 ./_1_VisualSim/results/iso7401_test.mp4
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/transient_eval_visual.yml ./_1_VisualSim/BobLib.Standards.TransientEval_run_5_visual.npz --mp4 ./_1_VisualSim/results/transient_eval_test.mp4
 
 style:
   joints:

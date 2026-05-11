@@ -202,7 +202,7 @@ def add_knc_summary_page(pdf, summary):
     plt.close(fig)
 
 
-def add_iso7401_step_page(pdf, summary):
+def add_transient_eval_step_page(pdf, summary):
 
     import matplotlib.pyplot as plt
 
@@ -213,7 +213,7 @@ def add_iso7401_step_page(pdf, summary):
     # TITLE
     # ============================================================
 
-    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
+    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
              ha="center", fontsize=18, weight="bold")
 
     plt.text(0.5, 0.90, "Time Domain — Step Response",
@@ -267,7 +267,7 @@ def add_iso7401_step_page(pdf, summary):
     plt.close(fig)
 
 
-def add_iso7401_frequency_page(pdf, summary):
+def add_transient_eval_frequency_page(pdf, summary):
 
     import matplotlib.pyplot as plt
 
@@ -278,7 +278,7 @@ def add_iso7401_frequency_page(pdf, summary):
     # TITLE
     # ============================================================
 
-    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
+    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
              ha="center", fontsize=18, weight="bold")
 
     plt.text(0.5, 0.90, "Frequency Domain — Sustained Sine",

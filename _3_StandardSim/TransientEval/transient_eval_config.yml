@@ -1,4 +1,4 @@
-standard: ISO7401
+standard: TransientEval
 
 simulation:
   backend: modelica
@@ -55,9 +55,9 @@ test:
 report:
   enabled: true
   brand: BobSim
-  title: ISO7401 Lateral Transient Response
+  title: TransientEval Lateral Transient Response
   subtitle: Comprehensive Open-Loop Characterization
-  output_path: _3_StandardSim/results/iso7401_report.pdf
+  output_path: _3_StandardSim/results/transient_eval_report.pdf
 
   notes:
     - One-period sinusoidal input
@@ -70,7 +70,7 @@ report:
 plots:
   step_response:
     layout: triple
-    title: "Step Steer Response (ISO7401)"
+    title: "Step Steer Response (TransientEval)"
 
     subplots:
       - title: "Steering Wheel Angle $\\delta_H$"
@@ -87,7 +87,7 @@ plots:
 
   sine_one_period:
     layout: triple
-    title: "One-Period Sinusoidal Response (ISO7401)"
+    title: "One-Period Sinusoidal Response (TransientEval)"
 
     subplots:
       - title: "Steering Wheel Angle $\\delta_H$"
@@ -121,7 +121,7 @@ plots:
 
   freq_response_gain:
     layout: dual
-    title: "Frequency Response — Gain (ISO7401)"
+    title: "Frequency Response — Gain (TransientEval)"
     xscale: log
 
     subplots:
@@ -135,7 +135,7 @@ plots:
 
   freq_response_phase:
     layout: dual
-    title: "Frequency Response — Phase (ISO7401)"
+    title: "Frequency Response — Phase (TransientEval)"
     xscale: log
 
     subplots:
