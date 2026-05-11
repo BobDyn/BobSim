@@ -18,7 +18,7 @@ currently live.
   - this replaces the older `_2_GeneralSim` area in the tracked tree
 - `_3_StandardSim/`
   - standard maneuver orchestration and shared simulation runners
-  - current active standards are ISO4138 and ISO7401
+  - current active standards are SteadyStateEval and ISO7401
   - KnC code still exists, but currently points at removed `_2_GeneralSim`
     imports
 - `_4_DOE/`
@@ -44,7 +44,7 @@ Current shared runtime files:
 
 Current active standard modules:
 
-- `_3_StandardSim/ISO4138/iso4138_sim.py`
+- `_3_StandardSim/SteadyStateEval/steady_state_eval_sim.py`
 - `_3_StandardSim/ISO7401/iso7401_sim.py`
 
 Active build artifact location:
@@ -65,12 +65,12 @@ previous versions of this file.
 
 The most reliable entry points today are module entry points:
 
-- `python3 -m _3_StandardSim.ISO4138.iso4138_sim`
+- `python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim`
 - `python3 -m _3_StandardSim.ISO7401.iso7401_sim`
 
 The makefile exposes matching targets:
 
-- `make ISO4138`
+- `make SteadyStateEval`
 - `make ISO7401`
 
 The intended containerized flow is:
@@ -125,7 +125,7 @@ Supported extraction modes:
 ## 5) `_3_StandardSim/_fmu_runner.py`
 
 `FMURunner` is present as an FMI 2.0 Model Exchange runner. It is not currently
-used by ISO4138 or ISO7401, but it mirrors the public runner shape of
+used by SteadyStateEval or ISO7401, but it mirrors the public runner shape of
 `ModelicaRunner`.
 
 What it does:
@@ -142,7 +142,7 @@ What it does:
 
 Currently implemented Python-side controller:
 
-- `iso4138_radius_velocity_pi`
+- `steady_state_eval_radius_velocity_pi`
 
 Expected config keys live under `simulation`, including:
 
@@ -158,12 +158,12 @@ Expected config keys live under `simulation`, including:
 - `init_parameters`
 - `init_input_values`
 
-## 6) ISO4138 current behavior
+## 6) SteadyStateEval current behavior
 
 Files:
 
-- `_3_StandardSim/ISO4138/iso4138_sim.py`
-- `_3_StandardSim/ISO4138/iso4138_config.yml`
+- `_3_StandardSim/SteadyStateEval/steady_state_eval_sim.py`
+- `_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml`
 
 Backend:
 
@@ -204,9 +204,9 @@ Extraction and summary:
   - plotting series for steering behavior, vehicle states, sensitivities, and
     steering effort
 - writes a metrics CSV beside the report:
-  - `_3_StandardSim/results/iso4138_report_metrics.csv`
+  - `_3_StandardSim/results/steady_state_eval_report_metrics.csv`
 - builds a PDF when `report.enabled` is true:
-  - `_3_StandardSim/results/iso4138_report.pdf`
+  - `_3_StandardSim/results/steady_state_eval_report.pdf`
 
 ## 7) ISO7401 current behavior
 
@@ -296,7 +296,7 @@ Plot engine:
 
 Supported report standards:
 
-- `ISO4138`
+- `SteadyStateEval`
 - `ISO7401`
 - `KnC`
 
@@ -334,7 +334,7 @@ Inputs:
 
 Templates currently present:
 
-- `_1_VisualSim/visual_templates/iso4138_visual.yml`
+- `_1_VisualSim/visual_templates/steady_state_eval_visual.yml`
 - `_1_VisualSim/visual_templates/iso7401_visual.yml`
 - `_1_VisualSim/visual_templates/fr_knc_visual.yml`
 - `_1_VisualSim/visual_templates/rr_knc_visual.yml`
@@ -473,7 +473,7 @@ Useful make targets:
 - `make rebuild`: rebuild compose image without cache
 - `make shell-standard`: shell in the standard service
 - `make shell-doe`: shell in the DOE service
-- `make ISO4138`: run ISO4138 module directly on host
+- `make SteadyStateEval`: run SteadyStateEval module directly on host
 - `make ISO7401`: run ISO7401 module directly on host
 - `make clean`: remove common Python/build/simulation artifacts
 - `make clean_build`: empty `_3_StandardSim/**/Build` directories
@@ -497,8 +497,8 @@ Observed active build artifacts:
 
 Observed standard outputs:
 
-- `_3_StandardSim/results/iso4138_report.pdf`
-- `_3_StandardSim/results/iso4138_report_metrics.csv`
+- `_3_StandardSim/results/steady_state_eval_report.pdf`
+- `_3_StandardSim/results/steady_state_eval_report_metrics.csv`
 - `_3_StandardSim/results/iso7401_report.pdf`
 - `_3_StandardSim/results/iso7401_report_metrics.csv`
 
@@ -507,7 +507,7 @@ Observed missing or stale paths:
 - `_2_GeneralSim/` is not present
 - `_3_StandardSim/run_standard.py` is not present
 - `_3_StandardSim/registry.py` is not present
-- `_3_StandardSim/ISO4138/build/` is not present
+- `_3_StandardSim/SteadyStateEval/build/` is not present
 - `_3_StandardSim/KnC/build/fr_build/` is not present
 - `_3_StandardSim/KnC/build/rr_build/` is not present
 

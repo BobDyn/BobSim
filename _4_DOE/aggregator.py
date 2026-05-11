@@ -8,7 +8,7 @@ Extraction strategy:
   - Row 0 is the initial condition (all zeros) — skipped
   - Remaining rows are steady state — take the mean across them
 
-Metric columns are prefixed with the standard name e.g. ISO4138_yaw_rate_ss
+Metric columns are prefixed with the standard name e.g. SteadyStateEval_yaw_rate_ss
 so multiple standards can coexist in the same parquet table.
 
 Output: results/doe_results.parquet

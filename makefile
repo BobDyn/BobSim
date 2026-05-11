@@ -77,8 +77,8 @@ clean_results:
 	@find _3_StandardSim -type d -name "results" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
 
 # omc _3_StandardSim/build.mos
-ISO4138:
-	python3 -m _3_StandardSim.ISO4138.iso4138_sim
+SteadyStateEval:
+	python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
 
 ISO7401:
 	python3 -m _3_StandardSim.ISO7401.iso7401_sim

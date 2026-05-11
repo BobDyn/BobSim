@@ -580,7 +580,7 @@ class FMURunner:
 
         ctype = controller.get("type")
 
-        if ctype == "iso4138_radius_velocity_pi":
+        if ctype == "steady_state_eval_radius_velocity_pi":
             return np.array(
                 [
                     float(controller.get("curv_integral_0", 0.0)),
@@ -600,8 +600,8 @@ class FMURunner:
     ):
         ctype = controller.get("type")
 
-        if ctype == "iso4138_radius_velocity_pi":
-            return self._iso4138_radius_velocity_pi(
+        if ctype == "steady_state_eval_radius_velocity_pi":
+            return self._steady_state_eval_radius_velocity_pi(
                 controller=controller,
                 t=t,
                 x_ctrl=x_ctrl,
@@ -610,7 +610,7 @@ class FMURunner:
 
         raise ValueError(f"Unsupported controller type: {ctype}")
 
-    def _iso4138_radius_velocity_pi(
+    def _steady_state_eval_radius_velocity_pi(
         self,
         controller,
         t,
@@ -619,7 +619,7 @@ class FMURunner:
     ):
         if len(x_ctrl) != 2:
             raise ValueError(
-                "iso4138_radius_velocity_pi expects two controller states: "
+                "steady_state_eval_radius_velocity_pi expects two controller states: "
                 "[curv_integral, vel_integral]"
             )
 
@@ -817,13 +817,13 @@ class FMURunner:
 
         stype = steady.get("type")
 
-        if stype == "iso4138_radius_velocity":
-            return self._make_iso4138_steady_event(steady)
+        if stype == "steady_state_eval_radius_velocity":
+            return self._make_steady_state_eval_steady_event(steady)
 
         raise ValueError(f"Unsupported steady-state detector type: {stype}")
 
 
-    def _make_iso4138_steady_event(self, steady):
+    def _make_steady_state_eval_steady_event(self, steady):
         min_time = float(steady.get("min_time", 1.5))
         curvature_tol = float(steady.get("curvature_tol", 2.0e-4))
         velocity_tol = float(steady.get("velocity_tol", 0.10))

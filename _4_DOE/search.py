@@ -4,10 +4,10 @@ Loads the aggregated Parquet table, builds a KDTree over the requested
 metric columns, and returns the nearest variant's suspension parameters.
  
 Usage:
-    python search.py --metrics ISO4138_sideslip_ss=0.02 ISO4138_handwheel_angle_ss=0.3
+    python search.py --metrics SteadyStateEval_sideslip_ss=0.02 SteadyStateEval_handwheel_angle_ss=0.3
  
     python search.py \\
-        --metrics ISO4138_sideslip_ss=0.02 ISO4138_handwheel_angle_ss=0.3 \\
+        --metrics SteadyStateEval_sideslip_ss=0.02 SteadyStateEval_handwheel_angle_ss=0.3 \\
         --parquet results/doe_results.parquet \\
         --top 3
  
@@ -108,7 +108,7 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         required=True,
         metavar="METRIC=VALUE",
-        help="One or more metric=value pairs e.g. ISO4138_sideslip_ss=0.02",
+        help="One or more metric=value pairs e.g. SteadyStateEval_sideslip_ss=0.02",
     )
     parser.add_argument(
         "--parquet",

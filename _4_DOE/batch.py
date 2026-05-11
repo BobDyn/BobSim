@@ -104,8 +104,8 @@ def run_variant(
 
 
 def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
-    model = standard_cfg["model"]       # BobLib.Standards.ISO4138
-    short = model.split(".")[-1]        # ISO4138
+    model = standard_cfg["model"]       # BobLib.Standards.SteadyStateEval
+    short = model.split(".")[-1]        # SteadyStateEval
     candidates = [
         build_dir / model,
         build_dir / f"{model}.exe",

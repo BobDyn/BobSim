@@ -1,4 +1,4 @@
-# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/iso4138_visual.yml ./_3_StandardSim/ISO4138/results/raw_results/BobLib.Standards.ISO4138_run_0/BobLib.Standards.ISO4138_run_0_visual.npz --mp4 ./_1_VisualSim/results/iso4138_test.mp4
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/steady_state_eval_visual.yml ./_3_StandardSim/SteadyStateEval/results/raw_results/BobLib.Standards.SteadyStateEval_run_0/BobLib.Standards.SteadyStateEval_run_0_visual.npz --mp4 ./_1_VisualSim/results/steady_state_eval_test.mp4
 
 style:
   joints:

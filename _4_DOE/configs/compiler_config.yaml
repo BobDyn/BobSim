@@ -11,8 +11,8 @@ boblib_path: ../../_0_Utils/external/BobLib/package.mo
 max_workers: 4
 
 standards:
-  ISO4138:
-    model: BobLib.Standards.ISO4138
+  SteadyStateEval:
+    model: BobLib.Standards.SteadyStateEval
     start_time: 0
     stop_time: 100
     intervals: 0

@@ -8,7 +8,7 @@ For each variant_XXXX/ in population/:
   1. Skip if already compiled and inputs unchanged
   2. Fill in build_template.mos and write to variant_XXXX/build_<standard>.mos
   3. Run omc on it with build dir set to variant_XXXX/build/<standard>/
-  4. Verify executable exists (named after full model path e.g. BobLib.Standards.ISO4138)
+  4. Verify executable exists (named after full model path e.g. BobLib.Standards.SteadyStateEval)
   5. Write compile_error_<standard>.log on failure
 
 Compilation runs in parallel across variants using ProcessPoolExecutor.
@@ -134,9 +134,9 @@ def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
     """Return exe path if it exists.
 
     OMC names the executable after the full model path e.g.
-    BobLib.Standards.ISO4138, not just ISO4138.
+    BobLib.Standards.SteadyStateEval, not just SteadyStateEval.
     """
-    model = standard_cfg["model"]  # e.g. BobLib.Standards.ISO4138
+    model = standard_cfg["model"]  # e.g. BobLib.Standards.SteadyStateEval
     for candidate in [build_dir / model, build_dir / f"{model}.exe"]:
         if candidate.exists():
             return candidate

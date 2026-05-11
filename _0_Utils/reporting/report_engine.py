@@ -35,7 +35,7 @@ class ReportEngine:
 
         if standard is None:
             raise KeyError(
-                "Missing standard in config. Add `standard: ISO4138`, "
+                "Missing standard in config. Add `standard: SteadyStateEval`, "
                 "`standard: ISO7401`, or `standard: KnC` at the top level "
                 "of the YAML."
             )
@@ -43,7 +43,7 @@ class ReportEngine:
         with PdfPages(output_path) as pdf:
             add_title_page(pdf, self.config)
 
-            if standard == "ISO4138":
+            if standard == "SteadyStateEval":
                 add_summary_page(pdf, result["summary"])
 
             elif standard == "ISO7401":

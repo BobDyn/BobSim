@@ -9,7 +9,7 @@ def add_summary_page(pdf, summary):
     plt.axis("off")
 
     # --- Title ---
-    plt.text(0.5, 0.85, "ISO4138 Summary",
+    plt.text(0.5, 0.85, "SteadyStateEval Summary",
              ha="center", fontsize=18, weight="bold")
 
     ay_min, ay_max = summary["Ay_range"]

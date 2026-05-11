@@ -1,3 +1,8 @@
+<<<<<<<< HEAD:_2_StandardSim/ISO4138/iso4138_config.yml
+========
+standard: SteadyStateEval
+
+>>>>>>>> f93a0aa (Mass rename):_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml
 simulation:
   backend: modelica
   build_dir: _3_StandardSim/Build
@@ -52,12 +57,12 @@ fit:
 report:
   enabled: true
   brand: BobSim
-  title: ISO4138 Vehicle Characterization
+  title: SteadyStateEval Vehicle Characterization
   subtitle: OpenModelica Executable with Curvature Feedforward and PI Trim
-  output_path: _3_StandardSim/results/iso4138_report.pdf
+  output_path: _3_StandardSim/results/steady_state_eval_report.pdf
 
   notes:
-    - ISO4138 steady-state circular test performed
+    - SteadyStateEval steady-state circular test performed
     - Constant velocity maintained at 15 m/s
     - Radius sweep from 12.5 m to 100 m
     - Tire model: MF52

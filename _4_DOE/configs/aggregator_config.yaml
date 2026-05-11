@@ -1,7 +1,7 @@
 # aggregator_config.yaml — defines which signals to extract per standard
 #
 # Each standard has its own steady_state_metrics block.
-# key:   output column name in parquet (prefixed with standard e.g. ISO4138_yaw_rate_ss)
+# key:   output column name in parquet (prefixed with standard e.g. SteadyStateEval_yaw_rate_ss)
 # value: exact signal name from OMC results CSV
 #
 # To add a metric: add one line under the standard. Nothing else changes.
@@ -9,7 +9,7 @@
 
 standards:
 
-  ISO4138:
+  SteadyStateEval:
     steady_state_metrics:
 
       # --- Vehicle dynamics ---

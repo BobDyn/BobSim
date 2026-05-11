@@ -178,7 +178,7 @@ Resources stores records only, used for parameterization and standard output sch
 
 - `Resources/StandardRecord/...`
     - output record schemas for standardized tests:
-        - `ISO4138Record.mo`
+        - `SteadyStateEvalRecord.mo`
         - `ISO8726Record.mo`
         - `KnCRecord.mo`
 
@@ -194,15 +194,15 @@ Standards holds canonical test procedures and templates.
 
 ### Core models
 
-- `Standards/ISO4138.mo`
+- `Standards/SteadyStateEval.mo`
     - steady-state cornering style setup with curvature PI control
     - uses full vehicle model, ground contact blocks, and speed PI torque feed
     - includes steady-state detection and early termination criteria
-    - writes to `ISO4138Record`
+    - writes to `SteadyStateEvalRecord`
 
 - `Standards/ISO8726.mo`
     - transient steering step setup
-    - similar plant/environment structure to ISO4138, with step handwheel command
+    - similar plant/environment structure to SteadyStateEval, with step handwheel command
     - writes to `ISO8726Record`
 
 - `Standards/Templates/KnC.mo`
@@ -302,7 +302,7 @@ nonlinear diagnostics.
 
 Most useful runnable starts:
 
-1. `Standards.ISO4138`
+1. `Standards.SteadyStateEval`
 2. `Standards.ISO8726`
 3. `Standards.FrKnC`
 4. `Standards.RrKnC`
@@ -351,7 +351,7 @@ Evidence from repository code indicates:
 
 ### Standards and scripts
 
-- `Standards/ISO4138.mo`
+- `Standards/SteadyStateEval.mo`
 - `Standards/ISO8726.mo`
 - `Standards/Templates/KnC.mo`
 - `Standards/FrKnC.mo`
@@ -362,7 +362,7 @@ Evidence from repository code indicates:
 ### Resources and records
 
 - `Resources/VehicleDefn/OrionRecord.mo`
-- `Resources/StandardRecord/ISO4138Record.mo`
+- `Resources/StandardRecord/SteadyStateEvalRecord.mo`
 - `Resources/StandardRecord/ISO8726Record.mo`
 - `Resources/StandardRecord/KnCRecord.mo`
 
@@ -380,7 +380,7 @@ Evidence from repository code indicates:
 
 ## 9. Recommended Way To Work With BobLib
 
-1. Start from a standard test model (`ISO4138`, `ISO8726`, `FrKnC`, `RrKnC`).
+1. Start from a standard test model (`SteadyStateEval`, `ISO8726`, `FrKnC`, `RrKnC`).
 2. Parameterize via `Resources/VehicleDefn/OrionRecord.mo` rather than changing equations.
 3. If needed, redeclare replaceable submodels in a new vehicle variant model.
 4. Use tests under `Tests/TestVehicle` for focused subsystem debugging.
