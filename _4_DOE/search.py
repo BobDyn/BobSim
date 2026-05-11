@@ -84,13 +84,12 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
     tree = KDTree(metric_data_norm)
     distances, indices = tree.query(target_norm, k=min(top, len(df)))
 
-    # Ensure distances and indices are 1D arrays for consistent handling
-    if np.isscalar(distances):
-        distances = np.array([distances])
-        indices = np.array([indices])
+    # Ensure distances and indices are always 1D arrays for consistent handling.
+    distances_arr = np.atleast_1d(distances)
+    indices_arr = np.atleast_1d(indices).astype(int)
 
-    results = df.iloc[indices][["variant"] + INPUT_PARAMS + metric_cols].copy()
-    results.insert(1, "distance", [round(float(d), 6) for d in distances])
+    results = df.iloc[indices_arr][["variant"] + INPUT_PARAMS + metric_cols].copy()
+    results.insert(1, "distance", [round(float(d), 6) for d in distances_arr])
 
     return results.reset_index(drop=True)
 
