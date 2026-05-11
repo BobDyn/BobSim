@@ -36,9 +36,9 @@ cd("_3_StandardSim/Build");
 
 // Build executable
 res := buildModel(
-  BobLib.Standards.VehicleModel,
+  BobLib.Standards.VehicleSim,
   startTime = 0,
-  stopTime = 5,
+  stopTime = 10,
   tolerance = 1e-6,
   cflags="-O3 -march=native -mtune=native",
   outputFormat = "csv"

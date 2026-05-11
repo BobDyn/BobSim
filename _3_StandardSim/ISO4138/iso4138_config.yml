@@ -3,24 +3,35 @@ standard: ISO4138
 simulation:
   backend: modelica
   build_dir: _3_StandardSim/Build
-  exec_name: BobLib.Standards.VehicleModel
+  exec_name: BobLib.Standards.VehicleSim
 
-  stop_time: 10.0
+  start_time: 0.5
+  stop_time: 10
   solver: dassl
   output_format: csv
 
-  log_level: LOG_STDOUT,LOG_ASSERT,LOG_STATS
-
-  variable_filter: "time|handwheelAngle|leftSteerAngle|rightSteerAngle|accY|roll|sideslip|handwheelTorque|velX|velY|yawVel"
+  log_level: LOG_STATS
 
   no_grid: true
-  no_event_emit: false
-  no_equidistant_output_frequency: false
+  no_event_emit: true
+
+  # Optional explicit Modelica overrides. Here for transparency but redundant
+  init_parameters:
+    useMode: 0
+
+    curvatureGain: 3.2
+    curvatureTi: 0.04
+    ayRampDuration: 1.5
+    ayErrorTol: 0.01
+    steadyHoldDuration: 0.15
+
+    velGain: 200.0
+    velTi: 1.0
 
 execution:
   parallel: true
-  max_workers: 4
-  cleanup: true
+  max_workers: 8
+  cleanup: false
   stream_logs: false
 
 sweep:
@@ -30,13 +41,6 @@ sweep:
   r_max: 100.0
   radius_bias_power: 2.5
 
-controller:
-  curv_kp: 3
-  curv_ti: 0.02
-
-  vel_kp: 200.0
-  vel_ti: 1.0
-
 fit:
   ay_linear_max: 6.0
 
@@ -44,7 +48,7 @@ report:
   enabled: true
   brand: BobSim
   title: ISO4138 Vehicle Characterization
-  subtitle: OpenModelica Executable with Modelica PI Control
+  subtitle: OpenModelica Executable with Curvature Feedforward and PI Trim
   output_path: _3_StandardSim/results/iso4138_report.pdf
 
   notes:
@@ -54,25 +58,42 @@ report:
     - Tire model: MF52
     - Configuration: baseline_v3
     - Backend: OpenModelica executable
+    - Curvature controller follows the BobLib radius-controller pattern
+    - Gain-scheduled steer-ratio feedforward drives the majority of the command
+    - A curvature PI trim loop closes the remaining tracking error
+    - Steady-state metrics average the final settled time window
+    - Ay tracking error is plotted against analytical signed Ay
 
 plots:
 
-  steering:
+  roadwheel:
     layout: dual
-    title: "Steering Behavior vs $a_y$"
+    title: "Steering Angle vs $a_y$"
 
     subplots:
 
       - title: "Roadwheel Angle $\\delta$"
-        style: line
-        fit: false
         x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: roadwheel, label: "$\\delta$ (rad)" }
+        y: { key: roadwheel, label: "$\\delta$ (deg)", scale: 57.3 }
 
-      - title: "Curvature Tracking Error"
-        style: scatter
+      - title: "Handwheel Angle $\\delta_{sw}$"
         x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: curvature_error_pct, label: "$\\Delta \\kappa / \\kappa_{cmd} \\times 100$ (%)" }
+        y: { key: handwheel, label: "$\\delta_{sw}$ (deg)", scale: 57.3 }
+  tracking_errors:
+    layout: dual
+    title: "Tracking Error vs Analytical $a_y$"
+
+    subplots:
+
+      - title: "Ay Tracking Error"
+        style: scatter
+        x: { key: ay_analytical, label: "Analytical $a_y$ $(m/s^2)$" }
+        y: { key: ay_error_pct, label: "$\\Delta a_y / a_{y,analytical} \\times 100$ (%)" }
+
+      - title: "Radius Tracking Error"
+        style: scatter
+        x: { key: ay_analytical, label: "Analytical $a_y$ $(m/s^2)$" }
+        y: { key: radius_error_pct, label: "$\\Delta r / r_{cmd} \\times 100$ (%)" }
 
   vehicle_states:
     layout: triple

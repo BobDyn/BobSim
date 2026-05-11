@@ -21,13 +21,23 @@ def add_summary_page(pdf, summary):
             r"$\mathrm{m/s^2}$",
         ),
         (
-            "Understeer Gradient",
+            "Roadwheel Understeer Gradient",
             rf"${summary['understeer_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
         (
             "",
             rf"${summary['understeer_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Handwheel Understeer Gradient",
+            rf"${summary['handwheel_understeer_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['handwheel_understeer_gradient_deg_per_g']:.2f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (

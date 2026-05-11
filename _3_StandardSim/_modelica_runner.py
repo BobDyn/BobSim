@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
+
 import shutil
 import subprocess
 import uuid
 
 import numpy as np
 import pandas as pd
+
+
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+
+    return None
 
 
 class ModelicaRunner:
@@ -31,7 +41,7 @@ class ModelicaRunner:
 
         return cls(
             build_dir=sim_cfg.get("build_dir", "_3_StandardSim/Build"),
-            exec_name=sim_cfg.get("exec_name", "BobLib.Standards.VehicleModel"),
+            exec_name=sim_cfg.get("exec_name", "BobLib.Standards.VehicleSim"),
             simulation=sim_cfg,
         )
 
@@ -104,7 +114,10 @@ class ModelicaRunner:
             futures = {}
 
             n_workers = max_workers or "default"
-            print(f"Queueing {n_total} cases; running up to {n_workers} at a time", flush=True)
+            print(
+                f"Queueing {n_total} cases; running up to {n_workers} at a time",
+                flush=True,
+            )
 
             for i, case in enumerate(cases, start=1):
                 label = self._case_label(case)
@@ -284,9 +297,9 @@ class ModelicaRunner:
                 if key.startswith("_"):
                     continue
 
-                # Runtime flag, not necessarily a Modelica parameter.
-                # It is handled in _build_command().
-                if key == "stopTime":
+                # Runtime flags, not necessarily Modelica parameters.
+                # These are handled in _build_command().
+                if key in {"startTime", "stopTime"}:
                     continue
 
                 value = self._format_override_value(value)
@@ -317,11 +330,20 @@ class ModelicaRunner:
             f"-r={result_file}",
         ]
 
-        stop_time = (
-            case.get("_stopTime")
-            or case.get("stopTime")
-            or self.simulation.get("stop_time")
+        start_time = _first_not_none(
+            case.get("_startTime"),
+            case.get("startTime"),
+            self.simulation.get("start_time"),
         )
+
+        stop_time = _first_not_none(
+            case.get("_stopTime"),
+            case.get("stopTime"),
+            self.simulation.get("stop_time"),
+        )
+
+        if start_time is not None:
+            cmd.append(f"-startTime={float(start_time)}")
 
         if stop_time is not None:
             cmd.append(f"-stopTime={float(stop_time)}")
@@ -331,7 +353,7 @@ class ModelicaRunner:
             cmd.append(f"-s={solver}")
 
         tolerance = self.simulation.get("tolerance")
-        if tolerance:
+        if tolerance is not None:
             cmd.append(f"-tolerance={float(tolerance)}")
 
         log_level = self.simulation.get("log_level")

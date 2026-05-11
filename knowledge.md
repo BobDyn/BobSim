@@ -53,9 +53,9 @@ Active build artifact location:
 
 The current build script compiles one unified executable:
 
-- model: `BobLib.Standards.VehicleModel`
-- executable: `_3_StandardSim/Build/BobLib.Standards.VehicleModel`
-- init XML: `_3_StandardSim/Build/BobLib.Standards.VehicleModel_init.xml`
+- model: `BobLib.Standards.VehicleSim`
+- executable: `_3_StandardSim/Build/BobLib.Standards.VehicleSim`
+- init XML: `_3_StandardSim/Build/BobLib.Standards.VehicleSim_init.xml`
 - output format: CSV
 
 This is different from the older per-standard build directories described in
@@ -170,7 +170,7 @@ Backend:
 - requires `simulation.backend: modelica`
 - uses `ModelicaRunner.from_config(config)`
 - default build dir from config is `_3_StandardSim/Build`
-- executable is `BobLib.Standards.VehicleModel`
+- executable is `BobLib.Standards.VehicleSim`
 
 Case generation:
 
@@ -220,7 +220,7 @@ Backend:
 - uses `ModelicaRunner.from_config(config)`
 - current config relies on runner defaults for:
   - `simulation.build_dir: _3_StandardSim/Build`
-  - `simulation.exec_name: BobLib.Standards.VehicleModel`
+  - `simulation.exec_name: BobLib.Standards.VehicleSim`
 
 Case generation:
 
@@ -491,8 +491,8 @@ Caveats:
 Observed active build artifacts:
 
 - `_3_StandardSim/Build/` exists
-- `_3_StandardSim/Build/BobLib.Standards.VehicleModel` exists and is executable
-- `_3_StandardSim/Build/BobLib.Standards.VehicleModel_init.xml` exists
+- `_3_StandardSim/Build/BobLib.Standards.VehicleSim` exists and is executable
+- `_3_StandardSim/Build/BobLib.Standards.VehicleSim_init.xml` exists
 - `_3_StandardSim/Build/results/run_*` directories exist
 
 Observed standard outputs:
