@@ -8,6 +8,7 @@ simulation:
   start_time: 0.5
   stop_time: 10.0
   solver: dassl
+  tolerance: 1e-6
   output_format: csv
 
   log_level: LOG_STATS
@@ -22,8 +23,8 @@ simulation:
     curvatureGain: 3.2
     curvatureTi: 0.04
     ayRampDuration: 1.5
-    ayErrorTol: 0.01
-    steadyHoldDuration: 0.15
+    ayErrorTol: 0.05
+    steadyHoldDuration: 0.05
 
     velGain: 200.0
     velTi: 1.0

@@ -1,7 +1,7 @@
 [tool.mypy]
 explicit_package_bases = true
 ignore_missing_imports = true
-files = ["_0_Utils", "_1_VisualSim", "_2_GeneralSim", "_3_StandardSim", "_4_DOE"]
+files = ["_0_Utils", "_1_VisualSim", "_2_GeneralSim", "_3_StandardSim", "_4_OptSim"]
 
 exclude = '''
 (^|/)build/

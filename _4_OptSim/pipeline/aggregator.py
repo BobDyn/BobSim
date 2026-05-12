@@ -1,14 +1,14 @@
 """aggregator.py — Collect batch results into a single Parquet dataset.
 
 For each variant and each standard:
-  - Input parameters are reconstructed from sampler (seed is fixed in doe_config.yaml)
-  - Output metrics are extracted from results/<standard>/results.csv
+  - Input parameters are reconstructed from sampler (seed is fixed in _doe_config.yaml)
+  - Output metrics are extracted from results/<standard>/metrics.csv
 
 Extraction strategy:
-  - Row 0 is the initial condition (all zeros) — skipped
-  - Remaining rows are steady state — take the mean across them
+  - Read the report-style metrics CSV written by the standard wrapper
+  - Pull the requested metric rows into the parquet table
 
-Metric columns are prefixed with the standard name e.g. SteadyStateEval_yaw_rate_ss
+Metric columns are prefixed with the standard name e.g. SteadyStateEval_ay_min
 so multiple standards can coexist in the same parquet table.
 
 Output: results/doe_results.parquet
@@ -26,16 +26,17 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from sampler import sample
+from pipeline.sampler import sample
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-DOE_CONFIG = Path(__file__).parent / "configs/doe_config.yaml"
-AGGREGATOR_CONFIG = Path(__file__).parent / "configs/aggregator_config.yaml"
-POPULATION_DIR = Path(__file__).parent / "population"
-OUTPUT_PATH = Path(__file__).parent / "results/doe_results.parquet"
+ROOT = Path(__file__).resolve().parent.parent
+DOE_CONFIG = ROOT / "configs/_doe_config.yaml"
+AGGREGATOR_CONFIG = ROOT / "configs/aggregator_config.yaml"
+POPULATION_DIR = ROOT / "population"
+OUTPUT_PATH = ROOT / "results/doe_results.parquet"
 
 
 def load_aggregator_config(config_path: Path = AGGREGATOR_CONFIG) -> dict:
@@ -52,16 +53,19 @@ def _extract_metrics(
         metrics: dict[str, str],
         standard: str,
 ) -> dict[str, float]:
-    """Read one results CSV and extract all steady-state scalar metrics.
-
-    Skips row 0 (initial condition), means the rest.
-    Prefixes each column with the standard name.
-    """
+    """Read one metrics CSV and extract the requested metric rows."""
     df = pd.read_csv(csv_path)
-    steady = df.iloc[1:]
+    if "metric" not in df.columns or "value" not in df.columns:
+        raise ValueError(f"Metrics CSV is missing required columns: {csv_path}")
+
+    if "standard" in df.columns:
+        df = df[df["standard"] == standard]
+
+    by_metric = df.set_index("metric")
+
     return {
-        f"{standard}_{col}": float(steady[signal].mean())
-        for col, signal in metrics.items()
+        f"{standard}_{col}": float(by_metric.loc[metric_name, "value"])
+        for col, metric_name in metrics.items()
     }
 
 
@@ -92,11 +96,11 @@ def aggregate(
         for standard, standard_cfg in standards.items():
             metrics = standard_cfg["steady_state_metrics"]
             csv_path = (
-                    population_dir / variant_name / "results" / standard / "results.csv"
+                    population_dir / variant_name / "results" / standard / "metrics.csv"
             )
 
             if not csv_path.exists():
-                print(f"  SKIP {variant_name}/{standard} — no results CSV")
+                print(f"  SKIP {variant_name}/{standard} — no metrics CSV")
                 variant_skipped = True
                 continue
 
@@ -114,16 +118,22 @@ def aggregate(
         rows.append(row)
 
     if not rows:
-        raise RuntimeError("No results found — has batch.py run?")
+        raise RuntimeError("No metrics found — has batch.py run?")
 
     result = pd.DataFrame(rows)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.to_parquet(output_path, index=False)
+    try:
+        result.to_parquet(output_path, index=False)
+        output_written = output_path
+    except ImportError:
+        csv_path = output_path.with_suffix(".csv")
+        result.to_csv(csv_path, index=False)
+        output_written = csv_path
 
     print(f"\nAggregated {len(rows)} variants ({skipped} with missing standards)")
     print(f"Columns:  {list(result.columns)}")
-    print(f"Output:   {output_path}")
+    print(f"Output:   {output_written}")
 
     return result
 

@@ -111,10 +111,11 @@ def generate_variants(
 
 
 if __name__ == "__main__":
-    from sampler import sample
+    from pipeline.sampler import sample
 
-    config = Path(__file__).parent / "configs/doe_config.yaml"
-    population = Path(__file__).parent / "population"
+    root = Path(__file__).resolve().parent.parent
+    config = root / "configs/_doe_config.yaml"
+    population = root / "population"
 
     variants = sample(config)
     generate_variants(config, variants, population)

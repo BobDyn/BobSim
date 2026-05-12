@@ -8,13 +8,13 @@ boblib_path: ../../_0_Utils/external/BobLib/package.mo
 # Each worker runs a separate OMC process.
 # OMC itself is already multithreaded, so don't set this too high.
 # 2-4 is a good starting point on a laptop, more on TACC.
-max_workers: 4
+max_workers: 8  # 8 for the Framework 16 goat
 
 standards:
   SteadyStateEval:
-    model: BobLib.Standards.SteadyStateEval
-    start_time: 0
-    stop_time: 100
+    model: BobLib.Standards.VehicleSim
+    start_time: 0.5
+    stop_time: 10
     intervals: 0
     tolerance: 1e-6
     solver: dassl
@@ -37,5 +37,5 @@ standards:
 
 # sim runner
 batch:
-  max_workers: 4
-  timeout: 300
+  max_workers: 1
+  timeout: 500

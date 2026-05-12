@@ -32,8 +32,8 @@ sim-doe:
 
 clean-doe:
 	$(DOCKER_RUN) bash -c "\
-		find /bobsim/_4_DOE/population -mindepth 1 ! -name '.gitkeep' -delete && \
-		find /bobsim/_4_DOE/results    -mindepth 1 ! -name '.gitkeep' -delete"
+		find /bobsim/_4_OptSim/population -mindepth 1 ! -name '.gitkeep' -delete && \
+		find /bobsim/_4_OptSim/results    -mindepth 1 ! -name '.gitkeep' -delete"
 
 clean:
 	# Python caches

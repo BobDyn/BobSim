@@ -15,4 +15,4 @@ services:
 
   doe:
     <<: *bobsim-base
-    working_dir: /workspace/_4_DOE
+    working_dir: /workspace/_4_OptSim

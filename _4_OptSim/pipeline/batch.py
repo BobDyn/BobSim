@@ -1,10 +1,10 @@
-"""batch.py — Run compiled OMC executables for all variants.
+"""batch.py — Run the SteadyStateEval report wrapper for all variants.
 
 For each variant_XXXX/build/<standard>/ that has a compiled executable:
-  1. Skip if results.csv already exists and is valid (correct row count)
+  1. Skip if metrics.csv already exists and is valid (correct row count)
   2. Create variant_XXXX/results/<standard>/
-  3. Run the executable with -r results.csv
-  4. Verify the CSV was produced and has expected rows
+  3. Run the standard-sim wrapper against the variant executable
+  4. Verify the metrics CSV was produced and has expected rows
   5. Write run_error_<standard>.log on failure and continue
 
 Parallelism: controlled by batch.max_workers in compiler_config.yaml.
@@ -13,7 +13,6 @@ TACC: set max_workers to match your SLURM allocation's cores-per-node.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -21,13 +20,16 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from pipeline.steady_state_eval_report import run_report
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONFIG = Path(__file__).parent / "configs/compiler_config.yaml"
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = ROOT / "configs/compiler_config.yaml"
 
-# Minimum rows expected in a valid results CSV (row 0 + at least 1 timestep)
+# Minimum rows expected in a valid metrics CSV (header + at least 1 metric row)
 MIN_RESULT_ROWS = 2
 
 
@@ -41,7 +43,7 @@ def load_config(config_path: Path = DEFAULT_CONFIG) -> dict:
 # ---------------------------------------------------------------------------
 
 def _csv_is_valid(csv_path: Path) -> bool:
-    """Return True if results CSV exists and has enough rows to be valid.
+    """Return True if metrics CSV exists and has enough rows to be valid.
 
     Guards against partial writes from crashed simulations.
     """
@@ -64,7 +66,7 @@ def run_variant(
         standard_cfg: dict,
         timeout: int,
 ) -> bool:
-    """Run one variant's executable for one standard.
+    """Run one variant's report wrapper for one standard.
 
     Returns True on success, False on failure.
     Writes run_error_<standard>.log on failure.
@@ -78,26 +80,20 @@ def run_variant(
 
     results_dir = variant_dir / "results" / standard
     results_dir.mkdir(parents=True, exist_ok=True)
-    results_csv = results_dir / "results.csv"
 
     try:
-        result = subprocess.run(
-            [str(exe), "-r", str(results_csv)],
-            capture_output=True,
-            text=True,
-            cwd=str(build_dir),
+        metrics_csv = run_report(
+            variant_dir=variant_dir,
+            build_dir=build_dir,
+            exec_name=standard_cfg["model"],
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
-        _write_error(variant_dir, standard, f"Simulation timed out after {timeout}s")
-        return False
     except Exception as e:
         _write_error(variant_dir, standard, str(e))
         return False
 
-    if not _csv_is_valid(results_csv):
-        error_msg = (result.stdout + "\n" + result.stderr).strip()
-        _write_error(variant_dir, standard, error_msg or "No valid results.csv produced")
+    if not _csv_is_valid(metrics_csv):
+        _write_error(variant_dir, standard, "No valid metrics.csv produced")
         return False
 
     return True
@@ -142,10 +138,10 @@ def run_all(
         population_dir: Path,
         config_path: Path = DEFAULT_CONFIG,
 ) -> dict[str, list[Path]]:
-    """Run all compiled variants for all standards.
+    """Run the postprocessed report for all compiled variants.
 
-    Skips variants that already have valid results.csv files.
-    Returns dict mapping standard -> list of successful results.csv paths.
+    Skips variants that already have valid metrics.csv files.
+    Returns dict mapping standard -> list of successful metrics.csv paths.
     Failed variants are logged and skipped.
     """
     cfg = load_config(config_path)
@@ -164,7 +160,7 @@ def run_all(
     # Collect already-valid results
     for vdir in variant_dirs:
         for standard in standards:
-            csv = vdir / "results" / standard / "results.csv"
+            csv = vdir / "results" / standard / "metrics.csv"
             if _csv_is_valid(csv):
                 results[standard].append(csv)
 
@@ -173,7 +169,7 @@ def run_all(
         (variant_dir, standard, standard_cfg, timeout)
         for variant_dir in variant_dirs
         for standard, standard_cfg in standards.items()
-        if not _csv_is_valid(variant_dir / "results" / standard / "results.csv")
+        if not _csv_is_valid(variant_dir / "results" / standard / "metrics.csv")
     ]
 
     n_skipped = (total * len(standards)) - len(work)
@@ -196,7 +192,7 @@ def run_all(
 
             if success:
                 variant_dir = population_dir / variant_name
-                csv = variant_dir / "results" / standard / "results.csv"
+                csv = variant_dir / "results" / standard / "metrics.csv"
                 results[standard].append(csv)
 
     print()
@@ -213,7 +209,7 @@ def run_all(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    population = Path(__file__).parent / "population"
+    population = ROOT / "population"
     config = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_CONFIG
 
     print(f"Config:         {config}")

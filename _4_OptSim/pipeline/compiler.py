@@ -24,7 +24,7 @@ from pathlib import Path
 
 import yaml
 
-from _pipeline_hash import (
+from pipeline._pipeline_hash import (
     check_pipeline_hash,
     write_pipeline_hash,
     write_variant_hash,
@@ -35,10 +35,15 @@ from _pipeline_hash import (
 # Paths
 # ---------------------------------------------------------------------------
 
-DOE_DIR = Path(__file__).parent
+DOE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_COMPILER_CONFIG = DOE_DIR / "configs/compiler_config.yaml"
 DEFAULT_MOS_TEMPLATE = DOE_DIR / "configs/build_template.mos"
-DEFAULT_DOE_CONFIG = DOE_DIR / "configs/doe_config.yaml"
+DEFAULT_DOE_CONFIG = DOE_DIR / "configs/_doe_config.yaml"
+DEFAULT_ARCHITECTURE_CONFIG = DOE_DIR / "configs/vehicle_architecture.yaml"
+DEFAULT_REPORT_WRAPPER = DOE_DIR / "pipeline/steady_state_eval_report.py"
+DEFAULT_STEADY_STATE_SIM = DOE_DIR.parent / "_3_StandardSim/SteadyStateEval/steady_state_eval_sim.py"
+DEFAULT_STEADY_STATE_CONFIG = DOE_DIR.parent / "_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"
+DEFAULT_MODELICA_RUNNER = DOE_DIR.parent / "_3_StandardSim/_modelica_runner.py"
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +189,7 @@ def compile_all(
         compiler_config_path: Path = DEFAULT_COMPILER_CONFIG,
         template_path: Path = DEFAULT_MOS_TEMPLATE,
         doe_config_path: Path = DEFAULT_DOE_CONFIG,
+        architecture_config_path: Path = DEFAULT_ARCHITECTURE_CONFIG,
 ) -> dict[str, list[Path]]:
     """Compile all variants in population_dir for all standards in config.
 
@@ -210,7 +216,19 @@ def compile_all(
         raise FileNotFoundError(f"build_template.mos not found at {template_path}")
 
     # Check pipeline hash — raises if inputs changed since last run
-    check_pipeline_hash(population_dir, doe_config_path, compiler_config_path, boblib_path)
+    check_pipeline_hash(
+        population_dir,
+        doe_config_path,
+        compiler_config_path,
+        boblib_path,
+        architecture_config_path,
+        (
+            DEFAULT_REPORT_WRAPPER,
+            DEFAULT_STEADY_STATE_SIM,
+            DEFAULT_STEADY_STATE_CONFIG,
+            DEFAULT_MODELICA_RUNNER,
+        ),
+    )
 
     variant_dirs = sorted(population_dir.glob("variant_????"))
     if not variant_dirs:
@@ -266,7 +284,19 @@ def compile_all(
         print(f"{standard}: {n_ok}/{total} compiled ok, {n_fail} failed")
 
     # Write pipeline hash after successful compile run
-    write_pipeline_hash(population_dir, doe_config_path, compiler_config_path, boblib_path)
+    write_pipeline_hash(
+        population_dir,
+        doe_config_path,
+        compiler_config_path,
+        boblib_path,
+        architecture_config_path,
+        (
+            DEFAULT_REPORT_WRAPPER,
+            DEFAULT_STEADY_STATE_SIM,
+            DEFAULT_STEADY_STATE_CONFIG,
+            DEFAULT_MODELICA_RUNNER,
+        ),
+    )
 
     return results
 

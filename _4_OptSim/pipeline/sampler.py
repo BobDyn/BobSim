@@ -107,9 +107,9 @@ def read_baseline(mo_path: str | Path, variables: list[dict]) -> dict[str, float
         block = var["block"]
         param = var["param"]
         if block not in blocks:
-            raise KeyError(f"Block '{block}' not found in {mo_path}. Check doe_config.yaml.")
+            raise KeyError(f"Block '{block}' not found in {mo_path}. Check _doe_config.yaml.")
         if param not in blocks[block]:
-            raise KeyError(f"Param '{param}' not found in block '{block}'. Check doe_config.yaml.")
+            raise KeyError(f"Param '{param}' not found in block '{block}'. Check _doe_config.yaml.")
         raw = blocks[block][param]
         baseline[var["path"]] = _parse_float(raw)
     return baseline
@@ -128,7 +128,7 @@ def sample(config_path: str | Path) -> list[dict[str, float]]:
     if not mo_path.exists():
         raise FileNotFoundError(
             f"baseline_mo not found at {mo_path}. "
-            f"Check doe_config.yaml and ensure submodules are initialized."
+            f"Check _doe_config.yaml and ensure submodules are initialized."
         )
 
     baseline = read_baseline(mo_path, variables)
@@ -151,8 +151,9 @@ def sample(config_path: str | Path) -> list[dict[str, float]]:
 if __name__ == "__main__":
     import sys
 
-    cfg_path = sys.argv[1] if len(sys.argv) > 1 else Path(
-        __file__).parent / "configs/doe_config.yaml"
+    cfg_path = sys.argv[1] if len(sys.argv) > 1 else (
+        Path(__file__).resolve().parent.parent / "configs/_doe_config.yaml"
+    )
     variants = sample(cfg_path)
     print(f"Generated {len(variants)} variants ({len(variants) - 1} sampled + 1 baseline)")
     print(f"Baseline: {variants[0]}")

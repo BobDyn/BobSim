@@ -1,8 +1,10 @@
 """pipeline_hash.py — Track pipeline state to detect stale artifacts.
 
 Computes a hash of all inputs that affect compiled executables:
-  - doe_config.yaml        (parameter ranges, sample count)
+  - _doe_config.yaml       (derived DOE sweep config)
+  - vehicle_architecture.yaml (source-of-truth template + sweep selection)
   - compiler_config.yaml   (solver, tolerance, intervals)
+  - SteadyStateEval wrapper/config inputs
   - BobLib submodule SHA   (upstream model changes)
 
 Stores the hash in population/.pipeline.hash on each fresh run.
@@ -54,25 +56,54 @@ def _boblib_sha(boblib_path: Path) -> str:
     return "unknown"
 
 
-def compute_pipeline_hash(doe_config: Path, compiler_config: Path, boblib_path: Path) -> str:
+def compute_pipeline_hash(
+    doe_config: Path,
+    compiler_config: Path,
+    boblib_path: Path,
+    architecture_config: Path | None = None,
+    extra_inputs: tuple[Path, ...] = (),
+) -> str:
     parts = [
         f"doe:{_hash_file(doe_config)}",
         f"compiler:{_hash_file(compiler_config)}",
         f"boblib:{_boblib_sha(boblib_path)}",
     ]
+    if architecture_config is not None and architecture_config.exists():
+        parts.append(f"architecture:{_hash_file(architecture_config)}")
+    for path in extra_inputs:
+        if path.exists():
+            parts.append(f"extra:{path.name}:{_hash_file(path)}")
     combined = "|".join(parts)
     return _hash_string(combined)
 
 
-def write_pipeline_hash(population_dir: Path, doe_config: Path, compiler_config: Path,
-                        boblib_path: Path) -> str:
-    h = compute_pipeline_hash(doe_config, compiler_config, boblib_path)
+def write_pipeline_hash(
+    population_dir: Path,
+    doe_config: Path,
+    compiler_config: Path,
+    boblib_path: Path,
+    architecture_config: Path | None = None,
+    extra_inputs: tuple[Path, ...] = (),
+) -> str:
+    h = compute_pipeline_hash(
+        doe_config,
+        compiler_config,
+        boblib_path,
+        architecture_config,
+        extra_inputs,
+    )
     (population_dir / HASH_FILE).write_text(h)
     return h
 
 
-def check_pipeline_hash(population_dir: Path, doe_config: Path, compiler_config: Path,
-                        boblib_path: Path) -> None:
+def check_pipeline_hash(
+    population_dir: Path,
+    doe_config: Path,
+    compiler_config: Path,
+    boblib_path: Path,
+    architecture_config: Path | None = None,
+    extra_inputs: tuple[Path, ...] = (),
+) -> None:
     """Raise RuntimeError if pipeline inputs have changed since last run.
 
     Does nothing if no hash file exists (first run).
@@ -82,7 +113,13 @@ def check_pipeline_hash(population_dir: Path, doe_config: Path, compiler_config:
         return
 
     stored = hash_path.read_text().strip()
-    current = compute_pipeline_hash(doe_config, compiler_config, boblib_path)
+    current = compute_pipeline_hash(
+        doe_config,
+        compiler_config,
+        boblib_path,
+        architecture_config,
+        extra_inputs,
+    )
 
     if stored != current:
         raise RuntimeError(
@@ -90,8 +127,12 @@ def check_pipeline_hash(population_dir: Path, doe_config: Path, compiler_config:
             "Compiled artifacts are stale and cannot be reused.\n"
             "Run 'make clean-population' then rerun the pipeline.\n\n"
             "Changes detected in one or more of:\n"
-            "  - configs/doe_config.yaml\n"
+            "  - configs/_doe_config.yaml\n"
+            "  - configs/vehicle_architecture.yaml\n"
             "  - configs/compiler_config.yaml\n"
+            "  - _3_StandardSim/SteadyStateEval/steady_state_eval_sim.py\n"
+            "  - _3_StandardSim/SteadyStateEval/steady_state_eval_config.yml\n"
+            "  - _3_StandardSim/_modelica_runner.py\n"
             "  - BobLib submodule\n"
         )
 

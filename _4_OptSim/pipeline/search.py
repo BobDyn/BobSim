@@ -4,10 +4,10 @@ Loads the aggregated Parquet table, builds a KDTree over the requested
 metric columns, and returns the nearest variant's suspension parameters.
  
 Usage:
-    python search.py --metrics SteadyStateEval_sideslip_ss=0.02 SteadyStateEval_handwheel_angle_ss=0.3
+    python search.py --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 SteadyStateEval_handwheel_torque_max=12
  
     python search.py \\
-        --metrics SteadyStateEval_sideslip_ss=0.02 SteadyStateEval_handwheel_angle_ss=0.3 \\
+        --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 SteadyStateEval_handwheel_torque_max=12 \\
         --parquet results/doe_results.parquet \\
         --top 3
  
@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import KDTree
 
-DEFAULT_PARQUET = Path(__file__).parent / "results/doe_results.parquet"
+DEFAULT_PARQUET = Path(__file__).resolve().parent.parent / "results/doe_results.parquet"
 
 # these are params that we sweep
 INPUT_PARAMS = [
@@ -54,12 +54,15 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
     Returns:
         DataFrame with top nearest variants — input params + metrics + distance
     """
-    if not parquet_path.exists():
+    csv_path = parquet_path.with_suffix(".csv")
+    if parquet_path.exists():
+        df = pd.read_parquet(parquet_path)
+    elif csv_path.exists():
+        df = pd.read_csv(csv_path)
+    else:
         raise FileNotFoundError(
-            f"Parquet not found at {parquet_path}. Has the pipeline run?"
+            f"Results not found at {parquet_path} or {csv_path}. Has the pipeline run?"
         )
-
-    df = pd.read_parquet(parquet_path)
 
     # Validate requested metrics exist
     missing = [m for m in targets if m not in df.columns]
@@ -108,7 +111,7 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         required=True,
         metavar="METRIC=VALUE",
-        help="One or more metric=value pairs e.g. SteadyStateEval_sideslip_ss=0.02",
+        help="One or more metric=value pairs e.g. SteadyStateEval_understeer_gradient_deg_per_g=0.05",
     )
     parser.add_argument(
         "--parquet",

@@ -50,8 +50,8 @@ htmlcov/
 Thumbs.db
 
 # Project-generated outputs
-_4_DOE/results/
-_4_DOE/population/
+_4_OptSim/results/
+_4_OptSim/population/
 
 # BobLib is tracked as a git submodule (gitlink mode 160000);
 # keep this path visible even if future broad rules are added.
