@@ -4,10 +4,13 @@ Loads the aggregated Parquet table, builds a KDTree over the requested
 metric columns, and returns the nearest variant's suspension parameters.
  
 Usage:
-    python search.py --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 SteadyStateEval_handwheel_torque_max=12
- 
+    python search.py --metrics \\
+        SteadyStateEval_understeer_gradient_deg_per_g=0.05 \\
+        SteadyStateEval_handwheel_torque_max=12
+
     python search.py \\
-        --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 SteadyStateEval_handwheel_torque_max=12 \\
+        --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 \\
+        SteadyStateEval_handwheel_torque_max=12 \\
         --parquet results/doe_results.parquet \\
         --top 3
  

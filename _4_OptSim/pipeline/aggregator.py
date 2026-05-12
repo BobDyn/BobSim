@@ -22,6 +22,7 @@ Nothing else changes.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 import yaml
@@ -64,7 +65,9 @@ def _extract_metrics(
     by_metric = df.set_index("metric")
 
     return {
-        f"{standard}_{col}": float(by_metric.loc[metric_name, "value"])
+        f"{standard}_{col}": float(
+            cast(Any, by_metric.loc[metric_name, "value"])
+        )
         for col, metric_name in metrics.items()
     }
 

@@ -252,7 +252,7 @@ def compile_all(
         for standard, standard_cfg in standards.items():
             if not _should_compile(vdir, standard, standard_cfg):
                 exe = _find_exe(vdir / "build" / standard, standard_cfg)
-                if exe:
+                if exe is not None:
                     results[standard].append(exe)
 
     if not work_items:
@@ -275,7 +275,8 @@ def compile_all(
             if success:
                 standard_cfg = standards[standard]
                 exe = _find_exe(variant_dir / "build" / standard, standard_cfg)
-                results[standard].append(exe)
+                if exe is not None:
+                    results[standard].append(exe)
 
     print()
     for standard in standards:

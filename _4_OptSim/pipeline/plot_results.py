@@ -20,6 +20,7 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib import colormaps
 from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 import pandas as pd
@@ -92,7 +93,7 @@ def _normalize_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
 def _plot_parallel_coordinates(ax: plt.Axes, df: pd.DataFrame) -> None:
     norm = _normalize_columns(df, INPUT_COLS)
     x = np.arange(len(INPUT_COLS))
-    cmap = plt.cm.viridis
+    cmap = colormaps["viridis"]
 
     color_metric = "SteadyStateEval_understeer_gradient_deg_per_g"
     colors = df[color_metric].to_numpy(dtype=float)
