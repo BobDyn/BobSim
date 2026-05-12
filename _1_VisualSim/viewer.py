@@ -36,7 +36,6 @@ from PyQt6.QtWidgets import (
     QSlider,
     QComboBox,
     QSplitter,
-    QGroupBox,
     QScrollArea,
     QSizePolicy,
     QFrame,
@@ -58,7 +57,6 @@ import matplotlib
 matplotlib.use("QtAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -577,20 +575,27 @@ class VisualScene:
         view_func()
         self._remember_manual_camera(0)
 
+    def _view_yz_with_azimuth_180(self) -> None:
+        self.plotter.view_yz()
+        self.plotter.camera.azimuth = 180
+
+    def _view_xz_with_azimuth_180(self) -> None:
+        self.plotter.view_xz()
+        self.plotter.camera.azimuth = 180
+
+    def _view_isometric_with_azimuth_180(self) -> None:
+        self.plotter.view_isometric()
+        self.plotter.camera.azimuth += 180
+
     # ------------------------------------------------------------------
     # Camera preset helpers  (called from toolbar buttons)
     # ------------------------------------------------------------------
     def set_view_top(self)   -> None: self._set_manual_view(self.plotter.view_xy)
-    #def set_view_front(self) -> None: self._set_manual_view(self.plotter.view_xz)
     def set_view_rear(self)  -> None: self._set_manual_view(self.plotter.view_yz)
-    #def set_view_rear(self)  -> None: self._set_manual_view(lambda: (self.plotter.view_xz(), setattr(self.plotter.camera, 'azimuth', 180)))
-    def set_view_front(self) -> None: self._set_manual_view(lambda: (self.plotter.view_yz(), setattr(self.plotter.camera, 'azimuth', 180)))
-    #def set_view_left(self)  -> None: self._set_manual_view(self.plotter.view_yz)
-    def set_view_right(self)  -> None: self._set_manual_view(lambda: (self.plotter.view_xz(), setattr(self.plotter.camera, 'azimuth', 180)))
-    #def set_view_right(self) -> None: self._set_manual_view(lambda: (self.plotter.view_yz(), setattr(self.plotter.camera, 'azimuth', 180)))
+    def set_view_front(self) -> None: self._set_manual_view(self._view_yz_with_azimuth_180)
+    def set_view_right(self) -> None: self._set_manual_view(self._view_xz_with_azimuth_180)
     def set_view_left(self) -> None: self._set_manual_view(self.plotter.view_xz)
-    #def set_view_iso(self)   -> None: self._set_manual_view(self.plotter.view_isometric)
-    def set_view_iso(self) -> None: self._set_manual_view(lambda: (self.plotter.view_isometric(), setattr(self.plotter.camera, "azimuth", self.plotter.camera.azimuth + 180)))
+    def set_view_iso(self) -> None: self._set_manual_view(self._view_isometric_with_azimuth_180)
     def set_view_free(self)  -> None:
         self._camera_mode = "manual"
         self._remember_manual_camera(0)
@@ -1195,12 +1200,16 @@ class BobVisWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _build_menu(self) -> None:
         mb = self.menuBar()
+        assert mb is not None
 
         # File
         file_menu = mb.addMenu("&File")
-        open_act  = QAction("&Open…", self, shortcut=QKeySequence.StandardKey.Open)
+        assert file_menu is not None
+        open_act  = QAction("&Open…", self)
+        open_act.setShortcut(QKeySequence.StandardKey.Open)
         export_act= QAction("Export MP4…", self)
-        quit_act  = QAction("&Quit", self, shortcut=QKeySequence.StandardKey.Quit)
+        quit_act  = QAction("&Quit", self)
+        quit_act.setShortcut(QKeySequence.StandardKey.Quit)
         quit_act.triggered.connect(self.close)
         file_menu.addActions([open_act, export_act])
         file_menu.addSeparator()
@@ -1208,12 +1217,15 @@ class BobVisWindow(QMainWindow):
 
         # View
         view_menu  = mb.addMenu("&View")
-        reset_act  = QAction("Reset camera", self, shortcut="R")
+        assert view_menu is not None
+        reset_act  = QAction("Reset camera", self)
+        reset_act.setShortcut("R")
         reset_act.triggered.connect(lambda: self._scene.set_view_iso())
         view_menu.addAction(reset_act)
 
         # Help
         help_menu = mb.addMenu("&Help")
+        assert help_menu is not None
         about_act = QAction("About BobVis", self)
         help_menu.addAction(about_act)
 
