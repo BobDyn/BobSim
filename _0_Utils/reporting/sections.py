@@ -9,7 +9,7 @@ def add_summary_page(pdf, summary):
     plt.axis("off")
 
     # --- Title ---
-    plt.text(0.5, 0.85, "ISO4138 Summary",
+    plt.text(0.5, 0.85, "SteadyStateEval Summary",
              ha="center", fontsize=18, weight="bold")
 
     ay_min, ay_max = summary["Ay_range"]
@@ -21,13 +21,23 @@ def add_summary_page(pdf, summary):
             r"$\mathrm{m/s^2}$",
         ),
         (
-            "Understeer Gradient",
+            "Roadwheel Understeer Gradient",
             rf"${summary['understeer_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
         (
             "",
             rf"${summary['understeer_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Handwheel Understeer Gradient",
+            rf"${summary['handwheel_understeer_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['handwheel_understeer_gradient_deg_per_g']:.2f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
@@ -192,7 +202,7 @@ def add_knc_summary_page(pdf, summary):
     plt.close(fig)
 
 
-def add_iso7401_step_page(pdf, summary):
+def add_transient_eval_step_page(pdf, summary):
 
     import matplotlib.pyplot as plt
 
@@ -203,7 +213,7 @@ def add_iso7401_step_page(pdf, summary):
     # TITLE
     # ============================================================
 
-    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
+    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
              ha="center", fontsize=18, weight="bold")
 
     plt.text(0.5, 0.90, "Time Domain — Step Response",
@@ -257,7 +267,7 @@ def add_iso7401_step_page(pdf, summary):
     plt.close(fig)
 
 
-def add_iso7401_frequency_page(pdf, summary):
+def add_transient_eval_frequency_page(pdf, summary):
 
     import matplotlib.pyplot as plt
 
@@ -268,7 +278,7 @@ def add_iso7401_frequency_page(pdf, summary):
     # TITLE
     # ============================================================
 
-    plt.text(0.5, 0.94, "ISO7401 Metrics Summary",
+    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
              ha="center", fontsize=18, weight="bold")
 
     plt.text(0.5, 0.90, "Frequency Domain — Sustained Sine",
@@ -314,8 +324,8 @@ def add_iso7401_frequency_page(pdf, summary):
 
         ("RESPONSE COUPLING", "", "", ""),
 
-        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_time_lag", "s", "{:.3f}"),
-        ("Lag: $\\delta_H \\rightarrow r$", "yaw_time_lag", "s", "{:.3f}"),
+        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_lag_1hz", "s", "{:.3f}"),
+        ("Lag: $\\delta_H \\rightarrow r$", "yaw_lag_1hz", "s", "{:.3f}"),
         ("Lag: $r \\rightarrow a_y$", "yaw_to_ay_lag", "s", "{:.3f}"),
 
         ("$r/a_y$ Ratio", "yaw_to_ay_ratio", "(rad/s)/(m/s²)", "{:.3f}"),

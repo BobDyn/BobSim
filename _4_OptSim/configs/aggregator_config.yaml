@@ -1,0 +1,42 @@
+# aggregator_config.yaml — defines which report metrics to extract per standard
+#
+# Each standard has its own steady_state_metrics block.
+# key:   output column name in parquet
+# value: exact metric name from the standard's metrics CSV
+#
+# To add a metric: add one line under the standard. Nothing else changes.
+# To add a standard: add a new block. Nothing else changes.
+
+standards:
+
+  SteadyStateEval:
+    steady_state_metrics:
+
+      # --- Range summary ---
+      ay_min:                               "ay_min"
+      ay_max:                               "ay_max"
+
+      # --- Steering gradients ---
+      understeer_gradient_rad_per_mps2:     "understeer_gradient_rad_per_mps2"
+      understeer_gradient_deg_per_g:        "understeer_gradient_deg_per_g"
+      handwheel_understeer_gradient_rad_per_mps2: "handwheel_understeer_gradient_rad_per_mps2"
+      handwheel_understeer_gradient_deg_per_g:    "handwheel_understeer_gradient_deg_per_g"
+      roll_gradient_deg_per_g:              "roll_gradient_deg_per_g"
+
+      # --- Tracking errors ---
+      max_curvature_error_pct:              "max_curvature_error_pct"
+      mean_curvature_error_pct:             "mean_curvature_error_pct"
+      max_radius_error_pct:                 "max_radius_error_pct"
+      mean_radius_error_pct:                "mean_radius_error_pct"
+      max_abs_ay_error_raw:                 "max_abs_ay_error_raw"
+      mean_abs_ay_error_raw:                "mean_abs_ay_error_raw"
+      max_abs_ay_error_pct:                 "max_abs_ay_error_pct"
+      mean_abs_ay_error_pct:                "mean_abs_ay_error_pct"
+
+      # --- Steering effort ---
+      handwheel_torque_min:                 "handwheel_torque_min"
+      handwheel_torque_max:                 "handwheel_torque_max"
+
+  # KnC:
+  #   steady_state_metrics:
+  #     some_metric: "some.metric"

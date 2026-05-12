@@ -14,3 +14,9 @@ imageio-ffmpeg
 
 ruff
 mypy
+
+# FMU interface
+# fmpy
+# pyside6
+# typing-extensions
+# plotly

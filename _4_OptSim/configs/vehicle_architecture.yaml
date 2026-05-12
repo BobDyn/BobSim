@@ -1,0 +1,47 @@
+schema: bobsim.doe.vehicle_architecture.v1
+
+# Source vehicle template used to generate DOE baseline and sweepable paths.
+vehicle_template: ../../_0_Utils/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml
+
+# DOE sampling controls.
+samples: 23
+seed: 42
+
+# DOE sweep definition. This is the source of truth for generated _doe_config.yaml.
+# Note: staticAlpha/staticGamma are degree-valued record inputs passed through
+# to the vehicle model's FixedRotation setup, so keep these ranges in degrees.
+sweep:
+  variables:
+    - path: front.stabar.bar_rate
+      block: pFrStabar
+      param: barRate
+      range: [100, 200]
+
+    - path: rear.stabar.bar_rate
+      block: pRrStabar
+      param: barRate
+      range: [100, 200]
+
+    - path: front.wheel.static_alpha
+      block: pFrPartialWheel
+      param: staticAlpha
+      # degrees
+      range: [-1.5, 1.5]
+
+    - path: rear.wheel.static_alpha
+      block: pRrPartialWheel
+      param: staticAlpha
+      # degrees
+      range: [-1.5, 1.5]
+
+    - path: front.wheel.static_gamma
+      block: pFrPartialWheel
+      param: staticGamma
+      # degrees
+      range: [-2.0, 0.0]
+
+    - path: rear.wheel.static_gamma
+      block: pRrPartialWheel
+      param: staticGamma
+      # degrees
+      range: [-2.0, 0.0]

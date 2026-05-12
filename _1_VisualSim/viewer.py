@@ -13,9 +13,8 @@ Dependencies:
 
 from __future__ import annotations
 
-import argparse
 import sys
-from collections.abc import Callable
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +54,6 @@ from pyvistaqt import QtInteractor
 
 # ── Matplotlib (Qt-embedded) ──────────────────────────────────────────────────
 import matplotlib
-
 matplotlib.use("QtAgg")
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -572,49 +570,33 @@ class VisualScene:
             "parallel_projection": bool(getattr(cam, "parallel_projection", False)),
         }
 
-    def _set_manual_view(self, view_func: Callable[[], Any]) -> None:
+    def _set_manual_view(self, view_func: Any) -> None:
         self._camera_mode = "manual"
         view_func()
         self._remember_manual_camera(0)
 
-    def _set_manual_view_with_azimuth(
-        self,
-        view_func: Callable[[], Any],
-        azimuth: float,
-    ) -> None:
-        self._camera_mode = "manual"
-        view_func()
-        self.plotter.camera.azimuth = azimuth
-        self._remember_manual_camera(0)
+    def _view_yz_with_azimuth_180(self) -> None:
+        self.plotter.view_yz()
+        self.plotter.camera.azimuth = 180
 
-    def _set_flipped_isometric_view(self) -> None:
-        self._camera_mode = "manual"
+    def _view_xz_with_azimuth_180(self) -> None:
+        self.plotter.view_xz()
+        self.plotter.camera.azimuth = 180
+
+    def _view_isometric_with_azimuth_180(self) -> None:
         self.plotter.view_isometric()
-        self.plotter.camera.azimuth = self.plotter.camera.azimuth + 180
-        self._remember_manual_camera(0)
+        self.plotter.camera.azimuth += 180
 
     # ------------------------------------------------------------------
     # Camera preset helpers  (called from toolbar buttons)
     # ------------------------------------------------------------------
-    def set_view_top(self) -> None:
-        self._set_manual_view(self.plotter.view_xy)
-
-    def set_view_rear(self) -> None:
-        self._set_manual_view(self.plotter.view_yz)
-
-    def set_view_front(self) -> None:
-        self._set_manual_view_with_azimuth(self.plotter.view_yz, 180.0)
-
-    def set_view_right(self) -> None:
-        self._set_manual_view_with_azimuth(self.plotter.view_xz, 180.0)
-
-    def set_view_left(self) -> None:
-        self._set_manual_view(self.plotter.view_xz)
-
-    def set_view_iso(self) -> None:
-        self._set_flipped_isometric_view()
-
-    def set_view_free(self) -> None:
+    def set_view_top(self)   -> None: self._set_manual_view(self.plotter.view_xy)
+    def set_view_rear(self)  -> None: self._set_manual_view(self.plotter.view_yz)
+    def set_view_front(self) -> None: self._set_manual_view(self._view_yz_with_azimuth_180)
+    def set_view_right(self) -> None: self._set_manual_view(self._view_xz_with_azimuth_180)
+    def set_view_left(self) -> None: self._set_manual_view(self.plotter.view_xz)
+    def set_view_iso(self) -> None: self._set_manual_view(self._view_isometric_with_azimuth_180)
+    def set_view_free(self)  -> None:
         self._camera_mode = "manual"
         self._remember_manual_camera(0)
 
@@ -712,15 +694,11 @@ class AnimationWorker(QThread):
                 self.playback_done.emit()
 
     # ------------------------------------------------------------------
-    def play(self) -> None:
+    def play(self)  -> None:
         self._sim_time = float(self.time_arr[self._frame])
         self._playing = True
-
-    def pause(self) -> None:
-        self._playing = False
-
-    def stop(self) -> None:
-        self._stop_req = True
+    def pause(self) -> None: self._playing = False
+    def stop(self)  -> None: self._stop_req = True
 
     def seek(self, frame: int) -> None:
         self._frame = max(0, min(frame, self.n_frames - 1))
@@ -1097,9 +1075,7 @@ class ViewToolbar(QToolBar):
         for name in self.PRESETS:
             btn = QPushButton(name)
             btn.setFixedHeight(24)
-            btn.clicked.connect(
-                lambda _, n=name: self.view_preset_requested.emit(n.lower().replace(" ", "_"))
-            )
+            btn.clicked.connect(lambda _, n=name: self.view_preset_requested.emit(n.lower().replace(" ", "_")))
             self.addWidget(btn)
 
     # ------------------------------------------------------------------
@@ -1171,8 +1147,6 @@ class BobVisWindow(QMainWindow):
         self.resize(1280, 760)
 
         self._current_frame = 0
-        self._scene: VisualScene | None = None
-        self._worker: AnimationWorker | None = None
 
         self._build_ui()
         self._wire_signals()
@@ -1226,43 +1200,35 @@ class BobVisWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _build_menu(self) -> None:
         mb = self.menuBar()
-        if mb is None:
-            return
+        assert mb is not None
 
         # File
         file_menu = mb.addMenu("&File")
-        if file_menu is not None:
-            open_act = QAction("&Open…", self)
-            open_act.setShortcut(QKeySequence.StandardKey.Open)
-
-            export_act = QAction("Export MP4…", self)
-
-            quit_act = QAction("&Quit", self)
-            quit_act.setShortcut(QKeySequence.StandardKey.Quit)
-            quit_act.triggered.connect(self.close)
-
-            file_menu.addActions([open_act, export_act])
-            file_menu.addSeparator()
-            file_menu.addAction(quit_act)
+        assert file_menu is not None
+        open_act  = QAction("&Open…", self)
+        open_act.setShortcut(QKeySequence.StandardKey.Open)
+        export_act= QAction("Export MP4…", self)
+        quit_act  = QAction("&Quit", self)
+        quit_act.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_act.triggered.connect(self.close)
+        file_menu.addActions([open_act, export_act])
+        file_menu.addSeparator()
+        file_menu.addAction(quit_act)
 
         # View
-        view_menu = mb.addMenu("&View")
-        if view_menu is not None:
-            reset_act = QAction("Reset camera", self)
-            reset_act.setShortcut(QKeySequence("R"))
-            reset_act.triggered.connect(self._reset_camera_from_menu)
-            view_menu.addAction(reset_act)
+        view_menu  = mb.addMenu("&View")
+        assert view_menu is not None
+        reset_act  = QAction("Reset camera", self)
+        reset_act.setShortcut("R")
+        reset_act.triggered.connect(lambda: self._scene.set_view_iso())
+        view_menu.addAction(reset_act)
 
         # Help
         help_menu = mb.addMenu("&Help")
-        if help_menu is not None:
-            about_act = QAction("About BobVis", self)
-            help_menu.addAction(about_act)
+        assert help_menu is not None
+        about_act = QAction("About BobVis", self)
+        help_menu.addAction(about_act)
 
-    def _reset_camera_from_menu(self) -> None:
-        if self._scene is not None:
-            self._scene.set_view_iso()
-            
     # ------------------------------------------------------------------
     def _wire_signals(self) -> None:
         """Connect toolbar + timeline signals to scene / worker."""
@@ -1278,29 +1244,26 @@ class BobVisWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _start_worker(self) -> None:
-        worker = AnimationWorker(self.data.n_frames, self.data.time)
-        worker.frame_ready.connect(self._on_frame)
-        worker.playback_done.connect(self._timeline.on_playback_done)
-        worker.start()
-        self._worker = worker
+        self._worker = AnimationWorker(self.data.n_frames, self.data.time)
+        self._worker.frame_ready.connect(self._on_frame)
+        self._worker.playback_done.connect(self._timeline.on_playback_done)
+        self._worker.start()
 
     # ------------------------------------------------------------------
     def _build_scene(self) -> None:
         """Called once via QTimer after plotter is shown."""
-        scene = VisualScene(self.data, self._plotter)
-        scene.build()
-        scene.update_time(float(self.data.time[0]))
-        self._scene = scene
-
+        self._scene = VisualScene(self.data, self._plotter)
+        self._scene.build()
+        self._scene.update_time(float(self.data.time[0]))
         self._timeline.sync_time(0, float(self.data.time[0]))
         self._plot_panel.update_cursor_time(float(self.data.time[0]))
         self._plotter.render()
 
         # now safe to wire toolbar → scene
         self._toolbar.view_preset_requested.connect(self._on_view_preset)
-        self._toolbar.focus_changed.connect(scene.set_focus_point)
+        self._toolbar.focus_changed.connect(self._scene.set_focus_point)
         self._toolbar.rotate_requested.connect(self._on_rotate)
-        self._toolbar.reset_camera.connect(scene.set_view_iso)
+        self._toolbar.reset_camera.connect(self._scene.set_view_iso)
 
         self._status.showMessage(
             f"Loaded  {self.data.n_frames} frames  |  "
@@ -1311,9 +1274,6 @@ class BobVisWindow(QMainWindow):
     # Frame update  (all UI sync happens here)
     # ──────────────────────────────────────────────────────────────────
     def _on_frame(self, frame_i: int, sim_time: float) -> None:
-        if self._scene is None:
-            return
-
         self._current_frame = frame_i
         self._scene.update_time(sim_time)
         self._timeline.sync_time(frame_i, sim_time)
@@ -1328,62 +1288,44 @@ class BobVisWindow(QMainWindow):
     # Slot handlers
     # ──────────────────────────────────────────────────────────────────
     def _on_play(self) -> None:
-        if self._worker is None:
-            return
-
         self._worker.pause()
-        if self._scene is not None and getattr(self._scene, "_camera_mode", "follow") == "manual":
+        if getattr(self._scene, "_camera_mode", "follow") == "manual":
             self._scene._remember_manual_camera(self._current_frame)
         self._worker.seek(0)
         self._worker.play()
 
-    def _on_pause(self) -> None:
-        if self._worker is not None:
-            self._worker.pause()
+    def _on_pause(self) -> None: self._worker.pause()
 
     def _on_seek(self, frame: int) -> None:
-        if self._worker is not None:
-            self._worker.seek(frame)
+        self._worker.seek(frame)
 
     def _on_speed_change(self, speed: float) -> None:
-        if self._worker is not None:
-            self._worker.set_speed(speed)
+        self._worker.set_speed(speed)
 
     def _on_view_preset(self, preset: str) -> None:
-        if self._scene is None:
-            return
-
-        dispatch: dict[str, Callable[[], None]] = {
-            "top": self._scene.set_view_top,
-            "front": self._scene.set_view_front,
-            "rear": self._scene.set_view_rear,
+        dispatch = {
+            "top":    self._scene.set_view_top,
+            "front":  self._scene.set_view_front,
+            "rear":   self._scene.set_view_rear,
             "side_l": self._scene.set_view_left,
             "side_r": self._scene.set_view_right,
-            "iso": self._scene.set_view_iso,
-            "free": self._scene.set_view_free,
+            "iso":    self._scene.set_view_iso,
+            "free":   self._scene.set_view_free,
         }
-        view_func = dispatch.get(preset)
-        if view_func is not None:
-            view_func()
+        dispatch.get(preset, lambda: None)()
 
     def _on_rotate(self, axis: str, deg: float) -> None:
-        if self._scene is None:
-            return
-
-        dispatch: dict[str, Callable[[float], None]] = {
+        dispatch = {
             "x": self._scene.rotate_x,
             "y": self._scene.rotate_y,
             "z": self._scene.rotate_z,
         }
-        rotate_func = dispatch.get(axis)
-        if rotate_func is not None:
-            rotate_func(deg)
+        dispatch.get(axis, lambda d: None)(deg)
 
     # ──────────────────────────────────────────────────────────────────
     def closeEvent(self, event: Any) -> None:
-        if self._worker is not None:
-            self._worker.stop()
-            self._worker.wait(2000)
+        self._worker.stop()
+        self._worker.wait(2000)
         self._plotter.close()
         super().closeEvent(event)
 
@@ -1515,7 +1457,7 @@ def main() -> None:
         description="BobVis Interactive Viewer",
         epilog="If paths are omitted a file-picker dialog will appear on launch.",
     )
-    parser.add_argument("yml", nargs="?", default="", help="Path to visual YAML config")
+    parser.add_argument("yml",  nargs="?", default="", help="Path to visual YAML config")
     parser.add_argument("data", nargs="?", default="", help="Path to .npz or .csv data file")
     args = parser.parse_args()
 

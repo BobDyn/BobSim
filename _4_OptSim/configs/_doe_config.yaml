@@ -1,0 +1,45 @@
+architecture:
+  template: ../_0_Utils/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml
+  vehicle: DWBCStabar_DWBCStabar
+  record: DWBCStabar_DWBCStabarRecord
+  source: configs/vehicle_architecture.yaml
+baseline_mo: ../../_0_Utils/external/BobLib/Resources/VehicleDefn/DWBCStabar_DWBCStabarRecord.mo
+variables:
+- path: front.stabar.bar_rate
+  block: pFrStabar
+  param: barRate
+  range:
+  - 100
+  - 200
+- path: rear.stabar.bar_rate
+  block: pRrStabar
+  param: barRate
+  range:
+  - 100
+  - 200
+- path: front.wheel.static_alpha
+  block: pFrPartialWheel
+  param: staticAlpha
+  range:
+  - -1.5
+  - 1.5
+- path: rear.wheel.static_alpha
+  block: pRrPartialWheel
+  param: staticAlpha
+  range:
+  - -1.5
+  - 1.5
+- path: front.wheel.static_gamma
+  block: pFrPartialWheel
+  param: staticGamma
+  range:
+  - -2.0
+  - 0.0
+- path: rear.wheel.static_gamma
+  block: pRrPartialWheel
+  param: staticGamma
+  range:
+  - -2.0
+  - 0.0
+samples: 23
+seed: 42

@@ -1,0 +1,56 @@
+// Start clean
+clear();
+
+// Generate C simulation code
+OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
+
+// Allow larger tearing systems before falling back to untorn systems
+OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
+
+// Use dynamic state selection for multibody/index-reduced systems
+OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
+
+// Set matching algorithm
+OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
+
+// Enable analytic Jacobians for nonlinear strong components.
+OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
+
+// Disable automatic loading of libraries. All libraries are present as submodules
+// OpenModelica.Scripting.setCommandLineOptions("--loadMissingLibraries=false");
+
+// Load vendored dependencies explicitly.
+loadModel(Modelica);
+// loadFile("_0_Utils/external/ModelicaStandardLibrary/Complex.mo", uses=false);
+// loadFile("_0_Utils/external/ModelicaStandardLibrary/Modelica/package.mo", uses=false);
+// loadFile("_0_Utils/external/ModelicaStandardLibrary/ModelicaServices/package.mo", uses=false);
+
+// Load BobLib.
+loadFile("_0_Utils/external/BobLib/package.mo");
+
+// Create build directory if it doesn't exist
+system("mkdir -p _3_StandardSim/Build");
+
+// Go to build directory
+cd("_3_StandardSim/Build");
+
+// Build executable
+res := buildModel(
+  BobLib.Standards.VehicleSim,
+  startTime = 0,
+  stopTime = 10,
+  tolerance = 1e-6,
+  cflags="-O3 -march=native -mtune=native",
+  outputFormat = "csv"
+);
+
+// Print build result and errors/warnings
+res;
+getErrorString();
+
+// res := buildModelFMU(
+//   BobLib.Standards.VehicleFMI,
+//   version="2.0",
+//   fmuType="me_cs",       // co-simulation for testing
+//   platforms={"dynamic"}  // portable FMU
+// );
