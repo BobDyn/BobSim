@@ -24,8 +24,8 @@ front:
     camber_deg: 0
   tire:
     wheel_inertia_kg_m2: 0.02
-    vertical_stiffness_n_per_m: 98947
-    vertical_damping_n_s_per_m: 115.844
+    vertical_stiffness_n_per_m: 100000
+    vertical_damping_n_s_per_m: 100
     template: 16x7p5_10_12psi
   suspension:
     upper_fore_i_m: [0.1016, 0.237744, 0.2143252]

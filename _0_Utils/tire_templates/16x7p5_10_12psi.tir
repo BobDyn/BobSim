@@ -1,24 +1,15 @@
 [MDI_HEADER]
 FILE_TYPE        = 'tir'
-FILE_VERSION     =  3.0
+FILE_VERSION     =  1.0
 FILE_FORMAT      = 'ASCII'
-! : TIRE_VERSION :  PAC2002 2018
-! : USE_MODE :      2
-! : COMPATIBILITY : Adams Tire 2018
-! : COMMENT :       Stackpole Engineering Services, Inc.
-! : COMMENT :       Created By : Michael Arbogast
-! : COMMENT :       Date Created : February 15, 2019
-! : COMMENT :       Customer : TTC
-! : COMMENT :       Manufacturer : Hoosier
-! : COMMENT :       Construction : R25B
-! : COMMENT :       DOT : XXXX
-! : COMMENT :       Tyre Size : 190/40R10
-! : COMMENT :       Rim Width (in): 7
-! : COMMENT :       Infl. Pressure (PSI) : 12.1
-! : COMMENT :       Test Speed (mph): 25
-! : COMMENT :       Position : Right
-!
-! Copyright Stackpole Engineering Services, Inc. 2018
+! : TIRE_VERSION :  PAC2002
+! : COMMENT :       Tire 16x7.5
+! : COMMENT :       Nom. section width (m) 0.1905
+! : COMMENT :       Infl. pressure (Pa) 82737
+! : COMMENT :       Rim radius (m) 0.127
+! : COMMENT :       Test speed (m/s) 12
+! : COMMENT :       Road condition Right
+! : USE_MODE :      14
 !
 ! USE_MODE specifies the type of calculation performed:
 !       0: Fz only, no Magic Formula evaluation
@@ -36,14 +27,6 @@ FILE_FORMAT      = 'ASCII'
 !    +400: road contact for 2D roads (using travelled distance)
 !    +500: road contact for 3D roads
 !
-$-----------------------------------------------------------------ses_tire_plotter
-[SES_TIRE_PLOTTER]
-YEAR                     = '2018'
-MANUFACTURER             = 'Hoosier'
-CONSTRUCTION             =  R25B 16 x 7.5 on 10x7 Rim
-RIM_DIAMETER_INCH        =  10.0
-RIM_WIDTH_INCH           =  7.0
-INFLATION_PSI            =  12.0
 $-----------------------------------------------------------------UNITS
 [UNITS]
 LENGTH                   = 'meter'
@@ -55,55 +38,44 @@ PRESSURE                 = 'Pascal'
 $-----------------------------------------------------------------MODEL
 [MODEL]
 PROPERTY_FILE_FORMAT     = 'PAC2002'
-USE_MODE                 =  2                       $Tyre use switch (IUSED)
+USE_MODE                 =  14                      $Tyre use switch
 VXLOW                    =  1                       $Threshold for scaling down forces and moments
-LONGVL                   =  11.1760                 $Measurement speed
-TYRESIDE                 = 'Right'                  $Mounted side of tyre at vehicle/test bench
+LONGVL                   =  12                      $Measurement speed
 $-----------------------------------------------------------------TYRE_CONDITIONS
 [TYRE_CONDITIONS]
-IP                       =  83441                   $Inflation Pressure
-IP_NOM                   =  83441                   $Nominal Inflation Pressure
+IP                       =  82737                   $Inflation Pressure
+IP_NOM                   =  82737                   $Nominal Inflation Pressure
 $-----------------------------------------------------------------DIMENSIONS
 [DIMENSION]
-UNLOADED_RADIUS          =  0.2045                  $Free tyre radius
-WIDTH                    =  0.19                    $Nominal section width of the tyre
+UNLOADED_RADIUS          =  0.2032                  $Free tyre radius
+WIDTH                    =  0.1905                  $Nominal section width of the tyre
 ASPECT_RATIO             =  0.40                    $Nominal aspect ratio
 RIM_RADIUS               =  0.127                   $Nominal rim radius
 RIM_WIDTH                =  0.1778                  $Rim width
-$-----------------------------------------------------------------SHAPE
-[SHAPE]
-{radial width}
- 1.0    0.0
- 1.0    0.4
- 1.0    0.9
- 0.9    1.0
-$-----------------------------------------------------------------STRUCTURAL
-[STRUCTURAL]
-LATERAL_STIFFNESS        = 1e30                     $Lateral Stiffness (Added as a placeholder by rhorvath@utexas.edu)
 $-----------------------------------------------------------------PARAMETER
 [VERTICAL]
-FNOMIN                   =  654                     $Nominal wheel load
-VERTICAL_STIFFNESS       =  98947                   $Tyre vertical stiffness
-VERTICAL_DAMPING         =  115.844                 $Tyre vertical damping
+FNOMIN                   =  650                     $Nominal wheel load
+VERTICAL_STIFFNESS       =  100000                  $Tyre vertical stiffness
+VERTICAL_DAMPING         =  100                     $Tyre vertical damping
 BREFF                    =  1                       $Low load stiffness e.r.r.
 DREFF                    =  1                       $Peak value of e.r.r.
-FREFF                    =  1.0001                  $High load stiffness e.r.r.
+FREFF                    =  1                       $High load stiffness e.r.r.
 $-----------------------------------------------------------------LONGITUDINAL_SLIP_RANGE
 [LONG_SLIP_RANGE]
 KPUMIN                   = -0.15                    $Minimum valid wheel slip
 KPUMAX                   =  0.15                    $Maximum valid wheel slip
 $-----------------------------------------------------------------SLIP_ANGLE_RANGE
 [SLIP_ANGLE_RANGE]
-ALPMIN                   = -0.261799                $Minimum valid slip angle
-ALPMAX                   =  0.261799                $Maximum valid slip angle
+ALPMIN                   = -0.2617994               $Minimum valid slip angle
+ALPMAX                   =  0.2617994               $Maximum valid slip angle
 $-----------------------------------------------------------------INCLINATION_ANGLE_RANGE
 [INCLINATION_ANGLE_RANGE]
 CAMMIN                   =  0                       $Minimum valid camber angle
-CAMMAX                   =  0.069813                $Maximum valid camber angle
+CAMMAX                   =  0.0698132               $Maximum valid camber angle
 $-----------------------------------------------------------------VERTICAL_FORCE_RANGE
 [VERTICAL_FORCE_RANGE]
 FZMIN                    =  100                     $Minimum allowed wheel load
-FZMAX                    =  1091                    $Maximum allowed wheel load
+FZMAX                    =  1000                    $Maximum allowed wheel load
 $-----------------------------------------------------------------SCALING
 [SCALING_COEFFICIENTS]
 LFZO                     =  1                       $Scale factor of nominal (rated) load
@@ -122,10 +94,8 @@ LKY                      =  1                       $Scale factor of Fy cornerin
 LHY                      =  1                       $Scale factor of Fy horizontal shift
 LVY                      =  1                       $Scale factor of Fy vertical shift
 LGAY                     =  1                       $Scale factor of camber for Fy
-LKYG                     =  1                       $Scale factor of the camber stiffness Kygamma0
 LTR                      =  1                       $Scale factor of peak of pneumatic trail
 LRES                     =  1                       $Scale factor for offset of residual torque
-LCZ                      =  1                       $Scale factor of vertical tyre stiffness
 LGAZ                     =  1                       $Scale factor of camber for Mz
 LYKA                     =  1                       $Scale factor of kappa influence on Fy
 LVYKA                    =  1                       $Scale factor of kappa induced Fy
@@ -136,7 +106,6 @@ LGYR                     =  1                       $Scale factor of gyroscopic 
 LMX                      =  1                       $Scale factor of overturning couple
 LVMX                     =  1                       $Scale factor of Mx vertical shift
 LMY                      =  1                       $Scale factor of rolling resistance torque
-LIP                      =  1                       $Scale factor of nominal inflation pressure
 $-----------------------------------------------------------------LONGITUDINAL_FORCE
 [LONGITUDINAL_COEFFICIENTS]
 PCX1                     =  1.530410                $Shape factor Cfx for longitudinal force
@@ -160,12 +129,6 @@ RCX1                     =  1.122399                $Shape factor for combined s
 REX1                     =  0.052014                $Curvature factor of combined Fx
 REX2                     =  -0.898450               $Curvature factor of combined Fx with load
 RHX1                     =  0.0                     $Shift factor for combined slip Fx reduction
-RVX1                     =  0.0                     $
-RVX2                     =  0.0                     $
-PPX1                     =  0                       $Linear pressure effect on slip stiffness
-PPX2                     =  0                       $Quadratic pressure effect on slip stiffness
-PPX3                     =  0                       $Linear pressure effect on longitudinal friction
-PPX4                     =  0                       $Quadratic pressure effect on longitudinal friction
 PTX1                     =  0                       $Relaxation length SigKap0/Fz at Fznom
 PTX2                     =  0                       $Variation of SigKap0/Fz with load
 PTX3                     =  0                       $Variation of SigKap0/Fz with exponent of load
@@ -229,10 +192,6 @@ QSY1                     =  0                       $Rolling resistance torque c
 QSY2                     =  0                       $Rolling resistance torque depending on Fx
 QSY3                     =  0                       $Rolling resistance torque depending on speed
 QSY4                     =  0                       $Rolling resistance torque depending on speed ^4
-QSY5                     =  0                       $Rolling resistance torque depending on camber squared
-QSY6                     =  0                       $Rolling resistance torque depending on load and camber squared
-QSY7                     =  0                       $Rolling resistance torque coefficient load dependency
-QSY8                     =  0                       $Rolling resistance torque coefficient pressure dependency
 $-----------------------------------------------------------------ALIGNING_TORQUE
 [ALIGNING_COEFFICIENTS]
 QBZ1                     =  8.22843                 $Trail slope factor for trail Bpt at Fznom
@@ -264,19 +223,3 @@ SSZ1                     =  0                       $Nominal value of s/R0: effe
 SSZ2                     =  0                       $Variation of distance s/R0 with Fy/Fznom
 SSZ3                     =  0                       $Variation of distance s/R0 with camber
 SSZ4                     =  0                       $Variation of distance s/R0 with load and camber
-QPZ1                     =  0                       $Variation of peak Dt with pressure
-QPZ2                     =  0                       $Variation of peak Dr with pressure
-QTZ1                     =  0                       $Gyration torque constant
-MBELT                    =  0                       $Belt mass of the wheel
-$-----------------------------------------------------------------LOADED_RADIUS
-[LOADED_RADIUS_COEFFICIENTS]
-QRE0                     =  1                       $Correction factor for measured unloaded radius
-QV1                      =  1490.79                 $Tyre radius growth coefficient
-QV2                      = -22.5469                 $Tyre stiffness variation coefficient with speed
-QFCX1                    =  1.02803                 $Tyre stiffness interaction with Fx
-QFCY1                    = -0.0144798               $Tyre stiffness interaction with Fy
-QFCG1                    =  13.1372                 $Tyre stiffness interaction with camber squared
-QFZ1                     =  26.9259                 $Linear stiffness coefficient, if zero, VERTICAL_STIFFNESS is taken
-QFZ2                     = -61.6063                 $Tyre vertical stiffness coefficient (quadratic)
-QFZ3                     = -1                       $Tyre vertical stiffness coefficient (quadratic)
-QPFZ1                    =  0                       $Tyre stiffness variation with pressure

@@ -59,17 +59,19 @@ clean:
 
 	@echo "Clean complete"
 
-clean_build:
+clean-build:
 	@echo "Cleaning all build directories under _3_StandardSim..."
 	@find _3_StandardSim -type d -name "Build" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
 
-clean_results:
+clean-results:
 	@echo "Cleaning all result directories under _3_StandardSim..."
 	@find _3_StandardSim -type d -name "results" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
 
-# omc _3_StandardSim/build.mos
-SteadyStateEval:
+build-standard:
+	omc _3_StandardSim/build.mos
+
+steady-state-eval:
 	python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
 
-TransientEval:
+transient-eval:
 	python3 -m _3_StandardSim.TransientEval.transient_eval_sim

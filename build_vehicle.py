@@ -63,7 +63,7 @@ DEFAULT_ALIASES = {
     "Axle": "BobLib.Resources.VehicleRecord.Chassis.Suspension",
 }
 
-MF52_SECTION_FIELDS = {'fxCombined': ['RBX1', 'RBX2', 'RCX1', 'REX1', 'REX2', 'RHX1', 'RVX1', 'RVX2'],
+MF52_SECTION_FIELDS = {'fxCombined': ['RBX1', 'RBX2', 'RCX1', 'REX1', 'REX2', 'RHX1'],
  'fxPure': ['LFZO',
             'LGAX',
             'PCX1',
