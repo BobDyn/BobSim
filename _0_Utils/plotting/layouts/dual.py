@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class DualLayout:
@@ -7,7 +8,7 @@ class DualLayout:
         fig, axes = plt.subplots(1, 2, figsize=(11, 8.5))
 
         for ax, sub in zip(axes, p_cfg["subplots"]):
-            x, y = plotter.get_xy(result, sub)
+            series = plotter.get_xy(result, sub)
 
             xscale = sub.get("xscale", p_cfg.get("xscale", "linear"))
             yscale = sub.get("yscale", p_cfg.get("yscale", "linear"))
@@ -15,18 +16,50 @@ class DualLayout:
             ax.set_yscale(yscale)
 
             style = sub.get("style", "line")
+            xmins = []
+            xmaxs = []
+            has_data = False
 
-            if style == "line":
-                ax.plot(x, y, "-", linewidth=2)
-            elif style == "scatter":
-                ax.plot(x, y, "o")
-            else:
-                ax.plot(x, y, linewidth=2)
+            for item in series:
+                x = np.asarray(item["x"], dtype=float)
+                y = np.asarray(item["y"], dtype=float)
+                if x.size == 0 or y.size == 0:
+                    continue
 
-            # FIT
-            fit = plotter.compute_fit(x, y, sub)
-            if fit is not None:
-                ax.plot(x, fit, "--", linewidth=2)
+                has_data = True
+                xmins.append(float(np.nanmin(x)))
+                xmaxs.append(float(np.nanmax(x)))
+
+                label = item.get("label")
+                item_style = item.get("style", style)
+                plot_kwargs = {}
+                if item.get("alpha") is not None:
+                    plot_kwargs["alpha"] = item["alpha"]
+                if item.get("markersize") is not None:
+                    plot_kwargs["markersize"] = item["markersize"]
+                if item.get("color") is not None:
+                    plot_kwargs["color"] = item["color"]
+                if item.get("linestyle") is not None:
+                    plot_kwargs["linestyle"] = item["linestyle"]
+                linewidth = item.get("linewidth", 2)
+
+                if item_style == "line":
+                    line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
+                elif item_style == "scatter":
+                    line, = ax.plot(x, y, "o", label=label, **plot_kwargs)
+                else:
+                    line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
+
+                fit = plotter.compute_fit(x, y, sub) if item.get("fit", sub.get("fit", False)) else None
+                if fit is not None:
+                    ax.plot(
+                        x,
+                        fit,
+                        "--",
+                        linewidth=2,
+                        color=line.get_color(),
+                        alpha=0.85,
+                    )
 
             # REFERENCE LINES
             refs = sub.get("reference")
@@ -47,6 +80,9 @@ class DualLayout:
             ax.set_title(sub["title"], fontsize=12)
             ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
             ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)
+
+            if has_data and xmins and xmaxs:
+                ax.set_xlim(min(xmins), max(xmaxs))
 
             ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
             ax.tick_params(labelsize=10)

@@ -23,7 +23,8 @@ class PlotEngine:
 
     def run(self, result, pdf):
 
-        for _, p_cfg in self.config.get("plots", {}).items():
+        for plot_name, p_cfg in self.config.get("plots", {}).items():
+            print(f"📈 Rendering plot page: {plot_name}")
 
             layout_name = p_cfg.get("layout", "single")
             layout = LAYOUT_REGISTRY[layout_name]()

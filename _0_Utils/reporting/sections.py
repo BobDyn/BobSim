@@ -1,27 +1,62 @@
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+import textwrap
 
-
-def add_summary_page(pdf, summary):
+def add_summary_page(pdf, summary, title=None):
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
     # --- Title ---
-    plt.text(0.5, 0.85, "SteadyStateEval Summary",
-             ha="center", fontsize=18, weight="bold")
+    page_title = title or "SteadyStateEval Summary"
+    velocity = summary.get("velocity_mps")
+    if velocity is not None and np.isfinite(velocity):
+        page_title = f"{page_title}"
 
-    ay_min, ay_max = summary["Ay_range"]
+    fig.text(0.5, 0.95, page_title,
+             ha="center", va="top", fontsize=18, weight="bold")
+
+    ay_min, ay_max = summary.get("MeasuredAy_range", summary.get("Ay_range"))
 
     rows = [
         (
-            r"$a_y$ Range",
+            r"Measured $a_y$ Range",
             rf"${ay_min:.2f} \rightarrow {ay_max:.2f}$",
             r"$\mathrm{m/s^2}$",
         ),
         (
-            "Roadwheel Understeer Gradient",
+            "Roadwheel Angle Gradient",
+            rf"${summary['roadwheel_angle_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['roadwheel_angle_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Handwheel Angle Gradient",
+            rf"${summary['handwheel_angle_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['handwheel_angle_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Sideslip Gradient",
+            rf"${summary['sideslip_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['sideslip_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Understeer Gradient",
             rf"${summary['understeer_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
@@ -46,9 +81,14 @@ def add_summary_page(pdf, summary):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Max Radius Error",
-            rf"${summary['max_radius_error_pct']:.2f}$",
-            r"$\%$",
+            "Handwheel Torque Min",
+            rf"${summary['handwheel_torque_min_Nm']:.1f}$",
+            r"$\mathrm{N\cdot m}$",
+        ),
+        (
+            "Handwheel Torque Max",
+            rf"${summary['handwheel_torque_max_Nm']:.1f}$",
+            r"$\mathrm{N\cdot m}$",
         ),
     ]
 
@@ -57,8 +97,8 @@ def add_summary_page(pdf, summary):
     x_value = 0.65
     x_units = 0.82
 
-    y_top = 0.7
-    row_h = 0.07
+    y_top = 0.72
+    row_h = 0.048
 
     # --- header ---
     plt.text(x_metric, y_top, "Metric", fontsize=13, weight="bold")
@@ -383,7 +423,6 @@ def add_transient_eval_frequency_page(pdf, summary):
 
 
 def add_title_page(pdf, config):
-
     fig, ax = plt.subplots(figsize=(11, 8.5))
     ax.set_frame_on(False)
     ax.set_xticks([])
@@ -402,7 +441,7 @@ def add_title_page(pdf, config):
     # ============================================================
     logo = plt.imread("_0_Utils/reporting/media/bob.png")
 
-    ax_logo = fig.add_axes([0.0, 0.74, 0.28, 0.20])
+    ax_logo = fig.add_axes([0.03, 0.72, 0.22, 0.19])
     ax_logo.imshow(logo, alpha=0.8)
     ax_logo.axis("off")
 
@@ -412,49 +451,49 @@ def add_title_page(pdf, config):
     # ============================================================
     # MAIN TEXT
     # ============================================================
-    ax.text(0.5, 0.80, brand,
-            ha="center", fontsize=24, weight="bold")
-
-    ax.text(0.5, 0.64, title,
-            ha="center", fontsize=20, weight="bold")
-
-    if subtitle:
-        ax.text(0.5, 0.57, subtitle,
-                ha="center", fontsize=14)
-
-    ax.text(0.5, 0.40,
-            f"Generated: {now}",
-            ha="center", fontsize=12)
-
-    # ============================================================
-    # BOTTOM DIVIDER
-    # ============================================================
-    divider_y = 0.14
-
-    fig.lines.append(
-        plt.Line2D(
-            [0.05, 0.95], [divider_y, divider_y],
-            transform=fig.transFigure,
-            color="black",
-            linewidth=0.6,
-            alpha=0.5,
-        )
+    ax.text(
+        0.5,
+        0.80,
+        brand,
+        ha="center",
+        fontsize=24,
+        weight="bold",
     )
 
-    # ============================================================
-    # BOBDYN (BOTTOM RIGHT, ABOVE DIVIDER)
-    # ============================================================
-    fig.text(
-        0.94, divider_y + 0.015,
-        "BobDyn",
-        ha="right",
-        fontsize=11,
+    ax.text(
+        0.5,
+        0.65,
+        title,
+        ha="center",
+        fontsize=20,
         weight="bold",
+    )
+
+    if subtitle:
+        subtitle_wrapped = "\n".join(
+            textwrap.wrap(str(subtitle), width=92)
+        )
+        ax.text(
+            0.5,
+            0.57,
+            subtitle_wrapped,
+            ha="center",
+            va="center",
+            fontsize=13,
+            alpha=0.9,
+        )
+
+    ax.text(
+        0.5,
+        0.46,
+        f"Generated: {now}",
+        ha="center",
+        fontsize=11,
         alpha=0.85,
     )
 
     # ============================================================
-    # FOOTER NOTES (BELOW DIVIDER)
+    # NOTES PANEL
     # ============================================================
     notes = report_cfg.get("notes", [])
     footer = report_cfg.get("footer", "")
@@ -467,29 +506,124 @@ def add_title_page(pdf, config):
         else:
             clean_notes.append(str(note))
 
-    y_base = 0.10
-    line_spacing = 0.028
-    max_lines = 6
+    if not clean_notes and footer:
+        clean_notes = [str(footer)]
 
-    if clean_notes:
-        for i, note in enumerate(clean_notes[:max_lines]):
-            fig.text(
-                0.08,
-                y_base - i * line_spacing,
-                f"– {note}",
-                ha="left",
-                fontsize=10,
-                alpha=0.8,
-            )
-    elif footer:
-        fig.text(
-            0.08,
-            y_base,
-            footer,
-            ha="left",
-            fontsize=10,
-            alpha=0.8,
+    panel_left = 0.07
+    panel_right = 0.93
+    panel_top = 0.38
+    panel_bottom = 0.13
+
+    # Panel title
+    fig.text(
+        panel_left,
+        panel_top + 0.025,
+        "Run Notes",
+        ha="left",
+        fontsize=11,
+        weight="bold",
+        alpha=0.9,
+    )
+
+    # Divider above notes
+    fig.lines.append(
+        plt.Line2D(
+            [panel_left, panel_right],
+            [panel_top + 0.012, panel_top + 0.012],
+            transform=fig.transFigure,
+            color="black",
+            linewidth=0.6,
+            alpha=0.45,
         )
+    )
+
+    # Two-column wrapped notes
+    if clean_notes:
+        col_x = [panel_left, 0.52]
+        col_width_chars = 48
+        line_spacing = 0.019
+        paragraph_gap = 0.0
+        font_size = 8.0
+
+        usable_height = panel_top - panel_bottom
+        max_lines_per_col = int(usable_height / line_spacing)
+
+        wrapped_blocks = []
+        for note in clean_notes:
+            wrapped = textwrap.wrap(
+                note,
+                width=col_width_chars,
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            if not wrapped:
+                wrapped = [""]
+            wrapped_blocks.append(wrapped)
+
+        # Fill column 1 first, then column 2.
+        col = 0
+        line_in_col = 0
+
+        for block in wrapped_blocks:
+            block_height = len(block) + 1
+
+            if line_in_col + block_height > max_lines_per_col and col == 0:
+                col = 1
+                line_in_col = 0
+
+            if col > 1:
+                break
+
+            # If even column 2 is full, stop cleanly.
+            if line_in_col >= max_lines_per_col:
+                break
+
+            for j, line in enumerate(block):
+                if line_in_col >= max_lines_per_col:
+                    break
+
+                prefix = "– " if j == 0 else "  "
+                fig.text(
+                    col_x[col],
+                    panel_top - line_in_col * line_spacing,
+                    f"{prefix}{line}",
+                    ha="left",
+                    va="top",
+                    fontsize=font_size,
+                    alpha=0.82,
+                )
+                line_in_col += 1
+
+            line_in_col += int(round(paragraph_gap / line_spacing))
+
+    # ============================================================
+    # BOTTOM DIVIDER
+    # ============================================================
+    divider_y = 0.075
+
+    fig.lines.append(
+        plt.Line2D(
+            [0.05, 0.95],
+            [divider_y, divider_y],
+            transform=fig.transFigure,
+            color="black",
+            linewidth=0.6,
+            alpha=0.5,
+        )
+    )
+
+    # ============================================================
+    # BOBDYN FOOTER
+    # ============================================================
+    fig.text(
+        0.94,
+        divider_y + 0.018,
+        "BobDyn",
+        ha="right",
+        fontsize=11,
+        weight="bold",
+        alpha=0.85,
+    )
 
     pdf.savefig(fig)
     plt.close(fig)

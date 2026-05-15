@@ -26,12 +26,8 @@ standards:
       # --- Tracking errors ---
       max_curvature_error_pct:              "max_curvature_error_pct"
       mean_curvature_error_pct:             "mean_curvature_error_pct"
-      max_radius_error_pct:                 "max_radius_error_pct"
-      mean_radius_error_pct:                "mean_radius_error_pct"
-      max_abs_ay_error_raw:                 "max_abs_ay_error_raw"
-      mean_abs_ay_error_raw:                "mean_abs_ay_error_raw"
-      max_abs_ay_error_pct:                 "max_abs_ay_error_pct"
-      mean_abs_ay_error_pct:                "mean_abs_ay_error_pct"
+      max_abs_ay_error_cmd:                 "max_abs_ay_error_cmd"
+      mean_abs_ay_error_cmd:                "mean_abs_ay_error_cmd"
 
       # --- Steering effort ---
       handwheel_torque_min:                 "handwheel_torque_min"

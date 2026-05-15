@@ -47,10 +47,10 @@ METRICS = [
     "SteadyStateEval_understeer_gradient_deg_per_g",
     "SteadyStateEval_roll_gradient_deg_per_g",
     "SteadyStateEval_handwheel_torque_max",
-    "SteadyStateEval_max_abs_ay_error_pct",
+    "SteadyStateEval_max_abs_ay_error_cmd",
 ]
 
-FILTER_METRIC = "SteadyStateEval_max_abs_ay_error_pct"
+FILTER_METRIC = "SteadyStateEval_max_abs_ay_error_cmd"
 FILTER_LIMIT = 5.0
 
 
@@ -75,7 +75,7 @@ def _filter_results(df: pd.DataFrame) -> pd.DataFrame:
     if dropped:
         print(
             f"Filtering out {dropped} variant(s) with "
-            f"{FILTER_METRIC} > {FILTER_LIMIT}%"
+            f"{FILTER_METRIC} > {FILTER_LIMIT} m/s^2"
         )
     return kept
 
