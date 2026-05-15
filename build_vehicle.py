@@ -32,7 +32,7 @@ import re
 try:
     import yaml
 except ImportError:  # pragma: no cover
-    yaml = None
+    yaml = None  # type: ignore[assignment]
 
 
 ARCH_TOKENS = {

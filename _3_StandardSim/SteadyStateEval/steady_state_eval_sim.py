@@ -174,12 +174,15 @@ def build_smoothing_spline(
     if x.size < 2:
         raise ValueError("Cannot build a smoothing spline from fewer than two unique points.")
 
-    k = min(3, x.size - 1)
     if smoothing_fraction <= 0.0:
         s_value = 0.0
     else:
         s_value = float(max(0.0, smoothing_fraction) * x.size * np.nanvar(y))
-    return _SciPyUnivariateSpline(x, y, k=k, s=s_value)
+    if x.size == 2:
+        return _SciPyUnivariateSpline(x, y, k=1, s=s_value)
+    if x.size == 3:
+        return _SciPyUnivariateSpline(x, y, k=2, s=s_value)
+    return _SciPyUnivariateSpline(x, y, k=3, s=s_value)
 
 
 def evaluate_spline(spline: Any, x: np.ndarray, derivative: int = 0) -> np.ndarray:
@@ -283,7 +286,9 @@ def build_split_smoothing_curve(
     }
 
 
-def collapse_duplicate_samples(x: np.ndarray, values: dict[str, np.ndarray]) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+def collapse_duplicate_samples(
+    x: np.ndarray, values: dict[str, np.ndarray]
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     x = np.asarray(x, dtype=float).reshape(-1)
     order = np.argsort(x, kind="mergesort")
     x_sorted = x[order]
@@ -872,7 +877,6 @@ class SteadyStateEvalSim:
             curvature = yaw / np.maximum(speed, 0.1)
 
             kappa_cmd = _concat_samples("targetCurvatureCmd")
-            target_ay_cmd = _concat_samples("targetAyCmd")
             ay_target = _repeat_case_values("_testAy")
 
             if ay_measured.size == 0:
