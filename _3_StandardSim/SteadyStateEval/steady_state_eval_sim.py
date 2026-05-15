@@ -1017,6 +1017,10 @@ class SteadyStateEvalSim:
                 "handwheel_steer_sensitivity_deg_per_g": float(
                     handwheel_angle_gradient * 57.2958 * 9.81
                 ),
+                "handwheel_understeer_gradient_rad_per_mps2": handwheel_angle_gradient,
+                "handwheel_understeer_gradient_deg_per_g": float(
+                    handwheel_angle_gradient * 57.2958 * 9.81
+                ),
                 "sideslip_gradient_rad_per_mps2": sideslip_gradient,
                 "sideslip_gradient_deg_per_g": float(
                     sideslip_gradient * 57.2958 * 9.81
@@ -1356,6 +1360,10 @@ class SteadyStateEvalSim:
             ),
             "handwheel_steer_sensitivity_rad_per_mps2": handwheel_angle_gradient,
             "handwheel_steer_sensitivity_deg_per_g": float(
+                handwheel_angle_gradient * 57.2958 * 9.81
+            ),
+            "handwheel_understeer_gradient_rad_per_mps2": handwheel_angle_gradient,
+            "handwheel_understeer_gradient_deg_per_g": float(
                 handwheel_angle_gradient * 57.2958 * 9.81
             ),
             "sideslip_gradient_rad_per_mps2": sideslip_gradient,
