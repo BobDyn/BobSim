@@ -12,8 +12,6 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import yaml
-
 from pipeline.compiler import (
     compile_variant,
     _should_compile,
