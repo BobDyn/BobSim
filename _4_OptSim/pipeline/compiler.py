@@ -22,8 +22,6 @@ import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import yaml
-
 from pipeline._pipeline_hash import (
     check_pipeline_hash,
     write_pipeline_hash,
@@ -51,6 +49,7 @@ DEFAULT_MODELICA_RUNNER = DOE_DIR.parent / "_3_StandardSim/_modelica_runner.py"
 # ---------------------------------------------------------------------------
 
 def load_compiler_config(config_path: Path = DEFAULT_COMPILER_CONFIG) -> dict:
+    import yaml
     with open(config_path) as f:
         return yaml.safe_load(f)
 

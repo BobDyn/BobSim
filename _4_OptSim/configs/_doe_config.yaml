@@ -41,5 +41,5 @@ variables:
   range:
   - -2.0
   - 0.0
-samples: 23
+samples: 3
 seed: 42

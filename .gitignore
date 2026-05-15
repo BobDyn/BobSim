@@ -65,3 +65,5 @@ _4_OptSim/population/
 # Animations
 *.gif
 *.mp4
+
+*.claude/

@@ -3,9 +3,9 @@
 Stages:
   1. sample    — LHS sample variants from _doe_config.yaml
   2. generate  — patch the selected vehicle record per variant → population/
-  3. compile   — compile each variant via OMC → executables
-  4. batch     — run SteadyStateEval report sweep → metrics.csv per variant
-  5. aggregate — collect metrics → results/doe_results.parquet
+  3. build     — compile each variant via OMC then immediately run its simulation
+                 (pipelined per variant, parallel across variants)
+  4. aggregate — collect metrics → results/doe_results.parquet
 
 Safety checks:
   - Population count mismatch: raises if on-disk variant count differs from config
@@ -19,8 +19,7 @@ import time
 from pathlib import Path
 
 from pipeline.aggregator import aggregate
-from pipeline.batch import run_all
-from pipeline.compiler import compile_all
+from pipeline.build_pipeline import build_all
 from pipeline.generate_configs import refresh_doe_config
 from pipeline.generator import generate_variants
 from pipeline.sampler import sample
@@ -43,7 +42,7 @@ POPULATION_DIR = ROOT / "population"
 
 def _stage(n: int, name: str) -> None:
     print(f"\n{'='*60}")
-    print(f"  {n} / 5  —  {name}")
+    print(f"  {n} / 4  —  {name}")
     print(f"{'='*60}\n")
 
 
@@ -88,10 +87,10 @@ def run() -> None:
     generate_variants(DOE_CONFIG, variants, POPULATION_DIR)
     print(f"Done  ({_elapsed(t)})")
 
-    # 3. Compile
-    _stage(3, "Compiling via OMC")
+    # 3+4. Compile → Simulate (pipelined per variant)
+    _stage(3, "Building & simulating (compile → sim per variant)")
     t = time.time()
-    compile_all(
+    build_all(
         POPULATION_DIR,
         COMPILER_CONFIG,
         doe_config_path=DOE_CONFIG,
@@ -99,14 +98,8 @@ def run() -> None:
     )
     print(f"Done  ({_elapsed(t)})")
 
-    # 4. Batch
-    _stage(4, "Running simulations")
-    t = time.time()
-    run_all(POPULATION_DIR, COMPILER_CONFIG)
-    print(f"Done  ({_elapsed(t)})")
-
-    # 5. Aggregate
-    _stage(5, "Aggregating results")
+    # 4. Aggregate
+    _stage(4, "Aggregating results")
     t = time.time()
     df = aggregate(POPULATION_DIR, DOE_CONFIG, AGGREGATOR_CONFIG)
     print(f"Done  ({_elapsed(t)})")
