@@ -16,7 +16,6 @@ import yaml
 
 from pipeline.compiler import (
     compile_variant,
-    _find_exe,
     _should_compile,
     load_compiler_config,
     DEFAULT_MOS_TEMPLATE,
