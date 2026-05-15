@@ -77,11 +77,11 @@ steady-state-eval:
 transient-eval:
 	$(PYTHON) -m _3_StandardSim.TransientEval.transient_eval_sim
 
-run1:
-	python3 build_vehicle.py
-	make shell-bobsim
+# run1:
+# 	python3 build_vehicle.py
+# 	make shell-bobsim
 
-run2:
-	make clean
-	make clean-build
-	make build-standard && make steady-state-eval
+# run2:
+# 	make clean
+# 	make clean-build
+# 	make build-standard && make steady-state-eval
