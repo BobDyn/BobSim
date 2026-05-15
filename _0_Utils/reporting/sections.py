@@ -66,6 +66,16 @@ def add_summary_page(pdf, summary, title=None):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
+            "Handwheel Understeer Gradient",
+            rf"${summary['handwheel_understeer_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['handwheel_understeer_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
             "Roll Gradient",
             rf"${summary['roll_gradient_deg_per_g']:.3f}$",
             r"$\frac{\mathrm{deg}}{g}$",

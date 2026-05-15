@@ -671,7 +671,6 @@ def parameter_sections(data: dict[str, Any]) -> list[tuple[str, str, dict[str, A
             "myTable": require_key(aero, "aero", "my_table_nm"),
             "mzTable": require_key(aero, "aero", "mz_table_nm"),
         }))
-
     return params
 
 
