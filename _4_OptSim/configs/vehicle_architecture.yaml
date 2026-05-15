@@ -4,7 +4,7 @@ schema: bobsim.doe.vehicle_architecture.v1
 vehicle_template: ../../_0_Utils/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml
 
 # DOE sampling controls.
-samples: 23
+samples: 3
 seed: 42
 
 # DOE sweep definition. This is the source of truth for generated _doe_config.yaml.
