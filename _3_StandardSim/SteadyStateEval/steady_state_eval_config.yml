@@ -5,8 +5,8 @@ simulation:
   build_dir: _3_StandardSim/Build
   exec_name: BobLib.Standards.VehicleSim
 
-  start_time: 0.5
-  stop_time: 10.0
+  start_time: 0.0
+  stop_time: 20.0
   solver: dassl
   tolerance: 1e-6
   output_format: csv
@@ -16,16 +16,16 @@ simulation:
   no_grid: true
   no_event_emit: true
 
-  # Optional explicit Modelica overrides. Here for transparency but currently redundant
+  # Explicit Modelica overrides used by SteadyStateEval.
   init_parameters:
     useMode: 0
+    steerStart: 2.0
+    ayRampDuration: 7.0
+    steadyHoldDuration: 0.1
+    handwheelRateTol: 0.01
+    settleTimeout: 3.0
 
-    curvatureGain: 3.2
-    curvatureTi: 0.04
-    ayRampDuration: 1.5
-    ayErrorTol: 0.05
-    steadyHoldDuration: 0.05
-
+    # Longitudinal velocity controller
     velGain: 200.0
     velTi: 1.0
 
@@ -36,111 +36,459 @@ execution:
   stream_logs: false
 
 sweep:
-  testVel: 15.0
-  n_cases: 10
-  r_min: 12.5
-  r_max: 100.0
-  radius_bias_power: 2.5
+  # Velocity isolines used for the open-loop ramp-steer characterization.
+  testVels: [12.5, 15.0, 17.5, 20.0]
+
+  # Signed ramps are generated from 0 -> +maxAy and 0 -> -maxAy.
+  maxAy: 18.0
 
 fit:
-  ay_linear_max: 6.0
+  # Linear-region bound used for reported understeer/gradient fits.
+  ay_linear_max: 4.0
+  # Exclude the low-|measured a_y| region before analysis.
+  ay_min_magnitude: 1.0
+  # Robust prefilter applied before the smoothing spline fit.
+  hampel_window: 100
+  hampel_nsigmas: 1.0
+  # Keep the spline as close to the cleaned samples as possible after outlier rejection.
+  spline_smoothing_fraction: 0.0
 
 report:
   enabled: true
   brand: BobSim
   title: SteadyStateEval Vehicle Characterization
-  subtitle: OpenModelica Executable with Curvature Feedforward and PI Trim
+  subtitle: Measured-$a_y$ ramp-steer isolines with robust fits
   output_path: _3_StandardSim/results/steady_state_eval_report.pdf
 
+  # CSV metrics are exported from the velocity nearest this target.
+  metric_target_velocity_mps: 15.0
+
+  sensitivity_cutoff_fraction: 0.9
+
   notes:
-    - SteadyStateEval steady-state circular test performed
-    - Constant velocity maintained at 15 m/s
-    - Radius sweep from 12.5 m to 100 m
-    - Tire model: MF52
-    - Configuration: baseline_v3
-    - Backend: OpenModelica executable
-    - Curvature controller follows the BobLib radius-controller pattern
-    - Gain-scheduled steer-ratio feedforward drives the majority of the command
-    - A curvature PI trim loop closes the remaining tracking error
-    - Steady-state metrics average the final settled time window
-    - Ay tracking error is plotted against analytical signed Ay
+    - "Open-loop ramp-steer at 12.5, 15, 17.5, and 20 m/s"
+    - "steerStart = 2.0 s; trim all pre-ramp samples"
+    - "Measured $a_y$ is the analysis axis; commanded $a_y$ only sets the ramp"
+    - "|measured $a_y$| < 1.0 m/s^2 is excluded; linear band = 1.0 to 4.0 m/s^2"
+    - "Understeer gradient = mean d(delta_excess)/d(a_y) over the linear band"
+    - "Response curves use split Hampel-filtered spline fits; sensitivities trim the outer 20% of |measured $a_y$|"
+    - "steerExcess = avgSteerAngle - wheelbase * curvature"
+    - "Tire/config: MF52, baseline_v3; Backend: OpenModelica"
+
 
 plots:
   roadwheel:
     layout: dual
-    title: "Steering Angle vs $a_y$"
+    title: "Steering Angle Isolines vs Measured $a_y$"
 
     subplots:
-
       - title: "Roadwheel Angle $\\delta$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: roadwheel, label: "$\\delta$ (deg)", scale: 57.3 }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: roadwheel_isoline
+          label: "$\\delta$ (deg)"
+          scale: 57.3
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: roadwheel_bridge_isoline
+        #       label: "$\\delta$ (deg)"
+        #       scale: 57.3
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: roadwheel_raw_isoline
+        #       label: "$\\delta$ (deg)"
+        #       scale: 57.3
 
       - title: "Handwheel Angle $\\delta_{sw}$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: handwheel, label: "$\\delta_{sw}$ (deg)", scale: 57.3 }
-  tracking_errors:
-    layout: dual
-    title: "Tracking Error vs Analytical $a_y$"
-
-    subplots:
-
-      - title: "Ay Tracking Error"
-        style: scatter
-        x: { key: ay_analytical, label: "Analytical $a_y$ $(m/s^2)$" }
-        y: { key: ay_error_pct, label: "$\\Delta a_y / a_{y,analytical} \\times 100$ (%)" }
-
-      - title: "Radius Tracking Error"
-        style: scatter
-        x: { key: ay_analytical, label: "Analytical $a_y$ $(m/s^2)$" }
-        y: { key: radius_error_pct, label: "$\\Delta r / r_{cmd} \\times 100$ (%)" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: handwheel_isoline
+          label: "$\\delta_{sw}$ (deg)"
+          scale: 57.3
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: handwheel_bridge_isoline
+        #       label: "$\\delta_{sw}$ (deg)"
+        #       scale: 57.3
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: handwheel_raw_isoline
+        #       label: "$\\delta_{sw}$ (deg)"
+        #       scale: 57.3
 
   vehicle_states:
     layout: triple
-    title: "Vehicle States vs $a_y$"
+    title: "Vehicle State Isolines vs Measured $a_y$"
 
     subplots:
-
       - title: "Curvature $\\kappa$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: curvature, label: "$\\kappa$ (1/m)" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: curvature_isoline
+          label: "$\\kappa$ (1/m)"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: curvature_bridge_isoline
+        #       label: "$\\kappa$ (1/m)"
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: curvature_raw_isoline
+        #       label: "$\\kappa$ (1/m)"
 
       - title: "Roll Angle $\\phi$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: roll, label: "$\\phi$ (rad)" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: roll_isoline
+          label: "$\\phi$ (rad)"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: roll_bridge_isoline
+        #       label: "$\\phi$ (rad)"
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: roll_raw_isoline
+        #       label: "$\\phi$ (rad)"
 
       - title: "Sideslip $\\beta$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: sideslip, label: "$\\beta$ (rad)" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: sideslip_isoline
+          label: "$\\beta$ (rad)"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: sideslip_bridge_isoline
+        #       label: "$\\beta$ (rad)"
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: sideslip_raw_isoline
+        #       label: "$\\beta$ (rad)"
 
   sensitivities:
     layout: triple
-    title: "Response Sensitivities vs $a_y$"
+    title: "Parametric Response Sensitivities vs Measured $a_y$"
 
     subplots:
-
       - title: "$d\\kappa/da_y$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: curvature_gradient, label: "$d\\kappa/da_y$" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: curvature_gradient_isoline
+          label: "$d\\kappa/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: curvature_gradient_bridge_isoline
+        #       label: "$d\\kappa/da_y$"
 
       - title: "$d\\phi/da_y$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: roll_gradient, label: "$d\\phi/da_y$" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: roll_gradient_isoline
+          label: "$d\\phi/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: roll_gradient_bridge_isoline
+        #       label: "$d\\phi/da_y$"
 
       - title: "$d\\beta/da_y$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: sideslip_gradient, label: "$d\\beta/da_y$" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: sideslip_gradient_isoline
+          label: "$d\\beta/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: sideslip_gradient_bridge_isoline
+        #       label: "$d\\beta/da_y$"
 
   steering_effort:
     layout: dual
-    title: "Steering Effort and Sensitivity vs $a_y$"
+    title: "Steering Effort Isolines vs Measured $a_y$"
 
     subplots:
-
       - title: "Steering Torque $T_{sw}$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: torque, label: "$T_{sw}$ (Nm)" }
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: torque_isoline
+          label: "$T_{sw}$ (Nm)"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: torque_bridge_isoline
+        #       label: "$T_{sw}$ (Nm)"
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: torque_raw_isoline
+        #       label: "$T_{sw}$ (Nm)"
 
-      - title: "Steering Sensitivity $d\\delta/da_y$"
-        x: { key: ay_signed, label: "$a_y$ $(m/s^2)$" }
-        y: { key: steer_gradient, label: "$d\\delta/da_y$" }
+      - title: "Roadwheel Steering Sensitivity $d\\delta/da_y$"
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: steer_gradient_isoline
+          label: "$d\\delta/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: steer_gradient_bridge_isoline
+        #       label: "$d\\delta/da_y$"
+
+  steer_excess:
+    layout: dual
+    title: "Excess Steer Isolines vs Measured $a_y$"
+
+    subplots:
+      - title: "Steer Excess $\\delta_{excess}$"
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: steer_excess_isoline
+          label: "$\\delta_{excess}$ (rad)"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: steer_excess_bridge_isoline
+        #       label: "$\\delta_{excess}$ (rad)"
+
+      - title: "Understeer Gradient $d\\delta_{excess}/da_y$"
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: steer_excess_gradient_isoline
+          label: "$d\\delta_{excess}/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: steer_excess_gradient_bridge_isoline
+        #       label: "$d\\delta_{excess}/da_y$"
+
+  velocity_angle_gradients:
+    layout: dual
+    title: "Angle Gradients vs Velocity"
+
+    subplots:
+      - title: "Roadwheel Angle Gradient"
+        x:
+          key: velocity_summary_mps
+          label: "Velocity (m/s)"
+        y:
+          key: velocity_summary_roadwheel_angle_gradient_rad_per_mps2
+          label: "Roadwheel gradient (deg/g)"
+          scale: 562.071798
+
+      - title: "Handwheel Angle Gradient"
+        x:
+          key: velocity_summary_mps
+          label: "Velocity (m/s)"
+        y:
+          key: velocity_summary_handwheel_angle_gradient_rad_per_mps2
+          label: "Handwheel gradient (deg/g)"
+          scale: 562.071798
+
+  velocity_state_gradients:
+    layout: triple
+    title: "State Gradients vs Velocity"
+
+    subplots:
+      - title: "Sideslip Gradient"
+        x:
+          key: velocity_summary_mps
+          label: "Velocity (m/s)"
+        y:
+          key: velocity_summary_sideslip_gradient_rad_per_mps2
+          label: "Sideslip gradient (deg/g)"
+          scale: 562.071798
+
+      - title: "Understeer Gradient"
+        x:
+          key: velocity_summary_mps
+          label: "Velocity (m/s)"
+        y:
+          key: velocity_summary_understeer_gradient_rad_per_mps2
+          label: "Understeer gradient (deg/g)"
+          scale: 562.071798
+
+      - title: "Roll Gradient"
+        x:
+          key: velocity_summary_mps
+          label: "Velocity (m/s)"
+        y:
+          key: velocity_summary_roll_gradient_rad_per_mps2
+          label: "Roll gradient (deg/g)"
+          scale: 562.071798
+        #   - style: scatter
+        #     group_labels: false
+        #     alpha: 0.25
+        #     markersize: 3
+        #     x:
+        #       key: ay_measured_raw_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: steer_excess_raw_isoline
+        #       label: "$\\delta_{excess}$ (rad)"
+
+      - title: "Understeer Gradient $d\\delta_{excess}/da_y$"
+        x:
+          key: ay_measured_isoline
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: steer_excess_gradient_isoline
+          label: "$d\\delta_{excess}/da_y$"
+        # overlay:
+        #   - style: line
+        #     group_labels: false
+        #     linestyle: ":"
+        #     color: "#666666"
+        #     linewidth: 1.5
+        #     x:
+        #       key: ay_measured_bridge_isoline
+        #       label: "Measured $a_y$ $(m/s^2)$"
+        #     y:
+        #       key: steer_excess_gradient_bridge_isoline
+        #       label: "$d\\delta_{excess}/da_y$"

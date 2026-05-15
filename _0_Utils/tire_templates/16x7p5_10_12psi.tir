@@ -8,7 +8,6 @@ FILE_FORMAT      = 'ASCII'
 ! : COMMENT :       Infl. pressure (Pa) 82737
 ! : COMMENT :       Rim radius (m) 0.127
 ! : COMMENT :       Test speed (m/s) 12
-! : COMMENT :       Road condition Right
 ! : USE_MODE :      14
 !
 ! USE_MODE specifies the type of calculation performed:
@@ -75,7 +74,7 @@ CAMMAX                   =  0.0698132               $Maximum valid camber angle
 $-----------------------------------------------------------------VERTICAL_FORCE_RANGE
 [VERTICAL_FORCE_RANGE]
 FZMIN                    =  100                     $Minimum allowed wheel load
-FZMAX                    =  1000                    $Maximum allowed wheel load
+FZMAX                    =  1800                    $Maximum allowed wheel load
 $-----------------------------------------------------------------SCALING
 [SCALING_COEFFICIENTS]
 LFZO                     =  1                       $Scale factor of nominal (rated) load

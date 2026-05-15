@@ -1,4 +1,5 @@
 DOCKER_RUN := docker run --rm -v "$(CURDIR):/bobsim" openmodelica/openmodelica:v1.26.3-ompython
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf ".venv/bin/python"; else printf "python3"; fi)
 
 .PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-transient clean-doe clean
 
@@ -71,7 +72,16 @@ build-standard:
 	omc _3_StandardSim/build.mos
 
 steady-state-eval:
-	python3 -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
+	$(PYTHON) -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
 
 transient-eval:
-	python3 -m _3_StandardSim.TransientEval.transient_eval_sim
+	$(PYTHON) -m _3_StandardSim.TransientEval.transient_eval_sim
+
+run1:
+	python3 build_vehicle.py
+	make shell-bobsim
+
+run2:
+	make clean
+	make clean-build
+	make build-standard && make steady-state-eval

@@ -7,6 +7,7 @@ from typing import Any
 import shutil
 import subprocess
 import uuid
+import traceback
 
 import numpy as np
 import pandas as pd
@@ -72,23 +73,35 @@ class ModelicaRunner:
     def run_cases(self, signals, mode, cases, cleanup=False, stream_logs=False):
         results = []
         n_total = len(cases)
+        n_done = 0
+        n_failed = 0
 
         for i, case in enumerate(cases, start=1):
             label = self._case_label(case)
 
             print(f"[{i}/{n_total}] running {label}", flush=True)
 
-            results.append(
-                self.run_case(
-                    signals=signals,
-                    mode=mode,
-                    case=case,
-                    cleanup=cleanup,
-                    stream_logs=stream_logs,
-                )
+            result = self._run_case_safe(
+                signals=signals,
+                mode=mode,
+                case=case,
+                cleanup=cleanup,
+                stream_logs=stream_logs,
             )
+            results.append(result)
 
-            print(f"[{i}/{n_total}] complete {label}", flush=True)
+            n_done += 1
+            if result.get("_status") == "failed":
+                n_failed += 1
+                print(f"[{i}/{n_total}] failed {label}", flush=True)
+            else:
+                print(f"[{i}/{n_total}] complete {label}", flush=True)
+
+        print(
+            f"Finished {n_done}/{n_total} cases"
+            + (f" with {n_failed} failure(s)" if n_failed else ""),
+            flush=True,
+        )
 
         return results
 
@@ -139,16 +152,37 @@ class ModelicaRunner:
                 futures[future] = i - 1
 
             n_done = 0
+            n_failed = 0
 
             for future in as_completed(futures):
                 idx = futures[future]
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception as exc:  # pragma: no cover - safety net
+                    case = cases[idx]
+                    label = self._case_label(case)
+                    result = {
+                        "_status": "failed",
+                        "_case_label": label,
+                        "_error": str(exc),
+                        "_traceback": traceback.format_exc(),
+                    }
                 results[idx] = result
 
                 n_done += 1
                 label = result.get("_case_label", f"case {idx + 1}")
 
-                print(f"[{n_done}/{n_total}] complete {label}", flush=True)
+                if result.get("_status") == "failed":
+                    n_failed += 1
+                    print(f"[{n_done}/{n_total}] failed {label}", flush=True)
+                else:
+                    print(f"[{n_done}/{n_total}] complete {label}", flush=True)
+
+        print(
+            f"Finished {n_done}/{n_total} cases"
+            + (f" with {n_failed} failure(s)" if n_failed else ""),
+            flush=True,
+        )
 
         return results
 
@@ -290,6 +324,27 @@ class ModelicaRunner:
 
         raise ValueError(f"Unsupported extraction mode: {mode}")
 
+    def _run_case_safe(self, signals, mode, case, cleanup=False, stream_logs=False):
+        try:
+            result = self.run_case(
+                signals=signals,
+                mode=mode,
+                case=case,
+                cleanup=cleanup,
+                stream_logs=stream_logs,
+            )
+        except Exception as exc:
+            label = self._case_label(case)
+            return {
+                "_status": "failed",
+                "_case_label": label,
+                "_error": str(exc),
+                "_traceback": traceback.format_exc(),
+            }
+
+        result["_status"] = "ok"
+        return result
+
     def _write_override_file(self, path, case):
         with Path(path).open("w", newline="\n") as f:
             for key, value in case.items():
@@ -381,6 +436,27 @@ class ModelicaRunner:
     def _case_label(self, case):
         mode = case.get("_mode", case.get("mode", "case"))
 
+        if any(key in case for key in ("testVel", "_testVel", "targetVel")) and any(
+            key in case for key in ("testAy", "_testAy", "targetAy")
+        ):
+            vel = _first_not_none(case.get("testVel"), case.get("_testVel"), case.get("targetVel"))
+            ay = _first_not_none(case.get("testAy"), case.get("_testAy"), case.get("targetAy"))
+
+            if vel is not None and ay is not None:
+                return (
+                    f"{mode}, V={float(vel):.3g} m/s, "
+                    f"Ay={float(ay):.3g} m/s^2"
+                )
+
+        if "testAy" in case:
+            return f"{mode}, Ay={float(case['testAy']):.3g} m/s^2"
+
+        if "_testAy" in case:
+            return f"{mode}, Ay={float(case['_testAy']):.3g} m/s^2"
+
+        if "targetAy" in case:
+            return f"{mode}, Ay={float(case['targetAy']):.3g} m/s^2"
+
         if "testRad" in case:
             return f"{mode}, R={float(case['testRad']):.3g} m"
 
@@ -422,7 +498,7 @@ def _run_case_worker(
     label = runner._case_label(case)
     print(f"started {label}", flush=True)
 
-    return runner.run_case(
+    return runner._run_case_safe(
         signals=signals,
         mode=mode,
         case=case,

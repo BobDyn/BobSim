@@ -31,10 +31,8 @@ import re
 
 try:
     import yaml
-except ImportError as exc:  # pragma: no cover
-    raise SystemExit(
-        "Missing dependency: PyYAML. Install it with `python -m pip install pyyaml`."
-    ) from exc
+except ImportError:  # pragma: no cover
+    yaml = None
 
 
 ARCH_TOKENS = {
@@ -176,7 +174,7 @@ MF52_SECTION_FIELDS = {'fxCombined': ['RBX1', 'RBX2', 'RCX1', 'REX1', 'REX2', 'R
             'LKY',
             'LMUY',
             'LGAZ'],
- 'setup': ['FNOMIN', 'UNLOADED_RADIUS']}
+ 'setup': ['FNOMIN', 'FZMIN', 'FZMAX', 'UNLOADED_RADIUS']}
 TIRE_SECTION_TYPES = {
     "setup": "TireModel.SetupRecord",
     "fxPure": "TireModel.PureSlip.FxPureRecord",
@@ -234,6 +232,10 @@ def node_value(node: Any, default: Any = None) -> Any:
 def load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Missing {path}. Create or copy a vehicle.yml first.")
+    if yaml is None:  # pragma: no cover
+        raise RuntimeError(
+            "Missing dependency: PyYAML. Install it with `python -m pip install pyyaml`."
+        )
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a YAML mapping.")
@@ -383,6 +385,11 @@ def render_field_value(value: Any) -> str:
 
 
 def render_parameter(name: str, modelica_type: str, fields: dict[str, Any]) -> str:
+    binding = fields.get("_binding")
+    if binding is not None:
+        if len(fields) != 1:
+            raise ValueError(f"Binding-only parameter {name} cannot mix with field assignments: {fields!r}")
+        return f"parameter {modelica_type} {name} = {binding};"
     if not fields:
         return f"parameter {modelica_type} {name};"
     assignments = [f"    {key} = {render_field_value(value)}" for key, value in fields.items()]
@@ -515,6 +522,14 @@ def mass_record(value: dict[str, Any]) -> dict[str, Any]:
     })
 
 
+def zero_mass_record() -> dict[str, Any]:
+    return constructor("MassRecord", {
+        "m": 0,
+        "rCM": [0, 0, 0],
+        "inertia": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+    })
+
+
 def side_parameters(data: dict[str, Any], side_name: str, prefix: str, topology: str) -> list[tuple[str, str, dict[str, Any]]]:
     side = require_side(data, side_name)
     wheel = require_section(side, side_name, "wheel")
@@ -617,16 +632,37 @@ def parameter_sections(data: dict[str, Any]) -> list[tuple[str, str, dict[str, A
     params.extend(side_parameters(data, "rear", "Rr", rear_topology))
 
     sprung = require_mapping(data, "sprung_mass", vehicle_yaml_path())
-    params.append(("pSprungMass", "MassRecord", {
+    params.append(("pBaseSprungMass", "MassRecord", {
         "m": require_key(sprung, "sprung_mass", "mass_kg"),
         "rCM": require_key(sprung, "sprung_mass", "cg_m"),
         "inertia": require_key(sprung, "sprung_mass", "inertia_kg_m2"),
+    }))
+
+    driver = data.get("driver_mass")
+    if isinstance(driver, dict):
+        driver_fields = {
+            "m": require_key(driver, "driver_mass", "mass_kg"),
+            "rCM": require_key(driver, "driver_mass", "cg_m"),
+            "inertia": require_key(driver, "driver_mass", "inertia_kg_m2"),
+        }
+    else:
+        driver_fields = zero_mass_record()
+    params.append(("pDriverMass", "MassRecord", driver_fields))
+    body = require_mapping(data, "body", vehicle_yaml_path())
+    params.append(("pTorsionalStiff", "Modelica.SIunits.RotationalSpringConstant", {
+        "_binding": require_key(body, "body", "torsional_stiff_n_m_per_rad"),
+    }))
+    params.append(("pSprungMass", "MassRecord", {
+        "_binding": "BobLib.Utilities.Mechanics.combineMassRecords({pBaseSprungMass, pDriverMass})",
     }))
 
     aero = data.get("aero")
     if isinstance(aero, dict):
         params.append(("pAero", "Aero.CFDAeroMapRecord", {
             "referenceSpeed": require_key(aero, "aero", "reference_speed_m_per_s"),
+            "aeroRef": require_key(aero, "aero", "aero_ref_m"),
+            "FL_RideHeightRef": require_key(aero, "aero", "front_left_ride_height_ref_m"),
+            "RL_RideHeightRef": require_key(aero, "aero", "rear_left_ride_height_ref_m"),
             "frontRideHeightGrid": require_key(aero, "aero", "front_ride_height_grid_m"),
             "rearRideHeightGrid": require_key(aero, "aero", "rear_ride_height_grid_m"),
             "dragTable": require_key(aero, "aero", "drag_table_n"),
@@ -635,6 +671,7 @@ def parameter_sections(data: dict[str, Any]) -> list[tuple[str, str, dict[str, A
             "myTable": require_key(aero, "aero", "my_table_nm"),
             "mzTable": require_key(aero, "aero", "mz_table_nm"),
         }))
+
     return params
 
 
@@ -687,21 +724,21 @@ model VehicleSim
   parameter {record_name} pVehicle;
 
   parameter Integer useMode = 0
-    "0 - closed-loop lateral acceleration and velocity; 1 - open-loop sinusoidal steer, constant velocity; 2 - custom open-loop steer and drive torque"
+    "0 - open-loop slow ramp steer; 1 - open-loop sinusoidal steer, constant velocity; 2 - custom open-loop step steer and drive torque"
     annotation(Evaluate = false);
 
   // Toggle controllers
-  final parameter Boolean closedLoopAy = useMode == 0;
+  final parameter Boolean openLoopAy = useMode == 0;
   final parameter Boolean closedLoopVelocity = useMode == 0 or useMode == 1 or useMode == 2;
 
-  parameter Modelica.SIunits.Time steerStart = 1.0
+  parameter Modelica.SIunits.Time steerStart = 2.0
     "Start time"
     annotation(Evaluate = false);
 
-  // Closed-loop maneuver parameters
-  parameter SIunits.Length targetRad = 12.5
-    "Target maneuver radius"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
+  // Open-loop ramp-steer parameters
+  parameter SIunits.Acceleration targetAy = 18
+    "Nominal target lateral acceleration used to size the open-loop ramp"
+    annotation(Evaluate = false, Dialog(enable = openLoopAy));
 
   parameter SIunits.Velocity targetVel = 15
     "Target maneuver velocity"
@@ -711,33 +748,21 @@ model VehicleSim
     "Initial velocity"
     annotation(Evaluate = false);
 
-  parameter Real curvatureGain = 3.2
-    "Proportional gain of curvature PI controller"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
-
-  parameter Real curvatureTi = 0.03
-    "Time constant of curvature PI controller"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
-
   parameter Real steerRatioEstimateStart = 17.5
     "Geometry-based bootstrap for handwheel-to-roadwheel ratio"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
+    annotation(Evaluate = false, Dialog(enable = openLoopAy));
 
   parameter Real steerRatioEstimateDecay = 15.5
     "Gain-scheduling strength for the feedforward steer ratio"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
+    annotation(Evaluate = false, Dialog(enable = openLoopAy));
 
-  parameter SIunits.Time ayRampDuration = 1.5
-    "Lateral acceleration target ramp duration"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
+  parameter SIunits.Time ayRampDuration = 3.0
+    "Open-loop ramp duration"
+    annotation(Evaluate = false, Dialog(enable = openLoopAy));
 
-  parameter SIunits.Time steadyHoldDuration = 0.5
-    "Duration that Ay error must remain below tolerance before termination"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
-
-  parameter Real ayErrorTol = 0.01
-    "Lateral acceleration error tolerance"
-    annotation(Evaluate = false, Dialog(enable = closedLoopAy));
+  parameter SIunits.Time steadyHoldDuration = 0.1
+    "Duration that the QSS plateau conditions must remain true before termination"
+    annotation(Evaluate = false, Dialog(enable = openLoopAy));
 
   parameter Real velGain = 200
     "Proportional gain of velocity controller"
@@ -749,6 +774,12 @@ model VehicleSim
 
   parameter Real der_yawVelTol = 0.01
     "Yaw-rate derivative tolerance for ramp-steer steady-state detection";
+
+  parameter Real handwheelRateTol = 0.01
+    "Handwheel-rate derivative tolerance for open-loop QSS detection";
+
+  parameter SIunits.Time settleTimeout = 3.0
+    "Fail-fast timeout after the ramp ends if QSS is never reached";
 
   // Ramp-steer parameters
   parameter SIunits.Angle frRampSteerHeight = 5*pi/180
@@ -776,8 +807,8 @@ model VehicleSim
 
   Real speed;
   Real curvature;
+  Real targetRad;
   Real targetCurvature;
-  Real targetAy;
   Real targetAyCmd;
   Real targetCurvatureCmd;
   Real targetRoadwheel;
@@ -796,12 +827,13 @@ model VehicleSim
   Real radError;
   Real velError;
   Real steerSine;
-  Real steerRamp;
+  Real steerStep;
 
   // Standard outputs
   SIunits.Acceleration accX;
   SIunits.Acceleration accY;
   SIunits.Angle handwheelAngle;
+  SIunits.Angle steerExcess;
   SIunits.Torque handwheelTorque;
   SIunits.Force Fz_FL;
   SIunits.Force Fz_FR;
@@ -809,6 +841,7 @@ model VehicleSim
   SIunits.Force Fz_RR;
   SIunits.Angle leftSteerAngle;
   SIunits.Angle rightSteerAngle;
+  SIunits.Angle avgSteerAngle;
   SIunits.Angle roll;
   SIunits.Angle sideslip;
   SIunits.Velocity velX;
@@ -819,8 +852,7 @@ model VehicleSim
     Placement(transformation(origin = {{-130, -110}}, extent = {{{{-10, -10}}, {{10, 10}}}})));
 
   BobLib.Vehicle.{vehicle_model} vehicle(
-    pVehicle = pVehicle,
-    pAero = pVehicle.pAero) annotation(
+    pVehicle = pVehicle) annotation(
     Placement(transformation(origin = {{0, 20}}, extent = {{{{-45, -50}}, {{45, 50}}}})));
 
   Modelica.Mechanics.MultiBody.Joints.FreeMotion cgFreeMotion(
@@ -872,7 +904,7 @@ model VehicleSim
     pVehicle.pFrDW.wheelCenter[1] - pVehicle.pRrDW.wheelCenter[1]);
 
 protected
-  discrete Real t_ay_hit(start = -1);
+  discrete Real t_qss_hit(start = -1);
   discrete Real t_yawVel_hit(start = -1);
 
   Real leftWheelVector[3];
@@ -899,7 +931,7 @@ protected
     Placement(transformation(origin = {{130, -50}}, extent = {{{{10, -10}}, {{10, 10}}}})));
 
   Modelica.Mechanics.MultiBody.Parts.Fixed cgFixed(
-    r = pVehicle.pSprungMass.rCM,
+    r = vehicle.pVehicleCG,
     animation = false) annotation(
     Placement(transformation(origin = {{130, 90}}, extent = {{{{10, -10}}, {{-10, 10}}}})));
 
@@ -914,16 +946,6 @@ protected
 
   BobLib.Utilities.Mechanics.Multibody.GroundPhysics groundRR annotation(
     Placement(transformation(origin = {{100, -50}}, extent = {{{{10, -10}}, {{10, 10}}}})));
-
-  Modelica.Blocks.Sources.RealExpression curvErrorExpression(
-    y = curvatureError) annotation(
-    Placement(transformation(origin = {{-110, 130}}, extent = {{{{-10, -10}}, {{10, 10}}}})));
-
-  Modelica.Blocks.Continuous.PI curvPI(
-    k = curvatureGain,
-    T = curvatureTi,
-    initType = Modelica.Blocks.Types.Init.InitialOutput) annotation(
-    Placement(transformation(origin = {{-70, 110}}, extent = {{{{-10, -10}}, {{10, 10}}}})));
 
   Modelica.Blocks.Sources.RealExpression velSetpointExpression(
     y = targetVel) annotation(
@@ -958,21 +980,32 @@ initial equation
     initialVel / pVehicle.pRrPartialWheel.R0;
 
 equation
-  targetCurvature = noEvent(1 / targetRad);
-  targetAy = noEvent(targetVel * targetVel / targetRad);
+  targetRad =
+    if abs(targetAy) > 1e-6 then
+      noEvent(
+        (if targetAy >= 0 then 1 else -1) *
+        targetVel * targetVel / abs(targetAy)
+      )
+    else
+      1e9;
+
+  targetCurvature = noEvent(targetAy / max(targetVel * targetVel, 1e-6));
   targetRoadwheel = noEvent(atan(wheelbase * targetCurvature));
 
   curvature =
     bodyAngularVels[3] / max(speed, 0.1);
 
   radError =
-    abs(curvature - targetCurvature) /
-    max(abs(targetCurvature), 1e-6) *
-    abs(targetRad);
+    if abs(targetAy) > 1e-6 then
+      abs(curvature - targetCurvature) /
+      max(abs(targetCurvature), 1e-6) *
+      abs(targetRad)
+    else
+      0;
 
   // Fifth-order smootherstep ramp for target Ay.
-  // With steerStart = 1.0 and ayRampDuration = 1.5,
-  // the target finishes ramping at t = 2.5 s.
+  // With steerStart = 2.0 and ayRampDuration = 3.0,
+  // the target finishes ramping at t = 5.0 s.
   rampXi =
     if useMode == 0 then
       noEvent(
@@ -1030,7 +1063,7 @@ equation
 
   curvatureError =
     if useMode == 0 and noEvent(time >= steerStart) then
-      ayRampFactor * (targetCurvature - curvature)
+      targetCurvatureCmd - curvature
     else
       0;
 
@@ -1053,29 +1086,35 @@ equation
     else
       0;
 
-  // Strict Ay hold-window detection:
-  // timer starts only when final Ay error enters tolerance
-  // timer resets immediately if final Ay error leaves tolerance.
+  // Open-loop QSS detection: the vehicle has settled when yaw rate and
+  // steering rate are both flat for long enough after the ramp ends.
   when useMode == 0
      and time > steerStart + ayRampDuration
-     and abs(ayErrorRaw) < ayErrorTol
-     and pre(t_ay_hit) < 0 then
-    t_ay_hit = time;
+     and abs(der(yawVel)) < der_yawVelTol
+     and abs(der(handwheelAngle)) < handwheelRateTol
+     and pre(t_qss_hit) < 0 then
+    t_qss_hit = time;
 
   elsewhen useMode == 0
      and time > steerStart + ayRampDuration
-     and abs(ayErrorRaw) >= ayErrorTol then
-    t_ay_hit = -1;
+     and (abs(der(yawVel)) >= der_yawVelTol
+          or abs(der(handwheelAngle)) >= handwheelRateTol) then
+    t_qss_hit = -1;
   end when;
 
   when useMode == 0
-     and t_ay_hit > 0
-     and time > t_ay_hit + steadyHoldDuration then
-    terminate("Reached lateral acceleration target and held error below tolerance");
+     and t_qss_hit > 0
+     and time > t_qss_hit + steadyHoldDuration then
+    terminate("Reached open-loop ramp-steer QSS plateau");
+  end when;
+
+  when useMode == 0
+     and time > steerStart + ayRampDuration + settleTimeout then
+    terminate("Open-loop ramp steer did not reach QSS plateau before timeout");
   end when;
 
   when useMode == 2
-     and time > steerStart + frRampSteerDuration
+     and time > steerStart
      and abs(der(yawVel)) < der_yawVelTol
      and pre(t_yawVel_hit) < 0 then
     t_yawVel_hit = time;
@@ -1088,7 +1127,7 @@ equation
   when useMode == 2
      and t_yawVel_hit > 0
      and time > t_yawVel_hit + 0.1 then
-    terminate("Reached ramp-steer steady-state: der(yawVel) below tolerance (held 0.1s)");
+    terminate("Reached open-loop step-steer steady-state: der(yawVel) below tolerance (held 0.1s)");
   end when;
 
   steerSine =
@@ -1097,18 +1136,20 @@ equation
     else
       0;
 
-  steerRamp =
-    frRampSteerHeight *
-    noEvent(min(1, max(0, (time - steerStart) / frRampSteerDuration)));
+  steerStep =
+    if noEvent(time > steerStart) then
+      frRampSteerHeight
+    else
+      0;
 
-  // Curvature error PI provides the nominal handwheel command.
+  // Open-loop feedforward provides the nominal handwheel command.
   frSteerCmd =
     if useMode == 0 and noEvent(time >= steerStart) then
-      steerFeedforward + curvPI.y
+      steerFeedforward
     elseif useMode == 1 then
       steerSine
     elseif useMode == 2 then
-      steerRamp
+      steerStep
     else
       0;
 
@@ -1122,24 +1163,16 @@ equation
   vehicle.uPTNTorque = driveTorqueCmd;
 
   bodyVels =
-    Frames.resolve2(
-      vehicle.chassis.spaceFrame.sprungBody.frame_a.R,
-      vehicle.chassis.spaceFrame.sprungBody.v_0);
+    Frames.resolve2(cgFreeMotion.frame_b.R, cgFreeMotion.v_rel_a);
 
   bodyAngularVels =
-    Frames.resolve2(
-      vehicle.chassis.spaceFrame.sprungBody.frame_a.R,
-      vehicle.chassis.spaceFrame.sprungBody.w_a);
+    Frames.angularVelocity2(cgFreeMotion.frame_b.R);
 
   bodyAccels =
-    Frames.resolve2(
-      vehicle.chassis.spaceFrame.sprungBody.frame_a.R,
-      vehicle.chassis.spaceFrame.sprungBody.a_0);
+    Frames.resolve2(cgFreeMotion.frame_b.R, cgFreeMotion.a_rel_a);
 
   bodyAngles =
-    Frames.resolve2(
-      vehicle.chassis.spaceFrame.sprungBody.frame_a.R,
-      sprungAngles.angles);
+    Frames.resolve2(vehicle.chassis.cgFrame.R, sprungAngles.angles);
 
   leftWheelVector =
     Frames.resolve1(
@@ -1153,8 +1186,10 @@ equation
 
   leftSteerAngle = -1*atan(leftWheelVector[2] / leftWheelVector[1]);
   rightSteerAngle = -1*atan(rightWheelVector[2] / rightWheelVector[1]);
+  avgSteerAngle = (leftSteerAngle + rightSteerAngle) / 2;
 
   handwheelAngle = vehicle.steerFlange.phi;
+  steerExcess = avgSteerAngle - wheelbase * curvature;
 
   speed = norm(bodyVels);
   velError = targetVel - speed;
@@ -1191,9 +1226,6 @@ equation
 
   connect(fixedRR.frame_b, groundRR.frame_a) annotation(
     Line(points = {{{{120, -50}}, {{110, -50}}}}, color = {{95, 95, 95}}));
-
-  connect(curvErrorExpression.y, curvPI.u) annotation(
-    Line(points = {{{{-99, 130}}, {{-82, 130}}}}, color = {{0, 0, 127}}));
 
   connect(velSetpointExpression.y, speedPI.u_s) annotation(
     Line(points = {{{{-59, -30}}, {{-42, -30}}}}, color = {{0, 0, 127}}));

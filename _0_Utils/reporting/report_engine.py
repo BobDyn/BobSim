@@ -44,7 +44,26 @@ class ReportEngine:
             add_title_page(pdf, self.config)
 
             if standard == "SteadyStateEval":
-                add_summary_page(pdf, result["summary"])
+                velocity_summaries = result.get("velocity_summaries", [])
+                if velocity_summaries:
+                    for summary in velocity_summaries:
+                        velocity = summary.get("velocity_mps")
+                        page_title = "SteadyStateEval Summary"
+                        if velocity is not None:
+                            page_title = f"{page_title} {velocity:.1f} m/s"
+                        print(f"📄 Rendering summary page: {page_title}")
+                        add_summary_page(
+                            pdf,
+                            summary,
+                            title=page_title,
+                        )
+                else:
+                    print("📄 Rendering summary page: SteadyStateEval Summary")
+                    add_summary_page(
+                        pdf,
+                        result["summary"],
+                        title="SteadyStateEval Summary",
+                    )
 
             elif standard == "TransientEval":
                 from _0_Utils.reporting.sections import (
@@ -64,6 +83,7 @@ class ReportEngine:
                 raise ValueError(f"Unknown standard: {standard}")
 
             if "plots" in self.config:
+                print("📄 Rendering plot pages")
                 PlotEngine(self.config).run(result, pdf)
 
         print("✅ Report written")
