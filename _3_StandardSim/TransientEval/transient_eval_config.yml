@@ -21,32 +21,27 @@ execution:
   stream_logs: false
 
 test:
-  testVel: 20.0
+  # Scalar or list of velocities; multiple values render as isolines.
+  testVel: [15.0, 20.0]
   stepTime: 1.0
 
   run_step: true
-  run_sine_one_period: true
   run_continuous_sine: true
 
-  directions: [left, right]
+  directions: [left]
 
-  # Kept for future useMode=2 step support.
+  # Representative step steer case.
   representative_step_deg: 5.0
   representative_step_direction: left
   steerStep_deg: [5.0]
-
-  representative_one_freq_hz: 1.0
-  representative_one_amp_deg: 5.0
-  representative_one_direction: left
-  sine_freq_hz: [1.0]
-  sine_amp_deg: [5.0]
+  stepDuration: 0.02
 
   representative_cont_freq_hz: 1.0
   representative_cont_amp_deg: 5.0
   representative_cont_direction: left
-  sweep_freq_hz: [0.5, 0.75, 1.0, 1.5, 2.0]
+  sweep_freq_hz: [0.5, 0.75, 1.0]
   sweep_amp_deg: [5.0]
-  n_cycles: 5
+  n_cycles: 4
   analyze_cycles_after: 1
 
   freq_response_amp_deg: 5.0
@@ -56,16 +51,17 @@ report:
   enabled: true
   brand: BobSim
   title: TransientEval Lateral Transient Response
-  subtitle: Comprehensive Open-Loop Characterization
+  subtitle: Step response and sustained-sine FRF
   output_path: _3_StandardSim/results/transient_eval_report.pdf
+  metric_target_velocity_mps: 15.0
 
   notes:
-    - One-period sinusoidal input
-    - Continuous sinusoidal response
-    - Frequency response computed from fixed-amplitude, single-direction sine sweep
+    - Representative step steer response
+    - Continuous sinusoidal responses
+    - Rise time uses 50 percent input to 90 percent response thresholds
+    - Frequency delays are reported at 0.5 Hz and 1.0 Hz
+    - Gain and phase slopes summarize the FRF trend
     - Steering shown in degrees for readability
-    - Representative plots use deterministic reference cases
-    - Step input support pending VehicleModel useMode=2
 
 plots:
   step_response:
@@ -79,28 +75,11 @@ plots:
 
       - title: "Lateral Acceleration $a_y$"
         x: { key: step_time, label: "Time [s]" }
-        y: { key: step_ay, label: "$a_y$ [m/s^2]" }
+        y: { key: step_ay, label: "$a_y$ [$\\mathrm{m/s^2}$]" }
 
       - title: "Yaw Velocity $r$"
         x: { key: step_time, label: "Time [s]" }
         y: { key: step_yaw, label: "$r$ [rad/s]" }
-
-  sine_one_period:
-    layout: triple
-    title: "One-Period Sinusoidal Response (TransientEval)"
-
-    subplots:
-      - title: "Steering Wheel Angle $\\delta_H$"
-        x: { key: one_time, label: "Time [s]" }
-        y: { key: one_steer, label: "$\\delta_{HWA}$ [deg]", scale: 57.3 }
-
-      - title: "Lateral Acceleration $a_y$"
-        x: { key: one_time, label: "Time [s]" }
-        y: { key: one_ay, label: "$a_y$ [m/s^2]" }
-
-      - title: "Yaw Velocity $r$"
-        x: { key: one_time, label: "Time [s]" }
-        y: { key: one_yaw, label: "$r$ [rad/s]" }
 
   sine_five_period:
     layout: triple
@@ -113,7 +92,7 @@ plots:
 
       - title: "Lateral Acceleration $a_y$"
         x: { key: cont_time, label: "Time [s]" }
-        y: { key: cont_ay, label: "$a_y$ [m/s^2]" }
+        y: { key: cont_ay, label: "$a_y$ [$\\mathrm{m/s^2}$]" }
 
       - title: "Yaw Velocity $r$"
         x: { key: cont_time, label: "Time [s]" }
@@ -127,7 +106,7 @@ plots:
     subplots:
       - title: "$|a_y / \\delta_{HWA}|$"
         x: { key: freq, label: "$f$ [Hz]" }
-        y: { key: ay_gain, label: "$|a_y / \\delta_{HWA}|$ [(m/s^2)/rad]" }
+        y: { key: ay_gain, label: "$|a_y / \\delta_{HWA}|$ [$\\frac{\\mathrm{m/s^2}}{\\mathrm{rad}}$]" }
 
       - title: "$|r / \\delta_{HWA}|$"
         x: { key: freq, label: "$f$ [Hz]" }

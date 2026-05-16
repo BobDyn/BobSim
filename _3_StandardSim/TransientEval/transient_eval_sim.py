@@ -52,6 +52,7 @@ CASE_METADATA_KEYS = [
     "targetVel",
     "testVel",
     "stepTime",
+    "stepDuration",
     "steerStart",
     "sinusoidal",
     "steerStep",
@@ -119,6 +120,45 @@ class TransientEvalSim:
             return list(x)
         return [x]
 
+    def _representative_velocity(self, available_velocities):
+        test = self.config.get("test", {})
+        target = test.get(
+            "metric_target_velocity_mps",
+            test.get(
+                "representative_testVel",
+                test.get("representative_velocity_mps"),
+            ),
+        )
+
+        available = [float(v) for v in available_velocities]
+        if not available:
+            return np.nan
+
+        if target is None:
+            return float(available[0])
+
+        target = float(target)
+        return float(min(available, key=lambda v: abs(v - target)))
+
+    @staticmethod
+    def _velocity_trend_slope(velocity_summaries, key):
+        velocities = []
+        values = []
+
+        for summary in velocity_summaries:
+            velocity = summary.get("velocity_mps", np.nan)
+            value = summary.get(key, np.nan)
+
+            if np.isfinite(velocity) and np.isfinite(value):
+                velocities.append(float(velocity))
+                values.append(float(value))
+
+        if len(velocities) < 2:
+            return np.nan
+
+        coeffs = np.polyfit(np.asarray(velocities, dtype=float), np.asarray(values, dtype=float), 1)
+        return float(coeffs[0])
+
     @staticmethod
     def _csv_value(value):
         if isinstance(value, np.generic):
@@ -128,6 +168,107 @@ class TransientEvalSim:
             return ""
 
         return value
+
+    @staticmethod
+    def _first_threshold_time(t, y, threshold):
+        t = np.asarray(t, dtype=float)
+        y = np.asarray(y, dtype=float)
+
+        if len(t) == 0:
+            return np.nan
+
+        if threshold >= 0:
+            idx = np.where(y >= threshold)[0]
+        else:
+            idx = np.where(y <= threshold)[0]
+
+        return float(t[idx[0]]) if len(idx) > 0 else np.nan
+
+    def _step_channel_metrics(self, t, steer, response):
+        t = np.asarray(t, dtype=float)
+        steer = np.asarray(steer, dtype=float)
+        response = np.asarray(response, dtype=float)
+
+        if len(t) == 0:
+            return {
+                "steer_ss": np.nan,
+                "response_ss": np.nan,
+                "response_peak": np.nan,
+                "response_peak_abs": np.nan,
+                "response_peak_time_s": np.nan,
+                "rise_time_s": np.nan,
+                "dc_gain": np.nan,
+                "overshoot_abs": np.nan,
+                "overshoot_pct": np.nan,
+            }
+
+        n_tail = min(20, len(t))
+
+        steer_ss = np.mean(steer[-n_tail:])
+        response_ss = np.mean(response[-n_tail:])
+
+        steer_50_time = self._first_threshold_time(t, steer, 0.5 * steer_ss)
+        response_90_time = self._first_threshold_time(t, response, 0.9 * response_ss)
+
+        peak_idx = int(np.argmax(np.abs(response)))
+        response_peak = float(response[peak_idx])
+        response_peak_abs = abs(response_peak)
+        response_peak_time_s = (
+            float(t[peak_idx] - steer_50_time)
+            if np.isfinite(steer_50_time)
+            else np.nan
+        )
+
+        rise_time_s = (
+            float(response_90_time - steer_50_time)
+            if np.isfinite(response_90_time) and np.isfinite(steer_50_time)
+            else np.nan
+        )
+
+        overshoot_abs = (
+            max(0.0, response_peak_abs - abs(response_ss))
+            if np.isfinite(response_peak_abs) and np.isfinite(response_ss)
+            else np.nan
+        )
+
+        overshoot_pct = (
+            overshoot_abs / abs(response_ss) * 100.0
+            if np.isfinite(overshoot_abs) and abs(response_ss) > 1e-8
+            else np.nan
+        )
+
+        dc_gain = (
+            response_ss / steer_ss
+            if abs(steer_ss) > 1e-8
+            else np.nan
+        )
+
+        return {
+            "steer_ss": float(steer_ss),
+            "response_ss": float(response_ss),
+            "response_peak": response_peak,
+            "response_peak_abs": float(response_peak_abs),
+            "response_peak_time_s": response_peak_time_s,
+            "rise_time_s": rise_time_s,
+            "dc_gain": float(dc_gain),
+            "overshoot_abs": overshoot_abs,
+            "overshoot_pct": overshoot_pct,
+        }
+
+    @staticmethod
+    def _nearest_sample(freqs, values, target_freq):
+        freqs = np.asarray(freqs, dtype=float)
+        values = np.asarray(values, dtype=float)
+
+        mask = np.isfinite(freqs) & np.isfinite(values)
+        if not np.any(mask):
+            return np.nan, np.nan
+
+        freqs = freqs[mask]
+        values = values[mask]
+
+        idx = np.argmin(np.abs(freqs - target_freq))
+        return float(values[idx]), float(freqs[idx])
 
     @staticmethod
     def _default_stop_time(config):
@@ -142,11 +283,6 @@ class TransientEvalSim:
             n_cycles = int(test.get("n_cycles", 5))
             stop_time = max(stop_time, step_time + n_cycles / f_min)
 
-        if test.get("run_sine_one_period", False):
-            freqs = test.get("sine_freq_hz", [1.0])
-            f_min = min(float(f) for f in freqs)
-            stop_time = max(stop_time, step_time + 1.0 / f_min)
-
         return stop_time
 
     @staticmethod
@@ -154,12 +290,6 @@ class TransientEvalSim:
         # Fallback stop time. VehicleModel useMode=2 may terminate earlier
         # using its internal QSS detector.
         return step_time + 5.0
-
-    @staticmethod
-    def _one_period_stop_time(step_time: float, freq_hz: float) -> float:
-        # No buffer here: VehicleModel useMode=1 keeps generating sine.
-        # Stop exactly after one period.
-        return step_time + 1.0 / freq_hz
 
     @staticmethod
     def _continuous_stop_time(
@@ -203,6 +333,374 @@ class TransientEvalSim:
 
         return merged
 
+    def _group_results_by_velocity(self, results):
+        grouped = {}
+
+        for r in results:
+            try:
+                velocity = float(r.get("testVel", r.get("targetVel", np.nan)))
+            except (TypeError, ValueError):
+                velocity = np.nan
+
+            if not np.isfinite(velocity):
+                continue
+
+            grouped.setdefault(velocity, []).append(r)
+
+        return grouped
+
+    def _summarize_velocity_group(self, velocity, group_results):
+        summary = {
+            "velocity_mps": float(velocity),
+            "testVel": float(velocity),
+            "n_cases": len(group_results),
+            "n_successful_cases": len(group_results),
+            "n_failed_cases": 0,
+        }
+
+        plot_series = {
+            "step_time": np.array([], dtype=float),
+            "step_steer": np.array([], dtype=float),
+            "step_ay": np.array([], dtype=float),
+            "step_sideslip": np.array([], dtype=float),
+            "step_yaw": np.array([], dtype=float),
+            "step_roll": np.array([], dtype=float),
+            "cont_time": np.array([], dtype=float),
+            "cont_steer": np.array([], dtype=float),
+            "cont_ay": np.array([], dtype=float),
+            "cont_yaw": np.array([], dtype=float),
+            "freq": np.array([], dtype=float),
+            "ay_gain": np.array([], dtype=float),
+            "yaw_gain": np.array([], dtype=float),
+            "ay_phase": np.array([], dtype=float),
+            "yaw_phase": np.array([], dtype=float),
+            "ay_fit_error": np.array([], dtype=float),
+            "yaw_fit_error": np.array([], dtype=float),
+        }
+
+        step_result = next(
+            (r for r in group_results if self._is_representative_step(r)),
+            None,
+        )
+        if step_result is None:
+            step_result = next((r for r in group_results if r.get("mode") == "step"), None)
+
+        cont_result = next(
+            (r for r in group_results if self._is_representative_continuous(r)),
+            None,
+        )
+        if cont_result is None:
+            cont_result = next(
+                (r for r in group_results if r.get("mode") == "continuous_sine"),
+                None,
+            )
+
+        if cont_result is not None:
+            plot_series["cont_time"] = np.array(cont_result["time"], dtype=float)
+            plot_series["cont_steer"] = self._signal(cont_result, "handwheelAngle")
+            plot_series["cont_ay"] = self._signal(cont_result, "accY")
+            plot_series["cont_yaw"] = self._signal(cont_result, "yawVel")
+
+        if step_result is not None:
+            plot_series["step_time"] = np.array(step_result["time"], dtype=float)
+            plot_series["step_steer"] = self._signal(step_result, "handwheelAngle")
+            plot_series["step_ay"] = self._signal(step_result, "accY")
+            plot_series["step_sideslip"] = self._signal(step_result, "sideslip")
+            plot_series["step_yaw"] = self._signal(step_result, "yawVel")
+            plot_series["step_roll"] = self._signal(step_result, "roll")
+
+            t = plot_series["step_time"]
+            ay = plot_series["step_ay"]
+            sideslip = plot_series["step_sideslip"]
+            yaw = plot_series["step_yaw"]
+            roll = plot_series["step_roll"]
+            steer = plot_series["step_steer"]
+
+            ay_metrics = self._step_channel_metrics(t, steer, ay)
+            sideslip_metrics = self._step_channel_metrics(t, steer, sideslip)
+            yaw_metrics = self._step_channel_metrics(t, steer, yaw)
+            roll_metrics = self._step_channel_metrics(t, steer, roll)
+
+            ay_ss = ay_metrics["response_ss"]
+            tol = 0.05 * abs(ay_ss)
+            settling_time = (
+                next(
+                    (
+                        t[i]
+                        for i in range(len(ay))
+                        if np.all(np.abs(ay[i:] - ay_ss) < tol)
+                    ),
+                    np.nan,
+                )
+                if np.isfinite(tol)
+                else np.nan
+            )
+
+            summary.update({
+                "ay_peak": float(ay_metrics["response_peak_abs"]),
+                "ay_ss": float(ay_ss),
+                "ay_rise_time_s": float(ay_metrics["rise_time_s"]),
+                "ay_peak_response_time_s": float(
+                    ay_metrics["response_peak_time_s"]
+                ),
+                "ay_gain_dc": float(ay_metrics["dc_gain"]),
+                "ay_gain_ss": float(ay_metrics["dc_gain"]),
+                "ay_overshoot_pct": float(ay_metrics["overshoot_pct"]),
+                "overshoot_pct": float(ay_metrics["overshoot_pct"]),
+                "settling_time_s": float(settling_time),
+                "rise_time_s": float(ay_metrics["rise_time_s"]),
+                "sideslip_ss": float(sideslip_metrics["response_ss"]),
+                "sideslip_rise_time_s": float(sideslip_metrics["rise_time_s"]),
+                "sideslip_gain_dc": float(sideslip_metrics["dc_gain"]),
+                "yaw_peak": float(yaw_metrics["response_peak_abs"]),
+                "yaw_ss": float(yaw_metrics["response_ss"]),
+                "yaw_rise_time_s": float(yaw_metrics["rise_time_s"]),
+                "yaw_peak_response_time_s": float(
+                    yaw_metrics["response_peak_time_s"]
+                ),
+                "yaw_gain_dc": float(yaw_metrics["dc_gain"]),
+                "yaw_overshoot_rad_per_s": float(yaw_metrics["overshoot_abs"]),
+                "yaw_overshoot_pct": float(yaw_metrics["overshoot_pct"]),
+                "roll_peak": float(roll_metrics["response_peak_abs"]),
+                "roll_ss": float(roll_metrics["response_ss"]),
+                "roll_rise_time_s": float(roll_metrics["rise_time_s"]),
+                "roll_gain_dc": float(roll_metrics["dc_gain"]),
+                "roll_overshoot_rad": float(roll_metrics["overshoot_abs"]),
+                "roll_overshoot_pct": float(roll_metrics["overshoot_pct"]),
+            })
+
+        freq_results = [
+            r for r in group_results if self._include_in_freq_response(r)
+        ]
+        if freq_results:
+            freq_vals = []
+            ay_gain_vals = []
+            yaw_gain_vals = []
+            ay_phase_vals = []
+            yaw_phase_vals = []
+            ay_err_vals = []
+            yaw_err_vals = []
+
+            for r in freq_results:
+                metrics = self._continuous_metrics(r)
+                freq_vals.append(metrics.get("freq", np.nan))
+                ay_gain_vals.append(metrics.get("ay_gain", np.nan))
+                yaw_gain_vals.append(metrics.get("yaw_gain", np.nan))
+                ay_phase_vals.append(metrics.get("ay_phase", np.nan))
+                yaw_phase_vals.append(metrics.get("yaw_phase", np.nan))
+                ay_err_vals.append(metrics.get("ay_fit_error", np.nan))
+                yaw_err_vals.append(metrics.get("yaw_fit_error", np.nan))
+
+            freq = np.asarray(freq_vals, dtype=float)
+            ay_gain = np.asarray(ay_gain_vals, dtype=float)
+            yaw_gain = np.asarray(yaw_gain_vals, dtype=float)
+            ay_phase = np.asarray(ay_phase_vals, dtype=float)
+            yaw_phase = np.asarray(yaw_phase_vals, dtype=float)
+            ay_fit_error = np.asarray(ay_err_vals, dtype=float)
+            yaw_fit_error = np.asarray(yaw_err_vals, dtype=float)
+
+            idx = np.argsort(freq)
+            freq = freq[idx]
+            ay_gain = ay_gain[idx]
+            yaw_gain = yaw_gain[idx]
+            ay_phase = ay_phase[idx]
+            yaw_phase = yaw_phase[idx]
+            ay_fit_error = ay_fit_error[idx]
+            yaw_fit_error = yaw_fit_error[idx]
+
+            ay_phase = self._wrap_phase(ay_phase)
+            yaw_phase = self._wrap_phase(yaw_phase)
+
+            plot_series.update({
+                "freq": freq,
+                "ay_gain": ay_gain,
+                "yaw_gain": yaw_gain,
+                "ay_phase": ay_phase,
+                "yaw_phase": yaw_phase,
+                "ay_fit_error": ay_fit_error,
+                "yaw_fit_error": yaw_fit_error,
+            })
+
+            valid_gain = (
+                np.isfinite(freq) & np.isfinite(ay_gain) & np.isfinite(yaw_gain)
+            )
+
+            if np.any(valid_gain):
+                f_gain = freq[valid_gain]
+                ay_gain_valid = ay_gain[valid_gain]
+                yaw_gain_valid = yaw_gain[valid_gain]
+
+                idx_peak_ay = np.argmax(ay_gain_valid)
+                idx_peak_yaw = np.argmax(yaw_gain_valid)
+                idx_low = np.argmin(f_gain)
+
+                ay_gain_dc = ay_gain_valid[idx_low]
+                yaw_gain_dc = yaw_gain_valid[idx_low]
+
+                target = 0.707 * ay_gain_dc if np.isfinite(ay_gain_dc) else np.nan
+                if np.isfinite(target):
+                    bw_idx = np.where(ay_gain_valid <= target)[0]
+                    bandwidth = (
+                        float(f_gain[bw_idx[0]])
+                        if len(bw_idx) > 0
+                        else float(f_gain[-1])
+                    )
+                else:
+                    bandwidth = np.nan
+
+                ay_gain_peak = ay_gain_valid[idx_peak_ay]
+                ay_gain_peak_freq = f_gain[idx_peak_ay]
+                yaw_gain_peak = yaw_gain_valid[idx_peak_yaw]
+                yaw_gain_peak_freq = f_gain[idx_peak_yaw]
+
+                ay_gain_db = 20.0 * np.log10(np.maximum(ay_gain_valid, 1e-12))
+                yaw_gain_db = 20.0 * np.log10(np.maximum(yaw_gain_valid, 1e-12))
+            else:
+                ay_gain_dc = np.nan
+                yaw_gain_dc = np.nan
+                ay_gain_peak = np.nan
+                ay_gain_peak_freq = np.nan
+                yaw_gain_peak = np.nan
+                yaw_gain_peak_freq = np.nan
+                bandwidth = np.nan
+                ay_gain_db = np.array([], dtype=float)
+                yaw_gain_db = np.array([], dtype=float)
+
+            valid_ay_phase = np.isfinite(freq) & np.isfinite(ay_phase)
+            if np.any(valid_ay_phase):
+                f_ay = freq[valid_ay_phase]
+                ay_phase_valid = ay_phase[valid_ay_phase]
+                idx_1hz_ay = np.argmin(np.abs(f_ay - 1.0))
+                ay_phase_1hz = ay_phase_valid[idx_1hz_ay]
+                f_1hz_ay = f_ay[idx_1hz_ay]
+            else:
+                f_ay = np.array([], dtype=float)
+                ay_phase_valid = np.array([], dtype=float)
+                ay_phase_1hz = np.nan
+                f_1hz_ay = np.nan
+
+            valid_yaw_phase = np.isfinite(freq) & np.isfinite(yaw_phase)
+            if np.any(valid_yaw_phase):
+                f_yaw = freq[valid_yaw_phase]
+                yaw_phase_valid = yaw_phase[valid_yaw_phase]
+                idx_1hz_yaw = np.argmin(np.abs(f_yaw - 1.0))
+                yaw_phase_1hz = yaw_phase_valid[idx_1hz_yaw]
+                f_1hz_yaw = f_yaw[idx_1hz_yaw]
+            else:
+                f_yaw = np.array([], dtype=float)
+                yaw_phase_valid = np.array([], dtype=float)
+                yaw_phase_1hz = np.nan
+                f_1hz_yaw = np.nan
+
+            def phase_to_lag(phi, freq_hz):
+                if not np.isfinite(phi) or not np.isfinite(freq_hz) or freq_hz <= 0:
+                    return np.nan
+                return -phi / 360.0 / freq_hz
+
+            ay_phase_05hz, f_05hz_ay = self._nearest_sample(
+                f_ay, ay_phase_valid, 0.5
+            )
+            yaw_phase_05hz, f_05hz_yaw = self._nearest_sample(
+                f_yaw, yaw_phase_valid, 0.5
+            )
+            ay_phase_1hz, f_1hz_ay = self._nearest_sample(
+                f_ay, ay_phase_valid, 1.0
+            )
+            yaw_phase_1hz, f_1hz_yaw = self._nearest_sample(
+                f_yaw, yaw_phase_valid, 1.0
+            )
+
+            ay_lag_05hz = phase_to_lag(ay_phase_05hz, f_05hz_ay)
+            yaw_lag_05hz = phase_to_lag(yaw_phase_05hz, f_05hz_yaw)
+            ay_lag = phase_to_lag(ay_phase_1hz, f_1hz_ay)
+            yaw_lag = phase_to_lag(yaw_phase_1hz, f_1hz_yaw)
+
+            def safe_log_slope(x, y):
+                x = np.asarray(x, dtype=float)
+                y = np.asarray(y, dtype=float)
+                mask = (x > 0) & np.isfinite(y)
+                if np.sum(mask) < 2:
+                    return np.nan
+                lx = np.log10(x[mask])
+                ly = y[mask]
+                return float(np.polyfit(lx, ly, 1)[0])
+
+            ay_gain_slope = safe_log_slope(freq, ay_gain_db)
+            yaw_gain_slope = safe_log_slope(freq, yaw_gain_db)
+            ay_phase_slope = safe_log_slope(f_ay, np.abs(ay_phase_valid))
+            yaw_phase_slope = safe_log_slope(f_yaw, np.abs(yaw_phase_valid))
+
+            def closest_cross(x, y, target):
+                x = np.asarray(x, dtype=float)
+                y = np.asarray(y, dtype=float)
+                if len(x) == 0:
+                    return np.nan
+                idx = np.argmin(np.abs(y - target))
+                return float(x[idx])
+
+            ay_cross = closest_cross(f_ay, ay_phase_valid, -45.0)
+            yaw_cross = closest_cross(f_yaw, yaw_phase_valid, -45.0)
+
+            yaw_to_ay_lag = (
+                ay_lag - yaw_lag
+                if np.isfinite(ay_lag) and np.isfinite(yaw_lag)
+                else np.nan
+            )
+
+            yaw_to_ay_lag_05hz = (
+                ay_lag_05hz - yaw_lag_05hz
+                if np.isfinite(ay_lag_05hz) and np.isfinite(yaw_lag_05hz)
+                else np.nan
+            )
+            yaw_to_ay_lag_1hz = yaw_to_ay_lag
+
+            mask_var = (
+                np.isfinite(freq) & np.isfinite(ay_gain) & (freq <= 2.0)
+            )
+            if np.sum(mask_var) > 1:
+                g = ay_gain[mask_var]
+                gain_variation = (
+                    (np.max(g) - np.min(g)) / np.mean(g) * 100.0
+                    if abs(np.mean(g)) > 1e-12
+                    else np.nan
+                )
+            else:
+                gain_variation = np.nan
+
+            summary.update({
+                "ay_gain_dc": float(ay_gain_dc),
+                "yaw_gain_dc": float(yaw_gain_dc),
+                "ay_gain_peak": float(ay_gain_peak),
+                "ay_gain_peak_freq": float(ay_gain_peak_freq),
+                "yaw_gain_peak": float(yaw_gain_peak),
+                "yaw_gain_peak_freq": float(yaw_gain_peak_freq),
+                "bandwidth_hz": float(bandwidth),
+                "ay_phase_1hz": float(ay_phase_1hz),
+                "yaw_phase_1hz": float(yaw_phase_1hz),
+                "ay_phase_0p5hz": float(ay_phase_05hz),
+                "yaw_phase_0p5hz": float(yaw_phase_05hz),
+                "ay_lag_0p5hz": float(ay_lag_05hz),
+                "yaw_lag_0p5hz": float(yaw_lag_05hz),
+                "yaw_to_ay_lag_0p5hz": float(yaw_to_ay_lag_05hz),
+                "ay_lag_1hz": float(ay_lag),
+                "yaw_lag_1hz": float(yaw_lag),
+                "lag_steer_to_ay": float(ay_lag),
+                "lag_steer_to_yaw": float(yaw_lag),
+                "yaw_to_ay_lag": float(yaw_to_ay_lag),
+                "yaw_to_ay_lag_1hz": float(yaw_to_ay_lag_1hz),
+                "ay_phase_45_freq": float(ay_cross),
+                "yaw_phase_45_freq": float(yaw_cross),
+                "ay_gain_slope": float(ay_gain_slope),
+                "yaw_gain_slope": float(yaw_gain_slope),
+                "ay_phase_slope": float(ay_phase_slope),
+                "yaw_phase_slope": float(yaw_phase_slope),
+                "gain_variation_pct": float(gain_variation),
+                "ay_fit_error": self._safe_nanmean(plot_series["ay_fit_error"]),
+                "yaw_fit_error": self._safe_nanmean(plot_series["yaw_fit_error"]),
+            })
+
+        return summary, plot_series
+
     # ============================================================
     # CASE GENERATION
     # ============================================================
@@ -213,8 +711,8 @@ class TransientEvalSim:
         directions = test.get("directions", ["left", "right"])
         signs = [self._direction_sign(d) for d in directions]
 
-        test_vel = float(test["testVel"])
         step_time = float(test["stepTime"])
+        test_vels = self._as_list(test["testVel"])
 
         cases = []
         metadata = []
@@ -235,93 +733,51 @@ class TransientEvalSim:
 
             ramp_duration = float(
                 test.get(
-                    "frRampSteerDuration",
-                    test.get("step_ramp_duration", 0.02),
+                    "stepDuration",
+                    test.get(
+                        "frRampSteerDuration",
+                        test.get("step_ramp_duration", 0.02),
+                    ),
                 )
             )
 
-            for amp in step_steer_deg_values:
-                for s in signs:
-                    amp_deg = float(amp)
-                    steer_step = s * np.deg2rad(amp_deg)
-                    stop_time_case = self._step_stop_time(step_time)
+            for test_vel in test_vels:
+                test_vel = float(test_vel)
 
-                    case = self._base_case(
-                        use_mode=2,
-                        test_vel=test_vel,
-                        step_time=step_time,
-                    )
-
-                    case.update({
-                        "frRampSteerHeight": steer_step,
-                        "frRampSteerDuration": ramp_duration,
-                        "stopTime": stop_time_case,
-                    })
-
-                    meta = {
-                        "mode": "step",
-                        "useMode": 2,
-                        "testVel": test_vel,
-                        "targetVel": test_vel,
-                        "stepTime": step_time,
-                        "steerStart": step_time,
-                        "sinusoidal": False,
-                        "steerStep": steer_step,
-                        "frRampSteerHeight": steer_step,
-                        "frRampSteerDuration": ramp_duration,
-                        "steerAmp": 0.0,
-                        "steerFreq": 0.0,
-                        "nCycles": 0,
-                        "directionSign": s,
-                        "stopTime": stop_time_case,
-                    }
-
-                    cases.append(case)
-                    metadata.append(meta)
-
-        # --------------------------------------------------------
-        # ONE-PERIOD SINE
-        #
-        # VehicleModel:
-        #   useMode = 1 -> open-loop sine steer + closed-loop speed
-        # --------------------------------------------------------
-        if test.get("run_sine_one_period", True):
-            for f in test["sine_freq_hz"]:
-                for amp in test["sine_amp_deg"]:
+                for amp in step_steer_deg_values:
                     for s in signs:
-                        freq = float(f)
                         amp_deg = float(amp)
-                        steer_amp = s * np.deg2rad(amp_deg)
-
-                        stop_time_case = self._one_period_stop_time(
-                            step_time=step_time,
-                            freq_hz=freq,
-                        )
+                        steer_step = s * np.deg2rad(amp_deg)
+                        stop_time_case = self._step_stop_time(step_time)
 
                         case = self._base_case(
-                            use_mode=1,
+                            use_mode=2,
                             test_vel=test_vel,
                             step_time=step_time,
                         )
 
                         case.update({
-                            "steerAmp": steer_amp,
-                            "steerFreq": freq,
+                            "frRampSteerHeight": steer_step,
+                            "frRampSteerDuration": ramp_duration,
+                            "stepDuration": ramp_duration,
                             "stopTime": stop_time_case,
                         })
 
                         meta = {
-                            "mode": "sine_one_period",
-                            "useMode": 1,
+                            "mode": "step",
+                            "useMode": 2,
                             "testVel": test_vel,
                             "targetVel": test_vel,
                             "stepTime": step_time,
                             "steerStart": step_time,
-                            "sinusoidal": True,
-                            "steerStep": 0.0,
-                            "steerAmp": steer_amp,
-                            "steerFreq": freq,
-                            "nCycles": 1,
+                            "sinusoidal": False,
+                            "steerStep": steer_step,
+                            "frRampSteerHeight": steer_step,
+                            "frRampSteerDuration": ramp_duration,
+                            "stepDuration": ramp_duration,
+                            "steerAmp": 0.0,
+                            "steerFreq": 0.0,
+                            "nCycles": 0,
                             "directionSign": s,
                             "stopTime": stop_time_case,
                         }
@@ -329,60 +785,60 @@ class TransientEvalSim:
                         cases.append(case)
                         metadata.append(meta)
 
-        # --------------------------------------------------------
-        # CONTINUOUS SINE
-        #
-        # VehicleModel:
-        #   useMode = 1 -> open-loop sine steer + closed-loop speed
-        # --------------------------------------------------------
-        if test.get("run_continuous_sine", True):
-            for f in test["sweep_freq_hz"]:
-                for amp in test["sweep_amp_deg"]:
-                    for s in signs:
-                        freq = float(f)
-                        amp_deg = float(amp)
-                        steer_amp = s * np.deg2rad(amp_deg)
-                        n_cycles = int(test["n_cycles"])
+                # --------------------------------------------------------
+                # CONTINUOUS SINE
+                #
+                # VehicleModel:
+                #   useMode = 1 -> open-loop sine steer + closed-loop speed
+                # --------------------------------------------------------
+                if test.get("run_continuous_sine", True):
+                    for f in test["sweep_freq_hz"]:
+                        for amp in test["sweep_amp_deg"]:
+                            for s in signs:
+                                freq = float(f)
+                                amp_deg = float(amp)
+                                steer_amp = s * np.deg2rad(amp_deg)
+                                n_cycles = int(test["n_cycles"])
 
-                        stop_time_case = self._continuous_stop_time(
-                            step_time=step_time,
-                            freq_hz=freq,
-                            n_cycles=n_cycles,
-                        )
+                                stop_time_case = self._continuous_stop_time(
+                                    step_time=step_time,
+                                    freq_hz=freq,
+                                    n_cycles=n_cycles,
+                                )
 
-                        case = self._base_case(
-                            use_mode=1,
-                            test_vel=test_vel,
-                            step_time=step_time,
-                        )
+                                case = self._base_case(
+                                    use_mode=1,
+                                    test_vel=test_vel,
+                                    step_time=step_time,
+                                )
 
-                        case.update({
-                            "steerAmp": steer_amp,
-                            "steerFreq": freq,
-                            "stopTime": stop_time_case,
-                        })
+                                case.update({
+                                    "steerAmp": steer_amp,
+                                    "steerFreq": freq,
+                                    "stopTime": stop_time_case,
+                                })
 
-                        meta = {
-                            "mode": "continuous_sine",
-                            "useMode": 1,
-                            "testVel": test_vel,
-                            "targetVel": test_vel,
-                            "stepTime": step_time,
-                            "steerStart": step_time,
-                            "sinusoidal": True,
-                            "steerStep": 0.0,
-                            "steerAmp": steer_amp,
-                            "steerFreq": freq,
-                            "nCycles": n_cycles,
-                            "analyze_cycles_after": int(
-                                test.get("analyze_cycles_after", 1)
-                            ),
-                            "directionSign": s,
-                            "stopTime": stop_time_case,
-                        }
+                                meta = {
+                                    "mode": "continuous_sine",
+                                    "useMode": 1,
+                                    "testVel": test_vel,
+                                    "targetVel": test_vel,
+                                    "stepTime": step_time,
+                                    "steerStart": step_time,
+                                    "sinusoidal": True,
+                                    "steerStep": 0.0,
+                                    "steerAmp": steer_amp,
+                                    "steerFreq": freq,
+                                    "nCycles": n_cycles,
+                                    "analyze_cycles_after": int(
+                                        test.get("analyze_cycles_after", 1)
+                                    ),
+                                    "directionSign": s,
+                                    "stopTime": stop_time_case,
+                                }
 
-                        cases.append(case)
-                        metadata.append(meta)
+                                cases.append(case)
+                                metadata.append(meta)
 
         return cases, metadata
 
@@ -460,20 +916,6 @@ class TransientEvalSim:
         return (
             r.get("mode") == "step"
             and self._close(r.get("steerStep", np.nan), target_sign * target_step)
-        )
-
-    def _is_representative_one_period(self, r) -> bool:
-        test = self.config["test"]
-        target_freq = float(test.get("representative_one_freq_hz", 1.0))
-        target_amp = np.deg2rad(test.get("representative_one_amp_deg", 4.0))
-        target_sign = self._direction_sign(
-            test.get("representative_one_direction", "left")
-        )
-
-        return (
-            r.get("mode") == "sine_one_period"
-            and self._close(r.get("steerFreq", np.nan), target_freq)
-            and self._close(r.get("steerAmp", np.nan), target_sign * target_amp)
         )
 
     def _is_representative_continuous(self, r) -> bool:
@@ -571,346 +1013,84 @@ class TransientEvalSim:
     # ============================================================
 
     def summarize(self, results):
+        successful_results = [r for r in results if "time" in r]
+        failed_results = [r for r in results if "time" not in r]
+
+        if failed_results:
+            print(
+                f"⚠️  TransientEval skipping {len(failed_results)} failed case(s)",
+                flush=True,
+            )
+
+        if not successful_results:
+            raise RuntimeError("TransientEval had no successful cases to summarize")
+
+        velocity_groups = self._group_results_by_velocity(successful_results)
+        if not velocity_groups:
+            raise RuntimeError(
+                "TransientEval had no successful velocity groups to summarize"
+            )
+
+        velocity_keys = sorted(velocity_groups)
+        representative_velocity = self._representative_velocity(velocity_keys)
+        if representative_velocity not in velocity_groups:
+            representative_velocity = velocity_keys[0]
+
         series = {
-            "step_time": [],
-            "step_steer": [],
-            "step_ay": [],
-            "step_yaw": [],
-            "one_time": [],
-            "one_steer": [],
-            "one_ay": [],
-            "one_yaw": [],
-            "cont_time": [],
-            "cont_steer": [],
-            "cont_ay": [],
-            "cont_yaw": [],
-            "freq": [],
-            "ay_gain": [],
-            "yaw_gain": [],
-            "ay_phase": [],
-            "yaw_phase": [],
-            "ay_fit_error": [],
-            "yaw_fit_error": [],
+            "step_time": {},
+            "step_steer": {},
+            "step_ay": {},
+            "step_sideslip": {},
+            "step_yaw": {},
+            "step_roll": {},
+            "cont_time": {},
+            "cont_steer": {},
+            "cont_ay": {},
+            "cont_yaw": {},
+            "freq": {},
+            "ay_gain": {},
+            "yaw_gain": {},
+            "ay_phase": {},
+            "yaw_phase": {},
+            "ay_fit_error": {},
+            "yaw_fit_error": {},
         }
 
-        summary = {"n_cases": len(results)}
+        velocity_summaries = []
 
-        step_found = False
-        one_found = False
-        cont_found = False
-
-        for r in results:
-            t = np.array(r["time"], dtype=float)
-            steer = self._signal(r, "handwheelAngle")
-            ay = self._signal(r, "accY")
-            yaw = self._signal(r, "yawVel")
-
-            if (not step_found) and self._is_representative_step(r):
-                series["step_time"] = t
-                series["step_steer"] = steer
-                series["step_ay"] = ay
-                series["step_yaw"] = yaw
-                step_found = True
-
-            if (not one_found) and self._is_representative_one_period(r):
-                series["one_time"] = t
-                series["one_steer"] = steer
-                series["one_ay"] = ay
-                series["one_yaw"] = yaw
-                one_found = True
-
-            if (not cont_found) and self._is_representative_continuous(r):
-                series["cont_time"] = t
-                series["cont_steer"] = steer
-                series["cont_ay"] = ay
-                series["cont_yaw"] = yaw
-                cont_found = True
-
-            if self._include_in_freq_response(r):
-                metrics = self._continuous_metrics(r)
-
-                series["freq"].append(metrics.get("freq", np.nan))
-                series["ay_gain"].append(metrics.get("ay_gain", np.nan))
-                series["yaw_gain"].append(metrics.get("yaw_gain", np.nan))
-                series["ay_phase"].append(metrics.get("ay_phase", np.nan))
-                series["yaw_phase"].append(metrics.get("yaw_phase", np.nan))
-                series["ay_fit_error"].append(metrics.get("ay_fit_error", np.nan))
-                series["yaw_fit_error"].append(metrics.get("yaw_fit_error", np.nan))
-
-        for k in [
-            "freq",
-            "ay_gain",
-            "yaw_gain",
-            "ay_phase",
-            "yaw_phase",
-            "ay_fit_error",
-            "yaw_fit_error",
-        ]:
-            series[k] = np.array(series[k], dtype=float)
-
-        if len(series["freq"]) > 0:
-            idx = np.argsort(series["freq"])
-            for k in [
-                "freq",
-                "ay_gain",
-                "yaw_gain",
-                "ay_phase",
-                "yaw_phase",
-                "ay_fit_error",
-                "yaw_fit_error",
-            ]:
-                series[k] = series[k][idx]
-
-            series["ay_phase"] = self._wrap_phase(series["ay_phase"])
-            series["yaw_phase"] = self._wrap_phase(series["yaw_phase"])
-
-        # ========================================================
-        # STEP METRICS
-        # ========================================================
-
-        if len(series["step_time"]) > 0:
-            t = np.asarray(series["step_time"], dtype=float)
-            ay = np.asarray(series["step_ay"], dtype=float)
-            yaw = np.asarray(series["step_yaw"], dtype=float)
-            steer = np.asarray(series["step_steer"], dtype=float)
-
-            n_tail = min(20, len(t))
-
-            ay_ss = np.mean(ay[-n_tail:])
-            ay_peak = np.max(np.abs(ay))
-            ay_overshoot = (
-                (ay_peak - abs(ay_ss)) / abs(ay_ss) * 100.0
-                if abs(ay_ss) > 1e-8 else np.nan
+        for velocity in velocity_keys:
+            vel_summary, vel_series = self._summarize_velocity_group(
+                velocity,
+                velocity_groups[velocity],
             )
+            velocity_summaries.append(vel_summary)
 
-            tol = 0.05 * abs(ay_ss)
+            for key, value in vel_series.items():
+                if isinstance(series.get(key), dict) and len(value) > 0:
+                    series[key][velocity] = value
 
-            settling_time = (
-                next(
-                    (
-                        t[i]
-                        for i in range(len(ay))
-                        if np.all(np.abs(ay[i:] - ay_ss) < tol)
-                    ),
-                    np.nan,
-                )
-                if np.isfinite(tol)
-                else np.nan
+        rep_summary = next(
+            (s for s in velocity_summaries if self._close(s["velocity_mps"], representative_velocity)),
+            velocity_summaries[0],
+        )
+
+        summary = dict(rep_summary)
+        metric_target_velocity = float(
+            self.config.get("report", {}).get(
+                "metric_target_velocity_mps",
+                representative_velocity,
             )
-
-            ay_10 = 0.1 * ay_ss
-            ay_90 = 0.9 * ay_ss
-
-            if ay_ss >= 0:
-                idx10 = np.where(ay >= ay_10)[0]
-                idx90 = np.where(ay >= ay_90)[0]
-            else:
-                idx10 = np.where(ay <= ay_10)[0]
-                idx90 = np.where(ay <= ay_90)[0]
-
-            rise_time = (
-                t[idx90[0]] - t[idx10[0]]
-                if len(idx10) > 0 and len(idx90) > 0
-                else np.nan
-            )
-
-            steer_ss = np.mean(steer[-n_tail:])
-            ay_gain_ss = ay_ss / steer_ss if abs(steer_ss) > 1e-8 else np.nan
-
-            yaw_ss = np.mean(yaw[-n_tail:])
-            yaw_peak = np.max(np.abs(yaw))
-            yaw_overshoot = (
-                (yaw_peak - abs(yaw_ss)) / abs(yaw_ss) * 100.0
-                if abs(yaw_ss) > 1e-8 else np.nan
-            )
-
-            summary.update({
-                "ay_peak": float(ay_peak),
-                "ay_ss": float(ay_ss),
-                "overshoot_pct": float(ay_overshoot),
-                "settling_time_s": float(settling_time),
-                "rise_time_s": float(rise_time),
-                "ay_gain_ss": float(ay_gain_ss),
-                "yaw_peak": float(yaw_peak),
-                "yaw_ss": float(yaw_ss),
-                "yaw_overshoot_pct": float(yaw_overshoot),
-            })
-
-        # ========================================================
-        # FREQUENCY METRICS
-        # ========================================================
-
-        if len(series["freq"]) > 0:
-            f = np.asarray(series["freq"], dtype=float)
-            ay_gain = np.asarray(series["ay_gain"], dtype=float)
-            yaw_gain = np.asarray(series["yaw_gain"], dtype=float)
-            ay_phase = np.asarray(series["ay_phase"], dtype=float)
-            yaw_phase = np.asarray(series["yaw_phase"], dtype=float)
-
-            valid_gain = np.isfinite(f) & np.isfinite(ay_gain) & np.isfinite(yaw_gain)
-
-            if np.any(valid_gain):
-                f_gain = f[valid_gain]
-                ay_gain_valid = ay_gain[valid_gain]
-                yaw_gain_valid = yaw_gain[valid_gain]
-
-                idx_peak_ay = np.argmax(ay_gain_valid)
-                idx_peak_yaw = np.argmax(yaw_gain_valid)
-                idx_low = np.argmin(f_gain)
-
-                ay_gain_dc = ay_gain_valid[idx_low]
-                yaw_gain_dc = yaw_gain_valid[idx_low]
-
-                target = 0.707 * ay_gain_dc if np.isfinite(ay_gain_dc) else np.nan
-
-                if np.isfinite(target):
-                    bw_idx = np.where(ay_gain_valid <= target)[0]
-                    bandwidth = (
-                        float(f_gain[bw_idx[0]])
-                        if len(bw_idx) > 0
-                        else float(f_gain[-1])
-                    )
-                else:
-                    bandwidth = np.nan
-
-                ay_gain_peak = ay_gain_valid[idx_peak_ay]
-                ay_gain_peak_freq = f_gain[idx_peak_ay]
-                yaw_gain_peak = yaw_gain_valid[idx_peak_yaw]
-                yaw_gain_peak_freq = f_gain[idx_peak_yaw]
-
-                ay_gain_db = 20.0 * np.log10(np.maximum(ay_gain_valid, 1e-12))
-                yaw_gain_db = 20.0 * np.log10(np.maximum(yaw_gain_valid, 1e-12))
-            else:
-                f_gain = np.array([], dtype=float)
-                ay_gain_valid = np.array([], dtype=float)
-                yaw_gain_valid = np.array([], dtype=float)
-                ay_gain_dc = np.nan
-                yaw_gain_dc = np.nan
-                ay_gain_peak = np.nan
-                ay_gain_peak_freq = np.nan
-                yaw_gain_peak = np.nan
-                yaw_gain_peak_freq = np.nan
-                bandwidth = np.nan
-                ay_gain_db = np.array([], dtype=float)
-                yaw_gain_db = np.array([], dtype=float)
-
-            valid_ay_phase = np.isfinite(f) & np.isfinite(ay_phase)
-
-            if np.any(valid_ay_phase):
-                f_ay = f[valid_ay_phase]
-                ay_phase_valid = ay_phase[valid_ay_phase]
-                idx_1hz_ay = np.argmin(np.abs(f_ay - 1.0))
-                ay_phase_1hz = ay_phase_valid[idx_1hz_ay]
-                f_1hz_ay = f_ay[idx_1hz_ay]
-            else:
-                f_ay = np.array([], dtype=float)
-                ay_phase_valid = np.array([], dtype=float)
-                ay_phase_1hz = np.nan
-                f_1hz_ay = np.nan
-
-            valid_yaw_phase = np.isfinite(f) & np.isfinite(yaw_phase)
-
-            if np.any(valid_yaw_phase):
-                f_yaw = f[valid_yaw_phase]
-                yaw_phase_valid = yaw_phase[valid_yaw_phase]
-                idx_1hz_yaw = np.argmin(np.abs(f_yaw - 1.0))
-                yaw_phase_1hz = yaw_phase_valid[idx_1hz_yaw]
-                f_1hz_yaw = f_yaw[idx_1hz_yaw]
-            else:
-                f_yaw = np.array([], dtype=float)
-                yaw_phase_valid = np.array([], dtype=float)
-                yaw_phase_1hz = np.nan
-                f_1hz_yaw = np.nan
-
-            def phase_to_lag(phi, freq_hz):
-                if not np.isfinite(phi) or not np.isfinite(freq_hz) or freq_hz <= 0:
-                    return np.nan
-                return -phi / 360.0 / freq_hz
-
-            ay_lag = phase_to_lag(ay_phase_1hz, f_1hz_ay)
-            yaw_lag = phase_to_lag(yaw_phase_1hz, f_1hz_yaw)
-
-            def safe_log_slope(x, y):
-                x = np.asarray(x, dtype=float)
-                y = np.asarray(y, dtype=float)
-                mask = (x > 0) & np.isfinite(y)
-                if np.sum(mask) < 2:
-                    return np.nan
-                lx = np.log10(x[mask])
-                ly = y[mask]
-                return float(np.polyfit(lx, ly, 1)[0])
-
-            ay_gain_slope = safe_log_slope(f_gain, ay_gain_db)
-            yaw_gain_slope = safe_log_slope(f_gain, yaw_gain_db)
-            ay_phase_slope = safe_log_slope(f_ay, np.abs(ay_phase_valid))
-            yaw_phase_slope = safe_log_slope(f_yaw, np.abs(yaw_phase_valid))
-
-            def closest_cross(x, y, target):
-                x = np.asarray(x, dtype=float)
-                y = np.asarray(y, dtype=float)
-                if len(x) == 0:
-                    return np.nan
-                idx = np.argmin(np.abs(y - target))
-                return float(x[idx])
-
-            ay_cross = closest_cross(f_ay, ay_phase_valid, -45.0)
-            yaw_cross = closest_cross(f_yaw, yaw_phase_valid, -45.0)
-
-            if np.any(valid_gain):
-                idx_gain_1hz = np.argmin(np.abs(f_gain - 1.0))
-                yaw_to_ay_ratio = (
-                    yaw_gain_valid[idx_gain_1hz] / ay_gain_valid[idx_gain_1hz]
-                    if ay_gain_valid[idx_gain_1hz] > 1e-8
-                    else np.nan
-                )
-            else:
-                yaw_to_ay_ratio = np.nan
-
-            yaw_to_ay_lag = (
-                ay_lag - yaw_lag
-                if np.isfinite(ay_lag) and np.isfinite(yaw_lag)
-                else np.nan
-            )
-
-            mask_var = np.isfinite(f_gain) & np.isfinite(ay_gain_valid) & (f_gain <= 2.0)
-
-            if np.sum(mask_var) > 1:
-                g = ay_gain_valid[mask_var]
-                gain_variation = (
-                    (np.max(g) - np.min(g)) / np.mean(g) * 100.0
-                    if abs(np.mean(g)) > 1e-12
-                    else np.nan
-                )
-            else:
-                gain_variation = np.nan
-
-            summary["ay_fit_error"] = self._safe_nanmean(series["ay_fit_error"])
-            summary["yaw_fit_error"] = self._safe_nanmean(series["yaw_fit_error"])
-
-            summary.update({
-                "ay_gain_dc": float(ay_gain_dc),
-                "yaw_gain_dc": float(yaw_gain_dc),
-                "ay_gain_peak": float(ay_gain_peak),
-                "ay_gain_peak_freq": float(ay_gain_peak_freq),
-                "yaw_gain_peak": float(yaw_gain_peak),
-                "yaw_gain_peak_freq": float(yaw_gain_peak_freq),
-                "bandwidth_hz": float(bandwidth),
-                "ay_phase_1hz": float(ay_phase_1hz),
-                "yaw_phase_1hz": float(yaw_phase_1hz),
-                "ay_lag_1hz": float(ay_lag),
-                "yaw_lag_1hz": float(yaw_lag),
-                "lag_steer_to_ay": float(ay_lag),
-                "lag_steer_to_yaw": float(yaw_lag),
-                "yaw_to_ay_lag": float(yaw_to_ay_lag),
-                "ay_phase_45_freq": float(ay_cross),
-                "yaw_phase_45_freq": float(yaw_cross),
-                "ay_gain_slope": float(ay_gain_slope),
-                "yaw_gain_slope": float(yaw_gain_slope),
-                "ay_phase_slope": float(ay_phase_slope),
-                "yaw_phase_slope": float(yaw_phase_slope),
-                "yaw_to_ay_ratio": float(yaw_to_ay_ratio),
-                "gain_variation_pct": float(gain_variation),
-            })
+        )
+        summary.update({
+            "n_cases": len(results),
+            "n_successful_cases": len(successful_results),
+            "n_failed_cases": len(failed_results),
+            "metric_target_velocity_mps": metric_target_velocity,
+            "representative_testVel_mps": float(
+                rep_summary.get("velocity_mps", np.nan)
+            ),
+            "n_velocity_groups": len(velocity_summaries),
+        })
 
         # --------------------------------------------------------
         # CSV metric rows.
@@ -925,6 +1105,46 @@ class TransientEvalSim:
                 "value": summary.get("n_cases", np.nan),
                 "units": "count",
                 "description": "Number of simulation cases included in TransientEval run",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "general",
+                "metric": "n_successful_cases",
+                "value": summary.get("n_successful_cases", np.nan),
+                "units": "count",
+                "description": "Number of successful simulation cases included in TransientEval run",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "general",
+                "metric": "n_failed_cases",
+                "value": summary.get("n_failed_cases", np.nan),
+                "units": "count",
+                "description": "Number of failed simulation cases skipped by TransientEval",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "general",
+                "metric": "representative_testVel_mps",
+                "value": summary.get("representative_testVel_mps", np.nan),
+                "units": "m/s",
+                "description": "Representative velocity used for the CSV summary rows and tables",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "general",
+                "metric": "metric_target_velocity_mps",
+                "value": summary.get("metric_target_velocity_mps", np.nan),
+                "units": "m/s",
+                "description": "Target velocity used when selecting the representative summary row",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "general",
+                "metric": "n_velocity_groups",
+                "value": summary.get("n_velocity_groups", np.nan),
+                "units": "count",
+                "description": "Number of velocity isolines included in the TransientEval run",
             },
 
             # Step response metrics.
@@ -947,26 +1167,138 @@ class TransientEvalSim:
             {
                 "standard": "TransientEval",
                 "group": "step",
-                "metric": "ay_gain_ss",
-                "value": summary.get("ay_gain_ss", np.nan),
+                "metric": "ay_rise_time_s",
+                "value": summary.get("ay_rise_time_s", np.nan),
+                "units": "s",
+                "description": "Lateral acceleration 50 to 90 percent rise time",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "ay_peak_response_time_s",
+                "value": summary.get("ay_peak_response_time_s", np.nan),
+                "units": "s",
+                "description": "Time from 50 percent input to peak lateral acceleration response",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "ay_gain_dc",
+                "value": summary.get("ay_gain_dc", np.nan),
                 "units": "(m/s^2)/rad",
                 "description": "Steady-state lateral acceleration gain from handwheel angle",
             },
             {
                 "standard": "TransientEval",
                 "group": "step",
-                "metric": "overshoot_pct",
-                "value": summary.get("overshoot_pct", np.nan),
+                "metric": "ay_overshoot_pct",
+                "value": summary.get("ay_overshoot_pct", np.nan),
                 "units": "%",
                 "description": "Lateral acceleration overshoot in representative step steer response",
             },
             {
                 "standard": "TransientEval",
                 "group": "step",
-                "metric": "rise_time_s",
-                "value": summary.get("rise_time_s", np.nan),
+                "metric": "sideslip_ss",
+                "value": summary.get("sideslip_ss", np.nan),
+                "units": "rad",
+                "description": "Steady-state sideslip angle from representative step steer response",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "sideslip_rise_time_s",
+                "value": summary.get("sideslip_rise_time_s", np.nan),
                 "units": "s",
-                "description": "Lateral acceleration 10-90 percent rise time",
+                "description": "Sideslip angle 50 to 90 percent rise time",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "sideslip_gain_dc",
+                "value": summary.get("sideslip_gain_dc", np.nan),
+                "units": "rad/rad",
+                "description": "Steady-state sideslip gain from handwheel angle",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "yaw_rise_time_s",
+                "value": summary.get("yaw_rise_time_s", np.nan),
+                "units": "s",
+                "description": "Yaw velocity 50 to 90 percent rise time",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "yaw_peak_response_time_s",
+                "value": summary.get("yaw_peak_response_time_s", np.nan),
+                "units": "s",
+                "description": "Time from 50 percent input to peak yaw velocity response",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "yaw_gain_dc",
+                "value": summary.get("yaw_gain_dc", np.nan),
+                "units": "(rad/s)/rad",
+                "description": "Steady-state yaw velocity gain from handwheel angle",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "yaw_overshoot_rad_per_s",
+                "value": summary.get("yaw_overshoot_rad_per_s", np.nan),
+                "units": "rad/s",
+                "description": "Yaw velocity overshoot relative to final steady-state value",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "yaw_overshoot_pct",
+                "value": summary.get("yaw_overshoot_pct", np.nan),
+                "units": "%",
+                "description": "Yaw velocity overshoot percentage relative to final steady-state value",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "roll_peak",
+                "value": summary.get("roll_peak", np.nan),
+                "units": "rad",
+                "description": "Peak absolute roll angle during representative step steer response",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "roll_ss",
+                "value": summary.get("roll_ss", np.nan),
+                "units": "rad",
+                "description": "Steady-state roll angle from representative step steer response",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "roll_gain_dc",
+                "value": summary.get("roll_gain_dc", np.nan),
+                "units": "rad/rad",
+                "description": "Steady-state roll gain from handwheel angle",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "roll_overshoot_rad",
+                "value": summary.get("roll_overshoot_rad", np.nan),
+                "units": "rad",
+                "description": "Roll angle overshoot relative to final steady-state value",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "step",
+                "metric": "roll_overshoot_pct",
+                "value": summary.get("roll_overshoot_pct", np.nan),
+                "units": "%",
+                "description": "Roll angle overshoot percentage relative to final steady-state value",
             },
             {
                 "standard": "TransientEval",
@@ -1069,10 +1401,50 @@ class TransientEvalSim:
             {
                 "standard": "TransientEval",
                 "group": "frequency",
+                "metric": "ay_phase_0p5hz",
+                "value": summary.get("ay_phase_0p5hz", np.nan),
+                "units": "deg",
+                "description": "Lateral acceleration phase relative to handwheel angle near 0.5 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
                 "metric": "yaw_phase_1hz",
                 "value": summary.get("yaw_phase_1hz", np.nan),
                 "units": "deg",
                 "description": "Yaw velocity phase relative to handwheel angle near 1 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
+                "metric": "yaw_phase_0p5hz",
+                "value": summary.get("yaw_phase_0p5hz", np.nan),
+                "units": "deg",
+                "description": "Yaw velocity phase relative to handwheel angle near 0.5 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
+                "metric": "ay_lag_0p5hz",
+                "value": summary.get("ay_lag_0p5hz", np.nan),
+                "units": "s",
+                "description": "Equivalent lateral acceleration time lag near 0.5 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
+                "metric": "yaw_lag_0p5hz",
+                "value": summary.get("yaw_lag_0p5hz", np.nan),
+                "units": "s",
+                "description": "Equivalent yaw velocity time lag near 0.5 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
+                "metric": "yaw_to_ay_lag_0p5hz",
+                "value": summary.get("yaw_to_ay_lag_0p5hz", np.nan),
+                "units": "s",
+                "description": "Additional lateral acceleration lag relative to yaw velocity near 0.5 Hz",
             },
             {
                 "standard": "TransientEval",
@@ -1089,6 +1461,14 @@ class TransientEvalSim:
                 "value": summary.get("yaw_lag_1hz", np.nan),
                 "units": "s",
                 "description": "Equivalent yaw velocity time lag near 1 Hz",
+            },
+            {
+                "standard": "TransientEval",
+                "group": "frequency",
+                "metric": "yaw_to_ay_lag_1hz",
+                "value": summary.get("yaw_to_ay_lag_1hz", np.nan),
+                "units": "s",
+                "description": "Additional lateral acceleration lag relative to yaw velocity near 1 Hz",
             },
             {
                 "standard": "TransientEval",
@@ -1165,14 +1545,6 @@ class TransientEvalSim:
             {
                 "standard": "TransientEval",
                 "group": "frequency",
-                "metric": "yaw_to_ay_ratio",
-                "value": summary.get("yaw_to_ay_ratio", np.nan),
-                "units": "(rad/s)/(m/s^2)",
-                "description": "Yaw velocity to lateral acceleration gain ratio near 1 Hz",
-            },
-            {
-                "standard": "TransientEval",
-                "group": "frequency",
                 "metric": "gain_variation_pct",
                 "value": summary.get("gain_variation_pct", np.nan),
                 "units": "%",
@@ -1196,6 +1568,37 @@ class TransientEvalSim:
             },
         ]
 
+        trend_exclude = {
+            "n_cases",
+            "n_successful_cases",
+            "n_failed_cases",
+            "representative_testVel_mps",
+            "metric_target_velocity_mps",
+            "n_velocity_groups",
+        }
+        seen_trend_metrics = set()
+        trend_rows = []
+        for row in metrics:
+            metric = row["metric"]
+            if metric in trend_exclude or metric in seen_trend_metrics:
+                continue
+            seen_trend_metrics.add(metric)
+
+            slope = self._velocity_trend_slope(velocity_summaries, metric)
+            trend_rows.append({
+                "standard": "TransientEval",
+                "group": "trend",
+                "metric": f"{metric}_velocity_slope",
+                "value": slope,
+                "units": f"{row['units']}/(m/s)",
+                "description": (
+                    f"Linear slope of {metric} versus velocity across "
+                    "velocity groups"
+                ),
+            })
+
+        metrics.extend(trend_rows)
+
         for row in metrics:
             row["value"] = self._csv_value(row["value"])
 
@@ -1205,6 +1608,7 @@ class TransientEvalSim:
 
         return {
             "summary": summary,
+            "velocity_summaries": velocity_summaries,
             "metrics": metrics,
             "metrics_csv_path": metrics_csv_path,
             "series": series,

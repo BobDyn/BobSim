@@ -71,8 +71,20 @@ class ReportEngine:
                     add_transient_eval_frequency_page,
                 )
 
-                add_transient_eval_step_page(pdf, result["summary"])
-                add_transient_eval_frequency_page(pdf, result["summary"])
+                velocity_summaries = result.get("velocity_summaries", [])
+                if velocity_summaries:
+                    for summary in velocity_summaries:
+                        velocity = summary.get("velocity_mps")
+                        page_title = "TransientEval Metrics Summary"
+                        if velocity is not None:
+                            page_title = f"{page_title} {velocity:.1f} m/s"
+                        print(f"📄 Rendering summary page: {page_title}")
+                        add_transient_eval_step_page(pdf, summary)
+                        add_transient_eval_frequency_page(pdf, summary)
+                else:
+                    print("📄 Rendering summary page: TransientEval Metrics Summary")
+                    add_transient_eval_step_page(pdf, result["summary"])
+                    add_transient_eval_frequency_page(pdf, result["summary"])
 
             elif standard == "KnC":
                 from _0_Utils.reporting.sections import add_knc_summary_page

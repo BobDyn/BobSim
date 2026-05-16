@@ -787,6 +787,9 @@ model VehicleSim
   parameter SIunits.Time frRampSteerDuration = 0.001
     "Ramp steer duration";
 
+  parameter SIunits.Time stepDuration = frRampSteerDuration
+    "Step steer duration";
+
   // Frequency response parameters
   parameter SIunits.Angle steerAmp = 6*pi/180
     "Amplitude"
@@ -1137,7 +1140,7 @@ equation
 
   steerStep =
     if noEvent(time > steerStart) then
-      frRampSteerHeight
+      frRampSteerHeight * noEvent(min(1, max(0, (time - steerStart) / stepDuration)))
     else
       0;
 

@@ -8,6 +8,22 @@ ENV PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /workspace
 
+# Add OpenModelica apt repository explicitly.
+# The base image has omc installed, but may not keep the apt source enabled,
+# which prevents installing optional packages like libomccpp.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    && curl -fsSL https://build.openmodelica.org/apt/openmodelica.asc | \
+        gpg --dearmor -o /usr/share/keyrings/openmodelica-keyring.gpg \
+    && . /etc/os-release \
+    && OM_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME}}" \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openmodelica-keyring.gpg] https://build.openmodelica.org/apt ${OM_CODENAME} stable" \
+        > /etc/apt/sources.list.d/openmodelica.list \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     git \
@@ -19,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-venv \
     python-is-python3 \
+    # libomccpp \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
