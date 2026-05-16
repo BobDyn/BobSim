@@ -243,169 +243,155 @@ def add_knc_summary_page(pdf, summary):
 
 
 def add_transient_eval_step_page(pdf, summary):
-
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
-    # ============================================================
-    # TITLE
-    # ============================================================
+    velocity = summary.get("velocity_mps")
+    page_title = "TransientEval Metrics Summary"
+    if velocity is not None and np.isfinite(velocity):
+        page_title = f"{page_title} {velocity:.1f} m/s"
 
-    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
-             ha="center", fontsize=18, weight="bold")
+    plt.text(
+        0.5,
+        0.94,
+        page_title,
+        ha="center",
+        fontsize=18,
+        weight="bold",
+    )
+    plt.text(
+        0.5,
+        0.90,
+        "Time Domain - Step Response",
+        ha="center",
+        fontsize=13,
+    )
 
-    plt.text(0.5, 0.90, "Time Domain — Step Response",
-             ha="center", fontsize=13)
-
-    # ============================================================
-    # ROW DEFINITIONS
-    # ============================================================
-
-    rows = [
-
+    left_rows = [
         ("STEP RESPONSE", "", "", ""),
-
-        ("Peak $a_y$", "ay_peak", "m/s²", "{:.2f}"),
-        ("Steady-State $a_y$", "ay_ss", "m/s²", "{:.2f}"),
-        ("Steady-State Gain", "ay_gain_ss", "(m/s²)/rad", "{:.2f}"),
-        ("Overshoot ($a_y$)", "overshoot_pct", "%", "{:.1f}"),
-        ("Rise Time (10–90%)", "rise_time_s", "s", "{:.2f}"),
-        ("Settling Time", "settling_time_s", "s", "{:.2f}"),
-
-        ("Yaw Overshoot", "yaw_overshoot_pct", "%", "{:.1f}"),
+        ("a_y Rise Time (50-90%)", "ay_rise_time_s", "s", "{:.2f}"),
+        ("Sideslip Rise Time (50-90%)", "sideslip_rise_time_s", "s", "{:.2f}"),
+        ("Yaw Rise Time (50-90%)", "yaw_rise_time_s", "s", "{:.2f}"),
+        ("Yaw Peak Response Time", "yaw_peak_response_time_s", "s", "{:.2f}"),
+        ("a_y DC Gain", "ay_gain_dc", r"$\frac{\mathrm{m/s^2}}{\mathrm{rad}}$", "{:.2f}"),
+        ("Sideslip DC Gain", "sideslip_gain_dc", "rad/rad", "{:.3f}"),
+        ("Yaw DC Gain", "yaw_gain_dc", "(rad/s)/rad", "{:.2f}"),
+        ("Roll DC Gain", "roll_gain_dc", "rad/rad", "{:.3f}"),
     ]
 
-    # ============================================================
-    # LAYOUT
-    # ============================================================
+    right_rows = [
+        ("STEADY-STATE / OVERSHOOT", "", "", ""),
+        ("a_y Peak", "ay_peak", r"$\mathrm{m/s^2}$", "{:.2f}"),
+        ("a_y Steady-State", "ay_ss", r"$\mathrm{m/s^2}$", "{:.2f}"),
+        ("a_y Overshoot", "ay_overshoot_pct", "%", "{:.1f}"),
+        ("Yaw Steady-State", "yaw_ss", "rad/s", "{:.3f}"),
+        ("Yaw Overshoot", "yaw_overshoot_rad_per_s", "rad/s", "{:.3f}"),
+        ("Roll Steady-State", "roll_ss", "rad", "{:.3f}"),
+        ("Roll Overshoot", "roll_overshoot_rad", "rad", "{:.3f}"),
+        ("Settling Time", "settling_time_s", "s", "{:.2f}"),
+    ]
 
-    x_label = 0.18
-    x_val   = 0.70
-    x_unit  = 0.86
-
+    x_left_label = 0.07
+    x_left_val = 0.36
+    x_left_unit = 0.45
+    x_right_label = 0.66
+    x_right_val = 0.92
+    x_right_unit = 0.98
     y_top = 0.82
-    row_h = 0.055
+    row_h = 0.048
 
-    for i, (label, key, unit, fmt) in enumerate(rows):
-        y = y_top - i * row_h
+    def render_column(rows, x_label, x_val, x_unit):
+        for i, (label, key, unit, fmt) in enumerate(rows):
+            y = y_top - i * row_h
 
-        if key == "" and label != "":
-            plt.text(x_label, y, label,
-                     fontsize=13, weight="bold")
-            continue
+            if key == "" and label:
+                plt.text(x_label, y, label, fontsize=13, weight="bold")
+                continue
 
-        val = summary.get(key, None)
-        val_str = "—" if val is None or (isinstance(val, float) and np.isnan(val)) else fmt.format(val)
+            val = summary.get(key, None)
+            val_str = "—" if val is None or (isinstance(val, float) and np.isnan(val)) else fmt.format(val)
 
-        plt.text(x_label, y, label, fontsize=11)
-        plt.text(x_val, y, val_str, fontsize=11, ha="right")
-        plt.text(x_unit, y, unit, fontsize=11)
+            plt.text(x_label, y, label, fontsize=11)
+            plt.text(x_val, y, val_str, fontsize=11, ha="right")
+            plt.text(x_unit, y, unit, fontsize=11)
+
+    render_column(left_rows, x_left_label, x_left_val, x_left_unit)
+    render_column(right_rows, x_right_label, x_right_val, x_right_unit)
 
     pdf.savefig(fig)
     plt.close(fig)
 
 
 def add_transient_eval_frequency_page(pdf, summary):
-
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
-    # ============================================================
-    # TITLE
-    # ============================================================
+    velocity = summary.get("velocity_mps")
+    page_title = "TransientEval Metrics Summary"
+    if velocity is not None and np.isfinite(velocity):
+        page_title = f"{page_title} {velocity:.1f} m/s"
 
-    plt.text(0.5, 0.94, "TransientEval Metrics Summary",
-             ha="center", fontsize=18, weight="bold")
-
-    plt.text(0.5, 0.90, "Frequency Domain — Sustained Sine",
-             ha="center", fontsize=13)
-
-    # ============================================================
-    # ROWS (split into two columns)
-    # ============================================================
+    plt.text(
+        0.5,
+        0.94,
+        page_title,
+        ha="center",
+        fontsize=18,
+        weight="bold",
+    )
+    plt.text(
+        0.5,
+        0.90,
+        "Frequency Domain - Sustained Sine",
+        ha="center",
+        fontsize=13,
+    )
 
     left_rows = [
-
-        ("FREQUENCY RESPONSE — CORE", "", "", ""),
-
-        ("DC Gain ($a_y/\\delta_H$)", "ay_gain_dc", "(m/s²)/rad", "{:.2f}"),
-        ("DC Gain ($r/\\delta_H$)", "yaw_gain_dc", "(rad/s)/rad", "{:.2f}"),
-
-        ("Peak Gain ($a_y$)", "ay_gain_peak", "(m/s²)/rad", "{:.2f}"),
-        ("Peak Freq ($a_y$)", "ay_gain_peak_freq", "Hz", "{:.2f}"),
-
+        ("FREQUENCY RESPONSE - CORE", "", "", ""),
+        ("DC Gain (a_y)", "ay_gain_dc", r"$\frac{\mathrm{m/s^2}}{\mathrm{rad}}$", "{:.2f}"),
+        ("DC Gain (r)", "yaw_gain_dc", "(rad/s)/rad", "{:.2f}"),
+        ("Peak Gain (a_y)", "ay_gain_peak", r"$\frac{\mathrm{m/s^2}}{\mathrm{rad}}$", "{:.2f}"),
+        ("Peak Freq (a_y)", "ay_gain_peak_freq", "Hz", "{:.2f}"),
         ("Bandwidth (-3 dB)", "bandwidth_hz", "Hz", "{:.2f}"),
-
-        ("Phase @ 1 Hz ($a_y$)", "ay_phase_1hz", "deg", "{:.1f}"),
-        ("Phase @ 1 Hz ($r$)", "yaw_phase_1hz", "deg", "{:.1f}"),
-
-        ("Lag @ 1 Hz ($a_y$)", "ay_lag_1hz", "s", "{:.3f}"),
-        ("Lag @ 1 Hz ($r$)", "yaw_lag_1hz", "s", "{:.3f}"),
+        ("Gain Slope (a_y)", "ay_gain_slope", "dB/dec", "{:.2f}"),
+        ("Gain Slope (r)", "yaw_gain_slope", "dB/dec", "{:.2f}"),
+        ("Phase Slope (a_y)", "ay_phase_slope", "deg/dec", "{:.2f}"),
+        ("Phase Slope (r)", "yaw_phase_slope", "deg/dec", "{:.2f}"),
     ]
 
     right_rows = [
-
-        ("DYNAMIC CHARACTER", "", "", ""),
-
-        ("Gain Slope ($a_y$)", "ay_gain_slope", "dB/dec", "{:.2f}"),
-        ("Gain Slope ($r$)", "yaw_gain_slope", "dB/dec", "{:.2f}"),
-
-        ("Phase Slope ($a_y$)", "ay_phase_slope", "deg/Hz", "{:.2f}"),
-        ("Phase Slope ($r$)", "yaw_phase_slope", "deg/Hz", "{:.2f}"),
-
-        ("Phase = -45° ($a_y$)", "ay_phase_45_freq", "Hz", "{:.2f}"),
-        ("Phase = -45° ($r$)", "yaw_phase_45_freq", "Hz", "{:.2f}"),
-
-        ("", "", "", ""),
-
-        ("RESPONSE COUPLING", "", "", ""),
-
-        ("Lag: $\\delta_H \\rightarrow a_y$", "ay_lag_1hz", "s", "{:.3f}"),
-        ("Lag: $\\delta_H \\rightarrow r$", "yaw_lag_1hz", "s", "{:.3f}"),
-        ("Lag: $r \\rightarrow a_y$", "yaw_to_ay_lag", "s", "{:.3f}"),
-
-        ("$r/a_y$ Ratio", "yaw_to_ay_ratio", "(rad/s)/(m/s²)", "{:.3f}"),
-
-        ("", "", "", ""),
-
-        ("QUALITY / VALIDITY", "", "", ""),
-
-        ("$a_y$ Fit Error", "ay_fit_error", "-", "{:.2e}"),
-        ("Yaw Fit Error", "yaw_fit_error", "-", "{:.2e}"),
-
+        ("DELAY / COUPLING", "", "", ""),
+        ("Ay/Yaw Delay @ 0.5 Hz", "ay_lag_0p5hz", "s", "{:.3f}"),
+        ("Yaw/Steer Delay @ 0.5 Hz", "yaw_lag_0p5hz", "s", "{:.3f}"),
+        ("Difference @ 0.5 Hz", "yaw_to_ay_lag_0p5hz", "s", "{:.3f}"),
+        ("Ay/Yaw Delay @ 1.0 Hz", "ay_lag_1hz", "s", "{:.3f}"),
+        ("Yaw/Steer Delay @ 1.0 Hz", "yaw_lag_1hz", "s", "{:.3f}"),
+        ("Difference @ 1.0 Hz", "yaw_to_ay_lag_1hz", "s", "{:.3f}"),
         ("Gain Variation", "gain_variation_pct", "%", "{:.1f}"),
+        ("Fit Error (a_y)", "ay_fit_error", "-", "{:.2e}"),
+        ("Fit Error (r)", "yaw_fit_error", "-", "{:.2e}"),
     ]
 
-    # ============================================================
-    # LAYOUT
-    # ============================================================
-
-    # LEFT COLUMN
-    x_left_label  = 0.05   # was 0.08
-    x_left_val    = 0.32   # was 0.36
-    x_left_unit   = 0.38   # was 0.42
-
-    # RIGHT COLUMN
-    x_right_label = 0.55   # was 0.60
-    x_right_val   = 0.82   # was 0.88
-    x_right_unit  = 0.88   # was 0.94
-
+    x_left_label = 0.05
+    x_left_val = 0.30
+    x_left_unit = 0.39
+    x_right_label = 0.58
+    x_right_val = 0.84
+    x_right_unit = 0.92
     y_top = 0.82
-    row_h = 0.045
+    row_h = 0.042
 
     def render_column(rows, x_label, x_val, x_unit):
         for i, (label, key, unit, fmt) in enumerate(rows):
             y = y_top - i * row_h
 
-            if key == "" and label != "":
+            if key == "" and label:
                 plt.text(x_label, y, label, fontsize=13, weight="bold")
-                continue
-
-            if label == "":
                 continue
 
             val = summary.get(key, None)

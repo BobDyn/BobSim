@@ -1,21 +1,21 @@
 standard,metric,value,units,description
 SteadyStateEval,metric_target_velocity_mps,15.0,m/s,Target velocity used to select the exported metric table
 SteadyStateEval,metric_source_velocity_mps,15.0,m/s,Velocity nearest the target used for the exported metric table
-SteadyStateEval,ay_min,-17.55045027293144,m/s^2,Minimum measured lateral acceleration
-SteadyStateEval,ay_max,18.24986493020373,m/s^2,Maximum measured lateral acceleration
-SteadyStateEval,roadwheel_angle_gradient_rad_per_mps2,0.007515675368648743,rad/(m/s^2),Mean roadwheel angle gradient over the linear region
-SteadyStateEval,roadwheel_angle_gradient_deg_per_g,4.224349167640712,deg/g,Mean roadwheel angle gradient over the linear region
-SteadyStateEval,handwheel_angle_gradient_rad_per_mps2,0.030985059499412073,rad/(m/s^2),Mean handwheel angle gradient over the linear region
-SteadyStateEval,handwheel_angle_gradient_deg_per_g,17.415828103971524,deg/g,Mean handwheel angle gradient over the linear region
-SteadyStateEval,sideslip_gradient_rad_per_mps2,0.0008207933253648156,rad/(m/s^2),Mean sideslip gradient over the linear region
-SteadyStateEval,sideslip_gradient_deg_per_g,0.46134478017420094,deg/g,Mean sideslip gradient over the linear region
-SteadyStateEval,understeer_gradient_rad_per_mps2,0.0006926876441054678,rad/(m/s^2),Mean steer excess derivative over the linear region
-SteadyStateEval,understeer_gradient_deg_per_g,0.3893401895747444,deg/g,Mean steer excess derivative over the linear region
-SteadyStateEval,roll_gradient_deg_per_g,1.0444236311774429,deg/g,Mean roll gradient over the linear region
-SteadyStateEval,handwheel_torque_min,-18.91867942270876,N*m,Minimum handwheel torque over SteadyStateEval sweep
-SteadyStateEval,handwheel_torque_max,18.59778946383929,N*m,Maximum handwheel torque over SteadyStateEval sweep
-SteadyStateEval,roadwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-0.4051941662595321,deg/g per m/s,Linear fit slope of roadwheel angle gradient versus velocity
-SteadyStateEval,handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-1.6629789968818482,deg/g per m/s,Linear fit slope of handwheel angle gradient versus velocity
-SteadyStateEval,sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.18511607111948256,deg/g per m/s,Linear fit slope of sideslip gradient versus velocity
-SteadyStateEval,understeer_gradient_velocity_slope_deg_per_g_per_mps,0.024782492786999125,deg/g per m/s,Linear fit slope of understeer gradient versus velocity
-SteadyStateEval,roll_gradient_velocity_slope_deg_per_g_per_mps,0.008760232925528506,deg/g per m/s,Linear fit slope of roll gradient versus velocity
+SteadyStateEval,ay_min,-17.41491690505331,m/s^2,Minimum measured lateral acceleration
+SteadyStateEval,ay_max,18.16130669542749,m/s^2,Maximum measured lateral acceleration
+SteadyStateEval,roadwheel_angle_gradient_rad_per_mps2,0.007486990928135046,rad/(m/s^2),Mean roadwheel angle gradient over the linear region
+SteadyStateEval,roadwheel_angle_gradient_deg_per_g,4.208226452586555,deg/g,Mean roadwheel angle gradient over the linear region
+SteadyStateEval,handwheel_angle_gradient_rad_per_mps2,0.03085401361089229,rad/(m/s^2),Mean handwheel angle gradient over the linear region
+SteadyStateEval,handwheel_angle_gradient_deg_per_g,17.342170905790702,deg/g,Mean handwheel angle gradient over the linear region
+SteadyStateEval,sideslip_gradient_rad_per_mps2,0.0007615658232790303,rad/(m/s^2),Mean sideslip gradient over the linear region
+SteadyStateEval,sideslip_gradient_deg_per_g,0.4280546715857948,deg/g,Mean sideslip gradient over the linear region
+SteadyStateEval,understeer_gradient_rad_per_mps2,0.0006470912699422528,rad/(m/s^2),Mean steer excess derivative over the linear region
+SteadyStateEval,understeer_gradient_deg_per_g,0.3637117535665454,deg/g,Mean steer excess derivative over the linear region
+SteadyStateEval,roll_gradient_deg_per_g,1.5181039009494006,deg/g,Mean roll gradient over the linear region
+SteadyStateEval,handwheel_torque_min,-17.71943266723435,N*m,Minimum handwheel torque over SteadyStateEval sweep
+SteadyStateEval,handwheel_torque_max,16.91469689600481,N*m,Maximum handwheel torque over SteadyStateEval sweep
+SteadyStateEval,roadwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-0.4042172168210432,deg/g per m/s,Linear fit slope of roadwheel angle gradient versus velocity
+SteadyStateEval,handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-1.6579649063273854,deg/g per m/s,Linear fit slope of handwheel angle gradient versus velocity
+SteadyStateEval,sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.18465796377873497,deg/g per m/s,Linear fit slope of sideslip gradient versus velocity
+SteadyStateEval,understeer_gradient_velocity_slope_deg_per_g_per_mps,0.02454365916094051,deg/g per m/s,Linear fit slope of understeer gradient versus velocity
+SteadyStateEval,roll_gradient_velocity_slope_deg_per_g_per_mps,0.010924775913337714,deg/g per m/s,Linear fit slope of roll gradient versus velocity

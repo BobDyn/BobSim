@@ -24,7 +24,7 @@ driver_mass:
     - [-1.975938, -0.000053, 6.749042]
 
 body:
-  torsional_stiff_n_m_per_rad: 500000
+  torsional_stiff_n_m_per_rad: 300000
 
 front:
   wheel:
@@ -69,7 +69,7 @@ front:
     stabar:
       arm_end_m: [-0.03682914, 0.2667, 0.11597939]
       bar_end_m: [-0.10664664, 0.2667, 0.11811]
-      rate_n_m_per_rad: 258
+      rate_n_m_per_rad: 1
   masses:
     unsprung:
       mass_kg: 7.82268281
@@ -142,7 +142,7 @@ rear:
     stabar:
       arm_end_m: [-1.43001283, 0.3032125, 0.4054766]
       bar_end_m: [-1.3925183, 0.3032125, 0.41224196]
-      rate_n_m_per_rad: 300
+      rate_n_m_per_rad: 1
   masses:
     unsprung:
       mass_kg: 7.35220072
