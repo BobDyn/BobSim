@@ -507,11 +507,17 @@ def pickup_indices(order: list[str], required: list[str]) -> dict[str, int]:
 
 
 def spring_table(rate: Any) -> dict[str, Any]:
-    return {"table": [[0, 0], [1, rate]]}
+    value = node_value(rate)
+    if isinstance(value, dict) and "table" in value:
+        return {"table": value["table"]}
+    return {"table": [[0, 0], [1, value]]}
 
 
 def damper_table(rate: Any) -> dict[str, Any]:
-    return {"table": [[-1, -float(rate)], [0, 0], [1, rate]]}
+    value = node_value(rate)
+    if isinstance(value, dict) and "table" in value:
+        return {"table": value["table"]}
+    return {"table": [[-1, -float(value)], [0, 0], [1, value]]}
 
 
 def mass_record(value: dict[str, Any]) -> dict[str, Any]:
@@ -544,9 +550,17 @@ def side_parameters(data: dict[str, Any], side_name: str, prefix: str, topology:
 
     axle_fields: dict[str, Any] = {
         "shockMount": require_key(shock, f"{side_name}.actuation.shock", "mount_m"),
-        "springTable": spring_table(require_key(shock, f"{side_name}.actuation.shock", "spring_rate_n_per_m")),
+        "springTable": spring_table(
+            shock.get("spring_table")
+            if "spring_table" in shock
+            else require_key(shock, f"{side_name}.actuation.shock", "spring_rate_n_per_m")
+        ),
         "springFreeLength": require_key(shock, f"{side_name}.actuation.shock", "free_length_m"),
-        "damperTable": damper_table(require_key(shock, f"{side_name}.actuation.shock", "damper_rate_n_s_per_m")),
+        "damperTable": damper_table(
+            shock.get("damper_table")
+            if "damper_table" in shock
+            else require_key(shock, f"{side_name}.actuation.shock", "damper_rate_n_s_per_m")
+        ),
     }
 
     if topology in {"bellcrank", "bellcrank_stabar"}:

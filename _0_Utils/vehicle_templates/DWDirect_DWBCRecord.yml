@@ -55,9 +55,16 @@ front:
     rod_mount_m: [0.006762552642, 0.525610676234, 0.134465050856]
     shock:
       mount_m: [-0.020673469702, 0.247847085458, 0.561456926868]
-      spring_rate_n_per_m: 40000
+      spring_table:
+        table:
+          - [0, 0]
+          - [1, 40000]
       free_length_m: 0.525
-      damper_rate_n_s_per_m: 850
+      damper_table:
+        table:
+          - [-1, -850]
+          - [0, 0]
+          - [1, 850]
   masses:
     unsprung:
       mass_kg: 7.82268281
@@ -116,9 +123,16 @@ rear:
     rod_mount_m: [-1.53509479, 0.50330883, 0.26648017]
     shock:
       mount_m: [-1.50192144, 0.28884688, 0.36889916]
-      spring_rate_n_per_m: 43781.70875
+      spring_table:
+        table:
+          - [0, 0]
+          - [1, 43781.70875]
       free_length_m: 0.265
-      damper_rate_n_s_per_m: 1300
+      damper_table:
+        table:
+          - [-1, -1300]
+          - [0, 0]
+          - [1, 1300]
     bellcrank:
       pivot_m: [-1.39886851, 0.29230126, 0.1016]
       axis: [0.887962410598, 0.302708516859, 0.346251803151]
