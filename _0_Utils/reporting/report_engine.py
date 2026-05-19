@@ -30,13 +30,17 @@ class ReportEngine:
         print("📄 Writing report to:", output_path.resolve())
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.unlink(missing_ok=True)
 
         standard = self.config.get("standard") or report_cfg.get("standard")
+        summary_units = report_cfg.get("summary_units")
+        if summary_units is not None and not isinstance(summary_units, dict):
+            raise TypeError("report.summary_units must be a mapping if provided.")
 
         if standard is None:
             raise KeyError(
                 "Missing standard in config. Add `standard: SteadyStateEval`, "
-                "`standard: TransientEval`, or `standard: KnC` at the top level "
+                "`standard: TransientEval`, or `standard: FourPostEval` at the top level "
                 "of the YAML."
             )
 
@@ -86,10 +90,16 @@ class ReportEngine:
                     add_transient_eval_step_page(pdf, result["summary"])
                     add_transient_eval_frequency_page(pdf, result["summary"])
 
-            elif standard == "KnC":
+            elif standard in {"KnC", "FourPostEval"}:
                 from _0_Utils.reporting.sections import add_knc_summary_page
 
-                add_knc_summary_page(pdf, result["summary"])
+                page_title = "KnC Metrics Summary" if standard == "KnC" else "FourPostEval Metrics Summary"
+                add_knc_summary_page(
+                    pdf,
+                    result["summary"],
+                    title=page_title,
+                    unit_overrides=summary_units,
+                )
 
             else:
                 raise ValueError(f"Unknown standard: {standard}")

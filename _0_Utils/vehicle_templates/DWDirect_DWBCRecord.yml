@@ -6,8 +6,9 @@ architecture:
   front: direct
   rear: bellcrank
 paths:
-  boblib: _0_Utils/external/BobLib
-  tire_templates: _0_Utils/tire_templates
+  boblib: _0_Utils/external/BobLib/BobLib
+  vehicle_templates: _0_Utils/external/BobLib/Generation/vehicle_templates
+  tire_templates: _0_Utils/external/BobLib/Generation/tire_templates
 sprung_mass:
   mass_kg: 160.64
   cg_m: [-0.92, 0, 0.25]

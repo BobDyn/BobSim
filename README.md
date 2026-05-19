@@ -5,7 +5,12 @@ vehicle simulations, runs standard studies, extracts signals, computes metrics,
 generates reports, and supports design-of-experiments sweeps.
 
 BobLib lives in this repository as a git submodule under
-`_0_Utils/external/BobLib/`.
+`_0_Utils/external/BobLib/`, with the Modelica package itself in
+`_0_Utils/external/BobLib/BobLib/` and the editable generation workspace in
+`_0_Utils/external/BobLib/Generation/` (`vehicle_templates/`, `tire_templates/`,
+and `scripts/`). The active vehicle configuration is
+`_0_Utils/external/BobLib/Generation/vehicle.yml`, and `make sync-vehicle-yaml`
+refreshes it from the repo-root `vehicle.yml`.
 
 ## Repository Layout
 
@@ -28,7 +33,9 @@ BobSim follows a simple pipeline:
 7. Write plots, CSV files, PDFs, and DOE tables
 
 The active standard-simulation build path compiles the shared Modelica model
-`BobLib.Standards.VehicleSim` into `_3_StandardSim/Build/`.
+`BobLib.Standards.VehicleSim` into `_3_StandardSim/Build/VehicleSim/`, and the
+FourPost build compiles `BobLib.Standards.FourPostSim` into
+`_3_StandardSim/Build/FourPostSim/`.
 
 ## Active Workflows
 
@@ -45,9 +52,10 @@ From the repository root:
 ```bash
 make init
 make setup
-omc _3_StandardSim/build.mos
-make SteadyStateEval
-make TransientEval
+make build-vehicle-sim
+make build-four-post-sim
+make steady-state-eval
+make transient-eval
 make sim-doe
 ```
 
@@ -72,10 +80,13 @@ runner plus report engine.
 
 Useful entry points:
 
+- `make build-vehicle-sim`
+- `make build-four-post-sim`
 - `_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml`
 - `_3_StandardSim/TransientEval/transient_eval_config.yml`
-- `make SteadyStateEval`
-- `make TransientEval`
+- `make steady-state-eval`
+- `make transient-eval`
+- `make four-post-eval`
 
 Outputs land in `_3_StandardSim/results/` as PDF reports and metrics CSVs.
 
@@ -146,7 +157,8 @@ Useful starting points include:
 ## Notes
 
 - `make sim-doe` runs the DOE pipeline inside the Docker `doe` service.
-- `make SteadyStateEval` and `make TransientEval` run the standard workflows
+- `make steady-state-eval`, `make transient-eval`, and `make four-post-eval`
+  run the standard workflows
   directly from Python.
 - The repository intentionally keeps report generation, simulation execution,
   and DOE post-processing separate so each layer can evolve independently.

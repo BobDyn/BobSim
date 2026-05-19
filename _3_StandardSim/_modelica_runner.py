@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,7 @@ class ModelicaRunner:
         sim_cfg = config.get("simulation", {})
 
         return cls(
-            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/Build"),
+            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/Build/VehicleSim"),
             exec_name=sim_cfg.get("exec_name", "BobLib.Standards.VehicleSim"),
             simulation=sim_cfg,
         )
@@ -189,7 +190,7 @@ class ModelicaRunner:
     def run_case(self, signals, mode, case, cleanup=False, stream_logs=False):
         run_id = str(uuid.uuid4())[:8]
 
-        results_root = self.build_dir / "results"
+        results_root = self._resolve_run_root()
         run_dir = results_root / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -198,23 +199,27 @@ class ModelicaRunner:
         log_file = run_dir / "run.log"
 
         self._write_override_file(override_file, case)
+        self._remove_stale_profile_files()
 
         cmd = self._build_command(
             override_file=override_file,
             result_file=result_file,
             case=case,
         )
+        env = self._build_environment()
 
         if stream_logs:
             returncode = self._run_subprocess_streamed(
                 cmd=cmd,
                 log_file=log_file,
+                env=env,
             )
             stdout_tail = log_file.read_text(errors="replace")[-4000:]
         else:
             completed = subprocess.run(
                 cmd,
                 cwd=self.build_dir,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -260,10 +265,19 @@ class ModelicaRunner:
 
         return extracted
 
-    def _run_subprocess_streamed(self, cmd, log_file):
+    def _resolve_run_root(self) -> Path:
+        results_root = self.build_dir / "results"
+        if results_root.exists():
+            if os.access(results_root, os.W_OK):
+                return results_root
+            return self.build_dir / "runs"
+        return results_root
+
+    def _run_subprocess_streamed(self, cmd, log_file, env):
         with subprocess.Popen(
             cmd,
             cwd=self.build_dir,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -323,6 +337,37 @@ class ModelicaRunner:
             return out
 
         raise ValueError(f"Unsupported extraction mode: {mode}")
+
+    def _build_environment(self) -> dict[str, str]:
+        env = os.environ.copy()
+        runtime_dir = "/usr/lib/omc"
+        self._ensure_runtime_compat_symlink()
+        current_ld_library_path = env.get("LD_LIBRARY_PATH", "")
+        ld_library_path_parts = [str(self.build_dir), runtime_dir]
+        if current_ld_library_path:
+            ld_library_path_parts.append(current_ld_library_path)
+        env["LD_LIBRARY_PATH"] = ":".join(ld_library_path_parts)
+        return env
+
+    def _ensure_runtime_compat_symlink(self) -> None:
+        compat_link = self.build_dir / "libomcgc.so.1"
+        target = Path("/usr/lib/omc/libomcgc.so")
+
+        if compat_link.exists() or not target.exists():
+            return
+
+        try:
+            compat_link.symlink_to(target)
+        except FileExistsError:
+            pass
+
+    def _remove_stale_profile_files(self) -> None:
+        profile_prefix = f"{self.exec_name}_prof."
+        for path in self.build_dir.glob(f"{profile_prefix}*"):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
 
     def _run_case_safe(self, signals, mode, case, cleanup=False, stream_logs=False):
         try:
@@ -402,6 +447,16 @@ class ModelicaRunner:
 
         if stop_time is not None:
             cmd.append(f"-stopTime={float(stop_time)}")
+
+        step_size = _first_not_none(
+            case.get("_stepSize"),
+            case.get("stepSize"),
+            self.simulation.get("step_size"),
+            self.simulation.get("stepSize"),
+            self.simulation.get("initialStepSize"),
+        )
+        if step_size is not None:
+            cmd.append(f"-stepSize={float(step_size)}")
 
         solver = self.simulation.get("solver")
         if solver:

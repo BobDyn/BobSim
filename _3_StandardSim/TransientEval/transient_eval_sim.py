@@ -991,6 +991,7 @@ class TransientEvalSim:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = output_dir / f"{report_path.stem}_metrics.csv"
+        output_path.unlink(missing_ok=True)
 
         fieldnames = [
             "standard",

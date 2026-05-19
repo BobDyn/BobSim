@@ -2,7 +2,7 @@ standard: SteadyStateEval
 
 simulation:
   backend: modelica
-  build_dir: _3_StandardSim/Build
+  build_dir: _3_StandardSim/Build/VehicleSim
   exec_name: BobLib.Standards.VehicleSim
 
   start_time: 0.0
@@ -13,21 +13,22 @@ simulation:
 
   log_level: LOG_STATS
 
-  no_grid: true
+  no_grid: false
   no_event_emit: true
 
   # Explicit Modelica overrides used by SteadyStateEval.
   init_parameters:
     useMode: 0
     steerStart: 2.0
-    ayRampDuration: 7.0
+    ayRampDuration: 5.0
     steadyHoldDuration: 0.1
     handwheelRateTol: 0.01
     settleTimeout: 3.0
 
     # Longitudinal velocity controller
-    velGain: 200.0
-    velTi: 1.0
+    # Tuned for a faster, still-stable open-loop ramp response.
+    velGain: 100.0
+    velTi: 2.0
 
 execution:
   parallel: true

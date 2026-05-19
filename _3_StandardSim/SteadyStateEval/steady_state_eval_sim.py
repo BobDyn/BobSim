@@ -370,6 +370,24 @@ class SteadyStateEvalSim:
                 f"Got start_time={self.start_time}, stop_time={self.stop_time}."
             )
 
+    def _open_loop_stop_time(self, init_parameters: dict[str, Any]) -> float:
+        steer_start = float(init_parameters.get("steerStart", self.steer_start))
+        ramp_duration = float(init_parameters.get("ayRampDuration", 3.0))
+        steady_hold_duration = float(init_parameters.get("steadyHoldDuration", 0.1))
+        settle_timeout = float(init_parameters.get("settleTimeout", 3.0))
+
+        # The Modelica model already terminates once the plateau is reached or
+        # once the ramp+settle timeout expires. The Python harness only needs a
+        # slightly longer hard cap than that internal timeout, not a fixed 20 s
+        # horizon for every ramp duration.
+        dynamic_stop_time = (
+            steer_start
+            + ramp_duration
+            + settle_timeout
+            + steady_hold_duration
+        )
+        return min(self.stop_time, dynamic_stop_time)
+
     # ============================================================
     # CASE GENERATION
     # ============================================================
@@ -434,6 +452,7 @@ class SteadyStateEvalSim:
             sim_cfg.get("init_parameters", {}),
             name="simulation.init_parameters",
         )
+        stop_time_case = self._open_loop_stop_time(init_parameters)
 
         cases: list[dict[str, Any]] = []
 
@@ -462,7 +481,7 @@ class SteadyStateEvalSim:
                     # Handled by ModelicaRunner._build_command(), not written into
                     # the override file.
                     "startTime": self.start_time,
-                    "stopTime": self.stop_time,
+                    "stopTime": stop_time_case,
                 }
 
                 case.update(init_parameters)
@@ -780,6 +799,7 @@ class SteadyStateEvalSim:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_path = output_dir / f"{report_path.stem}_metrics.csv"
+        output_path.unlink(missing_ok=True)
 
         fieldnames = [
             "standard",

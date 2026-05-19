@@ -1,0 +1,43 @@
+// Start clean
+clear();
+
+root := OpenModelica.Scripting.cd();
+boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
+buildDir := root + "/_3_StandardSim/Build/VehicleSim";
+
+// Generate C simulation code
+OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
+
+// Allow larger tearing systems before falling back to untorn systems
+OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
+
+// Use dynamic state selection for multibody/index-reduced systems
+OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
+
+// Set matching algorithm
+OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
+
+// Load vendored dependencies explicitly.
+loadModel(Modelica);
+
+// Load BobLib.
+loadFile(boblibDir + "/package.mo");
+
+system("mkdir -p " + buildDir);
+
+// Go to build directory.
+cd(buildDir);
+
+// Build executable directly.
+res := buildModel(
+  BobLib.Standards.VehicleSim,
+  startTime = 0,
+  stopTime = 10,
+  tolerance = 1e-6,
+  outputFormat = "csv",
+  cflags = "-O3 -march=native -mtune=native"
+);
+
+// Print build result and errors/warnings.
+res;
+getErrorString();

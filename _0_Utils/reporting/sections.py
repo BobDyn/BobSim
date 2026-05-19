@@ -1,7 +1,34 @@
+from collections.abc import Mapping
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import textwrap
+
+
+def _resolve_unit(
+    unit_overrides: Mapping[str, object] | None,
+    key: str,
+    default_unit: str,
+) -> tuple[str, float]:
+    if not unit_overrides or key not in unit_overrides:
+        return default_unit, 1.0
+
+    override = unit_overrides[key]
+    if override is None:
+        return default_unit, 1.0
+
+    if isinstance(override, str):
+        return override, 1.0
+
+    if isinstance(override, Mapping):
+        unit = override.get("unit", override.get("label", default_unit))
+        scale = override.get("scale", 1.0)
+        return str(unit), float(scale)
+
+    raise TypeError(
+        f"summary_units[{key!r}] must be a string or a mapping with unit/scale."
+    )
+
 
 def add_summary_page(pdf, summary, title=None):
 
@@ -127,7 +154,12 @@ def add_summary_page(pdf, summary, title=None):
     plt.close(fig)
 
 
-def add_knc_summary_page(pdf, summary):
+def add_knc_summary_page(
+    pdf,
+    summary,
+    title="KnC Metrics Summary",
+    unit_overrides: Mapping[str, object] | None = None,
+):
 
     import matplotlib.pyplot as plt
 
@@ -135,30 +167,38 @@ def add_knc_summary_page(pdf, summary):
     plt.axis("off")
 
     # Title
-    plt.text(0.5, 0.96, "KnC Metrics Summary",
+    plt.text(0.5, 0.96, title,
              ha="center", fontsize=18, weight="bold")
 
     # Column anchors
-    x_left_label  = 0.10
-    x_left_val    = 0.38
-    x_left_unit   = 0.46
+    x_left_label  = 0.03
+    x_left_val    = 0.25
+    x_left_unit   = 0.36
 
-    x_right_label = 0.58
-    x_right_val   = 0.82
-    x_right_unit  = 0.90
+    x_right_label = 0.54
+    x_right_val   = 0.76
+    x_right_unit  = 0.87
 
     y_top = 0.88
 
     def add_section(x_label, x_val, x_unit, y, title, rows):
-        plt.text(x_label, y, title, fontsize=13, weight="bold")
+        x_title = 0.5 * (x_label + x_unit)
+        plt.text(x_title, y, title, fontsize=13, weight="bold", ha="center")
         y -= 0.045
 
         for label, key, unit, fmt in rows:
             val = summary.get(key, None)
-            val_str = "—" if val is None else fmt.format(val)
+            unit, scale = _resolve_unit(unit_overrides, key, unit)
+            if val is None:
+                val_str = "—"
+            else:
+                try:
+                    val_str = fmt.format(float(val) * scale)
+                except (TypeError, ValueError):
+                    val_str = fmt.format(val)
 
             plt.text(x_label, y, label, fontsize=11)
-            plt.text(x_val, y, val_str, fontsize=11)
+            plt.text(x_val, y, val_str, fontsize=11, ha="right")
             plt.text(x_unit, y, unit, fontsize=11)
 
             y -= 0.035
@@ -184,15 +224,14 @@ def add_knc_summary_page(pdf, summary):
         ])
 
     # --------------------------
-    # ANTI & BALANCE
+    # ANTI METRICS
     # --------------------------
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
-        "Anti & Balance", [
+        "Anti Metrics", [
             ("Anti-Dive", "avg_anti_dive_pct", "%", "{:.1f}"),
             ("Anti-Squat", "avg_anti_squat_pct", "%", "{:.1f}"),
             ("Front Anti-Roll", "avg_anti_roll_front_pct", "%", "{:.1f}"),
             ("Rear Anti-Roll", "avg_anti_roll_rear_pct", "%", "{:.1f}"),
-            ("Anti Balance (F/R)", "avg_anti_balance", "-", "{:.2f}"),
             ("LLTD (Front)", "avg_lltd_front_pct", "%", "{:.1f}"),
         ])
 

@@ -2,7 +2,7 @@ standard: TransientEval
 
 simulation:
   backend: modelica
-  build_dir: _3_StandardSim/Build
+  build_dir: _3_StandardSim/Build/VehicleSim
   exec_name: BobLib.Standards.VehicleSim
   
   start_time: 0.0

@@ -1,7 +1,11 @@
 DOCKER_RUN := docker run --rm -v "$(CURDIR):/bobsim" openmodelica/openmodelica:v1.26.3-ompython
 PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf ".venv/bin/python"; else printf "python3"; fi)
+VEHICLE_YAML_SRC := vehicle.yml
+VEHICLE_YAML_DST := _0_Utils/external/BobLib/Generation/vehicle.yml
 
-.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-knc sim-transient clean-doe clean
+.PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-transient \
+	sync-vehicle-yaml build-records build-axle-models build-vehicle-sim build-standard build-four-post \
+	steady-state-eval transient-eval four-post-eval clean-doe clean
 
 # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -68,8 +72,21 @@ clean-results:
 	@echo "Cleaning all result directories under _3_StandardSim..."
 	@find _3_StandardSim -type d -name "results" -exec sh -c 'rm -rf "$$1"/* "$$1"/.[!.]* "$$1"/..?*' _ {} \;
 
-build-standard:
-	omc _3_StandardSim/build.mos
+sync-vehicle-yaml:
+	@mkdir -p $(dir $(VEHICLE_YAML_DST))
+	cp "$(VEHICLE_YAML_SRC)" "$(VEHICLE_YAML_DST)"
+
+build-vehicle-sim: sync-vehicle-yaml
+	$(PYTHON) _0_Utils/external/BobLib/Generation/scripts/build_vehicle_sim.py
+	omc _3_StandardSim/build_vehicle_sim.mos
+
+build-axle-models: sync-vehicle-yaml
+	$(PYTHON) _0_Utils/external/BobLib/Generation/scripts/build_axle_models.py
+
+build-records: sync-vehicle-yaml
+	$(PYTHON) _0_Utils/external/BobLib/Generation/scripts/build_records.py
+
+build-standard: sync-vehicle-yaml build-vehicle-sim
 
 steady-state-eval:
 	$(PYTHON) -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
@@ -77,11 +94,11 @@ steady-state-eval:
 transient-eval:
 	$(PYTHON) -m _3_StandardSim.TransientEval.transient_eval_sim
 
-# run1:
-# 	python3 build_vehicle.py
-# 	make shell-bobsim
+build-four-post-sim: sync-vehicle-yaml
+	$(PYTHON) _0_Utils/external/BobLib/Generation/scripts/build_four_post_sim.py
+	omc _3_StandardSim/build_four_post_sim.mos
 
-# run2:
-# 	make clean
-# 	make clean-build
-# 	make build-standard && make steady-state-eval
+build-four-post: sync-vehicle-yaml build-four-post-sim
+
+four-post-eval:
+	$(PYTHON) -m _3_StandardSim.FourPostEval.four_post_eval_sim

@@ -26,6 +26,30 @@ class PlotEngine:
         for plot_name, p_cfg in self.config.get("plots", {}).items():
             print(f"📈 Rendering plot page: {plot_name}")
 
+            if p_cfg.get("skip_if_missing"):
+                subplots = p_cfg.get("subplots")
+                plot_cfgs = subplots if subplots is not None else [p_cfg]
+                has_data = False
+                plotter = SignalPlot()
+
+                for sub in plot_cfgs:
+                    try:
+                        series = plotter.get_xy(result, sub)
+                    except KeyError:
+                        continue
+
+                    for item in series:
+                        if len(item["x"]) and len(item["y"]):
+                            has_data = True
+                            break
+
+                    if has_data:
+                        break
+
+                if not has_data:
+                    print(f"📈 Skipping optional plot page: {plot_name}")
+                    continue
+
             layout_name = p_cfg.get("layout", "single")
             layout = LAYOUT_REGISTRY[layout_name]()
 
