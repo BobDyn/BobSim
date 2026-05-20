@@ -25,8 +25,10 @@ full Modelica trim solve and does not yet solve for steady-state yaw rate.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -35,10 +37,14 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from numpy.typing import NDArray
 from scipy.spatial import ConvexHull
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from _0_Utils.external.BobLib.Generation.scripts.build_common import load_yaml  # noqa: E402
+from _2_EnvelopeSim.vehicle_loader import load_active_envelope_inputs  # noqa: E402
+
 
 G = 9.80665
-IN_TO_M = 0.0254
-MPH_TO_MPS = 0.44704
 
 
 FloatArray = NDArray[np.float64]
@@ -91,6 +97,7 @@ class VehicleParams:
 @dataclass(frozen=True)
 class YMDConfig:
     speed: float = 15.0  # m/s
+    steering_ratio: float = 1.0
 
     beta_min_deg: float = -12.0
     beta_max_deg: float = 12.0
@@ -107,6 +114,10 @@ class YMDConfig:
     max_iter: int = 50
     tol_ay: float = 1e-5
     relaxation: float = 0.35
+
+    speed_sweep_start_mps: float = 5.0
+    speed_sweep_stop_mps: float = 25.0
+    speed_sweep_points: int = 7
 
     verbose: bool = True
     warn_tire_load_range: bool = True
@@ -128,27 +139,69 @@ class YMDSpeedSweepResult:
     results: list[YMDResult]
 
 
-def force_to_aero_area(
-    downforce_n: float,
-    drag_n: float,
-    speed_mps: float,
-    rho: float = 1.225,
-) -> tuple[float, float]:
-    """
-    Convert CFD forces at a known speed to ClA and CdA.
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("ymd_config.yml")
+DEFAULT_RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "YMD"
 
-    The vehicle model expects:
-        downforce = 0.5 * rho * V^2 * cl_a
-        drag      = 0.5 * rho * V^2 * cd_a
-    """
-    if speed_mps <= 0.0:
-        raise ValueError("speed_mps must be positive.")
 
-    q = 0.5 * rho * speed_mps**2
-    cl_a = downforce_n / q
-    cd_a = drag_n / q
+def _as_float(value: Any, *, name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"Expected {name} to be numeric.") from exc
 
-    return cl_a, cd_a
+
+def _as_int(value: Any, *, name: str) -> int:
+    if isinstance(value, bool):
+        raise TypeError(f"Expected {name} to be an integer, not boolean.")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"Expected {name} to be an integer.") from exc
+
+
+def _as_bool(value: Any, *, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"Expected {name} to be boolean.")
+    return value
+
+
+def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> YMDConfig:
+    data = load_yaml(Path(path))
+    defaults = YMDConfig()
+    return YMDConfig(
+        speed=_as_float(data.get("speed", defaults.speed), name="speed"),
+        steering_ratio=_as_float(
+            data.get("steering_ratio", defaults.steering_ratio),
+            name="steering_ratio",
+        ),
+        beta_min_deg=_as_float(data.get("beta_min_deg", defaults.beta_min_deg), name="beta_min_deg"),
+        beta_max_deg=_as_float(data.get("beta_max_deg", defaults.beta_max_deg), name="beta_max_deg"),
+        beta_points=_as_int(data.get("beta_points", defaults.beta_points), name="beta_points"),
+        hwa_min_deg=_as_float(data.get("hwa_min_deg", defaults.hwa_min_deg), name="hwa_min_deg"),
+        hwa_max_deg=_as_float(data.get("hwa_max_deg", defaults.hwa_max_deg), name="hwa_max_deg"),
+        hwa_points=_as_int(data.get("hwa_points", defaults.hwa_points), name="hwa_points"),
+        yaw_rate=_as_float(data.get("yaw_rate", defaults.yaw_rate), name="yaw_rate"),
+        max_iter=_as_int(data.get("max_iter", defaults.max_iter), name="max_iter"),
+        tol_ay=_as_float(data.get("tol_ay", defaults.tol_ay), name="tol_ay"),
+        relaxation=_as_float(data.get("relaxation", defaults.relaxation), name="relaxation"),
+        speed_sweep_start_mps=_as_float(
+            data.get("speed_sweep_start_mps", defaults.speed_sweep_start_mps),
+            name="speed_sweep_start_mps",
+        ),
+        speed_sweep_stop_mps=_as_float(
+            data.get("speed_sweep_stop_mps", defaults.speed_sweep_stop_mps),
+            name="speed_sweep_stop_mps",
+        ),
+        speed_sweep_points=_as_int(
+            data.get("speed_sweep_points", defaults.speed_sweep_points),
+            name="speed_sweep_points",
+        ),
+        verbose=_as_bool(data.get("verbose", defaults.verbose), name="verbose"),
+        warn_tire_load_range=_as_bool(
+            data.get("warn_tire_load_range", defaults.warn_tire_load_range),
+            name="warn_tire_load_range",
+        ),
+    )
 
 
 def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, float]:
@@ -801,7 +854,7 @@ def plot_ymd(
         fig.savefig(output_path, dpi=300)
         print(f"Saved YMD wireframe plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def plot_ymd_beta_slices(
@@ -861,7 +914,7 @@ def plot_ymd_beta_slices(
         fig.savefig(output_path, dpi=300)
         print(f"Saved YMD beta-slice plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def plot_ymd_contours(
@@ -917,7 +970,7 @@ def plot_ymd_contours(
         fig.savefig(output_path, dpi=300)
         print(f"Saved YMD contour plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
@@ -1114,7 +1167,7 @@ def plot_ymd_speed_sweep_3d(
         fig.savefig(output_path, dpi=300)
         print(f"Saved 3D YMD speed sweep plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def plot_ymd_speed_sweep_surface(
@@ -1184,7 +1237,7 @@ def plot_ymd_speed_sweep_surface(
         fig.savefig(output_path, dpi=300)
         print(f"Saved 3D YMD surface plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def plot_ymd_speed_sweep_hull_surfaces(
@@ -1495,82 +1548,42 @@ def plot_ymd_speed_sweep_hull_surfaces(
         fig.savefig(output_path, dpi=300)
         print(f"Saved YMD hull/surface plot: {output_path}")
 
-    plt.show()
+    plt.close(fig)
 
 
 def main() -> None:
-    # -------------------------------------------------------------------------
-    # Chassis / vehicle inputs
-    # -------------------------------------------------------------------------
-    sprung_mass_kg = 240.40
-    unsprung_front_axle_kg = 15.42
-    unsprung_rear_axle_kg = 15.42
+    config = load_config()
+    inputs = load_active_envelope_inputs()
 
-    total_mass_kg = sprung_mass_kg + unsprung_front_axle_kg + unsprung_rear_axle_kg
+    print(f"Loaded YMD config: {DEFAULT_CONFIG_PATH}")
+    print("Loaded active envelope inputs:")
+    print(f"  source YAML       = {inputs.source_yaml}")
+    print(f"  vehicle name      = {inputs.vehicle_name}")
+    print(f"  tire template     = {inputs.tire_template}")
+    print(f"  tire template path= {inputs.tire_template_path}")
+    print(f"  aero source       = {inputs.aero_source}")
+    print(f"  LLTD source       = {inputs.lltd_source}")
 
-    wheelbase_m = 61.0 * IN_TO_M
-    track_front_m = 48.0 * IN_TO_M
-    track_rear_m = 48.0 * IN_TO_M
-    cg_height_m = 11.0 * IN_TO_M
-
-    # -------------------------------------------------------------------------
-    # Aero inputs
-    # -------------------------------------------------------------------------
-    # Selected CFD case:
-    #   FRH = 1.4 in, RRH = 1.65 in
-    #   Downforce Fz = 161.7379 N
-    #   Drag Fx = 80.7986 N
-    #
-    # Use force-derived ClA/CdA, so no reference area is needed.
-    cfd_speed_mps = 25.0 * MPH_TO_MPS
-
-    cl_a, cd_a = force_to_aero_area(
-        downforce_n=161.7379,
-        drag_n=80.7986,
-        speed_mps=cfd_speed_mps,
-    )
-
-    print("Aero force-derived values:")
-    print(f"  CFD speed = {cfd_speed_mps:.3f} m/s")
-    print(f"  ClA       = {cl_a:.4f} m^2")
-    print(f"  CdA       = {cd_a:.4f} m^2")
-
-    # -------------------------------------------------------------------------
-    # Vehicle model
-    # -------------------------------------------------------------------------
     vehicle = VehicleParams(
-        mass=total_mass_kg,
-        wheelbase=wheelbase_m,
-        track_front=track_front_m,
-        track_rear=track_rear_m,
-        cg_height=cg_height_m,
-        front_static_frac=0.50,
-
-        # Front convention:
-        #   lltd = front lateral load transfer / total lateral load transfer
-        lltd=0.50,
-
-        # Update this once you want true roadwheel angle instead of roadwheel angle.
-        # Example:
-        #   steering_ratio = 4.0
-        # means:
-        #   delta_roadwheel = delta_hwa / 4
-        steering_ratio=1.0,
-
-        # 50/50 assumed aero balance for now
-        cl_a=cl_a,
-        cd_a=cd_a,
-        aero_balance_front=0.50,
-
-        # .tir lateral tire model
-        fz_ref=654.0,
-        fz_min_valid=100.0,
-        fz_max_valid=1091.0,
-        pdy1=-2.40275,
-        pdy2=0.343535,
-        pky1=-53.2421,
-        pky2=2.38205,
-        mu_min=0.8,
+        mass=inputs.mass,
+        wheelbase=inputs.wheelbase,
+        track_front=inputs.track_front,
+        track_rear=inputs.track_rear,
+        cg_height=inputs.cg_height,
+        front_static_frac=inputs.front_static_frac,
+        lltd=inputs.lltd,
+        steering_ratio=config.steering_ratio,
+        cl_a=inputs.cl_a,
+        cd_a=inputs.cd_a,
+        aero_balance_front=inputs.aero_balance_front,
+        fz_ref=inputs.fz_ref,
+        fz_min_valid=inputs.fz_min_valid,
+        fz_max_valid=inputs.fz_max_valid,
+        pdy1=inputs.pdy1,
+        pdy2=inputs.pdy2,
+        pky1=inputs.pky1,
+        pky2=inputs.pky2,
+        mu_min=inputs.mu_min,
     )
 
     print("\nVehicle values:")
@@ -1579,11 +1592,20 @@ def main() -> None:
     print(f"  front track    = {vehicle.track_front:.4f} m")
     print(f"  rear track     = {vehicle.track_rear:.4f} m")
     print(f"  CG height      = {vehicle.cg_height:.4f} m")
+    print(f"  front static frac = {vehicle.front_static_frac:.4f}")
+    print(f"  LLTD front frac   = {vehicle.lltd:.4f}")
     print(f"  static Fz/tire ≈ {vehicle.mass * G / 4.0:.1f} N")
     print(f"  steering ratio = {vehicle.steering_ratio:.3f}")
+    print(f"  aero balance   = {vehicle.aero_balance_front:.2f}")
 
     print("\nTire lateral model:")
+    print(f"  aero ref speed  = {inputs.aero_reference_speed:.1f} m/s")
     print(f"  FNOMIN          = {vehicle.fz_ref:.1f} N")
+    print(f"  FZ range        = {vehicle.fz_min_valid:.1f} to {vehicle.fz_max_valid:.1f} N")
+    print(f"  PDY1            = {vehicle.pdy1:.6f}")
+    print(f"  PDY2            = {vehicle.pdy2:.6f}")
+    print(f"  PKY1            = {vehicle.pky1:.6f}")
+    print(f"  PKY2            = {vehicle.pky2:.6f}")
     print(
         f"  mu_y(FNOMIN)    ≈ "
         f"{tire_mu_y(vehicle, np.array([vehicle.fz_ref], dtype=np.float64))[0]:.3f}"
@@ -1600,26 +1622,11 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # Single-speed YMD generation
     # -------------------------------------------------------------------------
-    config = YMDConfig(
-        speed=15.0,
-        beta_min_deg=-8.0,
-        beta_max_deg=8.0,
-        beta_points=61,
-        hwa_min_deg=-8.0,
-        hwa_max_deg=8.0,
-        hwa_points=61,
-        yaw_rate=0.0,
-        max_iter=50,
-        tol_ay=1e-5,
-        relaxation=0.35,
-        verbose=True,
-        warn_tire_load_range=True,
-    )
-
     result = generate_ymd(vehicle, config)
 
-    output_dir = Path("results")
+    output_dir = DEFAULT_RESULTS_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\nSaving YMD results to: {output_dir}")
 
     save_ymd_csv(result, output_dir / "ymd_first_principles.csv")
     plot_ymd(result, output_dir / "ymd_first_principles_wireframe.png")
@@ -1630,7 +1637,11 @@ def main() -> None:
     # YMD speed sweep / 3D visualization
     # -------------------------------------------------------------------------
     # Keep this modest for slide-readability. Increase to 11-15 later if desired.
-    speed_sweep = np.linspace(5.0, 25.0, 7)
+    speed_sweep = np.linspace(
+        config.speed_sweep_start_mps,
+        config.speed_sweep_stop_mps,
+        config.speed_sweep_points,
+    )
 
     sweep = generate_ymd_speed_sweep(
         vehicle=vehicle,

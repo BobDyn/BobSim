@@ -1,0 +1,26 @@
+# GGV envelope analysis settings.
+# Vehicle inputs still come from the active vehicle.yml via vehicle_loader.py.
+
+speeds:
+  - 5.0
+  - 10.0
+  - 15.0
+  - 20.0
+  - 25.0
+
+ay_max_g: 3.2
+ay_points: 321
+ax_search_min_g: -3.2
+ax_search_max_g: 2.8
+ax_search_points: 801
+
+max_drive_power_w: 80000.0
+max_drive_force_n: 3735.0
+max_brake_force_n: 14000.0
+drive_distribution_front: 0.0
+brake_distribution_front: 0.62
+
+include_left_right: true
+verbose: true
+progress_every: 25
+warn_tire_load_range: true

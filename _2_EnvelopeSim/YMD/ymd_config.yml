@@ -1,0 +1,25 @@
+# YMD envelope analysis settings.
+# Vehicle inputs still come from the active vehicle.yml via vehicle_loader.py.
+
+speed: 15.0
+steering_ratio: 1.0
+
+beta_min_deg: -8.0
+beta_max_deg: 8.0
+beta_points: 61
+
+hwa_min_deg: -8.0
+hwa_max_deg: 8.0
+hwa_points: 61
+
+yaw_rate: 0.0
+max_iter: 50
+tol_ay: 1e-5
+relaxation: 0.35
+
+speed_sweep_start_mps: 5.0
+speed_sweep_stop_mps: 25.0
+speed_sweep_points: 7
+
+verbose: true
+warn_tire_load_range: true

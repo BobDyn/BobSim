@@ -5,7 +5,7 @@ VEHICLE_YAML_DST := _0_Utils/external/BobLib/Generation/vehicle.yml
 
 .PHONY: init setup rebuild shell-doe shell-standard sim-doe sim-transient \
 	sync-vehicle-yaml build-records build-axle-models build-vehicle-sim build-standard build-four-post \
-	steady-state-eval transient-eval four-post-eval clean-doe clean
+	steady-state-eval transient-eval four-post-eval ggv-envelope ymd-envelope clean-doe clean
 
 # ── Setup ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +93,12 @@ steady-state-eval:
 
 transient-eval:
 	$(PYTHON) -m _3_StandardSim.TransientEval.transient_eval_sim
+
+ggv-envelope:
+	$(PYTHON) -m _2_EnvelopeSim.GGV.ggv_generation
+
+ymd-envelope:
+	$(PYTHON) -m _2_EnvelopeSim.YMD.ymd_generation
 
 build-four-post-sim: sync-vehicle-yaml
 	$(PYTHON) _0_Utils/external/BobLib/Generation/scripts/build_four_post_sim.py
