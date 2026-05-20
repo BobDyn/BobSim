@@ -30,6 +30,114 @@ def _resolve_unit(
     )
 
 
+def _format_table_value(value, fmt: str, scale: float = 1.0) -> str:
+    if value is None:
+        return "—"
+
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        try:
+            return fmt.format(value)
+        except Exception:
+            return str(value)
+
+    if not np.isfinite(numeric):
+        return "—"
+
+    return fmt.format(numeric * scale)
+
+
+def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
+    fig = plt.figure(figsize=(11, 8.5))
+    ax = plt.axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    vehicle = setup.get("vehicle", {})
+    cg = vehicle.get("sprung_cg_m", [float("nan")] * 3)
+    stats_line_1 = (
+        f"Sprung mass {vehicle.get('sprung_mass_kg', float('nan')):.1f} kg | "
+        f"CG ({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m | "
+        f"Wheelbase {vehicle.get('wheelbase_m', float('nan')):.3f} m | "
+        f"Track Fr/Rr {vehicle.get('track_front_m', float('nan')):.3f} / "
+        f"{vehicle.get('track_rear_m', float('nan')):.3f} m"
+    )
+    stats_line_2 = (
+        f"CG bias Fr/Rr {vehicle.get('cg_bias_front_pct', float('nan')):.1f} / "
+        f"{vehicle.get('cg_bias_rear_pct', float('nan')):.1f}% | "
+        f"CG bias L/R {vehicle.get('cg_bias_left_pct', float('nan')):.1f} / "
+        f"{vehicle.get('cg_bias_right_pct', float('nan')):.1f}%"
+    )
+
+    ax.text(0.5, 0.955, title, ha="center", va="top", fontsize=20, weight="bold", color="#1f2937")
+    ax.text(0.5, 0.905, stats_line_1, ha="center", va="top", fontsize=10.4, color="#3f4652")
+    ax.text(0.5, 0.875, stats_line_2, ha="center", va="top", fontsize=10.1, color="#4b5563")
+    ax.plot([0.08, 0.92], [0.845, 0.845], color="#d6dbe4", linewidth=1.0)
+
+    def render_setup_block(x0: float, x1: float, y_top: float, axle: dict[str, object], accent: str) -> None:
+        rows = [
+            ("Sprung mass", "sprung_mass_kg", "kg", "{:.1f}", 1.0),
+            ("Unsprung mass", "unsprung_mass_kg", "kg", "{:.1f}", 1.0),
+            ("Sprung load", "sprung_load_N", "N", "{:.0f}", 1.0),
+            ("Motion ratio", "motion_ratio", "wheel/spring", "{:.3f}", 1.0),
+            ("Spring rate", "spring_rate_N_per_m", "N/m", "{:.0f}", 1.0),
+            ("Spring force", "spring_force_N", "N", "{:.0f}", 1.0),
+            ("Installed length", "spring_installed_length_m", "mm", "{:.1f}", 1000.0),
+            ("Compression", "spring_compression_m", "mm", "{:.1f}", 1000.0),
+            ("Free length", "spring_free_length_m", "mm", "{:.1f}", 1000.0),
+            ("Wheel rate", "wheel_rate_N_per_m", "N/m", "{:.0f}", 1.0),
+            ("Sprung freq", "sprung_frequency_hz", "Hz", "{:.2f}", 1.0),
+            ("Unsprung freq", "unsprung_frequency_hz", "Hz", "{:.2f}", 1.0),
+        ]
+
+        width = x1 - x0
+        x_metric = x0
+        x_left = x0 + 0.40 * width
+        x_right = x0 + 0.70 * width
+        x_unit = x0 + 0.91 * width
+        x_title = 0.5 * (x_metric + x_unit)
+
+        ax.text(x_title, y_top, f"{axle['label']} Setup", fontsize=14, weight="bold", ha="center", color="#1f2937")
+        ax.text(
+            x_title,
+            y_top - 0.022,
+            f"{axle['left']['corner']} / {axle['right']['corner']}",
+            fontsize=9.4,
+            ha="center",
+            style="italic",
+            color="#5d6571",
+        )
+
+        header_y = y_top - 0.060
+        ax.text(x_metric, header_y, "Metric", fontsize=10.0, weight="bold", color="#1f2937")
+        ax.text(x_left, header_y, axle["left"]["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
+        ax.text(x_right, header_y, axle["right"]["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
+        ax.text(x_unit, header_y, "Units", fontsize=10.0, weight="bold", color="#1f2937")
+        ax.plot([x_metric, x_unit + 0.01], [header_y - 0.015, header_y - 0.015], color="#c8cfdb", linewidth=1.0)
+
+        row_y = header_y - 0.040
+        row_step = 0.050
+        for i, (label, key, unit, fmt, scale) in enumerate(rows):
+            yy = row_y - i * row_step
+            left_val = axle["left"].get(key)
+            right_val = axle["right"].get(key)
+            label_color = "#20242b"
+            value_color = "#111827"
+
+            ax.text(x_metric, yy, label, fontsize=9.0, color=label_color)
+            ax.text(x_left, yy, _format_table_value(left_val, fmt, scale), fontsize=9.0, ha="right", color=value_color)
+            ax.text(x_right, yy, _format_table_value(right_val, fmt, scale), fontsize=9.0, ha="right", color=value_color)
+            ax.text(x_unit, yy, unit, fontsize=9.0, color="#444b55")
+
+    render_setup_block(0.055, 0.44, 0.75, setup["front"], accent="#1f2937")
+    render_setup_block(0.56, 0.945, 0.75, setup["rear"], accent="#1f2937")
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def add_summary_page(pdf, summary, title=None):
 
     fig = plt.figure(figsize=(11, 8.5))

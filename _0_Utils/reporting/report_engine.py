@@ -91,7 +91,10 @@ class ReportEngine:
                     add_transient_eval_frequency_page(pdf, result["summary"])
 
             elif standard in {"KnC", "FourPostEval"}:
-                from _0_Utils.reporting.sections import add_knc_summary_page
+                from _0_Utils.reporting.sections import add_four_post_setup_page, add_knc_summary_page
+
+                if standard == "FourPostEval":
+                    add_four_post_setup_page(pdf, result.get("setup", {}))
 
                 page_title = "KnC Metrics Summary" if standard == "KnC" else "FourPostEval Metrics Summary"
                 add_knc_summary_page(

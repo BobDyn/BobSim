@@ -16,6 +16,12 @@ DEFAULT_CONFIG_PATH = Path("_3_StandardSim/FourPostEval/four_post_eval_config.ym
 DEFAULT_BUILD_DIR = "_3_StandardSim/Build/FourPostSim"
 DEFAULT_EXEC_NAME = "BobLib.Standards.FourPostSim"
 DEFAULT_METRICS_CSV_PATH = "_3_StandardSim/results/four_post_eval_report_metrics.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ACTIVE_VEHICLE_YAML_CANDIDATES = (
+    REPO_ROOT / "_0_Utils/external/BobLib/Generation/vehicle.yml",
+    REPO_ROOT / "vehicle.yml",
+)
+GRAVITY_MPS2 = 9.80665
 
 
 FOUR_POST_EVAL_SIGNALS = [
@@ -102,6 +108,187 @@ def write_metrics_csv(summary: dict[str, Any], path: str | Path) -> Path:
     return path
 
 
+def _load_active_vehicle_yaml() -> dict[str, Any]:
+    for path in ACTIVE_VEHICLE_YAML_CANDIDATES:
+        if not path.exists():
+            continue
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if data is None:
+            raise ValueError(f"Vehicle YAML is empty: {path}")
+        if not isinstance(data, dict):
+            raise TypeError(f"Expected vehicle YAML to contain a mapping: {path}")
+        return cast(dict[str, Any], data)
+    raise FileNotFoundError(
+        "Missing active vehicle.yml. Expected one of: "
+        + ", ".join(str(path) for path in ACTIVE_VEHICLE_YAML_CANDIDATES)
+    )
+
+
+def _combine_sprung_mass(vehicle: dict[str, Any]) -> tuple[float, np.ndarray]:
+    sprung = vehicle.get("sprung_mass")
+    if not isinstance(sprung, dict):
+        raise ValueError("vehicle.yml is missing sprung_mass")
+
+    base_m = float(sprung["mass_kg"])
+    base_cg = np.asarray(sprung["cg_m"], dtype=float)
+
+    driver = vehicle.get("driver_mass")
+    if isinstance(driver, dict):
+        driver_m = float(driver["mass_kg"])
+        driver_cg = np.asarray(driver["cg_m"], dtype=float)
+    else:
+        driver_m = 0.0
+        driver_cg = np.zeros(3, dtype=float)
+
+    total_m = base_m + driver_m
+    if total_m <= 0.0:
+        raise ValueError("Combined sprung mass must be positive.")
+
+    total_cg = (base_m * base_cg + driver_m * driver_cg) / total_m
+    return total_m, total_cg
+
+
+def _side_data(vehicle: dict[str, Any], side_name: str) -> dict[str, Any]:
+    side = vehicle.get(side_name)
+    if not isinstance(side, dict):
+        raise ValueError(f"vehicle.yml is missing {side_name}")
+    return side
+
+
+def _nested_value(data: dict[str, Any], *keys: str) -> Any:
+    cur: Any = data
+    for key in keys:
+        if not isinstance(cur, dict) or key not in cur:
+            raise KeyError(".".join(keys))
+        cur = cur[key]
+    return cur
+
+
+def _table_array(table_like: Any) -> np.ndarray:
+    arr = np.asarray(table_like, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] < 2:
+        raise ValueError("Expected a 2D table with at least two columns.")
+    return arr[:, :2]
+
+
+def _interp_with_extrap(x: float, xp: np.ndarray, fp: np.ndarray) -> float:
+    mask = np.isfinite(xp) & np.isfinite(fp)
+    xp = np.asarray(xp[mask], dtype=float)
+    fp = np.asarray(fp[mask], dtype=float)
+    if xp.size < 2:
+        return float("nan")
+
+    order = np.argsort(xp)
+    xp = xp[order]
+    fp = fp[order]
+
+    unique_xp, unique_idx = np.unique(xp, return_index=True)
+    xp = unique_xp
+    fp = fp[unique_idx]
+    if xp.size < 2:
+        return float("nan")
+
+    if x <= xp[0]:
+        slope = (fp[1] - fp[0]) / (xp[1] - xp[0] + 1e-12)
+        return float(fp[0] + slope * (x - xp[0]))
+    if x >= xp[-1]:
+        slope = (fp[-1] - fp[-2]) / (xp[-1] - xp[-2] + 1e-12)
+        return float(fp[-1] + slope * (x - xp[-1]))
+
+    return float(np.interp(x, xp, fp))
+
+
+def _force_to_deflection(spring_table: Any, force_n: float) -> float:
+    table = _table_array(spring_table)
+    deflection = table[:, 0]
+    force = table[:, 1]
+    return _interp_with_extrap(force_n, force, deflection)
+
+
+def _spring_rate_at_deflection(spring_table: Any, deflection_m: float) -> float:
+    table = _table_array(spring_table)
+    deflection = table[:, 0]
+    force = table[:, 1]
+    mask = np.isfinite(deflection) & np.isfinite(force)
+    deflection = np.asarray(deflection[mask], dtype=float)
+    force = np.asarray(force[mask], dtype=float)
+    if deflection.size < 2:
+        return float("nan")
+
+    order = np.argsort(deflection)
+    deflection = deflection[order]
+    force = force[order]
+
+    unique_deflection, unique_idx = np.unique(deflection, return_index=True)
+    deflection = unique_deflection
+    force = force[unique_idx]
+    if deflection.size < 2:
+        return float("nan")
+
+    if deflection_m <= deflection[0]:
+        idx = 0
+    elif deflection_m >= deflection[-1]:
+        idx = deflection.size - 2
+    else:
+        idx = int(np.searchsorted(deflection, deflection_m) - 1)
+
+    dx = deflection[idx + 1] - deflection[idx]
+    if abs(dx) < 1e-12:
+        return float("nan")
+
+    return float((force[idx + 1] - force[idx]) / dx)
+
+
+def _static_motion_ratio(series: dict[str, np.ndarray], corner_key: str, fallback: float) -> float:
+    x = np.asarray(series.get(f"{corner_key}_motion_ratio_x", []), dtype=float).reshape(-1)
+    y = np.asarray(series.get(f"{corner_key}_motion_ratio_vs_heave", []), dtype=float).reshape(-1)
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+    if x.size < 2 or y.size < 2:
+        return float(fallback)
+
+    if np.nanstd(x) < 1e-12 or np.nanstd(y) < 1e-12:
+        return float(fallback)
+
+    return _interp_with_extrap(0.0, x, y)
+
+
+def _quarter_car_frequencies(
+    sprung_mass_kg: float,
+    unsprung_mass_kg: float,
+    wheel_rate_n_per_m: float,
+    tire_rate_n_per_m: float,
+) -> tuple[float, float]:
+    if (
+        sprung_mass_kg <= 0.0
+        or unsprung_mass_kg <= 0.0
+        or wheel_rate_n_per_m <= 0.0
+        or tire_rate_n_per_m <= 0.0
+    ):
+        return float("nan"), float("nan")
+
+    m = np.array([[sprung_mass_kg, 0.0], [0.0, unsprung_mass_kg]], dtype=float)
+    k = np.array(
+        [
+            [wheel_rate_n_per_m, -wheel_rate_n_per_m],
+            [-wheel_rate_n_per_m, wheel_rate_n_per_m + tire_rate_n_per_m],
+        ],
+        dtype=float,
+    )
+
+    eigvals = np.linalg.eigvals(np.linalg.solve(m, k))
+    eigvals = np.real(eigvals[np.isfinite(eigvals) & (np.real(eigvals) > 0.0)])
+    eigvals.sort()
+    if eigvals.size < 2:
+        return float("nan"), float("nan")
+
+    sprung_hz = float(np.sqrt(eigvals[0]) / (2.0 * np.pi))
+    unsprung_hz = float(np.sqrt(eigvals[1]) / (2.0 * np.pi))
+    return sprung_hz, unsprung_hz
+
+
 class FourPostEvalSim:
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -115,6 +302,157 @@ class FourPostEvalSim:
             "rollMagnitude": procedure.get("rollMagnitude", 0.035),
             "forceMagnitude": procedure.get("forceMagnitude", 1000.0),
         }
+
+    def build_setup(self, summary: dict[str, Any], series: dict[str, np.ndarray]) -> dict[str, Any]:
+        vehicle = _load_active_vehicle_yaml()
+        sprung_mass_kg, sprung_cg_m = _combine_sprung_mass(vehicle)
+
+        front_side = _side_data(vehicle, "front")
+        rear_side = _side_data(vehicle, "rear")
+        front_wc = np.asarray(_nested_value(front_side, "suspension", "wheel_center_m"), dtype=float)
+        rear_wc = np.asarray(_nested_value(rear_side, "suspension", "wheel_center_m"), dtype=float)
+
+        front_x = float(front_wc[0])
+        rear_x = float(rear_wc[0])
+        left_y = 0.5 * (float(front_wc[1]) + float(rear_wc[1]))
+        right_y = -left_y
+
+        wheelbase = abs(front_x - rear_x)
+        track_front = 2.0 * float(front_wc[1])
+        track_rear = 2.0 * float(rear_wc[1])
+
+        if wheelbase <= 0.0:
+            raise ValueError("Vehicle wheelbase must be positive.")
+        if abs(left_y - right_y) <= 1e-12:
+            raise ValueError("Vehicle track width must be positive.")
+
+        front_fraction = (sprung_cg_m[0] - rear_x) / (front_x - rear_x)
+        rear_fraction = 1.0 - front_fraction
+        left_fraction = (sprung_cg_m[1] - right_y) / (left_y - right_y)
+        right_fraction = 1.0 - left_fraction
+
+        axle_specs = {
+            "front": {
+                "label": "Front",
+                "side": front_side,
+                "axle_fraction": front_fraction,
+                "track_m": track_front,
+                "corner_pairs": (("left", "fr_l"), ("right", "fr_r")),
+            },
+            "rear": {
+                "label": "Rear",
+                "side": rear_side,
+                "axle_fraction": rear_fraction,
+                "track_m": track_rear,
+                "corner_pairs": (("left", "rr_l"), ("right", "rr_r")),
+            },
+        }
+
+        def corner_unsprung_mass(side: dict[str, Any]) -> float:
+            masses = _nested_value(side, "masses")
+            total = 0.0
+            for key in ("unsprung", "upper_control_arm", "lower_control_arm", "tie_rod"):
+                total += float(_nested_value(masses, key, "mass_kg"))
+            return total
+
+        def spring_table(side: dict[str, Any]) -> np.ndarray:
+            shock = _nested_value(side, "actuation", "shock")
+            table = shock.get("spring_table")
+            if isinstance(table, dict):
+                table = table.get("table")
+            return _table_array(table)
+
+        def installed_length(side: dict[str, Any]) -> float:
+            actuation = _nested_value(side, "actuation")
+            shock_mount = np.asarray(_nested_value(actuation, "shock", "mount_m"), dtype=float)
+            if "bellcrank" in actuation:
+                shock_pickup = np.asarray(_nested_value(actuation, "bellcrank", "pickups_m", "shock"), dtype=float)
+                return float(np.linalg.norm(shock_mount - shock_pickup))
+            rod_mount = np.asarray(_nested_value(actuation, "rod_mount_m"), dtype=float)
+            return float(np.linalg.norm(shock_mount - rod_mount))
+
+        def tire_rate(side: dict[str, Any]) -> float:
+            return float(_nested_value(side, "tire", "vertical_stiffness_n_per_m"))
+
+        corners: dict[str, dict[str, Any]] = {}
+
+        for axle_name, axle in axle_specs.items():
+            side = axle["side"]
+            axle_fraction = float(axle["axle_fraction"])
+            axle_unsprung_mass = corner_unsprung_mass(side)
+            axle_installed_length_m = installed_length(side)
+            axle_tire_rate = tire_rate(side)
+            axle_spring_table = spring_table(side)
+
+            for corner_name, corner_key in axle["corner_pairs"]:
+                corner_fraction = axle_fraction * (left_fraction if corner_name == "left" else right_fraction)
+                sprung_corner_mass = sprung_mass_kg * corner_fraction
+                sprung_corner_load = sprung_corner_mass * GRAVITY_MPS2
+
+                static_mr = _static_motion_ratio(
+                    series,
+                    corner_key,
+                    float(summary.get("avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear", float("nan"))),
+                )
+                spring_force = sprung_corner_load * static_mr
+                spring_compression_m = _force_to_deflection(axle_spring_table, spring_force)
+                spring_rate = _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
+                wheel_rate = spring_rate / (static_mr**2) if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
+                free_length_m = axle_installed_length_m + spring_compression_m
+                sprung_mode_hz, unsprung_mode_hz = _quarter_car_frequencies(
+                    sprung_corner_mass,
+                    axle_unsprung_mass,
+                    wheel_rate,
+                    axle_tire_rate,
+                )
+
+                corners[corner_key] = {
+                    "corner": {
+                        "fr_l": "FL",
+                        "fr_r": "FR",
+                        "rr_l": "RL",
+                        "rr_r": "RR",
+                    }[corner_key],
+                    "sprung_mass_kg": float(sprung_corner_mass),
+                    "unsprung_mass_kg": float(axle_unsprung_mass),
+                    "sprung_load_N": float(sprung_corner_load),
+                    "motion_ratio": float(static_mr),
+                    "spring_rate_N_per_m": float(spring_rate),
+                    "spring_force_N": float(spring_force),
+                    "spring_compression_m": float(spring_compression_m),
+                    "spring_installed_length_m": float(axle_installed_length_m),
+                    "spring_free_length_m": float(free_length_m),
+                    "wheel_rate_N_per_m": float(wheel_rate),
+                    "sprung_frequency_hz": float(sprung_mode_hz),
+                    "unsprung_frequency_hz": float(unsprung_mode_hz),
+                }
+
+        setup = {
+            "subtitle": "Static spring setup from the active vehicle pose and FourPost motion ratios.",
+            "vehicle": {
+                "sprung_mass_kg": float(sprung_mass_kg),
+                "sprung_cg_m": [float(v) for v in sprung_cg_m],
+                "wheelbase_m": float(wheelbase),
+                "track_front_m": float(track_front),
+                "track_rear_m": float(track_rear),
+                "cg_bias_front_pct": float(100.0 * front_fraction),
+                "cg_bias_rear_pct": float(100.0 * rear_fraction),
+                "cg_bias_left_pct": float(100.0 * left_fraction),
+                "cg_bias_right_pct": float(100.0 * right_fraction),
+            },
+            "front": {
+                "label": "Front",
+                "left": corners["fr_l"],
+                "right": corners["fr_r"],
+            },
+            "rear": {
+                "label": "Rear",
+                "left": corners["rr_l"],
+                "right": corners["rr_r"],
+            },
+        }
+
+        return setup
 
     def run(self) -> dict[str, Any]:
         simulation_cfg = _as_mapping(self.config.get("simulation"), name="simulation")
@@ -152,6 +490,7 @@ class FourPostEvalSim:
             )
 
         summary, series = self.summarize(result)
+        setup = self.build_setup(summary, series)
         metrics_csv_path = write_metrics_csv(
             summary,
             report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH),
@@ -160,6 +499,7 @@ class FourPostEvalSim:
         return {
             "summary": summary,
             "series": series,
+            "setup": setup,
             "metrics_csv_path": str(metrics_csv_path),
             "cases": results,
             "failed_cases": [],

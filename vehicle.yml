@@ -25,7 +25,7 @@ driver_mass:
     - [-1.975938, -0.000053, 6.749042]
 
 body:
-  torsional_stiff_n_m_per_rad: 500000
+  torsional_stiff_n_m_per_rad: 300000
 
 front:
   wheel:
@@ -60,7 +60,7 @@ front:
         table:
           - [0, 0]
           - [1, 26269.02525]
-      free_length_m: 0.2
+      free_length_m: 0.1997
       damper_table:
         table:
           - [-1, -850]
@@ -140,7 +140,7 @@ rear:
         table:
           - [0, 0]
           - [1, 43781.70875]
-      free_length_m: 0.265
+      free_length_m: 0.2634
       damper_table:
         table:
           - [-1, -1300]
