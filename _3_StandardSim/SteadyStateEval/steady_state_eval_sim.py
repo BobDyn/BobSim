@@ -437,12 +437,12 @@ class SteadyStateEvalSim:
         if max_ay <= 0.0:
             raise ValueError("sweep.maxAy (or ay_max) must be positive")
 
-        # Two open-loop ramp-steer runs per velocity:
-        #   1) 0 -> +maxAy
-        #   2) 0 -> -maxAy
+        # One open-loop ramp-steer run per velocity:
+        #   0 -> +maxAy
         #
+        # The negative branch is symmetric, so we skip it to reduce runtime.
         # The nominal endpoint and ramp shaping are handled inside VehicleSim.
-        target_ays = np.array([max_ay, -max_ay], dtype=float)
+        target_ays = np.array([max_ay], dtype=float)
 
         # VehicleSim owns its own defaults.
         #
