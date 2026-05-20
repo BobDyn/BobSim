@@ -3,7 +3,7 @@ architecture:
   vehicle: DWBCStabar_DWBCStabar
   record: DWBCStabar_DWBCStabarRecord
   source: configs/vehicle_architecture.yaml
-baseline_mo: ../../_0_Utils/external/BobLib/Resources/VehicleDefn/DWBCStabar_DWBCStabarRecord.mo
+baseline_mo: ../../_0_Utils/external/BobLib/BobLib/Resources/VehicleDefn/DWBCStabar_DWBCStabarRecord.mo
 variables:
 - path: front.stabar.bar_rate
   block: pFrStabar
