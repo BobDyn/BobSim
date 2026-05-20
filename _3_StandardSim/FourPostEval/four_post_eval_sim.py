@@ -383,6 +383,9 @@ class FourPostEvalSim:
             axle_installed_length_m = installed_length(side)
             axle_tire_rate = tire_rate(side)
             axle_spring_table = spring_table(side)
+            motion_ratio_key = (
+                "avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear"
+            )
 
             for corner_name, corner_key in axle["corner_pairs"]:
                 corner_fraction = axle_fraction * (left_fraction if corner_name == "left" else right_fraction)
@@ -392,12 +395,16 @@ class FourPostEvalSim:
                 static_mr = _static_motion_ratio(
                     series,
                     corner_key,
-                    float(summary.get("avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear", float("nan"))),
+                    float(summary.get(motion_ratio_key, float("nan"))),
                 )
                 spring_force = sprung_corner_load * static_mr
                 spring_compression_m = _force_to_deflection(axle_spring_table, spring_force)
                 spring_rate = _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
-                wheel_rate = spring_rate / (static_mr**2) if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
+                wheel_rate = (
+                    spring_rate / (static_mr**2)
+                    if np.isfinite(static_mr) and abs(static_mr) > 1e-12
+                    else float("nan")
+                )
                 free_length_m = axle_installed_length_m + spring_compression_m
                 sprung_mode_hz, unsprung_mode_hz = _quarter_car_frequencies(
                     sprung_corner_mass,

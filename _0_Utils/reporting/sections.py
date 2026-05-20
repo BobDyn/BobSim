@@ -3,6 +3,48 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import textwrap
+from typing import TypedDict
+
+
+class FourPostCornerSummary(TypedDict):
+    corner: str
+    sprung_mass_kg: float
+    unsprung_mass_kg: float
+    sprung_load_N: float
+    motion_ratio: float
+    spring_rate_N_per_m: float
+    spring_force_N: float
+    spring_compression_m: float
+    spring_installed_length_m: float
+    spring_free_length_m: float
+    wheel_rate_N_per_m: float
+    sprung_frequency_hz: float
+    unsprung_frequency_hz: float
+
+
+class FourPostAxleSummary(TypedDict):
+    label: str
+    left: FourPostCornerSummary
+    right: FourPostCornerSummary
+
+
+class FourPostVehicleSummary(TypedDict):
+    sprung_mass_kg: float
+    sprung_cg_m: list[float]
+    wheelbase_m: float
+    track_front_m: float
+    track_rear_m: float
+    cg_bias_front_pct: float
+    cg_bias_rear_pct: float
+    cg_bias_left_pct: float
+    cg_bias_right_pct: float
+
+
+class FourPostSetup(TypedDict):
+    subtitle: str
+    vehicle: FourPostVehicleSummary
+    front: FourPostAxleSummary
+    rear: FourPostAxleSummary
 
 
 def _resolve_unit(
@@ -48,27 +90,31 @@ def _format_table_value(value, fmt: str, scale: float = 1.0) -> str:
     return fmt.format(numeric * scale)
 
 
-def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
+def add_four_post_setup_page(
+    pdf,
+    setup: FourPostSetup,
+    title="FourPostEval Setup Summary",
+):
     fig = plt.figure(figsize=(11, 8.5))
-    ax = plt.axes([0, 0, 1, 1])
+    ax = plt.axes((0.0, 0.0, 1.0, 1.0))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    vehicle = setup.get("vehicle", {})
-    cg = vehicle.get("sprung_cg_m", [float("nan")] * 3)
+    vehicle = setup["vehicle"]
+    cg = vehicle["sprung_cg_m"]
     stats_line_1 = (
-        f"Sprung mass {vehicle.get('sprung_mass_kg', float('nan')):.1f} kg | "
+        f"Sprung mass {vehicle['sprung_mass_kg']:.1f} kg | "
         f"CG ({cg[0]:.3f}, {cg[1]:.3f}, {cg[2]:.3f}) m | "
-        f"Wheelbase {vehicle.get('wheelbase_m', float('nan')):.3f} m | "
-        f"Track Fr/Rr {vehicle.get('track_front_m', float('nan')):.3f} / "
-        f"{vehicle.get('track_rear_m', float('nan')):.3f} m"
+        f"Wheelbase {vehicle['wheelbase_m']:.3f} m | "
+        f"Track Fr/Rr {vehicle['track_front_m']:.3f} / "
+        f"{vehicle['track_rear_m']:.3f} m"
     )
     stats_line_2 = (
-        f"CG bias Fr/Rr {vehicle.get('cg_bias_front_pct', float('nan')):.1f} / "
-        f"{vehicle.get('cg_bias_rear_pct', float('nan')):.1f}% | "
-        f"CG bias L/R {vehicle.get('cg_bias_left_pct', float('nan')):.1f} / "
-        f"{vehicle.get('cg_bias_right_pct', float('nan')):.1f}%"
+        f"CG bias Fr/Rr {vehicle['cg_bias_front_pct']:.1f} / "
+        f"{vehicle['cg_bias_rear_pct']:.1f}% | "
+        f"CG bias L/R {vehicle['cg_bias_left_pct']:.1f} / "
+        f"{vehicle['cg_bias_right_pct']:.1f}%"
     )
 
     ax.text(0.5, 0.955, title, ha="center", va="top", fontsize=20, weight="bold", color="#1f2937")
@@ -76,7 +122,15 @@ def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
     ax.text(0.5, 0.875, stats_line_2, ha="center", va="top", fontsize=10.1, color="#4b5563")
     ax.plot([0.08, 0.92], [0.845, 0.845], color="#d6dbe4", linewidth=1.0)
 
-    def render_setup_block(x0: float, x1: float, y_top: float, axle: dict[str, object], accent: str) -> None:
+    def render_setup_block(
+        x0: float,
+        x1: float,
+        y_top: float,
+        axle: FourPostAxleSummary,
+        accent: str,
+    ) -> None:
+        left_corner = axle["left"]
+        right_corner = axle["right"]
         rows = [
             ("Sprung mass", "sprung_mass_kg", "kg", "{:.1f}", 1.0),
             ("Unsprung mass", "unsprung_mass_kg", "kg", "{:.1f}", 1.0),
@@ -103,7 +157,7 @@ def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
         ax.text(
             x_title,
             y_top - 0.022,
-            f"{axle['left']['corner']} / {axle['right']['corner']}",
+            f"{left_corner['corner']} / {right_corner['corner']}",
             fontsize=9.4,
             ha="center",
             style="italic",
@@ -112,8 +166,8 @@ def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
 
         header_y = y_top - 0.060
         ax.text(x_metric, header_y, "Metric", fontsize=10.0, weight="bold", color="#1f2937")
-        ax.text(x_left, header_y, axle["left"]["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
-        ax.text(x_right, header_y, axle["right"]["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
+        ax.text(x_left, header_y, left_corner["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
+        ax.text(x_right, header_y, right_corner["corner"], fontsize=10.0, weight="bold", ha="right", color="#1f2937")
         ax.text(x_unit, header_y, "Units", fontsize=10.0, weight="bold", color="#1f2937")
         ax.plot([x_metric, x_unit + 0.01], [header_y - 0.015, header_y - 0.015], color="#c8cfdb", linewidth=1.0)
 
@@ -121,14 +175,21 @@ def add_four_post_setup_page(pdf, setup, title="FourPostEval Setup Summary"):
         row_step = 0.050
         for i, (label, key, unit, fmt, scale) in enumerate(rows):
             yy = row_y - i * row_step
-            left_val = axle["left"].get(key)
-            right_val = axle["right"].get(key)
+            left_val = left_corner.get(key)
+            right_val = right_corner.get(key)
             label_color = "#20242b"
             value_color = "#111827"
 
             ax.text(x_metric, yy, label, fontsize=9.0, color=label_color)
             ax.text(x_left, yy, _format_table_value(left_val, fmt, scale), fontsize=9.0, ha="right", color=value_color)
-            ax.text(x_right, yy, _format_table_value(right_val, fmt, scale), fontsize=9.0, ha="right", color=value_color)
+            ax.text(
+                x_right,
+                yy,
+                _format_table_value(right_val, fmt, scale),
+                fontsize=9.0,
+                ha="right",
+                color=value_color,
+            )
             ax.text(x_unit, yy, unit, fontsize=9.0, color="#444b55")
 
     render_setup_block(0.055, 0.44, 0.75, setup["front"], accent="#1f2937")
