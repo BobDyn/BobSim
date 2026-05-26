@@ -1,98 +1,12 @@
-"""sampler.py — Read baseline car + DOE config, generate N variant dicts via LHS."""
+"""sampler.py — Read baseline car + DOE config, generate DOE variant dicts."""
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
 from scipy.stats.qmc import LatinHypercube
 
-
-def parse_mo_blocks(mo_path: str | Path) -> dict[str, dict[str, str]]:
-    text = Path(mo_path).read_text()
-    blocks: dict[str, dict[str, str]] = {}
-    n = len(text)
-    i = 0
-
-    while i < n:
-        paren_start = text.find("(", i)
-        if paren_start == -1:
-            break
-
-        # Walk back over whitespace to grab the block name identifier
-        j = paren_start - 1
-        while j >= 0 and text[j] in " \t\n\r":
-            j -= 1
-        name_end = j + 1
-        while j >= 0 and (text[j].isalnum() or text[j] == "_"):
-            j -= 1
-        block_name = text[j + 1: name_end]
-
-        # Only keep top-level parameter blocks
-        stmt_start = text.rfind(";", 0, j + 1)
-        if "parameter" not in text[stmt_start + 1: j + 1]:
-            i = paren_start + 1
-            continue
-
-        # Track depth over (, {, [ to find matching close
-        depth = 1
-        k = paren_start + 1
-        while k < n and depth > 0:
-            if text[k] in "({[":
-                depth += 1
-            elif text[k] in ")}]":
-                depth -= 1
-            k += 1
-
-        blocks[block_name] = _parse_params(text[paren_start + 1: k - 1])
-        i = k
-
-    return blocks
-
-
-def _parse_params(body: str) -> dict[str, str]:
-    import re
-
-    body = re.sub(r"//[^\n]*", "", body)
-
-    params: dict[str, str] = {}
-    depth = 0
-    current: list[str] = []
-
-    for ch in body + ",":
-        if ch in "({[":
-            depth += 1
-            current.append(ch)
-        elif ch in ")}]":
-            depth -= 1
-            current.append(ch)
-        elif ch == "," and depth == 0:
-            token = "".join(current).strip()
-            if "=" in token:
-                key, _, val = token.partition("=")
-                params[key.strip()] = val.strip()
-            current = []
-        else:
-            current.append(ch)
-
-    return params
-
-
-def _parse_float(raw: str) -> float:
-    """Safely parse a float from a Modelica parameter value string.
-
-    Handles simple expressions like 0.2045*0.625 but rejects anything
-    that looks like a vector, matrix, or nested record.
-    """
-    raw = raw.strip()
-    if any(c in raw for c in "{}[]()"):
-        raise ValueError(f"Cannot parse non-scalar value as float: {raw!r}")
-    try:
-        # Only allow basic arithmetic on numeric literals
-        allowed = set("0123456789eE.+-*/() ")
-        if not all(c in allowed for c in raw):
-            raise ValueError(f"Unexpected characters in value: {raw!r}")
-        return float(eval(raw))  # safe: only numeric literals + arithmetic
-    except Exception as e:
-        raise ValueError(f"Could not parse float from {raw!r}: {e}")
+from pipeline.modelica_params import read_value
 
 
 def load_config(config_path: str | Path) -> dict:
@@ -101,25 +15,89 @@ def load_config(config_path: str | Path) -> dict:
 
 
 def read_baseline(mo_path: str | Path, variables: list[dict]) -> dict[str, float]:
-    blocks = parse_mo_blocks(mo_path)
+    text = Path(mo_path).read_text()
     baseline: dict[str, float] = {}
     for var in variables:
-        block = var["block"]
-        param = var["param"]
-        if block not in blocks:
-            raise KeyError(f"Block '{block}' not found in {mo_path}. Check _doe_config.yaml.")
-        if param not in blocks[block]:
-            raise KeyError(f"Param '{param}' not found in block '{block}'. Check _doe_config.yaml.")
-        raw = blocks[block][param]
-        baseline[var["path"]] = _parse_float(raw)
+        try:
+            if "baseline" in var:
+                baseline[var["path"]] = float(var["baseline"])
+            elif "targets" in var:
+                first = var["targets"][0]
+                scale = float(first.get("scale", 1.0))
+                baseline[var["path"]] = read_value(text, first) / scale
+            else:
+                scale = float(var.get("scale", 1.0))
+                baseline[var["path"]] = read_value(text, var) / scale
+        except Exception as e:
+            raise ValueError(
+                f"Could not read baseline for {var['path']!r} in {mo_path}: {e}"
+            ) from e
     return baseline
+
+
+def _linspace(lo: float, hi: float, intervals: int) -> Iterable[float]:
+    if intervals < 1:
+        raise ValueError("intervals must be >= 1")
+    for i in range(intervals + 1):
+        yield lo + (hi - lo) * i / intervals
+
+
+def _sample_lhs(
+    variables: list[dict],
+    baseline: dict[str, float],
+    n_samples: int,
+    seed: int | None,
+) -> list[dict[str, float]]:
+    lhs = LatinHypercube(d=len(variables), seed=seed)
+    unit_samples = lhs.random(n=n_samples)
+
+    variants: list[dict[str, float]] = [baseline.copy()]
+    for row in unit_samples:
+        variant: dict[str, float] = {}
+        for j, var in enumerate(variables):
+            lo, hi = var["range"]
+            variant[var["path"]] = lo + row[j] * (hi - lo)
+        variants.append(variant)
+
+    return variants
+
+
+def _sample_interval_splice(
+    variables: list[dict],
+    baseline: dict[str, float],
+    default_intervals: int,
+) -> list[dict[str, float]]:
+    """Generate one-factor-at-a-time interval perturbations around baseline."""
+    variants: list[dict[str, float]] = [baseline.copy()]
+
+    for var in variables:
+        path = var["path"]
+        lo, hi = var["range"]
+        intervals = int(var.get("intervals", default_intervals))
+        baseline_value = baseline[path]
+        values = var.get("values")
+
+        interval_values = values if values is not None else _linspace(float(lo), float(hi), intervals)
+        for value in interval_values:
+            if abs(value - baseline_value) <= 1e-12:
+                continue
+            variant = baseline.copy()
+            variant[path] = float(value)
+            variants.append(variant)
+
+    return variants
 
 
 def sample(config_path: str | Path) -> list[dict[str, float]]:
     cfg = load_config(config_path)
     variables = cfg["variables"]
-    n_samples = cfg["samples"]
     seed = cfg.get("seed")
+    sampling_cfg = cfg.get("sampling", {})
+    if sampling_cfg is None:
+        sampling_cfg = {}
+    if not isinstance(sampling_cfg, dict):
+        raise TypeError("sampling must be a mapping when provided")
+    method = sampling_cfg.get("method", "lhs")
 
     # Resolve mo_path relative to the config file
     config_dir = Path(config_path).resolve().parent
@@ -133,19 +111,21 @@ def sample(config_path: str | Path) -> list[dict[str, float]]:
 
     baseline = read_baseline(mo_path, variables)
 
-    lhs = LatinHypercube(d=len(variables), seed=seed)
-    unit_samples = lhs.random(n=n_samples)  # shape (n_samples, d)
+    if method == "lhs":
+        return _sample_lhs(
+            variables,
+            baseline,
+            int(cfg.get("samples", 3)),
+            seed,
+        )
+    if method == "interval_splice":
+        return _sample_interval_splice(
+            variables,
+            baseline,
+            int(sampling_cfg.get("intervals", cfg.get("intervals", 2))),
+        )
 
-    variants: list[dict[str, float]] = [baseline.copy()]  # index 0 = baseline
-
-    for row in unit_samples:
-        variant: dict[str, float] = {}
-        for j, var in enumerate(variables):
-            lo, hi = var["range"]
-            variant[var["path"]] = lo + row[j] * (hi - lo)
-        variants.append(variant)
-
-    return variants
+    raise ValueError(f"Unsupported DOE sampling method: {method!r}")
 
 
 if __name__ == "__main__":

@@ -44,6 +44,8 @@ Current public workflows:
 - `SteadyStateEval` - steady-state cornering characterization
 - `TransientEval` - steering transient / frequency-response characterization
 - `sim-doe` - OptSim DOE sweep and aggregation workflow
+- `sim-standard-sensitivities` - StandardSim sensitivity DOE workflow
+- `sim-envelope-sensitivities` - EnvelopeSim sensitivity DOE input workflow
 
 ## Quick Start
 
@@ -57,6 +59,8 @@ make build-four-post-sim
 make steady-state-eval
 make transient-eval
 make sim-doe
+make sim-standard-sensitivities
+make sim-envelope-sensitivities
 ```
 
 Helpful shell targets:
@@ -111,6 +115,13 @@ Main entry point:
 
 ```bash
 make sim-doe
+```
+
+Sensitivity-specific entry points:
+
+```bash
+make sim-standard-sensitivities
+make sim-envelope-sensitivities
 ```
 
 Useful configuration files:

@@ -55,6 +55,8 @@ front:
     rod_to: lower
     rod_mount_m: [0.006762552642, 0.525610676234, 0.134465050856]
     shock:
+      damper_model: Ohlins TTX25 MkII
+      dyno_reference: dampers/dyno_ttx25_mkii_n_vs_mmps.pdf
       mount_m: [-0.020673469702, 0.247847085458, 0.561456926868]
       spring_table:
         table:
@@ -77,7 +79,8 @@ front:
     stabar:
       arm_end_m: [-0.03682914, 0.2667, 0.11597939]
       bar_end_m: [-0.10664664, 0.2667, 0.11811]
-      rate_n_m_per_rad: 1
+      # Suspension input: 40 lb-in/deg.
+      rate_n_m_per_rad: 257.62483055
   masses:
     unsprung:
       mass_kg: 7.82268281
@@ -135,6 +138,8 @@ rear:
     rod_to: upper
     rod_mount_m: [-1.53509479, 0.50330883, 0.26648017]
     shock:
+      damper_model: Ohlins TTX25 MkII
+      dyno_reference: dampers/dyno_ttx25_mkii_n_vs_mmps.pdf
       mount_m: [-1.50192144, 0.28884688, 0.36889916]
       spring_table:
         table:
@@ -157,7 +162,8 @@ rear:
     stabar:
       arm_end_m: [-1.43001283, 0.3032125, 0.4054766]
       bar_end_m: [-1.3925183, 0.3032125, 0.41224196]
-      rate_n_m_per_rad: 1
+      # Suspension input: 82.7 lb-in/deg.
+      rate_n_m_per_rad: 535.473018735
   masses:
     unsprung:
       mass_kg: 7.35220072
@@ -190,8 +196,8 @@ rear:
 aero:
   reference_speed_m_per_s: 15.0
   aero_ref_m: [1, 0, 0]
-  front_left_ride_height_ref_m: [0, 0.606110767456, 0.199898]
-  rear_left_ride_height_ref_m: [-1.5494, 0.60611077, 0.199898]
+  front_left_ride_height_ref_m: [0.0127, 0.226314, 0.08001]
+  rear_left_ride_height_ref_m: [-1.4070203, 0.2834894, 0.0870458]
 
   front_ride_height_grid_m: [0.03556, 0.05334, 0.07112, 0.0889, 0.10668]
   rear_ride_height_grid_m: [0.04191, 0.0635, 0.08382, 0.10414, 0.12573]

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import yaml
 
+from pipeline.modelica_params import replace_value, scale_value
+
 
 def load_config(config_path: str | Path) -> dict:
     with open(config_path) as f:
@@ -66,6 +68,30 @@ def substitute_param(text: str, block: str, param: str, value: float) -> str:
     return text[: paren_open + 1] + new_body + text[paren_close:]
 
 
+def substitute_variable(text: str, spec: dict, value: float) -> str:
+    """Patch a variable using the extended DOE spec.
+
+    Falls back to the original scalar block/param behavior for old configs.
+    """
+    if "targets" in spec:
+        for target in spec["targets"]:
+            target_value = value
+            if "range" in target:
+                src_lo, src_hi = spec["range"]
+                dst_lo, dst_hi = target["range"]
+                if src_hi == src_lo:
+                    raise ValueError(f"Cannot map zero-width range for {spec['path']}")
+                fraction = (value - src_lo) / (src_hi - src_lo)
+                target_value = dst_lo + fraction * (dst_hi - dst_lo)
+            target_value *= float(target.get("scale", 1.0))
+            if target.get("operation") == "scale":
+                text = scale_value(text, target, target_value)
+            else:
+                text = replace_value(text, target, target_value)
+        return text
+    return replace_value(text, spec, value * float(spec.get("scale", 1.0)))
+
+
 def generate_variants(
         config_path: str | Path,
         variants: list[dict[str, float]],
@@ -82,11 +108,7 @@ def generate_variants(
     mo_path = (config_dir / cfg["baseline_mo"]).resolve()
     base_text = mo_path.read_text()
 
-    # Build lookup: path -> {block, param}
-    var_lookup = {
-        var["path"]: {"block": var["block"], "param": var["param"]}
-        for var in cfg["variables"]
-    }
+    var_lookup = {var["path"]: var for var in cfg["variables"]}
 
     written: list[Path] = []
 
@@ -98,9 +120,7 @@ def generate_variants(
         for path, value in variant.items():
             if path not in var_lookup:
                 raise KeyError(f"Path '{path}' not in config variables")
-            block = var_lookup[path]["block"]
-            param = var_lookup[path]["param"]
-            text = substitute_param(text, block, param, value)
+            text = substitute_variable(text, var_lookup[path], value)
 
         out_path = variant_dir / "variant.mo"
         out_path.write_text(text)
