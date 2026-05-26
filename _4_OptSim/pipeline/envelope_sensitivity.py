@@ -86,7 +86,10 @@ def _vehicle_from_variant(text: str) -> tuple[GGVVehicleParams, YMDVehicleParams
     ]
 
     total_mass = float(sum(m for m, _cg in masses))
-    cg = sum(m * cg for m, cg in masses) / total_mass
+    weighted_cg = np.zeros(3, dtype=float)
+    for mass, mass_cg in masses:
+        weighted_cg += mass * mass_cg
+    cg = weighted_cg / total_mass
 
     front_static_frac = float((cg[0] - REAR_AXLE_X_M) / WHEELBASE_M)
     front_static_frac = min(max(front_static_frac, 0.05), 0.95)

@@ -22,6 +22,7 @@ ARCHITECTURE_CONFIG = CONFIG_DIR / "vehicle_architecture.yaml"
 DOE_CONFIG = CONFIG_DIR / "_doe_config.yaml"
 COMPILER_CONFIG = CONFIG_DIR / "compiler_config.yaml"
 
+
 def load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
@@ -100,7 +101,7 @@ def build_doe_config(
         if "block" not in spec and "targets" not in spec:
             raise KeyError("Sweep variable must define either 'block' or 'targets'")
 
-        variable = {
+        variable: dict[str, Any] = {
             "path": str(spec["path"]),
             "range": list(spec["range"]),
         }
