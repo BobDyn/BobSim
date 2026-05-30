@@ -19,6 +19,7 @@ from pathlib import Path
 import sys
 import textwrap
 from typing import TypedDict, cast
+from typing import TypedDict, cast
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
@@ -36,6 +37,7 @@ REPO_ROOT = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from pipeline.sampler import sample  # noqa: E402
 from StandardSens.pipeline.sampler import sample  # noqa: E402
 
 DEFAULT_DOE_CONFIG = ROOT / "StandardSens/configs/_doe_config.yaml"
@@ -141,6 +143,25 @@ METRIC_LABELS = {
     "peak_handwheel_torque_Nm": "Peak handwheel torque ($\\mathrm{N\\,m}$)",
     "peak_handwheel_torque_ay_mps2": "Peak handwheel torque Ay ($\\mathrm{m/s^2}$)",
 }
+
+
+class TornadoPoint(TypedDict):
+    variant: str
+    input_value: float
+    metric_value: float
+    delta: float
+    delta_pct: float
+    input_pct: float
+
+
+class TornadoEffect(TypedDict):
+    input: str
+    label: str
+    baseline: float
+    input_baseline: float
+    points: list[TornadoPoint]
+    span: float
+    span_pct: float
 
 
 class TornadoPoint(TypedDict):
@@ -341,6 +362,7 @@ def _oat_effects(
     base_metric = float(base[metric])
 
     rows: list[TornadoEffect] = []
+    rows: list[TornadoEffect] = []
     for input_col in input_cols:
         mask = pd.Series(True, index=df.index)
         for other_col in input_cols:
@@ -362,6 +384,7 @@ def _oat_effects(
 
         base_input = float(base[input_col])
         points: list[TornadoPoint] = []
+        points: list[TornadoPoint] = []
         for _, point in perturbed.iterrows():
             input_value = float(point[input_col])
             metric_value = float(point[metric])
@@ -371,13 +394,20 @@ def _oat_effects(
                 if abs(base_metric) > 1e-12
                 else float("nan")
             )
+            delta_pct = (
+                100.0 * delta / abs(base_metric)
+                if abs(base_metric) > 1e-12
+                else float("nan")
+            )
             input_pct = (
                 100.0 * (input_value - base_input) / abs(base_input)
                 if abs(base_input) > 1e-12
                 else float("nan")
+                else float("nan")
             )
             points.append(
                 {
+                    "variant": str(point["variant"]),
                     "variant": str(point["variant"]),
                     "input_value": input_value,
                     "metric_value": metric_value,
@@ -393,6 +423,7 @@ def _oat_effects(
             for point in points
             if np.isfinite(point["delta_pct"])
         ]
+        span_pct = max(finite_pct) if finite_pct else float("nan")
         span_pct = max(finite_pct) if finite_pct else float("nan")
 
         rows.append(
@@ -449,18 +480,32 @@ def _plot_one_tornado(
         return
 
     y = np.arange(len(plot_records))
+    plot_records = cast(list[TornadoEffect], plot_df.to_dict("records"))
+    if not plot_records:
+        return
 
+    y = np.arange(len(plot_records))
+
+    fig_h = max(6.0, 0.62 * len(plot_records) + 1.8)
     fig_h = max(6.0, 0.62 * len(plot_records) + 1.8)
     fig, ax = plt.subplots(figsize=(12.5, fig_h))
 
     row_labels: list[str] = []
     for row in plot_records:
         unit = _input_unit(row["input"])
+    row_labels: list[str] = []
+    for row in plot_records:
+        unit = _input_unit(row["input"])
         ordered_inputs = [
             (float(point["input_value"]), _format_input_value(point["input_value"], unit))
             for point in row["points"]
+            for point in row["points"]
         ]
         ordered_inputs.append(
+            (
+                float(row["input_baseline"]),
+                f"base {_format_input_value(row['input_baseline'], unit)}",
+            )
             (
                 float(row["input_baseline"]),
                 f"base {_format_input_value(row['input_baseline'], unit)}",
@@ -469,14 +514,21 @@ def _plot_one_tornado(
         input_line = " | ".join(label for _, label in sorted(ordered_inputs, key=lambda item: item[0]))
         row_labels.append(f"{row['label']}\n{input_line}")
 
+    color_cycle = ["#355C7D", "#6F92A8", "#A08458", "#7C5F3D"]
+    label_cycle = ["lowest input", "low-mid input", "high-mid input", "highest input"]
+    max_points = max(len(row["points"]) for row in plot_records)
+        row_labels.append(f"{row['label']}\n{input_line}")
+
     max_points = max(len(row["points"]) for row in plot_records)
     color_cycle = _tornado_point_colors(max_points)
     label_cycle = _tornado_point_labels(max_points)
     if max_points <= 1:
         offsets = np.array([0.0], dtype=float)
+        offsets = np.array([0.0], dtype=float)
     else:
         offsets = np.linspace(-0.27, 0.27, max_points)
     bar_height = min(0.13, 0.52 / max_points)
+    all_plot_values: list[float] = [0.0]
     all_plot_values: list[float] = [0.0]
 
     for point_idx in range(max_points):
@@ -484,11 +536,19 @@ def _plot_one_tornado(
         bar_x: list[float] = []
         for y_pos, row in zip(y, plot_records, strict=False):
             if point_idx >= len(row["points"]):
+        bar_y: list[float] = []
+        bar_x: list[float] = []
+        for y_pos, row in zip(y, plot_records, strict=False):
+            if point_idx >= len(row["points"]):
                 continue
+            point = row["points"][point_idx]
             point = row["points"][point_idx]
             plot_value = point["delta_pct"] if use_percent else point["delta"]
             if not np.isfinite(plot_value):
                 continue
+            bar_y.append(float(y_pos + offsets[point_idx]))
+            bar_x.append(float(plot_value))
+            all_plot_values.append(float(plot_value))
             bar_y.append(float(y_pos + offsets[point_idx]))
             bar_x.append(float(plot_value))
             all_plot_values.append(float(plot_value))
@@ -524,9 +584,14 @@ def _plot_one_tornado(
         f"baseline {baseline:.5g}   max abs change {max_abs_format.format(max_abs)}   "
         "bars are ordered from lowest to highest input; row values include baseline"
     )
+    summary = (
+        f"baseline {baseline:.5g}   max abs change {max_abs_format.format(max_abs)}   "
+        "bars are ordered from lowest to highest input; row values include baseline"
+    )
     ax.text(
         0.0,
         1.008,
+        summary,
         summary,
         transform=ax.transAxes,
         ha="left",
