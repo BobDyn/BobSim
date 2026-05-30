@@ -1,0 +1,55 @@
+# aggregator_config.yaml — defines which report metrics to extract per standard
+#
+# Each standard has its own steady_state_metrics block.
+# key:   output column name in parquet
+# value: exact metric name from the standard's metrics CSV
+#
+# To add a metric: add one line under the standard. Nothing else changes.
+# To add a standard: add a new block. Nothing else changes.
+
+standards:
+
+  SteadyStateEval:
+    steady_state_metrics:
+
+      # --- Range summary ---
+      ay_min:                               "ay_min"
+      ay_max:                               "ay_max"
+      limit_ay_mps2:                        "limit_ay_mps2"
+
+      # --- Linear gradients ---
+      sideslip_gradient_rad_per_mps2:       "sideslip_gradient_rad_per_mps2"
+      sideslip_gradient_deg_per_g:          "sideslip_gradient_deg_per_g"
+      understeer_gradient_rad_per_mps2:     "understeer_gradient_rad_per_mps2"
+      understeer_gradient_deg_per_g:        "understeer_gradient_deg_per_g"
+      handwheel_angle_gradient_rad_per_mps2: "handwheel_angle_gradient_rad_per_mps2"
+      handwheel_angle_gradient_deg_per_g:    "handwheel_angle_gradient_deg_per_g"
+      roll_gradient_deg_per_g:              "roll_gradient_deg_per_g"
+
+      # --- Limit gradients ---
+      limit_sideslip_gradient_rad_per_mps2: "limit_sideslip_gradient_rad_per_mps2"
+      limit_sideslip_gradient_deg_per_g:    "limit_sideslip_gradient_deg_per_g"
+      limit_understeer_gradient_rad_per_mps2: "limit_understeer_gradient_rad_per_mps2"
+      limit_understeer_gradient_deg_per_g:    "limit_understeer_gradient_deg_per_g"
+      limit_handwheel_gradient_rad_per_mps2: "limit_handwheel_gradient_rad_per_mps2"
+      limit_handwheel_gradient_deg_per_g:    "limit_handwheel_gradient_deg_per_g"
+      limit_roll_gradient_rad_per_mps2:     "limit_roll_gradient_rad_per_mps2"
+      limit_roll_gradient_deg_per_g:        "limit_roll_gradient_deg_per_g"
+
+      # --- Steering effort ---
+      peak_handwheel_torque_Nm:             "peak_handwheel_torque_Nm"
+      peak_handwheel_torque_ay_mps2:        "peak_handwheel_torque_ay_mps2"
+
+      # --- Velocity sensitivity ---
+      sideslip_gradient_velocity_slope_deg_per_g_per_mps: "sideslip_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps: "limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps"
+      understeer_gradient_velocity_slope_deg_per_g_per_mps: "understeer_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_understeer_gradient_velocity_slope_deg_per_g_per_mps: "limit_understeer_gradient_velocity_slope_deg_per_g_per_mps"
+      handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps: "handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps: "limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps"
+      roll_gradient_velocity_slope_deg_per_g_per_mps: "roll_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_roll_gradient_velocity_slope_deg_per_g_per_mps: "limit_roll_gradient_velocity_slope_deg_per_g_per_mps"
+
+  # KnC:
+  #   steady_state_metrics:
+  #     some_metric: "some.metric"

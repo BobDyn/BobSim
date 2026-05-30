@@ -1,0 +1,220 @@
+schema: bobsim.doe.vehicle_architecture.v1
+
+# Source vehicle template used to generate DOE baseline and sweepable paths.
+vehicle_template: ../../../vehicle.yml
+
+# interval_splice creates the baseline plus one-factor-at-a-time perturbations.
+# With intervals: 4, each range is evaluated at
+# [low, mid-low, midpoint, mid-high, high], skipping the baseline value when it
+# lands exactly on a splice point.
+sampling:
+  method: interval_splice
+  intervals: 4
+
+# Used only when sampling.method is lhs.
+samples: 3
+seed: 42
+
+sweep:
+  variables:
+    # ---------------------------------------------------------------------
+    # Vehicle-level mass properties
+    # ---------------------------------------------------------------------
+    - path: sprung_mass.mass_kg
+      label: sprung mass
+      block: pBaseSprungMass
+      param: m
+      range: [144.576, 176.704]
+
+    - path: sprung_mass.cg_m.x
+      label: sprung CG x
+      block: pBaseSprungMass
+      param: rCM
+      index: [0]
+      range: [-0.97, -0.87]
+
+    - path: sprung_mass.cg_m.z
+      label: sprung CG z
+      block: pBaseSprungMass
+      param: rCM
+      index: [2]
+      range: [0.20, 0.30]
+
+    - path: driver_mass.mass_kg
+      label: driver mass
+      block: pDriverMass
+      param: m
+      range: [59.193821, 72.348003]
+
+    - path: driver_mass.cg_m.x
+      label: driver CG x
+      block: pDriverMass
+      param: rCM
+      index: [0]
+      range: [-0.591837, -0.491837]
+
+    - path: driver_mass.cg_m.z
+      label: driver CG z
+      block: pDriverMass
+      param: rCM
+      index: [2]
+      range: [0.345782, 0.445782]
+
+    - path: driver_mass.inertia_kg_m2.ixx
+      label: driver Ixx
+      block: pDriverMass
+      param: inertia
+      index: [0, 0]
+      range: [2.017789, 2.466187]
+
+    - path: driver_mass.inertia_kg_m2.iyy
+      label: driver Iyy
+      block: pDriverMass
+      param: inertia
+      index: [1, 1]
+      range: [6.859248, 8.383526]
+
+    - path: driver_mass.inertia_kg_m2.izz
+      label: driver Izz
+      block: pDriverMass
+      param: inertia
+      index: [2, 2]
+      range: [6.074138, 7.423946]
+
+    - path: body.torsional_stiff_n_m_per_rad
+      label: body torsional stiffness
+      block: pTorsionalStiff
+      range: [150000, 450000]
+
+    # ---------------------------------------------------------------------
+    # Alignment and steering
+    # ---------------------------------------------------------------------
+    - path: front.wheel.toe_deg
+      label: front toe
+      block: pFrPartialWheel
+      param: staticAlpha
+      range: [-0.25, 0.25]
+
+    - path: rear.wheel.toe_deg
+      label: rear toe
+      block: pRrPartialWheel
+      param: staticAlpha
+      range: [-0.25, 0.25]
+
+    - path: front.wheel.camber_deg
+      label: front camber
+      block: pFrPartialWheel
+      param: staticGamma
+      scale: -1
+      range: [-2.0, 0.0]
+
+    - path: rear.wheel.camber_deg
+      label: rear camber
+      block: pRrPartialWheel
+      param: staticGamma
+      scale: -1
+      range: [-2.0, 0.0]
+
+    # ---------------------------------------------------------------------
+    # Front axle setup
+    # ---------------------------------------------------------------------
+    - path: front.actuation.spring_rate_n_per_m
+      label: front spring package
+      targets:
+        - block: pFrAxleDW
+          param: springTable
+          index: [1, 1]
+        - block: pFrAxleDW
+          param: springFreeLength
+          range: [0.1797, 0.2197]
+      range: [21015.2202, 31522.8303]
+
+    - path: front.actuation.damper_rate_n_s_per_m
+      label: front damper rate
+      targets:
+        - block: pFrAxleDW
+          param: damperTable
+          index: [0, 1]
+          scale: -1
+        - block: pFrAxleDW
+          param: damperTable
+          index: [2, 1]
+      range: [680, 1020]
+
+    - path: front.stabar.rate_n_m_per_rad
+      label: front anti-roll bar rate
+      block: pFrStabar
+      param: barRate
+      range: [205.376938, 295.74279]
+      values: [205.376938, 231.500884, 276.68381, 295.74279]
+
+    - path: front.masses.unsprung.mass_kg
+      label: front unsprung mass
+      block: pFrAxleMass
+      param: unsprungMass
+      field_path: [m]
+      range: [6.258146248, 9.387219372]
+
+    # ---------------------------------------------------------------------
+    # Rear axle setup
+    # ---------------------------------------------------------------------
+    - path: rear.actuation.spring_rate_n_per_m
+      label: rear spring package
+      targets:
+        - block: pRrAxleDW
+          param: springTable
+          index: [1, 1]
+        - block: pRrAxleDW
+          param: springFreeLength
+          range: [0.2434, 0.2834]
+      range: [35025.367, 52538.0505]
+
+    - path: rear.actuation.damper_rate_n_s_per_m
+      label: rear damper rate
+      targets:
+        - block: pRrAxleDW
+          param: damperTable
+          index: [0, 1]
+          scale: -1
+        - block: pRrAxleDW
+          param: damperTable
+          index: [2, 1]
+      range: [1040, 1560]
+
+    - path: rear.stabar.rate_n_m_per_rad
+      label: rear anti-roll bar rate
+      block: pRrStabar
+      param: barRate
+      range: [360.052058, 961.495352]
+      values: [360.052058, 447.762538, 748.484186, 961.495352]
+
+    - path: rear.masses.unsprung.mass_kg
+      label: rear unsprung mass
+      block: pRrAxleMass
+      param: unsprungMass
+      field_path: [m]
+      range: [5.881760576, 8.822640864]
+
+    # ---------------------------------------------------------------------
+    # Aero reference comparison
+    # ---------------------------------------------------------------------
+    - path: aero.load_scale
+      label: aero load scale
+      baseline: 1.0
+      range: [0.5, 1.5]
+      targets:
+        - block: pAero
+          param: dragTable
+          operation: scale
+        - block: pAero
+          param: downforceTable
+          operation: scale
+        - block: pAero
+          param: mxTable
+          operation: scale
+        - block: pAero
+          param: myTable
+          operation: scale
+        - block: pAero
+          param: mzTable
+          operation: scale

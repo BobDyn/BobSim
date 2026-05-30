@@ -2,7 +2,7 @@
 clear();
 
 root := OpenModelica.Scripting.cd();
-boblibDir := root + "/_0_Utils/external/BobLib";
+boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
 buildDir := root + "/_3_StandardSim/Build/VehicleSim";
 
 // Generate C simulation code

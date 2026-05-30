@@ -52,6 +52,7 @@ class ModelicaRunner:
 
         cleanup = bool(execution.get("cleanup", False))
         stream_logs = bool(execution.get("stream_logs", False))
+        fail_fast = bool(execution.get("fail_fast", False))
 
         if execution.get("parallel", True):
             return self.run_cases_parallel(
@@ -61,6 +62,7 @@ class ModelicaRunner:
                 max_workers=execution.get("max_workers"),
                 cleanup=cleanup,
                 stream_logs=stream_logs,
+                fail_fast=fail_fast,
             )
 
         return self.run_cases(
@@ -69,9 +71,10 @@ class ModelicaRunner:
             cases=cases,
             cleanup=cleanup,
             stream_logs=stream_logs,
+            fail_fast=fail_fast,
         )
 
-    def run_cases(self, signals, mode, cases, cleanup=False, stream_logs=False):
+    def run_cases(self, signals, mode, cases, cleanup=False, stream_logs=False, fail_fast=False):
         results = []
         n_total = len(cases)
         n_done = 0
@@ -95,6 +98,11 @@ class ModelicaRunner:
             if result.get("_status") == "failed":
                 n_failed += 1
                 print(f"[{i}/{n_total}] failed {label}", flush=True)
+                if fail_fast:
+                    raise RuntimeError(
+                        "Stopping after failed simulation case "
+                        f"{label}: {result.get('_error', 'unknown error')}"
+                    )
             else:
                 print(f"[{i}/{n_total}] complete {label}", flush=True)
 
@@ -114,7 +122,15 @@ class ModelicaRunner:
         max_workers=None,
         cleanup=False,
         stream_logs=False,
+        fail_fast=False,
     ):
+        if fail_fast:
+            print(
+                "Note: fail_fast is only immediate for serial execution; "
+                "parallel cases already queued may continue until completion.",
+                flush=True,
+            )
+
         n_total = len(cases)
         results = [None] * n_total
 
@@ -176,6 +192,11 @@ class ModelicaRunner:
                 if result.get("_status") == "failed":
                     n_failed += 1
                     print(f"[{n_done}/{n_total}] failed {label}", flush=True)
+                    if fail_fast:
+                        raise RuntimeError(
+                            "Stopping after failed simulation case "
+                            f"{label}: {result.get('_error', 'unknown error')}"
+                        )
                 else:
                     print(f"[{n_done}/{n_total}] complete {label}", flush=True)
 
@@ -207,23 +228,40 @@ class ModelicaRunner:
             case=case,
         )
         env = self._build_environment()
+        timeout_s = self._timeout_seconds(case)
 
         if stream_logs:
             returncode = self._run_subprocess_streamed(
                 cmd=cmd,
                 log_file=log_file,
                 env=env,
+                timeout_s=timeout_s,
             )
             stdout_tail = log_file.read_text(errors="replace")[-4000:]
         else:
-            completed = subprocess.run(
-                cmd,
-                cwd=self.build_dir,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
+            try:
+                completed = subprocess.run(
+                    cmd,
+                    cwd=self.build_dir,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout_s,
+                )
+            except subprocess.TimeoutExpired as exc:
+                output = exc.stdout or ""
+                if isinstance(output, bytes):
+                    output = output.decode(errors="replace")
+                timeout_note = (
+                    f"\n\nSimulation exceeded wall-clock timeout "
+                    f"of {timeout_s:.1f} s and was terminated.\n"
+                )
+                log_file.write_text(output + timeout_note)
+                raise TimeoutError(
+                    f"Simulation exceeded wall-clock timeout of {timeout_s:.1f} s. "
+                    f"See log: {log_file}"
+                ) from exc
 
             log_file.write_text(completed.stdout)
             returncode = completed.returncode
@@ -239,6 +277,8 @@ class ModelicaRunner:
             raise FileNotFoundError(
                 f"Simulation finished but result file was not found: {result_file}"
             )
+
+        self._raise_if_solver_failed(log_file=log_file, stdout_tail=stdout_tail)
 
         data = pd.read_csv(result_file)
 
@@ -273,7 +313,37 @@ class ModelicaRunner:
             return self.build_dir / "runs"
         return results_root
 
-    def _run_subprocess_streamed(self, cmd, log_file, env):
+    def _run_subprocess_streamed(self, cmd, log_file, env, timeout_s=None):
+        if timeout_s is not None:
+            with subprocess.Popen(
+                cmd,
+                cwd=self.build_dir,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            ) as process:
+                try:
+                    stdout, _ = process.communicate(timeout=timeout_s)
+                except subprocess.TimeoutExpired as exc:
+                    process.kill()
+                    stdout, _ = process.communicate()
+                    timeout_note = (
+                        f"\n\nSimulation exceeded wall-clock timeout "
+                        f"of {timeout_s:.1f} s and was terminated.\n"
+                    )
+                    Path(log_file).write_text((stdout or "") + timeout_note)
+                    raise TimeoutError(
+                        f"Simulation exceeded wall-clock timeout of {timeout_s:.1f} s. "
+                        f"See log: {log_file}"
+                    ) from exc
+
+                Path(log_file).write_text(stdout or "")
+                for line in (stdout or "").splitlines():
+                    if self._should_print_solver_line(line):
+                        print(line.rstrip(), flush=True)
+                return process.returncode
+
         with subprocess.Popen(
             cmd,
             cwd=self.build_dir,
@@ -294,6 +364,24 @@ class ModelicaRunner:
 
                 return process.wait()
 
+    def _timeout_seconds(self, case):
+        timeout_s = _first_not_none(
+            case.get("_timeout_s"),
+            case.get("timeout_s"),
+            self.simulation.get("case_timeout_s"),
+            self.simulation.get("run_timeout_s"),
+            self.simulation.get("wall_timeout_s"),
+            self.simulation.get("timeout_s"),
+        )
+        if timeout_s is None:
+            return None
+
+        timeout_s = float(timeout_s)
+        if timeout_s <= 0.0:
+            return None
+
+        return timeout_s
+
     def _should_print_solver_line(self, line):
         s = line.lower()
 
@@ -308,13 +396,38 @@ class ModelicaRunner:
             or "simulation" in s
         )
 
+    def _raise_if_solver_failed(self, log_file, stdout_tail):
+        log_path = Path(log_file)
+        log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+        text = log_text.lower()
+
+        failure_markers = (
+            "integrator failed",
+            "can't continue",
+            "error test failed repeatedly",
+            "desired step to small",
+            "##cvode## -",
+            "ddassl had repeated error test failures",
+            "ddassl had repeated convergence test failures",
+            "tire normal load reached lift threshold",
+        )
+
+        if any(marker in text for marker in failure_markers):
+            raise RuntimeError(
+                f"Simulation solver failed. See log: {log_path}\n\n"
+                f"{stdout_tail}"
+            )
+
     def _extract_signals(self, data, signals, mode):
         out = {}
 
         if "time" in data.columns:
-            time = data["time"].to_numpy()
+            time = np.asarray(data["time"].to_numpy(), dtype=float)
         else:
             time = np.arange(len(data), dtype=float)
+
+        if not np.all(np.isfinite(time)):
+            raise ValueError("Result CSV contains non-finite values in time.")
 
         if mode == "raw":
             out["time"] = time
@@ -323,7 +436,13 @@ class ModelicaRunner:
                 if signal not in data.columns:
                     raise KeyError(f"Signal not found in result CSV: {signal}")
 
-                out[signal] = data[signal].to_numpy()
+                values = np.asarray(data[signal].to_numpy(), dtype=float)
+                if not np.all(np.isfinite(values)):
+                    raise ValueError(
+                        f"Result CSV contains non-finite values in signal: {signal}"
+                    )
+
+                out[signal] = values
 
             return out
 
@@ -332,7 +451,13 @@ class ModelicaRunner:
                 if signal not in data.columns:
                     raise KeyError(f"Signal not found in result CSV: {signal}")
 
-                out[signal] = float(data[signal].iloc[-1])
+                value = float(data[signal].iloc[-1])
+                if not np.isfinite(value):
+                    raise ValueError(
+                        f"Result CSV contains non-finite final value in signal: {signal}"
+                    )
+
+                out[signal] = value
 
             return out
 

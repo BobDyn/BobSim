@@ -23,7 +23,15 @@ class PlotEngine:
 
     def run(self, result, pdf):
 
+        raw_plots_only = bool(
+            self.config.get("report", {}).get("raw_plots_only", False)
+        )
+
         for plot_name, p_cfg in self.config.get("plots", {}).items():
+            if raw_plots_only and not plot_name.startswith("raw_"):
+                print(f"📈 Skipping non-raw plot page: {plot_name}")
+                continue
+
             print(f"📈 Rendering plot page: {plot_name}")
 
             if p_cfg.get("skip_if_missing"):

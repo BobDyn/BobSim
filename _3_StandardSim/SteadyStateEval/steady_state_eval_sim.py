@@ -40,26 +40,10 @@ DEFAULT_CONFIG_PATH = Path("_3_StandardSim/SteadyStateEval/steady_state_eval_con
 
 
 SteadyStateEval_SIGNALS = [
-    # Controller/debug signals
-    "frSteerCmd",
-    "steerRatioEstimate",
-    "steerFeedforward",
-    "targetAyCmd",
-    "targetCurvatureCmd",
-    "targetRoadwheelCmd",
-    "curvatureErrorRaw",
-    "curvatureError",
-    "ayErrorRaw",
-    "ayError",
-    "radError",
     "steerExcess",
 
     # Standard report signals
     "handwheelAngle",
-    "Fz_FL",
-    "Fz_FR",
-    "Fz_RL",
-    "Fz_RR",
     "leftSteerAngle",
     "rightSteerAngle",
     "accY",
@@ -187,6 +171,36 @@ def build_smoothing_spline(
 
 def evaluate_spline(spline: Any, x: np.ndarray, derivative: int = 0) -> np.ndarray:
     return np.asarray(spline(x, nu=derivative), dtype=float)
+
+
+def normalized_fit_rmse(x: np.ndarray, y: np.ndarray, spline: Any) -> float:
+    x = np.asarray(x, dtype=float).reshape(-1)
+    y = np.asarray(y, dtype=float).reshape(-1)
+    if x.size == 0 or y.size == 0 or x.size != y.size:
+        return float("nan")
+    y_fit = evaluate_spline(spline, x)
+    residual = y - y_fit
+    rmse = float(np.sqrt(np.nanmean(residual**2)))
+    span = float(np.nanpercentile(y, 95) - np.nanpercentile(y, 5))
+    if not np.isfinite(span) or abs(span) <= 1.0e-12:
+        span = float(np.nanmax(y) - np.nanmin(y))
+    if not np.isfinite(span) or abs(span) <= 1.0e-12:
+        return float("nan")
+    return rmse / abs(span)
+
+
+def signed_peak_with_axis(axis: np.ndarray, values: np.ndarray) -> tuple[float, float]:
+    axis = np.asarray(axis, dtype=float).reshape(-1)
+    values = np.asarray(values, dtype=float).reshape(-1)
+    if axis.size == 0 or values.size == 0 or axis.size != values.size:
+        return float("nan"), float("nan")
+    valid = np.isfinite(axis) & np.isfinite(values)
+    if not np.any(valid):
+        return float("nan"), float("nan")
+    axis_valid = axis[valid]
+    values_valid = values[valid]
+    peak_idx = int(np.nanargmax(np.abs(values_valid)))
+    return float(values_valid[peak_idx]), float(axis_valid[peak_idx])
 
 
 def build_split_smoothing_curve(
@@ -376,6 +390,9 @@ class SteadyStateEvalSim:
         steady_hold_duration = float(init_parameters.get("steadyHoldDuration", 0.1))
         settle_timeout = float(init_parameters.get("settleTimeout", 3.0))
 
+        if bool(init_parameters.get("enableLinearityTermination", False)):
+            return self.stop_time
+
         # The Modelica model already terminates once the plateau is reached or
         # once the ramp+settle timeout expires. The Python harness only needs a
         # slightly longer hard cap than that internal timeout, not a fixed 20 s
@@ -512,17 +529,20 @@ class SteadyStateEvalSim:
     ) -> dict[str, dict[float, np.ndarray]]:
         fit_cfg = self.config.get("fit", {})
         report_cfg = self.config.get("report", {})
-        sensitivity_cutoff_fraction = float(
-            report_cfg.get("sensitivity_cutoff_fraction", 0.95)
-        )
-        if not (0.0 < sensitivity_cutoff_fraction <= 1.0):
-            raise ValueError(
-                "report.sensitivity_cutoff_fraction must be within (0, 1]."
+        raw_plots_only = bool(report_cfg.get("raw_plots_only", False))
+        sensitivity_cutoff_ay = np.inf
+        if not raw_plots_only:
+            sensitivity_cutoff_fraction = float(
+                report_cfg.get("sensitivity_cutoff_fraction", 0.95)
             )
+            if not (0.0 < sensitivity_cutoff_fraction <= 1.0):
+                raise ValueError(
+                    "report.sensitivity_cutoff_fraction must be within (0, 1]."
+                )
 
-        sweep_cfg = self.config.get("sweep", {})
-        max_ay_cmd = float(sweep_cfg.get("maxAy", sweep_cfg.get("ay_max", 18.0)))
-        sensitivity_cutoff_ay = abs(max_ay_cmd) * sensitivity_cutoff_fraction
+            sweep_cfg = self.config.get("sweep", {})
+            max_ay_cmd = float(sweep_cfg.get("maxAy", sweep_cfg.get("ay_max", 18.0)))
+            sensitivity_cutoff_ay = abs(max_ay_cmd) * sensitivity_cutoff_fraction
 
         def _velocity_key(result: dict[str, Any]) -> float:
             for key in ("_testVel", "targetVel"):
@@ -546,7 +566,6 @@ class SteadyStateEvalSim:
                 continue
 
             ay_measured = _as_series(result.get("accY", []))
-            ay_cmd = _as_series(result.get("targetAyCmd", []))
             left = _as_series(result.get("leftSteerAngle", []))
             right = _as_series(result.get("rightSteerAngle", []))
             handwheel = _as_series(result.get("handwheelAngle", []))
@@ -559,7 +578,7 @@ class SteadyStateEvalSim:
             yaw = _as_series(result.get("yawVel", []))
 
             if not (
-                ay_measured.shape == ay_cmd.shape == left.shape == right.shape
+                ay_measured.shape == left.shape == right.shape
                 == handwheel.shape == steer_excess.shape == roll.shape == beta.shape
                 == torque.shape == vel_x.shape == vel_y.shape == yaw.shape
             ):
@@ -572,7 +591,6 @@ class SteadyStateEvalSim:
             (
                 time,
                 ay_measured,
-                ay_cmd,
                 left,
                 right,
                 handwheel,
@@ -586,7 +604,6 @@ class SteadyStateEvalSim:
             ) = self._trim_pre_steer_start(
                 time,
                 ay_measured,
-                ay_cmd,
                 left,
                 right,
                 handwheel,
@@ -608,7 +625,6 @@ class SteadyStateEvalSim:
             group = grouped_samples.setdefault(
                 vel_key,
                 {
-                    "ay_cmd": [],
                     "ay_measured": [],
                     "roadwheel": [],
                     "handwheel": [],
@@ -620,7 +636,6 @@ class SteadyStateEvalSim:
                 },
             )
 
-            group["ay_cmd"].append(ay_cmd)
             group["ay_measured"].append(ay_measured)
             group["roadwheel"].append(roadwheel)
             group["handwheel"].append(handwheel)
@@ -634,8 +649,6 @@ class SteadyStateEvalSim:
             "ay_measured_isoline": {},
             "ay_measured_raw_isoline": {},
             "ay_measured_bridge_isoline": {},
-            "ay_cmd_isoline": {},
-            "ay_cmd_raw_isoline": {},
             "roadwheel_isoline": {},
             "roadwheel_raw_isoline": {},
             "roadwheel_bridge_isoline": {},
@@ -697,6 +710,22 @@ class SteadyStateEvalSim:
             )
 
             if x_raw.size == 0:
+                continue
+
+            grouped_series["ay_measured_raw_isoline"][vel_key] = x_raw
+            for name in (
+                "roadwheel",
+                "handwheel",
+                "steer_excess",
+                "curvature",
+                "roll",
+                "sideslip",
+                "torque",
+            ):
+                if name in value_map:
+                    grouped_series[f"{name}_raw_isoline"][vel_key] = value_map[name]
+
+            if raw_plots_only:
                 continue
 
             x_collapsed, values_collapsed = collapse_duplicate_samples(
@@ -896,7 +925,6 @@ class SteadyStateEvalSim:
             speed = np.sqrt(vel_x**2 + vel_y**2)
             curvature = yaw / np.maximum(speed, 0.1)
 
-            kappa_cmd = _concat_samples("targetCurvatureCmd")
             ay_target = _repeat_case_values("_testAy")
 
             if ay_measured.size == 0:
@@ -912,7 +940,6 @@ class SteadyStateEvalSim:
             beta = beta[idx]
             torque = torque[idx]
             steer_excess = steer_excess[idx]
-            kappa_cmd = kappa_cmd[idx]
             ay_target = ay_target[idx]
 
             fit_cfg = self.config.get("fit", {})
@@ -946,7 +973,6 @@ class SteadyStateEvalSim:
             beta = filtered["sideslip"]
             torque = filtered["torque"]
             steer_excess = filtered["steer_excess"]
-
             analysis_inputs = {
                 "roadwheel": roadwheel,
                 "handwheel": handwheel,
@@ -970,6 +996,15 @@ class SteadyStateEvalSim:
                     smoothing_fraction=spline_smoothing_fraction,
                     hampel_window=hampel_window,
                     hampel_nsigmas=hampel_nsigmas,
+                )
+                for name, values in analysis_inputs.items()
+            }
+
+            fit_quality = {
+                f"{name}_fit_nrmse": normalized_fit_rmse(
+                    ay_fit_axis,
+                    values,
+                    analysis_fits[name],
                 )
                 for name, values in analysis_inputs.items()
             }
@@ -1015,13 +1050,23 @@ class SteadyStateEvalSim:
                 roll_gradient = float(np.nanmean(roll_grad))
                 sideslip_gradient = float(np.nanmean(beta_grad))
 
+            limit_idx = int(np.nanargmax(np.abs(ay_fit_axis)))
+            limit_ay_measured = float(ay_fit_axis[limit_idx])
+            limit_handwheel_gradient = float(handwheel_grad[limit_idx])
+            limit_sideslip_gradient = float(beta_grad[limit_idx])
+            limit_understeer_gradient = float(steer_excess_grad[limit_idx])
+            limit_roll_gradient = float(roll_grad[limit_idx])
+
             ay_range_measured = (
                 float(np.nanmin(ay_param)),
                 float(np.nanmax(ay_param)),
             )
-
+            peak_handwheel_torque_Nm, peak_handwheel_torque_ay_mps2 = signed_peak_with_axis(
+                ay_param,
+                torque,
+            )
             vel_value = raw_subset[0].get("_testVel", raw_subset[0].get("targetVel"))
-            return {
+            summary = {
                 "MeasuredAy_range": ay_range_measured,
                 "Ay_range": ay_range_measured,
                 "velocity_mps": float(vel_value) if vel_value is not None else np.nan,
@@ -1041,13 +1086,26 @@ class SteadyStateEvalSim:
                 "handwheel_steer_sensitivity_deg_per_g": float(
                     handwheel_angle_gradient * 57.2958 * 9.81
                 ),
-                "handwheel_understeer_gradient_rad_per_mps2": handwheel_angle_gradient,
-                "handwheel_understeer_gradient_deg_per_g": float(
-                    handwheel_angle_gradient * 57.2958 * 9.81
-                ),
                 "sideslip_gradient_rad_per_mps2": sideslip_gradient,
                 "sideslip_gradient_deg_per_g": float(
                     sideslip_gradient * 57.2958 * 9.81
+                ),
+                "limit_ay_mps2": limit_ay_measured,
+                "limit_handwheel_gradient_rad_per_mps2": limit_handwheel_gradient,
+                "limit_handwheel_gradient_deg_per_g": float(
+                    limit_handwheel_gradient * 57.2958 * 9.81
+                ),
+                "limit_sideslip_gradient_rad_per_mps2": limit_sideslip_gradient,
+                "limit_sideslip_gradient_deg_per_g": float(
+                    limit_sideslip_gradient * 57.2958 * 9.81
+                ),
+                "limit_understeer_gradient_rad_per_mps2": limit_understeer_gradient,
+                "limit_understeer_gradient_deg_per_g": float(
+                    limit_understeer_gradient * 57.2958 * 9.81
+                ),
+                "limit_roll_gradient_rad_per_mps2": limit_roll_gradient,
+                "limit_roll_gradient_deg_per_g": float(
+                    limit_roll_gradient * 57.2958 * 9.81
                 ),
                 "understeer_gradient_rad_per_mps2": excess_understeer_gradient,
                 "understeer_gradient_deg_per_g": float(
@@ -1055,9 +1113,11 @@ class SteadyStateEvalSim:
                 ),
                 "roll_gradient_rad_per_mps2": roll_gradient,
                 "roll_gradient_deg_per_g": float(roll_gradient * 57.2958 * 9.81),
-                "handwheel_torque_min_Nm": float(np.nanmin(torque)),
-                "handwheel_torque_max_Nm": float(np.nanmax(torque)),
+                "peak_handwheel_torque_Nm": peak_handwheel_torque_Nm,
+                "peak_handwheel_torque_ay_mps2": peak_handwheel_torque_ay_mps2,
             }
+            summary.update(fit_quality)
+            return summary
 
         velocity_groups: dict[float, list[dict[str, Any]]] = {}
         for result in raw_results:
@@ -1088,11 +1148,28 @@ class SteadyStateEvalSim:
                 "handwheel_angle_gradient_deg_per_g": np.nan,
                 "sideslip_gradient_rad_per_mps2": np.nan,
                 "sideslip_gradient_deg_per_g": np.nan,
+                "limit_ay_mps2": np.nan,
+                "limit_handwheel_gradient_rad_per_mps2": np.nan,
+                "limit_handwheel_gradient_deg_per_g": np.nan,
+                "limit_sideslip_gradient_rad_per_mps2": np.nan,
+                "limit_sideslip_gradient_deg_per_g": np.nan,
+                "limit_understeer_gradient_rad_per_mps2": np.nan,
+                "limit_understeer_gradient_deg_per_g": np.nan,
+                "limit_roll_gradient_rad_per_mps2": np.nan,
+                "limit_roll_gradient_deg_per_g": np.nan,
                 "understeer_gradient_rad_per_mps2": np.nan,
                 "understeer_gradient_deg_per_g": np.nan,
+                "roll_gradient_rad_per_mps2": np.nan,
                 "roll_gradient_deg_per_g": np.nan,
-                "handwheel_torque_min_Nm": np.nan,
-                "handwheel_torque_max_Nm": np.nan,
+                "peak_handwheel_torque_Nm": np.nan,
+                "peak_handwheel_torque_ay_mps2": np.nan,
+                "roadwheel_fit_nrmse": np.nan,
+                "handwheel_fit_nrmse": np.nan,
+                "steer_excess_fit_nrmse": np.nan,
+                "curvature_fit_nrmse": np.nan,
+                "roll_fit_nrmse": np.nan,
+                "sideslip_fit_nrmse": np.nan,
+                "torque_fit_nrmse": np.nan,
             }
 
         def _velocity_trend(metric_key: str) -> tuple[float, float]:
@@ -1106,7 +1183,11 @@ class SteadyStateEvalSim:
         roadwheel_trend, _ = _velocity_trend("roadwheel_angle_gradient_deg_per_g")
         handwheel_trend, _ = _velocity_trend("handwheel_angle_gradient_deg_per_g")
         sideslip_trend, _ = _velocity_trend("sideslip_gradient_deg_per_g")
+        limit_handwheel_trend, _ = _velocity_trend("limit_handwheel_gradient_deg_per_g")
+        limit_sideslip_trend, _ = _velocity_trend("limit_sideslip_gradient_deg_per_g")
+        limit_understeer_trend, _ = _velocity_trend("limit_understeer_gradient_deg_per_g")
         understeer_trend, _ = _velocity_trend("understeer_gradient_deg_per_g")
+        limit_roll_trend, _ = _velocity_trend("limit_roll_gradient_deg_per_g")
         roll_trend, _ = _velocity_trend("roll_gradient_deg_per_g")
 
         def _concat_samples(key: str) -> np.ndarray:
@@ -1160,16 +1241,6 @@ class SteadyStateEvalSim:
         speed = np.sqrt(vel_x**2 + vel_y**2)
         curvature = yaw / np.maximum(speed, 0.1)
 
-        kappa_cmd = _concat_samples("targetCurvatureCmd")
-        # Controller/debug arrays.
-        fr_steer_cmd = _concat_samples("frSteerCmd")
-        steer_ratio_estimate = _concat_samples("steerRatioEstimate")
-        steer_feedforward = _concat_samples("steerFeedforward")
-        target_ay_cmd = _concat_samples("targetAyCmd")
-        target_roadwheel_cmd = _concat_samples("targetRoadwheelCmd")
-        ay_error_raw = _concat_samples("ayErrorRaw")
-        ay_error = _concat_samples("ayError")
-        rad_error = _concat_samples("radError")
         ay_target = _repeat_case_values("_testAy")
 
         if ay.size == 0:
@@ -1188,18 +1259,9 @@ class SteadyStateEvalSim:
         beta = beta[idx]
         torque = torque[idx]
         steer_excess = steer_excess[idx]
-        kappa_cmd = kappa_cmd[idx]
         speed = speed[idx]
         yaw = yaw[idx]
 
-        fr_steer_cmd = fr_steer_cmd[idx]
-        steer_ratio_estimate = steer_ratio_estimate[idx]
-        steer_feedforward = steer_feedforward[idx]
-        target_ay_cmd = target_ay_cmd[idx]
-        target_roadwheel_cmd = target_roadwheel_cmd[idx]
-        ay_error_raw = ay_error_raw[idx]
-        ay_error = ay_error[idx]
-        rad_error = rad_error[idx]
         ay_target = ay_target[idx]
 
         fit_cfg = self.config.get("fit", {})
@@ -1210,25 +1272,16 @@ class SteadyStateEvalSim:
 
         ay_param, filtered = filter_samples_by_axis_magnitude(
             ay_param,
-                {
-                    "roadwheel": roadwheel,
-                    "handwheel": handwheel,
-                    "curvature": curvature,
-                    "roll": roll,
-                    "sideslip": beta,
-                    "torque": torque,
-                    "steer_excess": steer_excess,
-                    "kappa_cmd": kappa_cmd,
-                    "speed": speed,
-                    "yaw": yaw,
-                    "fr_steer_cmd": fr_steer_cmd,
-                    "steer_ratio_estimate": steer_ratio_estimate,
-                    "steer_feedforward": steer_feedforward,
-                "target_ay_cmd": target_ay_cmd,
-                "target_roadwheel_cmd": target_roadwheel_cmd,
-                "ay_error_raw": ay_error_raw,
-                "ay_error": ay_error,
-                "rad_error": rad_error,
+            {
+                "roadwheel": roadwheel,
+                "handwheel": handwheel,
+                "curvature": curvature,
+                "roll": roll,
+                "sideslip": beta,
+                "torque": torque,
+                "steer_excess": steer_excess,
+                "speed": speed,
+                "yaw": yaw,
                 "ay_target": ay_target,
             },
             min_magnitude=ay_min_magnitude,
@@ -1245,19 +1298,14 @@ class SteadyStateEvalSim:
         beta = filtered["sideslip"]
         torque = filtered["torque"]
         steer_excess = filtered["steer_excess"]
-        kappa_cmd = filtered["kappa_cmd"]
         speed = filtered["speed"]
         yaw = filtered["yaw"]
-        fr_steer_cmd = filtered["fr_steer_cmd"]
-        steer_ratio_estimate = filtered["steer_ratio_estimate"]
-        steer_feedforward = filtered["steer_feedforward"]
-        target_ay_cmd = filtered["target_ay_cmd"]
-        target_roadwheel_cmd = filtered["target_roadwheel_cmd"]
-        ay_error_raw = filtered["ay_error_raw"]
-        ay_error = filtered["ay_error"]
-        rad_error = filtered["rad_error"]
         ay_target = filtered["ay_target"]
         ay = ay_param
+        peak_handwheel_torque_Nm, peak_handwheel_torque_ay_mps2 = signed_peak_with_axis(
+            ay,
+            torque,
+        )
 
         # Build smoothing-spline analysis channels so downstream fits and
         # gradients are evaluated from clean response curves rather than raw
@@ -1276,20 +1324,9 @@ class SteadyStateEvalSim:
             analysis_inputs,
         )
 
-        ay_error_cmd = target_ay_cmd - ay
-        ay_error_cmd_abs = np.abs(ay_error_cmd)
-
         steer_plot_idx = np.argsort(ay_param)
-        ay_cmd_plot = ay_param[steer_plot_idx]
         roadwheel_plot = roadwheel[steer_plot_idx]
         handwheel_plot = handwheel[steer_plot_idx]
-
-        eps = 1.0e-9
-
-        curvature_error_pct = 100.0 * (curvature - kappa_cmd) / np.maximum(
-            np.abs(kappa_cmd),
-            eps,
-        )
 
         spline_smoothing_fraction = float(fit_cfg.get("spline_smoothing_fraction", 0.02))
 
@@ -1358,6 +1395,13 @@ class SteadyStateEvalSim:
             sideslip_gradient = float(np.nanmean(beta_grad))
             excess_understeer_gradient = float(np.nanmean(steer_excess_grad))
 
+        limit_idx = int(np.nanargmax(np.abs(analysis_fit_axis)))
+        limit_ay_measured = float(analysis_fit_axis[limit_idx])
+        limit_handwheel_gradient = float(handwheel_grad[limit_idx])
+        limit_sideslip_gradient = float(beta_grad[limit_idx])
+        limit_understeer_gradient = float(steer_excess_grad[limit_idx])
+        limit_roll_gradient = float(roll_grad[limit_idx])
+
         steer_fit = evaluate_spline(analysis_fits["roadwheel"], ay_param)
         handwheel_fit = evaluate_spline(analysis_fits["handwheel"], ay_param)
         steer_excess_fit = evaluate_spline(analysis_fits["steer_excess"], ay_param)
@@ -1386,13 +1430,26 @@ class SteadyStateEvalSim:
             "handwheel_steer_sensitivity_deg_per_g": float(
                 handwheel_angle_gradient * 57.2958 * 9.81
             ),
-            "handwheel_understeer_gradient_rad_per_mps2": handwheel_angle_gradient,
-            "handwheel_understeer_gradient_deg_per_g": float(
-                handwheel_angle_gradient * 57.2958 * 9.81
-            ),
             "sideslip_gradient_rad_per_mps2": sideslip_gradient,
             "sideslip_gradient_deg_per_g": float(
                 sideslip_gradient * 57.2958 * 9.81
+            ),
+            "limit_ay_mps2": limit_ay_measured,
+            "limit_handwheel_gradient_rad_per_mps2": limit_handwheel_gradient,
+            "limit_handwheel_gradient_deg_per_g": float(
+                limit_handwheel_gradient * 57.2958 * 9.81
+            ),
+            "limit_sideslip_gradient_rad_per_mps2": limit_sideslip_gradient,
+            "limit_sideslip_gradient_deg_per_g": float(
+                limit_sideslip_gradient * 57.2958 * 9.81
+            ),
+            "limit_understeer_gradient_rad_per_mps2": limit_understeer_gradient,
+            "limit_understeer_gradient_deg_per_g": float(
+                limit_understeer_gradient * 57.2958 * 9.81
+            ),
+            "limit_roll_gradient_rad_per_mps2": limit_roll_gradient,
+            "limit_roll_gradient_deg_per_g": float(
+                limit_roll_gradient * 57.2958 * 9.81
             ),
             "understeer_gradient_rad_per_mps2": excess_understeer_gradient,
             "understeer_gradient_deg_per_g": float(
@@ -1404,24 +1461,51 @@ class SteadyStateEvalSim:
             ),
             "roll_gradient_rad_per_mps2": roll_gradient,
             "roll_gradient_deg_per_g": float(roll_gradient * 57.2958 * 9.81),
-            "handwheel_torque_min_Nm": float(np.nanmin(torque)),
-            "handwheel_torque_max_Nm": float(np.nanmax(torque)),
-            "max_curvature_error_pct": float(
-                np.nanmax(np.abs(curvature_error_pct))
-            ),
-            "mean_curvature_error_pct": float(
-                np.nanmean(np.abs(curvature_error_pct))
-            ),
-            "max_abs_rad_error": float(np.nanmax(np.abs(rad_error))),
-            "mean_abs_rad_error": float(np.nanmean(np.abs(rad_error))),
+            "peak_handwheel_torque_Nm": peak_handwheel_torque_Nm,
+            "peak_handwheel_torque_ay_mps2": peak_handwheel_torque_ay_mps2,
             "roadwheel_angle_gradient_velocity_slope_deg_per_g_per_mps": roadwheel_trend,
             "handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps": handwheel_trend,
             "sideslip_gradient_velocity_slope_deg_per_g_per_mps": sideslip_trend,
+            "limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps": limit_handwheel_trend,
+            "limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps": limit_sideslip_trend,
+            "limit_understeer_gradient_velocity_slope_deg_per_g_per_mps": limit_understeer_trend,
+            "limit_roll_gradient_velocity_slope_deg_per_g_per_mps": limit_roll_trend,
             "understeer_gradient_velocity_slope_deg_per_g_per_mps": understeer_trend,
             "roll_gradient_velocity_slope_deg_per_g_per_mps": roll_trend,
         }
 
+        sweep_cfg = self.config.get("sweep", {})
+        sweep_max_ay = float(sweep_cfg.get("maxAy", np.nan))
+
         metrics: list[dict[str, Any]] = [
+            {
+                "standard": "SteadyStateEval",
+                "metric": "n_cases",
+                "value": len(results),
+                "units": "count",
+                "description": "Total SteadyStateEval cases requested",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "n_successful_cases",
+                "value": len(successful_results),
+                "units": "count",
+                "description": "Number of successful SteadyStateEval cases used in the summary",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "n_failed_cases",
+                "value": len(failed_results),
+                "units": "count",
+                "description": "Number of failed SteadyStateEval cases skipped by the summary",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "standard_sweep_max_ay_mps2",
+                "value": sweep_max_ay,
+                "units": "m/s^2",
+                "description": "Nominal positive lateral-acceleration target used for the SteadyStateEval sweep",
+            },
             {
                 "standard": "SteadyStateEval",
                 "metric": "metric_target_velocity_mps",
@@ -1452,115 +1536,220 @@ class SteadyStateEvalSim:
             },
             {
                 "standard": "SteadyStateEval",
-                "metric": "roadwheel_angle_gradient_rad_per_mps2",
-                "value": metric_summary["roadwheel_angle_gradient_rad_per_mps2"],
-                "units": "rad/(m/s^2)",
-                "description": "Mean roadwheel angle gradient over the linear region",
-            },
-            {
-                "standard": "SteadyStateEval",
-                "metric": "roadwheel_angle_gradient_deg_per_g",
-                "value": metric_summary["roadwheel_angle_gradient_deg_per_g"],
-                "units": "deg/g",
-                "description": "Mean roadwheel angle gradient over the linear region",
-            },
-            {
-                "standard": "SteadyStateEval",
-                "metric": "handwheel_angle_gradient_rad_per_mps2",
-                "value": metric_summary["handwheel_angle_gradient_rad_per_mps2"],
-                "units": "rad/(m/s^2)",
-                "description": "Mean handwheel angle gradient over the linear region",
-            },
-            {
-                "standard": "SteadyStateEval",
-                "metric": "handwheel_angle_gradient_deg_per_g",
-                "value": metric_summary["handwheel_angle_gradient_deg_per_g"],
-                "units": "deg/g",
-                "description": "Mean handwheel angle gradient over the linear region",
-            },
-            {
-                "standard": "SteadyStateEval",
                 "metric": "sideslip_gradient_rad_per_mps2",
                 "value": metric_summary["sideslip_gradient_rad_per_mps2"],
                 "units": "rad/(m/s^2)",
-                "description": "Mean sideslip gradient over the linear region",
+                "description": "Linear ramp-response sideslip gradient versus measured Ay",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "sideslip_gradient_deg_per_g",
                 "value": metric_summary["sideslip_gradient_deg_per_g"],
                 "units": "deg/g",
-                "description": "Mean sideslip gradient over the linear region",
+                "description": "Linear ramp-response sideslip gradient versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_ay_mps2",
+                "value": metric_summary["limit_ay_mps2"],
+                "units": "m/s^2",
+                "description": "Largest absolute measured lateral acceleration reached by the ramp",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_sideslip_gradient_rad_per_mps2",
+                "value": metric_summary["limit_sideslip_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Endpoint local ramp-response sideslip gradient at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_sideslip_gradient_deg_per_g",
+                "value": metric_summary["limit_sideslip_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Endpoint local ramp-response sideslip gradient at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_understeer_gradient_rad_per_mps2",
+                "value": metric_summary["limit_understeer_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Endpoint local steer-excess derivative at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_understeer_gradient_deg_per_g",
+                "value": metric_summary["limit_understeer_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Endpoint local steer-excess derivative at the measured Ay limit",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "understeer_gradient_rad_per_mps2",
                 "value": metric_summary["understeer_gradient_rad_per_mps2"],
                 "units": "rad/(m/s^2)",
-                "description": "Mean steer excess derivative over the linear region",
+                "description": "Linear steer-excess derivative versus measured Ay",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "understeer_gradient_deg_per_g",
                 "value": metric_summary["understeer_gradient_deg_per_g"],
                 "units": "deg/g",
-                "description": "Mean steer excess derivative over the linear region",
+                "description": "Linear steer-excess derivative versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "handwheel_angle_gradient_rad_per_mps2",
+                "value": metric_summary["handwheel_angle_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Linear raw handwheel angle gradient versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "handwheel_angle_gradient_deg_per_g",
+                "value": metric_summary["handwheel_angle_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Linear raw handwheel angle gradient versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_handwheel_gradient_rad_per_mps2",
+                "value": metric_summary["limit_handwheel_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Endpoint local raw handwheel angle gradient at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_handwheel_gradient_deg_per_g",
+                "value": metric_summary["limit_handwheel_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Endpoint local raw handwheel angle gradient at the measured Ay limit",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "roll_gradient_deg_per_g",
                 "value": metric_summary["roll_gradient_deg_per_g"],
                 "units": "deg/g",
-                "description": "Mean roll gradient over the linear region",
+                "description": "Linear ramp-response roll gradient versus measured Ay",
             },
             {
                 "standard": "SteadyStateEval",
-                "metric": "handwheel_torque_min",
-                "value": metric_summary["handwheel_torque_min_Nm"],
+                "metric": "limit_roll_gradient_rad_per_mps2",
+                "value": metric_summary["limit_roll_gradient_rad_per_mps2"],
+                "units": "rad/(m/s^2)",
+                "description": "Endpoint local ramp-response roll gradient at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_roll_gradient_deg_per_g",
+                "value": metric_summary["limit_roll_gradient_deg_per_g"],
+                "units": "deg/g",
+                "description": "Endpoint local ramp-response roll gradient at the measured Ay limit",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "peak_handwheel_torque_Nm",
+                "value": metric_summary["peak_handwheel_torque_Nm"],
                 "units": "N*m",
-                "description": "Minimum handwheel torque over SteadyStateEval sweep",
+                "description": "Signed handwheel torque at maximum absolute handwheel torque",
             },
             {
                 "standard": "SteadyStateEval",
-                "metric": "handwheel_torque_max",
-                "value": metric_summary["handwheel_torque_max_Nm"],
-                "units": "N*m",
-                "description": "Maximum handwheel torque over SteadyStateEval sweep",
+                "metric": "peak_handwheel_torque_ay_mps2",
+                "value": metric_summary["peak_handwheel_torque_ay_mps2"],
+                "units": "m/s^2",
+                "description": "Measured lateral acceleration at peak absolute handwheel torque",
             },
             {
                 "standard": "SteadyStateEval",
-                "metric": "roadwheel_angle_gradient_velocity_slope_deg_per_g_per_mps",
-                "value": roadwheel_trend,
-                "units": "deg/g per m/s",
-                "description": "Linear fit slope of roadwheel angle gradient versus velocity",
+                "metric": "roadwheel_fit_nrmse",
+                "value": metric_summary["roadwheel_fit_nrmse"],
+                "units": "fraction",
+                "description": "Normalized fit residual for roadwheel angle versus measured Ay",
             },
             {
                 "standard": "SteadyStateEval",
-                "metric": "handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps",
-                "value": handwheel_trend,
-                "units": "deg/g per m/s",
-                "description": "Linear fit slope of handwheel angle gradient versus velocity",
+                "metric": "handwheel_fit_nrmse",
+                "value": metric_summary["handwheel_fit_nrmse"],
+                "units": "fraction",
+                "description": "Normalized fit residual for handwheel angle versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "steer_excess_fit_nrmse",
+                "value": metric_summary["steer_excess_fit_nrmse"],
+                "units": "fraction",
+                "description": "Normalized fit residual for steer excess versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "roll_fit_nrmse",
+                "value": metric_summary["roll_fit_nrmse"],
+                "units": "fraction",
+                "description": "Normalized fit residual for roll versus measured Ay",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "sideslip_fit_nrmse",
+                "value": metric_summary["sideslip_fit_nrmse"],
+                "units": "fraction",
+                "description": "Normalized fit residual for sideslip versus measured Ay",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "sideslip_gradient_velocity_slope_deg_per_g_per_mps",
                 "value": sideslip_trend,
                 "units": "deg/g per m/s",
-                "description": "Linear fit slope of sideslip gradient versus velocity",
+                "description": "Linear fit slope of ramp-response sideslip gradient versus velocity",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps",
+                "value": limit_sideslip_trend,
+                "units": "deg/g per m/s",
+                "description": "Linear fit slope of endpoint sideslip gradient versus velocity",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_understeer_gradient_velocity_slope_deg_per_g_per_mps",
+                "value": limit_understeer_trend,
+                "units": "deg/g per m/s",
+                "description": "Linear fit slope of endpoint steer-excess gradient versus velocity",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps",
+                "value": handwheel_trend,
+                "units": "deg/g per m/s",
+                "description": "Linear fit slope of raw handwheel angle gradient versus velocity",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps",
+                "value": limit_handwheel_trend,
+                "units": "deg/g per m/s",
+                "description": "Linear fit slope of endpoint handwheel angle gradient versus velocity",
+            },
+            {
+                "standard": "SteadyStateEval",
+                "metric": "limit_roll_gradient_velocity_slope_deg_per_g_per_mps",
+                "value": limit_roll_trend,
+                "units": "deg/g per m/s",
+                "description": "Linear fit slope of endpoint roll gradient versus velocity",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "understeer_gradient_velocity_slope_deg_per_g_per_mps",
                 "value": understeer_trend,
                 "units": "deg/g per m/s",
-                "description": "Linear fit slope of understeer gradient versus velocity",
+                "description": "Linear fit slope of steer-excess gradient versus velocity",
             },
             {
                 "standard": "SteadyStateEval",
                 "metric": "roll_gradient_velocity_slope_deg_per_g_per_mps",
                 "value": roll_trend,
                 "units": "deg/g per m/s",
-                "description": "Linear fit slope of roll gradient versus velocity",
+                "description": "Linear fit slope of ramp-response roll gradient versus velocity",
             },
         ]
 
@@ -1585,6 +1774,10 @@ class SteadyStateEvalSim:
                 [summary["sideslip_gradient_rad_per_mps2"] for summary in velocity_summaries],
                 dtype=float,
             ),
+            "velocity_summary_limit_sideslip_gradient_rad_per_mps2": np.asarray(
+                [summary["limit_sideslip_gradient_rad_per_mps2"] for summary in velocity_summaries],
+                dtype=float,
+            ),
             "velocity_summary_understeer_gradient_rad_per_mps2": np.asarray(
                 [summary["understeer_gradient_rad_per_mps2"] for summary in velocity_summaries],
                 dtype=float,
@@ -1596,8 +1789,6 @@ class SteadyStateEvalSim:
         }
 
         series = {
-            "ay_cmd": ay_param,
-            "ay_cmd_plot": ay_cmd_plot,
             "ay_measured": ay,
             "ay_target": ay_target,
             "roadwheel": roadwheel,
@@ -1606,8 +1797,6 @@ class SteadyStateEvalSim:
             "handwheel_plot": handwheel_plot,
             "steer_excess": steer_excess,
             "curvature": curvature,
-            "curvature_cmd": kappa_cmd,
-            "curvature_error_pct": curvature_error_pct,
             "roll": roll,
             "sideslip": beta,
             "torque": torque,
@@ -1622,18 +1811,6 @@ class SteadyStateEvalSim:
             "curvature_gradient": curv_grad,
             "sideslip_gradient": beta_grad,
             "roll_gradient": roll_grad,
-
-            # Controller/debug series
-            "fr_steer_cmd": fr_steer_cmd,
-            "steer_ratio_estimate": steer_ratio_estimate,
-            "steer_feedforward": steer_feedforward,
-            "target_ay_cmd": target_ay_cmd,
-            "target_roadwheel_cmd": target_roadwheel_cmd,
-            "ay_error_cmd": ay_error_cmd,
-            "ay_error_cmd_abs": ay_error_cmd_abs,
-            "ay_error_raw": ay_error_raw,
-            "ay_error": ay_error,
-            "rad_error": rad_error,
         }
 
         series.update(velocity_summary_series)
@@ -1647,8 +1824,8 @@ class SteadyStateEvalSim:
             "series": series,
             "cases": results,
             "failed_cases": failed_results,
-            "n_cases": len(results) + len(failed_results),
-            "n_successful_cases": len(results),
+            "n_cases": len(results),
+            "n_successful_cases": len(successful_results),
             "n_failed_cases": len(failed_results),
         }
 

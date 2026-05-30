@@ -6,7 +6,7 @@ architecture:
   front: bellcrank_stabar
   rear: bellcrank_stabar
 paths:
-  boblib: _0_Utils/external/BobLib
+  boblib: _0_Utils/external/BobLib/BobLib
   vehicle_templates: _0_Utils/external/BobLib/Generation/vehicle_templates
   tire_templates: _0_Utils/external/BobLib/Generation/tire_templates
 sprung_mass:
@@ -195,25 +195,26 @@ rear:
         - [-6.025e-05, 0.0002161, 0.00154153]
 aero:
   reference_speed_m_per_s: 15.0
-  aero_ref_m: [1, 0, 0]
+  aero_ref_m: [1.0, 0.0, 0.0]
+
   front_left_ride_height_ref_m: [0.0127, 0.226314, 0.08001]
   rear_left_ride_height_ref_m: [-1.4070203, 0.2834894, 0.0870458]
 
-  front_ride_height_grid_m: [0.03556, 0.05334, 0.07112, 0.0889, 0.10668]
-  rear_ride_height_grid_m: [0.04191, 0.0635, 0.08382, 0.10414, 0.12573]
+  front_ride_height_grid_m: [0.03556, 0.05334, 0.07112, 0.08890, 0.10668]
+  rear_ride_height_grid_m: [0.04191, 0.06350, 0.08382, 0.10414, 0.12573]
 
   drag_table_n:
-    - [161.5972, 161.9498, 163.687, 159.2334, 154.50145]
-    - [164.547, 164.7349, 172.3558, 172.1838, 170.2062]
-    - [159.2388, 167.52, 172.4602, 176.457, 180.1312]
-    - [156.3824, 162.2704, 169.104, 174.6198, 178.8624]
-    - [155.6694, 157.0208, 165.7478, 169.332, 174.9112]
+    - [161.5972, 161.9498, 163.6870, 159.2334, 154.50145]
+    - [164.5470, 164.7349, 172.3558, 172.1838, 170.2062]
+    - [159.2388, 167.5200, 172.4602, 176.4570, 180.1312]
+    - [156.3824, 162.2704, 169.1040, 174.6198, 178.8624]
+    - [155.6694, 157.0208, 165.7478, 169.3320, 174.9112]
 
   downforce_table_n:
     - [323.4758, 306.2802, 265.3572, 215.9386, 163.4313375]
-    - [294.4118, 301.2197, 341.5206, 331.72, 301.3074]
-    - [263.8606, 296.1592, 319.799, 339.5682, 351.2746]
-    - [238.4332, 261.4048, 286.5552, 305.715, 332.3768]
+    - [294.4118, 301.2197, 341.5206, 331.7200, 301.3074]
+    - [263.8606, 296.1592, 319.7990, 339.5682, 351.2746]
+    - [238.4332, 261.4048, 286.5552, 305.7150, 332.3768]
     - [219.5836, 226.6504, 253.3114, 284.1392, 304.1904]
 
   # Symmetric FRH/RRH-only aero map should not create roll moment.
@@ -224,16 +225,17 @@ aero:
     - [0, 0, 0, 0, 0]
     - [0, 0, 0, 0, 0]
 
-  # Free pitch moment at aero_ref_m.
-  # Computed as:
-  #   my_free = my_cfd_total - downforce
-  # because aero_ref_m = [1, 0, 0] naturally creates +downforce pitch moment.
+  # CFD pitch moment about aero_ref_m, doubled from the half-car values.
+  # BobSim applies the aero force at aero_ref_m, so do not subtract
+  # aero_ref_m[0] * downforce from this table.
+  # The low-FRH/high-RRH tail is regularized from the neighboring CoP surface;
+  # those CFD cells were rearward/outlier enough to destabilize ramp studies.
   my_table_nm:
-    - [-825.9932, -825.4692, -808.9816, -764.9962, -718.26171250]
-    - [-755.724, -801.59830, -877.6862, -874.8364, -858.4004]
-    - [-697.1832, -777.7274, -832.2982, -876.6466, -904.5830]
-    - [-644.1302, -696.5430, -757.7346, -799.6382, -860.9186]
-    - [-607.5192, -615.3586, -683.1710, -758.2042, -802.5116]
+    - [-502.5174, -519.1890, -455.8905, -386.8458, -307.2876]
+    - [-461.3122, -500.3786, -536.1656, -543.1164, -557.0930]
+    - [-433.3226, -481.5682, -512.4992, -537.0784, -553.3084]
+    - [-405.6970, -435.1382, -471.1794, -493.9232, -528.5418]
+    - [-387.9356, -388.7082, -429.8596, -474.0650, -498.3212]
 
   # Symmetric FRH/RRH-only aero map should not create yaw moment.
   mz_table_nm:

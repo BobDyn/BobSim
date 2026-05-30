@@ -222,27 +222,7 @@ def add_summary_page(pdf, summary, title=None):
             r"$\mathrm{m/s^2}$",
         ),
         (
-            "Roadwheel Angle Gradient",
-            rf"${summary['roadwheel_angle_gradient_rad_per_mps2']:.5f}$",
-            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
-        ),
-        (
-            "",
-            rf"${summary['roadwheel_angle_gradient_deg_per_g']:.2f}$",
-            r"$\frac{\mathrm{deg}}{g}$",
-        ),
-        (
-            "Handwheel Angle Gradient",
-            rf"${summary['handwheel_angle_gradient_rad_per_mps2']:.5f}$",
-            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
-        ),
-        (
-            "",
-            rf"${summary['handwheel_angle_gradient_deg_per_g']:.2f}$",
-            r"$\frac{\mathrm{deg}}{g}$",
-        ),
-        (
-            "Sideslip Gradient",
+            "Linear Ramp Sideslip Gradient",
             rf"${summary['sideslip_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
@@ -252,7 +232,17 @@ def add_summary_page(pdf, summary, title=None):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Understeer Gradient",
+            "Limit Ramp Sideslip Gradient",
+            rf"${summary['limit_sideslip_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['limit_sideslip_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Linear Steer-Excess Understeer Gradient",
             rf"${summary['understeer_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
@@ -262,29 +252,54 @@ def add_summary_page(pdf, summary, title=None):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Handwheel Understeer Gradient",
-            rf"${summary['handwheel_understeer_gradient_rad_per_mps2']:.5f}$",
+            "Limit Steer-Excess Understeer Gradient",
+            rf"${summary['limit_understeer_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
         (
             "",
-            rf"${summary['handwheel_understeer_gradient_deg_per_g']:.2f}$",
+            rf"${summary['limit_understeer_gradient_deg_per_g']:.2f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Roll Gradient",
+            "Linear Raw Handwheel Angle Gradient",
+            rf"${summary['handwheel_angle_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['handwheel_angle_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Limit Raw Handwheel Angle Gradient",
+            rf"${summary['limit_handwheel_gradient_rad_per_mps2']:.5f}$",
+            r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
+        ),
+        (
+            "",
+            rf"${summary['limit_handwheel_gradient_deg_per_g']:.2f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Linear Ramp Roll Gradient",
             rf"${summary['roll_gradient_deg_per_g']:.3f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Handwheel Torque Min",
-            rf"${summary['handwheel_torque_min_Nm']:.1f}$",
+            "Limit Ramp Roll Gradient",
+            rf"${summary['limit_roll_gradient_deg_per_g']:.3f}$",
+            r"$\frac{\mathrm{deg}}{g}$",
+        ),
+        (
+            "Peak Handwheel Torque",
+            f"{summary['peak_handwheel_torque_Nm']:.1f}",
             r"$\mathrm{N\cdot m}$",
         ),
         (
-            "Handwheel Torque Max",
-            rf"${summary['handwheel_torque_max_Nm']:.1f}$",
-            r"$\mathrm{N\cdot m}$",
+            r"Peak Torque $a_y$",
+            f"{summary['peak_handwheel_torque_ay_mps2']:.2f}",
+            r"$\mathrm{m/s^2}$",
         ),
     ]
 
@@ -293,8 +308,8 @@ def add_summary_page(pdf, summary, title=None):
     x_value = 0.65
     x_units = 0.82
 
-    y_top = 0.72
-    row_h = 0.048
+    y_top = 0.78
+    row_h = 0.041
 
     # --- header ---
     plt.text(x_metric, y_top, "Metric", fontsize=13, weight="bold")
