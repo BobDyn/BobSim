@@ -35,7 +35,7 @@ cd(buildDir);
 res := buildModel(
   BobLib.Standards.FourPostSim,
   startTime = 0,
-  stopTime = 113,
+  stopTime = 118,
   tolerance = 1e-6,
   outputFormat = "csv",
   cflags = "-O3 -march=native -mtune=native"

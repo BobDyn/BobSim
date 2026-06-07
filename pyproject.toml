@@ -1,12 +1,13 @@
 [tool.mypy]
 explicit_package_bases = true
 ignore_missing_imports = true
-files = ["_0_Utils", "_1_VisualSim", "_2_GeneralSim", "_3_StandardSim", "_4_OptSim"]
+files = ["_0_Utils", "_1_VisualSim", "_3_StandardSim", "tests"]
 
 exclude = '''
 (^|/)build/
 |(^|/)__pycache__/
 |(^|/)\.venv/
+|(^|/)_0_Utils/external/BobLib/
 '''
 
 [[tool.mypy.overrides]]

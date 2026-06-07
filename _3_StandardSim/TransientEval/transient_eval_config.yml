@@ -10,6 +10,8 @@ simulation:
   output_format: csv
   
   log_level: LOG_STATS
+  extra_args:
+    - -jacobian=internalNumerical
   
   no_grid: true
   no_event_emit: true

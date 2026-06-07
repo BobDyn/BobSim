@@ -7,11 +7,13 @@ simulation:
 
   start_time: 0.0
   stop_time: 20.0
-  solver: ida
+  solver: dassl
   tolerance: 1e-6
   output_format: csv
 
   log_level: LOG_STATS
+  extra_args:
+    - -jacobian=internalNumerical
 
   no_grid: true
   no_event_emit: true
@@ -22,9 +24,7 @@ simulation:
     steerStart: 2.0
     handwheelRampRate: 0.14
 
-    # Keep legacy fallback ramp limiters explicitly disabled.
     # Linearity termination owns the useful-limit detection for this study.
-    enableCurvatureSteerLimiter: false
     enableNormalLoadSteerLimiter: false
 
     # Safety guard only; this should not define the reported limit metrics.

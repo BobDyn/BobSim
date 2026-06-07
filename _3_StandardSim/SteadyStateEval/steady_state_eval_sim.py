@@ -384,27 +384,6 @@ class SteadyStateEvalSim:
                 f"Got start_time={self.start_time}, stop_time={self.stop_time}."
             )
 
-    def _open_loop_stop_time(self, init_parameters: dict[str, Any]) -> float:
-        steer_start = float(init_parameters.get("steerStart", self.steer_start))
-        ramp_duration = float(init_parameters.get("ayRampDuration", 3.0))
-        steady_hold_duration = float(init_parameters.get("steadyHoldDuration", 0.1))
-        settle_timeout = float(init_parameters.get("settleTimeout", 3.0))
-
-        if bool(init_parameters.get("enableLinearityTermination", False)):
-            return self.stop_time
-
-        # The Modelica model already terminates once the plateau is reached or
-        # once the ramp+settle timeout expires. The Python harness only needs a
-        # slightly longer hard cap than that internal timeout, not a fixed 20 s
-        # horizon for every ramp duration.
-        dynamic_stop_time = (
-            steer_start
-            + ramp_duration
-            + settle_timeout
-            + steady_hold_duration
-        )
-        return min(self.stop_time, dynamic_stop_time)
-
     # ============================================================
     # CASE GENERATION
     # ============================================================
@@ -454,11 +433,12 @@ class SteadyStateEvalSim:
         if max_ay <= 0.0:
             raise ValueError("sweep.maxAy (or ay_max) must be positive")
 
-        # One open-loop ramp-steer run per velocity:
-        #   0 -> +maxAy
+        # One positive open-loop ramp-steer run per velocity.
+        # VehicleSim uses targetAy's sign to choose the handwheel direction;
+        # the useful limit is measured from model termination.
         #
         # The negative branch is symmetric, so we skip it to reduce runtime.
-        # The nominal endpoint and ramp shaping are handled inside VehicleSim.
+        # Handwheel ramping and useful-limit termination are handled inside VehicleSim.
         target_ays = np.array([max_ay], dtype=float)
 
         # VehicleSim owns its own defaults.
@@ -469,7 +449,7 @@ class SteadyStateEvalSim:
             sim_cfg.get("init_parameters", {}),
             name="simulation.init_parameters",
         )
-        stop_time_case = self._open_loop_stop_time(init_parameters)
+        stop_time_case = self.stop_time
 
         cases: list[dict[str, Any]] = []
 
@@ -1788,7 +1768,7 @@ class SteadyStateEvalSim:
             ),
         }
 
-        series = {
+        series: dict[str, Any] = {
             "ay_measured": ay,
             "ay_target": ay_target,
             "roadwheel": roadwheel,

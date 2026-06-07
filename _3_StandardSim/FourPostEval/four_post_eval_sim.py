@@ -22,6 +22,13 @@ ACTIVE_VEHICLE_YAML_CANDIDATES = (
     REPO_ROOT / "vehicle.yml",
 )
 GRAVITY_MPS2 = 9.80665
+FOUR_POST_POSE_STEP_S = 5.0
+FOUR_POST_HEAVE_START_S = 2.0
+FOUR_POST_HEAVE_POSE_COUNT = 11
+FOUR_POST_HEAVE_END_S = FOUR_POST_HEAVE_START_S + FOUR_POST_POSE_STEP_S * (FOUR_POST_HEAVE_POSE_COUNT + 1)
+FOUR_POST_ROLL_START_S = FOUR_POST_HEAVE_END_S + 1.0
+FOUR_POST_ROLL_POSE_COUNT = 11
+FOUR_POST_STOP_TIME_S = FOUR_POST_ROLL_START_S + FOUR_POST_POSE_STEP_S * FOUR_POST_ROLL_POSE_COUNT
 
 
 FOUR_POST_EVAL_SIGNALS = [
@@ -295,12 +302,17 @@ class FourPostEvalSim:
 
     def build_overrides(self) -> dict[str, Any]:
         procedure = _as_mapping(self.config.get("procedure"), name="procedure")
+        simulation = _as_mapping(self.config.get("simulation"), name="simulation")
 
         return {
             "steerMagnitude": procedure.get("steerMagnitude", 0.0),
             "heaveMagnitude": procedure.get("heaveMagnitude", 0.03),
             "rollMagnitude": procedure.get("rollMagnitude", 0.035),
             "forceMagnitude": procedure.get("forceMagnitude", 1000.0),
+            "_stopTime": procedure.get(
+                "stopTime",
+                simulation.get("stop_time", FOUR_POST_STOP_TIME_S),
+            ),
         }
 
     def build_setup(self, summary: dict[str, Any], series: dict[str, np.ndarray]) -> dict[str, Any]:
@@ -541,24 +553,17 @@ class FourPostEvalSim:
                 return float("nan")
             return float(np.nanmean(arr))
 
-        # FourPost uses a 5 s pose cadence with a short load pulse and a dead tail.
-        pose_step_s = 5.0
-        heave_pose_start_s = 2.0
-        heave_pose_count = 10
-        roll_pose_start_s = 58.0
-        roll_pose_count = 11
-
         def pose_sample_times(start_s: float, count: int) -> list[float]:
             # Sample inside the dead region after the load pulse, before the next pose change.
-            return [start_s + pose_step_s * i + 4.0 for i in range(count)]
+            return [start_s + FOUR_POST_POSE_STEP_S * i + 4.0 for i in range(count)]
 
         def jack_times(start_s: float, count: int) -> list[float]:
-            return [start_s + pose_step_s * i + 1.5 for i in range(count)]
+            return [start_s + FOUR_POST_POSE_STEP_S * i + 1.5 for i in range(count)]
 
-        heave_sample_times = pose_sample_times(heave_pose_start_s, heave_pose_count)
-        roll_sample_times = pose_sample_times(roll_pose_start_s, roll_pose_count)
-        heave_jack_times = jack_times(heave_pose_start_s, heave_pose_count)
-        roll_jack_times = jack_times(roll_pose_start_s, roll_pose_count)
+        heave_sample_times = pose_sample_times(FOUR_POST_HEAVE_START_S, FOUR_POST_HEAVE_POSE_COUNT)
+        roll_sample_times = pose_sample_times(FOUR_POST_ROLL_START_S, FOUR_POST_ROLL_POSE_COUNT)
+        heave_jack_times = jack_times(FOUR_POST_HEAVE_START_S, FOUR_POST_HEAVE_POSE_COUNT)
+        roll_jack_times = jack_times(FOUR_POST_ROLL_START_S, FOUR_POST_ROLL_POSE_COUNT)
 
         signals = {
             "camber": "Gamma",

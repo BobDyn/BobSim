@@ -1,4 +1,8 @@
 IN_CONTAINER := $(shell if [ -f /.dockerenv ]; then printf 1; fi)
+PYTHON ?= python
+QUALITY_DIRS := _0_Utils _1_VisualSim _2_EnvelopeSim _3_StandardSim _4_OptSim tests
+TYPECHECK_DIRS := _0_Utils _1_VisualSim _3_StandardSim tests
+BOBLIB_PATH := _0_Utils/external/BobLib
 
 ifeq ($(IN_CONTAINER),1)
 RUN_BOBSIM :=
@@ -20,12 +24,14 @@ SHELL_STANDARD_CMD := $(COMPOSE) run --rm standard bash
 endif
 
 VEHICLE_YAML_SRC := vehicle.yml
-VEHICLE_YAML_DST := _0_Utils/external/BobLib/Generation/vehicle.yml
-VEHICLE_SIM_MODEL := _0_Utils/external/BobLib/BobLib/Standards/VehicleSim.mo
+VEHICLE_YAML_DST := $(BOBLIB_PATH)/Generation/vehicle.yml
+VEHICLE_SIM_MODEL := $(BOBLIB_PATH)/BobLib/Standards/VehicleSim.mo
 VEHICLE_SIM_EXE := _3_StandardSim/Build/VehicleSim/BobLib.Standards.VehicleSim
 FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/BobLib.Standards.FourPostSim
 
-.PHONY: init setup rebuild \
+.DEFAULT_GOAL := help
+
+.PHONY: help init setup rebuild lint typecheck test ci \
 	shell shell-bobsim shell-doe shell-standard \
 	sim-doe sim-standard-sensitivities sim-envelope-sensitivities sim-envelope-all sim-refined-response-surfaces \
 	sim-steady-state sim-transient sim-four-post \
@@ -34,6 +40,22 @@ FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/BobLib.Standards.FourPostS
 	steady-state-eval transient-eval four-post-eval \
 	ggv-envelope ymd-envelope \
 	clean-doe clean-envelope clean-standard clean-build clean-results clean
+
+help:
+	@printf '%s\n' \
+		'BobSim development targets:' \
+		'  make init                  Initialize submodules' \
+		'  make setup                 Build the Docker development image' \
+		'  make lint                  Run ruff on BobSim source and tests' \
+		'  make typecheck             Run the release mypy gate' \
+		'  make test                  Run BobSim pytest checks' \
+		'  make ci                    Run lint, typecheck, and tests' \
+		'  make build-standard        Build BobLib.Standards.VehicleSim' \
+		'  make build-four-post       Build BobLib.Standards.FourPostSim' \
+		'  make sim-steady-state      Build if needed and run SteadyStateEval' \
+		'  make sim-transient         Build if needed and run TransientEval' \
+		'  make sim-four-post         Build if needed and run FourPostEval' \
+		'  make clean                 Remove local Python/tool caches'
 
 # Setup
 
@@ -45,6 +67,20 @@ setup:
 
 rebuild:
 	$(REBUILD_CMD)
+
+lint:
+	$(RUN_BOBSIM) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
+
+typecheck:
+	$(RUN_BOBSIM) $(PYTHON) -m mypy $(TYPECHECK_DIRS) \
+		--ignore-missing-imports \
+		--no-strict-optional \
+		--exclude '(^|/)$(BOBLIB_PATH)/'
+
+test:
+	$(RUN_BOBSIM) $(PYTHON) -m pytest tests
+
+ci: lint typecheck test
 
 # Shells
 
