@@ -1,270 +1,195 @@
-IN_CONTAINER := $(shell if [ -f /.dockerenv ]; then printf 1; fi)
 PYTHON ?= python
+
 QUALITY_DIRS := _0_Utils _1_VisualSim _2_EnvelopeSim _3_StandardSim _4_OptSim tests
 TYPECHECK_DIRS := _0_Utils _1_VisualSim _3_StandardSim tests
 BOBLIB_PATH := _0_Utils/external/BobLib
 
-ifeq ($(IN_CONTAINER),1)
-RUN_BOBSIM :=
-RUN_DOE := cd /workspace/_4_OptSim &&
-SETUP_CMD := @echo "Already inside the bobsim container; run 'make setup' on the host to build the image."
-REBUILD_CMD := @echo "Already inside the bobsim container; run 'make rebuild' on the host to rebuild the image."
-SHELL_BOBSIM_CMD := bash
-SHELL_DOE_CMD := cd /workspace/_4_OptSim && bash
-SHELL_STANDARD_CMD := cd /workspace/_3_StandardSim && bash
-else
-COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then printf "docker-compose"; else printf "docker compose"; fi)
-RUN_BOBSIM := $(COMPOSE) run --rm -T bobsim
-RUN_DOE := $(COMPOSE) run --rm -T doe
-SETUP_CMD := $(COMPOSE) build
-REBUILD_CMD := $(COMPOSE) build --no-cache
-SHELL_BOBSIM_CMD := $(COMPOSE) run --rm bobsim bash
-SHELL_DOE_CMD := $(COMPOSE) run --rm doe bash
-SHELL_STANDARD_CMD := $(COMPOSE) run --rm standard bash
-endif
-
 VEHICLE_YAML_SRC := vehicle.yml
 VEHICLE_YAML_DST := $(BOBLIB_PATH)/Generation/vehicle.yml
 VEHICLE_SIM_MODEL := $(BOBLIB_PATH)/BobLib/Standards/VehicleSim.mo
+FOUR_POST_SIM_MODEL := $(BOBLIB_PATH)/BobLib/Standards/FourPostSim.mo
 VEHICLE_SIM_EXE := _3_StandardSim/Build/VehicleSim/BobLib.Standards.VehicleSim
 FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/BobLib.Standards.FourPostSim
 
+BUILD_VEHICLE_SCRIPT := $(BOBLIB_PATH)/Generation/scripts/build_vehicle_sim.py
+BUILD_FOUR_POST_SCRIPT := $(BOBLIB_PATH)/Generation/scripts/build_four_post_sim.py
+BUILD_VEHICLE_MOS := _3_StandardSim/build_vehicle_sim.mos
+BUILD_FOUR_POST_MOS := _3_StandardSim/build_four_post_sim.mos
+
+IN_CONTAINER := $(shell if [ -f /.dockerenv ]; then printf 1; fi)
+
+ifeq ($(IN_CONTAINER),1)
+RUN :=
+DOCKER_BUILD_CMD := @echo "Already inside the BobSim container."
+DOCKER_REBUILD_CMD := @echo "Already inside the BobSim container."
+SHELL_BOBSIM_CMD := bash
+SHELL_STANDARD_CMD := cd _3_StandardSim && bash
+SHELL_ENVELOPE_CMD := cd _2_EnvelopeSim && bash
+SHELL_OPT_CMD := cd _4_OptSim && bash
+else
+COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then printf "docker-compose"; else printf "docker compose"; fi)
+RUN := $(COMPOSE) run --rm -T bobsim
+DOCKER_BUILD_CMD := $(COMPOSE) build
+DOCKER_REBUILD_CMD := $(COMPOSE) build --no-cache
+SHELL_BOBSIM_CMD := $(COMPOSE) run --rm bobsim bash
+SHELL_STANDARD_CMD := $(COMPOSE) run --rm standard bash
+SHELL_ENVELOPE_CMD := $(COMPOSE) run --rm envelope bash
+SHELL_OPT_CMD := $(COMPOSE) run --rm opt bash
+endif
+
+WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
+
 .DEFAULT_GOAL := help
 
-.PHONY: help init setup rebuild lint typecheck test ci \
-	shell shell-bobsim shell-doe shell-standard \
-	sim-doe sim-standard-sensitivities sim-envelope-sensitivities sim-envelope-all sim-refined-response-surfaces \
-	sim-steady-state sim-transient sim-four-post \
-	sync-vehicle-yaml build-records build-axle-models \
-	build-vehicle-sim build-standard build-four-post-sim build-four-post \
-	steady-state-eval transient-eval four-post-eval \
-	ggv-envelope ymd-envelope \
-	clean-doe clean-envelope clean-standard clean-build clean-results clean
+.PHONY: help init docker-build docker-rebuild \
+	lint typecheck test ci \
+	shell shell-bobsim shell-standard shell-envelope shell-opt \
+	sync-vehicle standard-build standard-build-four-post \
+	standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all \
+	envelope-ggv envelope-ymd envelope-all \
+	opt-standard opt-envelope opt-refined \
+	clean clean-standard clean-envelope clean-opt clean-all
 
 help:
 	@printf '%s\n' \
-		'BobSim development targets:' \
-		'  make init                  Initialize submodules' \
-		'  make setup                 Build the Docker development image' \
-		'  make lint                  Run ruff on BobSim source and tests' \
-		'  make typecheck             Run the release mypy gate' \
-		'  make test                  Run BobSim pytest checks' \
-		'  make ci                    Run lint, typecheck, and tests' \
-		'  make build-standard        Build BobLib.Standards.VehicleSim' \
-		'  make build-four-post       Build BobLib.Standards.FourPostSim' \
-		'  make sim-steady-state      Build if needed and run SteadyStateEval' \
-		'  make sim-transient         Build if needed and run TransientEval' \
-		'  make sim-four-post         Build if needed and run FourPostEval' \
-		'  make clean                 Remove local Python/tool caches'
-
-# Setup
+		'BobSim targets:' \
+		'' \
+		'  init                      Initialize submodules' \
+		'  docker-build              Build the Docker development image' \
+		'  docker-rebuild            Rebuild the Docker image from scratch' \
+		'' \
+		'  shell                     Open the main BobSim shell' \
+		'  shell-standard            Open a StandardSim shell' \
+		'  shell-envelope            Open an EnvelopeSim shell' \
+		'  shell-opt                 Open an OptSim shell' \
+		'' \
+		'  standard-build            Build BobLib.Standards.VehicleSim' \
+		'  standard-build-four-post  Build BobLib.Standards.FourPostSim' \
+		'' \
+		'  standard-eval-steady-state Run SteadyStateEval' \
+		'  standard-eval-transient    Run TransientEval' \
+		'  standard-eval-four-post    Run FourPostEval' \
+		'  standard-eval-all          Run all standard evaluations' \
+		'' \
+		'  envelope-ggv              Generate the GGV envelope' \
+		'  envelope-ymd              Generate the YMD envelope' \
+		'  envelope-all              Generate all envelope outputs' \
+		'' \
+		'  opt-standard              Run StandardSens pre-screen sensitivities' \
+		'  opt-envelope              Run EnvelopeSens sensitivities' \
+		'  opt-refined               Run StandardSens refined response surfaces' \
+		'' \
+		'  ci                        Run lint, typecheck, and tests' \
+		'  clean-all                 Remove caches and generated workflow artifacts'
 
 init:
 	git submodule update --init --recursive
 
-setup:
-	$(SETUP_CMD)
+docker-build:
+	$(DOCKER_BUILD_CMD)
 
-rebuild:
-	$(REBUILD_CMD)
+docker-rebuild:
+	$(DOCKER_REBUILD_CMD)
 
 lint:
-	$(RUN_BOBSIM) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
+	$(RUN) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
 
 typecheck:
-	$(RUN_BOBSIM) $(PYTHON) -m mypy $(TYPECHECK_DIRS) \
+	$(RUN) $(PYTHON) -m mypy $(TYPECHECK_DIRS) \
 		--ignore-missing-imports \
 		--no-strict-optional \
 		--exclude '(^|/)$(BOBLIB_PATH)/'
 
 test:
-	$(RUN_BOBSIM) $(PYTHON) -m pytest tests
+	$(RUN) $(PYTHON) -m pytest tests
 
 ci: lint typecheck test
-
-# Shells
 
 shell: shell-bobsim
 
 shell-bobsim:
 	$(SHELL_BOBSIM_CMD)
 
-shell-doe:
-	$(SHELL_DOE_CMD)
-
 shell-standard:
 	$(SHELL_STANDARD_CMD)
 
-# DOE / sensitivity runs
+shell-envelope:
+	$(SHELL_ENVELOPE_CMD)
 
-sim-doe:
-	$(RUN_DOE) python -m StandardSens.pre_screen_sensitivities
+shell-opt:
+	$(SHELL_OPT_CMD)
 
-sim-standard-sensitivities:
-	$(RUN_DOE) python -m StandardSens.pre_screen_sensitivities
+$(VEHICLE_YAML_DST): $(VEHICLE_YAML_SRC)
+	@mkdir -p $(dir $@)
+	cp "$<" "$@"
 
-sim-envelope-sensitivities:
-	$(RUN_DOE) python -m EnvelopeSens.sensitivities
+sync-vehicle: $(VEHICLE_YAML_DST)
 
-sim-envelope-all:
-	$(MAKE) sim-four-post
-	$(MAKE) ggv-envelope
-	$(MAKE) ymd-envelope
-	$(MAKE) sim-envelope-sensitivities
+$(VEHICLE_SIM_EXE): $(VEHICLE_YAML_DST) $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_SCRIPT) $(BUILD_VEHICLE_MOS)
+	$(RUN) bash -lc '$(PYTHON) $(BUILD_VEHICLE_SCRIPT) && omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
 
-sim-refined-response-surfaces:
-	$(RUN_DOE) python -m StandardSens.refined_response_surfaces
+$(FOUR_POST_SIM_EXE): $(VEHICLE_YAML_DST) $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_SCRIPT) $(BUILD_FOUR_POST_MOS)
+	$(RUN) bash -lc '$(PYTHON) $(BUILD_FOUR_POST_SCRIPT) && omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
 
-# Standard simulations
-# Build is skipped by sim targets if the executable already exists.
-# Run make clean-standard to force a rebuild.
+standard-build: $(VEHICLE_SIM_EXE)
 
-sim-steady-state: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		if [ ! -f $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_SIM_MODEL) -nt $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_YAML_SRC) -nt $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_YAML_DST) -nt $(VEHICLE_SIM_EXE) ]; then \
-			python _0_Utils/external/BobLib/Generation/scripts/build_vehicle_sim.py && \
-			omc /workspace/_3_StandardSim/build_vehicle_sim.mos && \
-			[ -f $(VEHICLE_SIM_EXE) ] || \
-				{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }; \
-		fi && \
-		python -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim"
+standard-build-four-post: $(FOUR_POST_SIM_EXE)
 
-sim-transient: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		if [ ! -f $(VEHICLE_SIM_EXE) ]; then \
-			python _0_Utils/external/BobLib/Generation/scripts/build_vehicle_sim.py && \
-			omc /workspace/_3_StandardSim/build_vehicle_sim.mos && \
-			[ -f $(VEHICLE_SIM_EXE) ] || \
-				{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }; \
-		fi && \
-		python -m _3_StandardSim.TransientEval.transient_eval_sim"
+standard-eval-steady-state: standard-build
+	$(RUN) $(PYTHON) -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
 
-sim-four-post: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		if [ ! -f $(FOUR_POST_SIM_EXE) ]; then \
-			python _0_Utils/external/BobLib/Generation/scripts/build_four_post_sim.py && \
-			omc /workspace/_3_StandardSim/build_four_post_sim.mos && \
-			[ -f $(FOUR_POST_SIM_EXE) ] || \
-				{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }; \
-		fi && \
-		python -m _3_StandardSim.FourPostEval.four_post_eval_sim"
+standard-eval-transient: standard-build
+	$(RUN) $(PYTHON) -m _3_StandardSim.TransientEval.transient_eval_sim
 
-# Generated Modelica builds
+standard-eval-four-post: standard-build-four-post
+	$(RUN) $(PYTHON) -m _3_StandardSim.FourPostEval.four_post_eval_sim
 
-sync-vehicle-yaml:
-	@mkdir -p $(dir $(VEHICLE_YAML_DST))
-	@if ! cmp -s "$(VEHICLE_YAML_SRC)" "$(VEHICLE_YAML_DST)"; then \
-		cp "$(VEHICLE_YAML_SRC)" "$(VEHICLE_YAML_DST)"; \
-	fi
+standard-eval-all: standard-eval-steady-state standard-eval-transient standard-eval-four-post
 
-build-records: sync-vehicle-yaml
-	$(RUN_BOBSIM) python _0_Utils/external/BobLib/Generation/scripts/build_records.py
+envelope-ggv:
+	$(RUN) $(PYTHON) -m _2_EnvelopeSim.GGV.ggv_generation
 
-build-axle-models: sync-vehicle-yaml
-	$(RUN_BOBSIM) python _0_Utils/external/BobLib/Generation/scripts/build_axle_models.py
+envelope-ymd:
+	$(RUN) $(PYTHON) -m _2_EnvelopeSim.YMD.ymd_generation
 
-build-vehicle-sim: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		python _0_Utils/external/BobLib/Generation/scripts/build_vehicle_sim.py && \
-		omc /workspace/_3_StandardSim/build_vehicle_sim.mos && \
-		[ -f $(VEHICLE_SIM_EXE) ] || \
-			{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }"
+envelope-all: envelope-ggv envelope-ymd
 
-build-standard: build-vehicle-sim
+opt-standard:
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.pre_screen_sensitivities
 
-build-four-post-sim: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		python _0_Utils/external/BobLib/Generation/scripts/build_four_post_sim.py && \
-		omc /workspace/_3_StandardSim/build_four_post_sim.mos && \
-		[ -f $(FOUR_POST_SIM_EXE) ] || \
-			{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }"
+opt-envelope:
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m EnvelopeSens.sensitivities
 
-build-four-post: build-four-post-sim
-
-# Evaluation-only entry points
-
-steady-state-eval: sync-vehicle-yaml
-	$(RUN_BOBSIM) bash -c "\
-		if [ ! -f $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_SIM_MODEL) -nt $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_YAML_SRC) -nt $(VEHICLE_SIM_EXE) ] || \
-		   [ $(VEHICLE_YAML_DST) -nt $(VEHICLE_SIM_EXE) ]; then \
-			python _0_Utils/external/BobLib/Generation/scripts/build_vehicle_sim.py && \
-			omc /workspace/_3_StandardSim/build_vehicle_sim.mos && \
-			[ -f $(VEHICLE_SIM_EXE) ] || \
-				{ echo 'ERROR: OMC build failed - executable not produced'; exit 1; }; \
-		fi && \
-		python -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim"
-
-transient-eval:
-	$(RUN_BOBSIM) python -m _3_StandardSim.TransientEval.transient_eval_sim
-
-four-post-eval:
-	$(RUN_BOBSIM) python -m _3_StandardSim.FourPostEval.four_post_eval_sim
-
-ggv-envelope:
-	$(RUN_BOBSIM) python -m _2_EnvelopeSim.GGV.ggv_generation
-
-ymd-envelope:
-	$(RUN_BOBSIM) python -m _2_EnvelopeSim.YMD.ymd_generation
-
-# Clean
-# compile_error_*.log files are preserved for debugging.
-
-clean-doe:
-	$(RUN_BOBSIM) bash -c '\
-		for path in \
-			/workspace/_4_OptSim/Build \
-			/workspace/_4_OptSim/StandardSens/results \
-			/workspace/_4_OptSim/EnvelopeSens/results \
-			/workspace/_4_OptSim/population \
-			/workspace/_4_OptSim/population_refined \
-			/workspace/_4_OptSim/results; do \
-			if [ -d "$$path" ]; then \
-				find "$$path" -mindepth 1 ! -name ".gitkeep" -delete; \
-			fi; \
-		done; \
-		echo "DOE artifacts cleaned"'
-
-clean-envelope:
-	$(RUN_BOBSIM) bash -c '\
-		for path in /workspace/_2_EnvelopeSim/results /workspace/_2_EnvelopeSim/Build; do \
-			if [ -d "$$path" ]; then \
-				find "$$path" -mindepth 1 ! -name ".gitkeep" -delete; \
-			fi; \
-		done; \
-		echo "EnvelopeSim artifacts cleaned"'
-
-clean-standard:
-	$(RUN_BOBSIM) bash -c '\
-		for path in /workspace/_3_StandardSim/Build /workspace/_3_StandardSim/results; do \
-			if [ -d "$$path" ]; then \
-				find "$$path" -mindepth 1 ! -name ".gitkeep" -delete; \
-			fi; \
-		done; \
-		echo "StandardSim artifacts cleaned"'
-
-clean-build:
-	$(RUN_BOBSIM) bash -c '\
-		find /workspace/_3_StandardSim -type d -name Build -exec find {} -mindepth 1 -delete \;; \
-		echo "Build artifacts cleaned"'
-
-clean-results:
-	$(RUN_BOBSIM) bash -c '\
-		find /workspace/_2_EnvelopeSim -type d -name results -exec find {} -mindepth 1 -delete \;; \
-		find /workspace/_2_EnvelopeSim -type d -name Build -exec find {} -mindepth 1 -delete \;; \
-		find /workspace/_3_StandardSim -type d -name results -exec find {} -mindepth 1 -delete \;; \
-		echo "Result artifacts cleaned"'
+opt-refined:
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.refined_response_surfaces
 
 clean:
-	$(RUN_BOBSIM) bash -c "\
-		find /workspace -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null; \
-		find /workspace -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete 2>/dev/null; \
-		rm -rf /workspace/.pytest_cache /workspace/.mypy_cache /workspace/.ruff_cache; \
-		rm -rf /workspace/.coverage /workspace/htmlcov; \
-		rm -rf /workspace/build /workspace/dist; \
-		find /workspace -maxdepth 2 -name '*.egg-info' -exec rm -rf {} + 2>/dev/null; \
-		echo 'Clean complete'"
+	$(RUN) bash -lc "find $(WORKSPACE) -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null; \
+		find $(WORKSPACE) -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete 2>/dev/null; \
+		rm -rf $(WORKSPACE)/.pytest_cache $(WORKSPACE)/.mypy_cache $(WORKSPACE)/.ruff_cache; \
+		rm -rf $(WORKSPACE)/.coverage $(WORKSPACE)/htmlcov $(WORKSPACE)/build $(WORKSPACE)/dist; \
+		find $(WORKSPACE) -maxdepth 2 -name '*.egg-info' -exec rm -rf {} + 2>/dev/null; \
+		echo 'Python/tool caches cleaned'"
+
+clean-standard:
+	$(RUN) bash -lc "for path in $(WORKSPACE)/_3_StandardSim/Build $(WORKSPACE)/_3_StandardSim/results; do \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		done; echo 'StandardSim artifacts cleaned'"
+
+clean-envelope:
+	$(RUN) bash -lc "for path in $(WORKSPACE)/_2_EnvelopeSim/Build $(WORKSPACE)/_2_EnvelopeSim/results; do \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		done; echo 'EnvelopeSim artifacts cleaned'"
+
+clean-opt:
+	$(RUN) bash -lc "for path in \
+		$(WORKSPACE)/_4_OptSim/Build \
+		$(WORKSPACE)/_4_OptSim/StandardSens/results \
+		$(WORKSPACE)/_4_OptSim/EnvelopeSens/results \
+		$(WORKSPACE)/_4_OptSim/population \
+		$(WORKSPACE)/_4_OptSim/population_refined \
+		$(WORKSPACE)/_4_OptSim/results; do \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		done; echo 'OptSim artifacts cleaned'"
+
+clean-all: clean clean-standard clean-envelope clean-opt

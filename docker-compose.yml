@@ -13,10 +13,14 @@ services:
     stdin_open: true
     tty: true
 
-  doe:
-    <<: *bobsim-base
-    working_dir: /workspace/_4_OptSim
-
   standard:
     <<: *bobsim-base
     working_dir: /workspace/_3_StandardSim
+
+  envelope:
+    <<: *bobsim-base
+    working_dir: /workspace/_2_EnvelopeSim
+
+  opt:
+    <<: *bobsim-base
+    working_dir: /workspace/_4_OptSim

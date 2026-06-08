@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import pytest
@@ -60,6 +61,51 @@ def test_application_specific_artifacts_are_not_in_bobsim() -> None:
 def test_boblib_submodule_is_available_for_bobsim_development() -> None:
     package_mo = ROOT / "_0_Utils/external/BobLib/BobLib/package.mo"
     assert package_mo.is_file()
+
+
+def test_make_help_uses_intentional_target_language() -> None:
+    completed = subprocess.run(
+        ["make", "help"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    help_text = completed.stdout
+    help_lines = {line.strip().split(maxsplit=1)[0] for line in help_text.splitlines() if line.strip()}
+
+    for target in (
+        "docker-build",
+        "shell-standard",
+        "standard-build",
+        "standard-eval-steady-state",
+        "envelope-ggv",
+        "opt-standard",
+        "clean-all",
+    ):
+        assert target in help_text
+
+    for stale_target in (
+        "sim-steady-state",
+        "clean-doe",
+        "ggv-envelope",
+        "build-standard",
+        "eval-steady-state",
+        "standard-steady-state",
+    ):
+        assert stale_target not in help_lines
+
+
+def test_compose_services_match_workflow_language() -> None:
+    compose = _load_yaml(Path("docker-compose.yml"))
+    services = compose.get("services")
+
+    assert isinstance(services, dict)
+    assert set(services) == {"bobsim", "standard", "envelope", "opt"}
+    assert services["bobsim"]["working_dir"] == "/workspace"
+    assert services["standard"]["working_dir"] == "/workspace/_3_StandardSim"
+    assert services["envelope"]["working_dir"] == "/workspace/_2_EnvelopeSim"
+    assert services["opt"]["working_dir"] == "/workspace/_4_OptSim"
 
 
 def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:

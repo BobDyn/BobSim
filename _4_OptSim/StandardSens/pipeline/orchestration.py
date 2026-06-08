@@ -57,7 +57,7 @@ def prepare_variants(
             f"\nPopulation mismatch: {existing} variants on disk, "
             f"{len(variants)} in config.\n"
             "DOE sampling is not incrementally extensible.\n"
-            "Run 'make clean-doe' then rerun.\n"
+            "Run 'make clean-opt' then rerun.\n"
         )
 
     generate_variants(DOE_CONFIG, variants, population_dir)

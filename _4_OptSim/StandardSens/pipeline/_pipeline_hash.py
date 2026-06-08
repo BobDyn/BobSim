@@ -125,7 +125,7 @@ def check_pipeline_hash(
         raise RuntimeError(
             "\nPipeline inputs have changed since last compilation.\n"
             "Compiled artifacts are stale and cannot be reused.\n"
-            "Run 'make clean-doe' then rerun the pipeline.\n\n"
+            "Run 'make clean-opt' then rerun the pipeline.\n\n"
             "Changes detected in one or more of:\n"
             "  - StandardSens/configs/_doe_config.yaml\n"
             "  - StandardSens/configs/vehicle_architecture.yaml\n"
