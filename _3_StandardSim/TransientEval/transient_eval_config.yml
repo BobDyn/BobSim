@@ -2,8 +2,8 @@ standard: TransientEval
 
 simulation:
   backend: modelica
-  build_dir: _3_StandardSim/Build/VehicleSim
-  exec_name: BobLibVehicleInterfaces.Experiments.Standards.VehicleSim
+  build_dir: _3_StandardSim/BuildBobLib/VehicleSim
+  exec_name: BobLib.Experiments.Standards.VehicleSim
   
   start_time: 0.0
   solver: dassl

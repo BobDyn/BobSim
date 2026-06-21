@@ -23,10 +23,12 @@ is healthy.
 - `_3_StandardSim/`: standard vehicle studies: RampSteerEval, SteadyStateEval,
   TransientEval, and FourPostEval.
 - `_4_OptSim/`: sensitivity and response-surface workflows.
+- `_5_App/`: local browser app for configuring setups, launching workflows, and
+  inspecting generated reports, metrics, configs, and job logs.
 - `tests/`: release-polish and workflow regression checks.
 - `vehicle.yml`: active vehicle data used by BobSim projection, reporting, and
   sensitivity workflows. The Modelica standard entry points now use checked-in
-  `BobLibVehicleInterfaces` records.
+  `BobLib` records.
 
 ## Quick Start
 
@@ -50,6 +52,14 @@ make help
 
 The Docker image is based on OpenModelica and installs the Python dependencies
 from `requirements.txt`.
+
+Start the local browser app:
+
+```bash
+make app
+```
+
+Then open `http://127.0.0.1:8765`.
 
 ## Release Checks
 

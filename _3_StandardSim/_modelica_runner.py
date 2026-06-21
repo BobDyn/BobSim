@@ -49,10 +49,10 @@ class ModelicaRunner:
         sim_cfg = config.get("simulation", {})
 
         return cls(
-            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/Build/VehicleSim"),
+            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/BuildBobLib/VehicleSim"),
             exec_name=sim_cfg.get(
                 "exec_name",
-                "BobLibVehicleInterfaces.Experiments.Standards.VehicleSim",
+                "BobLib.Experiments.Standards.VehicleSim",
             ),
             simulation=sim_cfg,
         )

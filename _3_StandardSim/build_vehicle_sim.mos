@@ -2,8 +2,8 @@
 clear();
 
 root := OpenModelica.Scripting.cd();
-boblibDir := root + "/_0_Utils/external/BobLib/BobLibVehicleInterfaces";
-buildDir := root + "/_3_StandardSim/Build/VehicleSim";
+boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
+buildDir := root + "/_3_StandardSim/BuildBobLib/VehicleSim";
 
 // Generate C simulation code
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
@@ -25,7 +25,7 @@ OpenModelica.Scripting.setCommandLineOptions("--generateDynamicJacobian=none");
 loadModel(Modelica, {"4.1.0"});
 loadModel(VehicleInterfaces, {"2.0.2"});
 
-// Load BobLibVehicleInterfaces.
+// Load BobLib.
 loadFile(boblibDir + "/package.mo");
 
 system("mkdir -p " + buildDir);
@@ -35,7 +35,7 @@ cd(buildDir);
 
 // Build executable directly.
 res := buildModel(
-  BobLibVehicleInterfaces.Experiments.Standards.VehicleSim,
+  BobLib.Experiments.Standards.VehicleSim,
   startTime = 0,
   stopTime = 10,
   tolerance = 1e-6,

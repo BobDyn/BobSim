@@ -55,7 +55,7 @@ def _record_binding_present(boblib_root: Path, source_path: Path, record_name: s
     record_stem = record_name.removesuffix("Record")
 
     patterns = (
-        rf"BobLibVehicleInterfaces\.Records\.VehicleDefn\.{re.escape(record_name)}\b",
+        rf"BobLib\.Records\.VehicleDefn\.{re.escape(record_name)}\b",
         rf"\b{re.escape(record_stem)}\b",
     )
     if any(re.search(pattern, text) for pattern in patterns):
@@ -69,7 +69,7 @@ def _record_binding_present(boblib_root: Path, source_path: Path, record_name: s
         if mo_path == source_path:
             continue
         source = mo_path.read_text(encoding="utf-8")
-        if f"BobLibVehicleInterfaces.Records.VehicleDefn.{record_name}" in source:
+        if f"BobLib.Records.VehicleDefn.{record_name}" in source:
             return True
 
     return False

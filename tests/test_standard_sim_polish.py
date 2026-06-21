@@ -18,8 +18,8 @@ from _3_StandardSim.TransientEval.transient_eval_sim import TransientEvalSim
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VEHICLE_ENTRYPOINT = "BobLibVehicleInterfaces.Experiments.Standards.VehicleSim"
-FOUR_POST_ENTRYPOINT = "BobLibVehicleInterfaces.Experiments.Standards.FourPostSim"
+VEHICLE_ENTRYPOINT = "BobLib.Experiments.Standards.VehicleSim"
+FOUR_POST_ENTRYPOINT = "BobLib.Experiments.Standards.FourPostSim"
 STANDARD_CONFIGS = (
     Path("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"),
     Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"),
@@ -47,7 +47,7 @@ def test_standard_sim_configs_use_internal_numerical_jacobian() -> None:
         assert "-jacobian=internalNumerical" in simulation.get("extra_args", []), rel_path
 
 
-def test_standard_sim_configs_use_boblibvehicleinterfaces_entrypoints() -> None:
+def test_standard_sim_configs_use_boblib_entrypoints() -> None:
     for rel_path, exec_name in STANDARD_ENTRYPOINTS.items():
         simulation = _load_yaml(rel_path)["simulation"]
         assert simulation.get("exec_name") == exec_name, rel_path
@@ -74,6 +74,7 @@ def test_bobsim_sources_do_not_reference_legacy_boblib_generation_layout() -> No
     resources = "Resources"
     vehicle_defn = "VehicleDefn"
     forbidden = (
+        "BobLib" + "VehicleInterfaces",
         f"{legacy}.Standards",
         f"{legacy}/Standards",
         f"{legacy}/Generation",
@@ -117,7 +118,7 @@ def test_application_specific_artifacts_are_not_in_bobsim() -> None:
 
 
 def test_boblib_submodule_is_available_for_bobsim_development() -> None:
-    package_mo = ROOT / "_0_Utils/external/BobLib/BobLibVehicleInterfaces/package.mo"
+    package_mo = ROOT / "_0_Utils/external/BobLib/BobLib/package.mo"
     assert package_mo.is_file()
 
 
@@ -133,6 +134,7 @@ def test_make_help_uses_intentional_target_language() -> None:
     help_lines = {line.strip().split(maxsplit=1)[0] for line in help_text.splitlines() if line.strip()}
 
     for target in (
+        "app",
         "docker-build",
         "shell-standard",
         "standard-build",

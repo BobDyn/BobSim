@@ -55,6 +55,7 @@ _2_EnvelopeSim/results/**
 !_2_EnvelopeSim/results/
 !_2_EnvelopeSim/results/.gitkeep
 _3_StandardSim/Build/
+_3_StandardSim/BuildBobLib/
 _3_StandardSim/results/**
 !_3_StandardSim/results/
 !_3_StandardSim/results/.gitkeep

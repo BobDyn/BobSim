@@ -3,7 +3,7 @@ architecture:
   vehicle: EVBatInvMotDiff_DWBCStabar_DWBCStabar
   record: EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord
   source: configs/vehicle_architecture.yaml
-baseline_mo: ../../../_0_Utils/external/BobLib/BobLibVehicleInterfaces/Records/VehicleDefn/EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord.mo
+baseline_mo: ../../../_0_Utils/external/BobLib/BobLib/Records/VehicleDefn/EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord.mo
 variables:
 - path: sprung_mass.mass_kg
   range:

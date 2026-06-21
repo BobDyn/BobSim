@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BobSim App</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <img src="/media/bob.png" alt="BobDyn">
+          <div>
+            <h1>BobSim Workbench</h1>
+            <p id="repo-root"></p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span id="boblib-status" class="status-pill">BobLib</span>
+          <span id="build-status" class="status-pill">Builds</span>
+          <button id="theme-toggle-btn" class="ghost-button" type="button">Dark</button>
+          <button id="refresh-btn" class="ghost-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="rail">
+          <div class="rail-stack">
+            <button class="rail-item active" data-view="setup" type="button">Setup</button>
+            <button class="rail-item" data-view="standard" type="button">Standard Sim</button>
+          </div>
+          <div class="rail-actions">
+            <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
+            <button id="rail-secondary-btn" class="ghost-button" type="button">Enter Standard</button>
+          </div>
+        </aside>
+
+        <section id="setup-view" class="screen active">
+          <div class="screen-head">
+            <div>
+              <h2>Vehicle Model</h2>
+            </div>
+            <div class="vehicle-source">
+              <select id="vehicle-library-picker" class="config-picker"></select>
+              <button id="load-vehicle-btn" class="ghost-button" type="button">Load</button>
+              <button id="delete-vehicle-btn" class="ghost-button danger-button" type="button">Delete</button>
+              <label class="file-import compact-import">
+                <input id="vehicle-import-input" type="file" accept=".yml,.yaml">
+                <span>Import YAML</span>
+              </label>
+              <input id="save-vehicle-name" class="name-input" type="text" placeholder="Save as name">
+              <button id="save-vehicle-btn" class="run-button" type="button">Save As</button>
+            </div>
+          </div>
+
+          <div class="setup-workspace">
+            <aside class="editor-pane">
+              <div class="editor-head">
+                <h3 id="editor-title">Inputs</h3>
+                <div class="editor-tools">
+                  <button id="reference-toggle-btn" class="reference-button" type="button" title="Reference">?</button>
+                  <span id="save-status"></span>
+                </div>
+              </div>
+              <div id="parameter-tabs" class="parameter-tabs"></div>
+              <div id="workflow-guide" class="workflow-guide" hidden></div>
+              <form id="config-form" class="config-form"></form>
+              <details class="raw-block">
+                <summary>Raw vehicle YAML</summary>
+                <div class="raw-actions">
+                  <span id="config-path"></span>
+                  <button id="save-raw-btn" class="ghost-button" type="button">Save Raw</button>
+                </div>
+                <textarea id="config-text" class="code-view"></textarea>
+              </details>
+            </aside>
+
+            <section class="visual-stage">
+              <div class="preview-toolbar">
+                <div>
+                  <h3 id="vehicle-preview-title">Vehicle</h3>
+                  <p id="vehicle-preview-subtitle"></p>
+                </div>
+                <div class="preview-controls">
+                  <label class="range-control" for="rotation-sensitivity">
+                    <span>Rotation</span>
+                    <input id="rotation-sensitivity" type="range" min="0.25" max="1.75" step="0.05">
+                    <strong id="rotation-sensitivity-value">1x</strong>
+                  </label>
+                  <div class="view-buttons">
+                    <button class="view-button active" data-view="iso" type="button">Iso</button>
+                    <button class="view-button" data-view="side" type="button">Side</button>
+                    <button class="view-button" data-view="top" type="button">Top</button>
+                    <button id="reset-view-btn" class="view-button" type="button">Reset</button>
+                  </div>
+                </div>
+              </div>
+              <canvas id="vehicle-canvas"></canvas>
+            </section>
+          </div>
+        </section>
+
+        <section id="standard-view" class="screen">
+          <div class="screen-head">
+            <div>
+              <h2>Standard Sim</h2>
+              <p id="standard-context"></p>
+            </div>
+            <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
+          </div>
+
+          <div class="standard-workspace">
+            <section class="workflow-list">
+              <div id="workflow-grid" class="workflow-grid"></div>
+            </section>
+            <section class="sim-pane">
+              <div class="sim-tabs">
+                <button class="tab active" data-tab="outputs" type="button">Review</button>
+                <button class="tab" data-tab="jobs" type="button">Run Log</button>
+              </div>
+
+              <div id="outputs-panel" class="panel active">
+                <h3 id="selected-title">Outputs</h3>
+                <div id="output-list" class="output-list"></div>
+                <div id="preview" class="preview"></div>
+              </div>
+
+              <div id="jobs-panel" class="panel">
+                <div class="panel-heading">
+                  <h3>Jobs</h3>
+                  <button id="clear-log-btn" class="ghost-button" type="button">Clear View</button>
+                </div>
+                <div id="job-list" class="job-list"></div>
+                <pre id="job-log" class="log-view"></pre>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

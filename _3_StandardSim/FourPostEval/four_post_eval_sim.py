@@ -13,8 +13,8 @@ from _3_StandardSim._modelica_runner import ModelicaRunner
 
 
 DEFAULT_CONFIG_PATH = Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml")
-DEFAULT_BUILD_DIR = "_3_StandardSim/Build/FourPostSim"
-DEFAULT_EXEC_NAME = "BobLibVehicleInterfaces.Experiments.Standards.FourPostSim"
+DEFAULT_BUILD_DIR = "_3_StandardSim/BuildBobLib/FourPostSim"
+DEFAULT_EXEC_NAME = "BobLib.Experiments.Standards.FourPostSim"
 DEFAULT_METRICS_CSV_PATH = "_3_StandardSim/results/four_post_eval_report_metrics.csv"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_VEHICLE_YAML_CANDIDATES = (

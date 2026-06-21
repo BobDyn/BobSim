@@ -5,18 +5,22 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 import sys
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+
 from matplotlib.backends.backend_pdf import PdfPages
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from _0_Utils.external.BobLib.Generation.scripts.build_common import (  # noqa: E402
+from _0_Utils.vehicle_io import (  # noqa: E402
     load_yaml,
     parse_tir,
     repo_root,
@@ -50,13 +54,35 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("vehicle_review_config.yml")
 DEFAULT_RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "VehicleReview"
 DEFAULT_PDF_NAME = "vehicle_review_report.pdf"
 DEFAULT_METRICS_NAME = "vehicle_review_report_metrics.csv"
-STEADY_STATE_METRICS_PATH = repo_root() / "_3_StandardSim" / "results" / "steady_state_eval_report_metrics.csv"
-TRANSIENT_METRICS_PATH = repo_root() / "_3_StandardSim" / "results" / "transient_eval_report_metrics.csv"
+STEADY_STATE_METRICS_PATH = (
+    repo_root() / "_3_StandardSim" / "results" / "steady_state_eval_report_metrics.csv"
+)
+TRANSIENT_METRICS_PATH = (
+    repo_root() / "_3_StandardSim" / "results" / "transient_eval_report_metrics.csv"
+)
 FOUR_POST_METRICS_PATH = repo_root() / "_3_StandardSim" / "results" / "four_post_eval_report_metrics.csv"
-GGV_RESULTS_DIR = ggv_generation.DEFAULT_RESULTS_DIR
-YMD_RESULTS_DIR = ymd_generation.DEFAULT_RESULTS_DIR
-GGV_CSV_PATH = GGV_RESULTS_DIR / "ggv_first_principles.csv"
-YMD_CSV_PATH = YMD_RESULTS_DIR / "ymd_first_principles.csv"
+
+
+def _configured_ggv_csv_path() -> Path:
+    config = ggv_generation.load_ggv_config()
+    report = config.get("report") or {}
+    return ggv_generation.resolve_ggv_output_path(
+        ggv_generation.DEFAULT_GGV_CONFIG,
+        report.get("raw_output_path", "../Build/GGV/ggv_first_principles.csv"),
+    )
+
+
+def _configured_ymd_csv_path() -> Path:
+    config = ymd_generation.load_ymd_config()
+    report = config.get("report") or {}
+    return ymd_generation.resolve_ymd_output_path(
+        ymd_generation.DEFAULT_YMD_CONFIG,
+        report.get("raw_output_path", "../Build/YMD/ymd_first_principles.csv"),
+    )
+
+
+GGV_CSV_PATH = _configured_ggv_csv_path()
+YMD_CSV_PATH = _configured_ymd_csv_path()
 
 
 FloatArray = np.ndarray
@@ -693,7 +719,21 @@ def _summarize_ggv(ggv_path: Path, speeds: tuple[float, ...]) -> dict[str, Any]:
     }
 
 
-def _summarize_ymd(ymd_path: Path, config: ymd_generation.YMDConfig) -> dict[str, Any]:
+def _ymd_speed_bounds(config: dict[str, Any]) -> tuple[float, float]:
+    speed_sweep = config.get("speed_sweep") or {}
+    if isinstance(speed_sweep, dict) and speed_sweep.get("enabled", False):
+        raw_speeds = speed_sweep.get("speeds_mps", [])
+        if isinstance(raw_speeds, list) and raw_speeds:
+            speeds = [float(speed) for speed in raw_speeds]
+            return min(speeds), max(speeds)
+
+    generation = config.get("generation") or {}
+    speed = float(generation.get("speed_mps", ymd_generation.YMDConfig.speed))
+    return speed, speed
+
+
+def _summarize_ymd(ymd_path: Path, config: dict[str, Any]) -> dict[str, Any]:
+    speed_min_mps, speed_max_mps = _ymd_speed_bounds(config)
     if not ymd_path.exists():
         return {
             "available": False,
@@ -701,8 +741,8 @@ def _summarize_ymd(ymd_path: Path, config: ymd_generation.YMDConfig) -> dict[str
             "converged_fraction": float("nan"),
             "max_abs_ay_g": float("nan"),
             "max_abs_mz_nm": float("nan"),
-            "speed_min_mps": float(config.speed_sweep_start_mps),
-            "speed_max_mps": float(config.speed_sweep_stop_mps),
+            "speed_min_mps": speed_min_mps,
+            "speed_max_mps": speed_max_mps,
             "summary_sentence": "YMD not yet generated.",
         }
 
@@ -716,8 +756,8 @@ def _summarize_ymd(ymd_path: Path, config: ymd_generation.YMDConfig) -> dict[str
             "converged_fraction": float("nan"),
             "max_abs_ay_g": float("nan"),
             "max_abs_mz_nm": float("nan"),
-            "speed_min_mps": float(config.speed_sweep_start_mps),
-            "speed_max_mps": float(config.speed_sweep_stop_mps),
+            "speed_min_mps": speed_min_mps,
+            "speed_max_mps": speed_max_mps,
             "summary_sentence": "YMD CSV was empty.",
         }
 
@@ -732,8 +772,8 @@ def _summarize_ymd(ymd_path: Path, config: ymd_generation.YMDConfig) -> dict[str
         "converged_fraction": float(np.mean(converged)),
         "max_abs_ay_g": float(np.nanmax(np.abs(ay_g))),
         "max_abs_mz_nm": float(np.nanmax(np.abs(mz_nm))),
-        "speed_min_mps": float(config.speed_sweep_start_mps),
-        "speed_max_mps": float(config.speed_sweep_stop_mps),
+        "speed_min_mps": float(np.nanmin(speed_mps)),
+        "speed_max_mps": float(np.nanmax(speed_mps)),
         "speed_center_mps": float(np.nanmedian(speed_mps)),
         "summary_sentence": (
             f"{100.0 * float(np.mean(converged)):.1f}% converged at {float(np.nanmedian(speed_mps)):.1f} m/s"
@@ -1260,8 +1300,9 @@ def _build_review(config: dict[str, Any]) -> dict[str, Any]:
     steady_rows = _load_metric_rows(STEADY_STATE_METRICS_PATH)
     transient_rows = _load_metric_rows(TRANSIENT_METRICS_PATH)
 
-    ggv_config = ggv_generation.load_config()
-    ymd_config = ymd_generation.load_config()
+    ggv_report_config = ggv_generation.load_ggv_config()
+    ymd_report_config = ymd_generation.load_ymd_config()
+    ggv_config = ggv_generation.config_to_ggv_config(ggv_report_config)
 
     tire_template = tire_template_name(vehicle_data, require_side(vehicle_data, "front"))
     tire_template_path = tire_templates_root(vehicle_data) / f"{tire_template}.tir"
@@ -1357,11 +1398,11 @@ def _build_review(config: dict[str, Any]) -> dict[str, Any]:
     }
 
     powertrain = {
-        "drive_distribution_front": float(ggv_config.drive_distribution_front),
-        "brake_distribution_front": float(ggv_config.brake_distribution_front),
-        "max_drive_power_w": float(ggv_config.max_drive_power_w),
-        "max_drive_force_n": float(ggv_config.max_drive_force_n),
-        "max_brake_force_n": float(ggv_config.max_brake_force_n),
+        "drive_distribution_front": float(active_inputs.drive_distribution_front),
+        "brake_distribution_front": float(active_inputs.brake_distribution_front),
+        "max_drive_power_w": float(active_inputs.max_drive_power),
+        "max_drive_force_n": float(active_inputs.max_drive_force),
+        "max_brake_force_n": float(active_inputs.max_brake_force),
     }
 
     tire["ip_nom_pa"] = tire["nominal_pressure_pa"]
@@ -1531,7 +1572,7 @@ def _build_review(config: dict[str, Any]) -> dict[str, Any]:
     performance = {**steady_state, **transient}
 
     ggv_summary = _summarize_ggv(GGV_CSV_PATH, tuple(ggv_config.speeds))
-    ymd_summary = _summarize_ymd(YMD_CSV_PATH, ymd_config)
+    ymd_summary = _summarize_ymd(YMD_CSV_PATH, ymd_report_config)
 
     performance.update(
         {

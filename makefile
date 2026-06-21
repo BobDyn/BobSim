@@ -2,17 +2,17 @@ PYTHON ?= python
 RUFF_CACHE_DIR ?= /tmp/bobsim-ruff-cache
 MYPY_CACHE_DIR ?= /tmp/bobsim-mypy-cache
 
-QUALITY_DIRS := _0_Utils _1_VisualSim _2_EnvelopeSim _3_StandardSim _4_OptSim tests
-TYPECHECK_DIRS := _0_Utils _1_VisualSim _3_StandardSim tests
+QUALITY_DIRS := _0_Utils _1_VisualSim _2_EnvelopeSim _3_StandardSim _4_OptSim _5_App tests
+TYPECHECK_DIRS := _0_Utils _1_VisualSim _3_StandardSim _5_App tests
 BOBLIB_PATH := _0_Utils/external/BobLib
-BOBLIB_PACKAGE_PATH := $(BOBLIB_PATH)/BobLibVehicleInterfaces
-VEHICLE_SIM_CLASS := BobLibVehicleInterfaces.Experiments.Standards.VehicleSim
-FOUR_POST_SIM_CLASS := BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
+BOBLIB_PACKAGE_PATH := $(BOBLIB_PATH)/BobLib
+VEHICLE_SIM_CLASS := BobLib.Experiments.Standards.VehicleSim
+FOUR_POST_SIM_CLASS := BobLib.Experiments.Standards.FourPostSim
 
 VEHICLE_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/VehicleSim.mo
 FOUR_POST_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/FourPostSim.mo
-VEHICLE_SIM_EXE := _3_StandardSim/Build/VehicleSim/$(VEHICLE_SIM_CLASS)
-FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/$(FOUR_POST_SIM_CLASS)
+VEHICLE_SIM_EXE := _3_StandardSim/BuildBobLib/VehicleSim/$(VEHICLE_SIM_CLASS)
+FOUR_POST_SIM_EXE := _3_StandardSim/BuildBobLib/FourPostSim/$(FOUR_POST_SIM_CLASS)
 
 BUILD_VEHICLE_MOS := _3_StandardSim/build_vehicle_sim.mos
 BUILD_FOUR_POST_MOS := _3_StandardSim/build_four_post_sim.mos
@@ -43,6 +43,7 @@ WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
 .DEFAULT_GOAL := help
 
 .PHONY: help init docker-build docker-rebuild \
+	app \
 	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
 	sync-vehicle standard-build standard-build-four-post standard-regression-four-post \
@@ -58,14 +59,15 @@ help:
 		'  init                      Initialize submodules' \
 		'  docker-build              Build the Docker development image' \
 		'  docker-rebuild            Rebuild the Docker image from scratch' \
+		'  app                       Open the BobSim browser app' \
 		'' \
 		'  shell                     Open the main BobSim shell' \
 		'  shell-standard            Open a StandardSim shell' \
 		'  shell-envelope            Open an EnvelopeSim shell' \
 		'  shell-opt                 Open an OptSim shell' \
 		'' \
-		'  standard-build            Build BobLibVehicleInterfaces VehicleSim' \
-		'  standard-build-four-post  Build BobLibVehicleInterfaces FourPostSim' \
+		'  standard-build            Build BobLib VehicleSim' \
+		'  standard-build-four-post  Build BobLib FourPostSim' \
 		'' \
 		'  standard-eval-ramp-steer   Run RampSteerEval' \
 		'  standard-eval-steady-state Run SteadyStateEval' \
@@ -96,6 +98,9 @@ docker-build:
 
 docker-rebuild:
 	$(DOCKER_REBUILD_CMD)
+
+app:
+	$(PYTHON) -m _5_App.app
 
 lint:
 	$(RUN) env RUFF_CACHE_DIR=$(RUFF_CACHE_DIR) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
@@ -133,7 +138,7 @@ shell-opt:
 	$(SHELL_OPT_CMD)
 
 sync-vehicle:
-	@printf '%s\n' 'Static BobLibVehicleInterfaces models use checked-in Modelica records; vehicle.yml remains a BobSim projection/report input.'
+	@printf '%s\n' 'Static BobLib models use checked-in Modelica records; vehicle.yml remains a BobSim projection/report input.'
 
 $(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo
 	$(RUN) bash -lc 'omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
@@ -187,7 +192,7 @@ clean:
 		echo 'Python/tool caches cleaned'"
 
 clean-standard:
-	$(RUN) bash -lc "for path in $(WORKSPACE)/_3_StandardSim/Build $(WORKSPACE)/_3_StandardSim/results; do \
+	$(RUN) bash -lc "for path in $(WORKSPACE)/_3_StandardSim/Build $(WORKSPACE)/_3_StandardSim/BuildBobLib $(WORKSPACE)/_3_StandardSim/results; do \
 		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' -exec rm -rf {} +; fi; \
 		done; echo 'StandardSim artifacts cleaned'"
 

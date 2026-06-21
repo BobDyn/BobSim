@@ -1,8 +1,8 @@
 standard: FourPostEval
 
 simulation:
-  build_dir: _3_StandardSim/Build/FourPostSim
-  exec_name: BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
+  build_dir: _3_StandardSim/BuildBobLib/FourPostSim
+  exec_name: BobLib.Experiments.Standards.FourPostSim
   solver: dassl
   # Optional OpenModelica output/integration step size.
   stepSize: 0.5

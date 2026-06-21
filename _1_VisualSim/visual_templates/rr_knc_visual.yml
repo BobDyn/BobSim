@@ -1,4 +1,4 @@
-# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/rr_knc_visual.yml _3_StandardSim/FourPostEval/results/raw_results/BobLibVehicleInterfaces.Experiments.Standards.FourPostSim_run_0/BobLibVehicleInterfaces.Experiments.Standards.FourPostSim_run_0_visual.npz --mp4 ./_1_VisualSim/results/rr_knc_test.mp4
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/rr_knc_visual.yml _3_StandardSim/FourPostEval/results/raw_results/BobLib.Experiments.Standards.FourPostSim_run_0/BobLib.Experiments.Standards.FourPostSim_run_0_visual.npz --mp4 ./_1_VisualSim/results/rr_knc_test.mp4
 
 style:
   joints:

@@ -53,7 +53,7 @@ RUN mkdir -p /root/.openmodelica/libraries \
         -o /root/.openmodelica/libraries/index.json \
         https://libraries.openmodelica.org/index/v1/index.json
 
-# Install the Modelica libraries expected by BobLibVehicleInterfaces.
+# Install the Modelica libraries expected by BobLib.
 # The package index has already been cached above.
 RUN printf '\
 installPackage(Modelica, "4.1.0", exactMatch=true);\n\
