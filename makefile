@@ -1,18 +1,19 @@
 PYTHON ?= python
+RUFF_CACHE_DIR ?= /tmp/bobsim-ruff-cache
+MYPY_CACHE_DIR ?= /tmp/bobsim-mypy-cache
 
 QUALITY_DIRS := _0_Utils _1_VisualSim _2_EnvelopeSim _3_StandardSim _4_OptSim tests
 TYPECHECK_DIRS := _0_Utils _1_VisualSim _3_StandardSim tests
 BOBLIB_PATH := _0_Utils/external/BobLib
+BOBLIB_PACKAGE_PATH := $(BOBLIB_PATH)/BobLibVehicleInterfaces
+VEHICLE_SIM_CLASS := BobLibVehicleInterfaces.Experiments.Standards.VehicleSim
+FOUR_POST_SIM_CLASS := BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
 
-VEHICLE_YAML_SRC := vehicle.yml
-VEHICLE_YAML_DST := $(BOBLIB_PATH)/Generation/vehicle.yml
-VEHICLE_SIM_MODEL := $(BOBLIB_PATH)/BobLib/Standards/VehicleSim.mo
-FOUR_POST_SIM_MODEL := $(BOBLIB_PATH)/BobLib/Standards/FourPostSim.mo
-VEHICLE_SIM_EXE := _3_StandardSim/Build/VehicleSim/BobLib.Standards.VehicleSim
-FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/BobLib.Standards.FourPostSim
+VEHICLE_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/VehicleSim.mo
+FOUR_POST_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/FourPostSim.mo
+VEHICLE_SIM_EXE := _3_StandardSim/Build/VehicleSim/$(VEHICLE_SIM_CLASS)
+FOUR_POST_SIM_EXE := _3_StandardSim/Build/FourPostSim/$(FOUR_POST_SIM_CLASS)
 
-BUILD_VEHICLE_SCRIPT := $(BOBLIB_PATH)/Generation/scripts/build_vehicle_sim.py
-BUILD_FOUR_POST_SCRIPT := $(BOBLIB_PATH)/Generation/scripts/build_four_post_sim.py
 BUILD_VEHICLE_MOS := _3_StandardSim/build_vehicle_sim.mos
 BUILD_FOUR_POST_MOS := _3_StandardSim/build_four_post_sim.mos
 
@@ -42,10 +43,10 @@ WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
 .DEFAULT_GOAL := help
 
 .PHONY: help init docker-build docker-rebuild \
-	lint typecheck test ci \
+	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
-	sync-vehicle standard-build standard-build-four-post \
-	standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all \
+	sync-vehicle standard-build standard-build-four-post standard-regression-four-post \
+	standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all \
 	envelope-ggv envelope-ymd envelope-all \
 	opt-standard opt-envelope opt-refined \
 	clean clean-standard clean-envelope clean-opt clean-all
@@ -63,9 +64,10 @@ help:
 		'  shell-envelope            Open an EnvelopeSim shell' \
 		'  shell-opt                 Open an OptSim shell' \
 		'' \
-		'  standard-build            Build BobLib.Standards.VehicleSim' \
-		'  standard-build-four-post  Build BobLib.Standards.FourPostSim' \
+		'  standard-build            Build BobLibVehicleInterfaces VehicleSim' \
+		'  standard-build-four-post  Build BobLibVehicleInterfaces FourPostSim' \
 		'' \
+		'  standard-eval-ramp-steer   Run RampSteerEval' \
 		'  standard-eval-steady-state Run SteadyStateEval' \
 		'  standard-eval-transient    Run TransientEval' \
 		'  standard-eval-four-post    Run FourPostEval' \
@@ -79,7 +81,11 @@ help:
 		'  opt-envelope              Run EnvelopeSens sensitivities' \
 		'  opt-refined               Run StandardSens refined response surfaces' \
 		'' \
-		'  ci                        Run lint, typecheck, and tests' \
+		'  regression-invariants     Check current regression artifacts for physical consistency' \
+		'  regression-baseline       Run default StandardSim baseline regressions' \
+		'  standard-regression-four-post  Alias for regression-baseline' \
+		'' \
+		'  ci                        Run lint, typecheck, StandardSim regressions, and tests' \
 		'  clean-all                 Remove caches and generated workflow artifacts'
 
 init:
@@ -92,16 +98,23 @@ docker-rebuild:
 	$(DOCKER_REBUILD_CMD)
 
 lint:
-	$(RUN) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
+	$(RUN) env RUFF_CACHE_DIR=$(RUFF_CACHE_DIR) $(PYTHON) -m ruff check $(QUALITY_DIRS) --exclude $(BOBLIB_PATH)
 
 typecheck:
 	$(RUN) $(PYTHON) -m mypy $(TYPECHECK_DIRS) \
 		--ignore-missing-imports \
 		--no-strict-optional \
+		--cache-dir $(MYPY_CACHE_DIR) \
 		--exclude '(^|/)$(BOBLIB_PATH)/'
 
 test:
-	$(RUN) $(PYTHON) -m pytest tests
+	$(RUN) env BOBSIM_BASELINE_REGRESSION=1 $(PYTHON) -m pytest tests
+
+regression-invariants:
+	$(RUN) $(PYTHON) -m pytest tests/test_simulation_regression.py
+
+regression-baseline:
+	$(RUN) env BOBSIM_BASELINE_REGRESSION=1 $(PYTHON) -m pytest tests/test_simulation_regression.py
 
 ci: lint typecheck test
 
@@ -119,21 +132,21 @@ shell-envelope:
 shell-opt:
 	$(SHELL_OPT_CMD)
 
-$(VEHICLE_YAML_DST): $(VEHICLE_YAML_SRC)
-	@mkdir -p $(dir $@)
-	cp "$<" "$@"
+sync-vehicle:
+	@printf '%s\n' 'Static BobLibVehicleInterfaces models use checked-in Modelica records; vehicle.yml remains a BobSim projection/report input.'
 
-sync-vehicle: $(VEHICLE_YAML_DST)
+$(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo
+	$(RUN) bash -lc 'omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
 
-$(VEHICLE_SIM_EXE): $(VEHICLE_YAML_DST) $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_SCRIPT) $(BUILD_VEHICLE_MOS)
-	$(RUN) bash -lc '$(PYTHON) $(BUILD_VEHICLE_SCRIPT) && omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
-
-$(FOUR_POST_SIM_EXE): $(VEHICLE_YAML_DST) $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_SCRIPT) $(BUILD_FOUR_POST_MOS)
-	$(RUN) bash -lc '$(PYTHON) $(BUILD_FOUR_POST_SCRIPT) && omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
+$(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo
+	$(RUN) bash -lc 'omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
 
 standard-build: $(VEHICLE_SIM_EXE)
 
 standard-build-four-post: $(FOUR_POST_SIM_EXE)
+
+standard-eval-ramp-steer: standard-build
+	$(RUN) $(PYTHON) -m _3_StandardSim.RampSteerEval.ramp_steer_eval_sim
 
 standard-eval-steady-state: standard-build
 	$(RUN) $(PYTHON) -m _3_StandardSim.SteadyStateEval.steady_state_eval_sim
@@ -144,7 +157,9 @@ standard-eval-transient: standard-build
 standard-eval-four-post: standard-build-four-post
 	$(RUN) $(PYTHON) -m _3_StandardSim.FourPostEval.four_post_eval_sim
 
-standard-eval-all: standard-eval-steady-state standard-eval-transient standard-eval-four-post
+standard-eval-all: standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post
+
+standard-regression-four-post: regression-baseline
 
 envelope-ggv:
 	$(RUN) $(PYTHON) -m _2_EnvelopeSim.GGV.ggv_generation
@@ -173,12 +188,12 @@ clean:
 
 clean-standard:
 	$(RUN) bash -lc "for path in $(WORKSPACE)/_3_StandardSim/Build $(WORKSPACE)/_3_StandardSim/results; do \
-		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' -exec rm -rf {} +; fi; \
 		done; echo 'StandardSim artifacts cleaned'"
 
 clean-envelope:
 	$(RUN) bash -lc "for path in $(WORKSPACE)/_2_EnvelopeSim/Build $(WORKSPACE)/_2_EnvelopeSim/results; do \
-		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' -exec rm -rf {} +; fi; \
 		done; echo 'EnvelopeSim artifacts cleaned'"
 
 clean-opt:
@@ -189,7 +204,7 @@ clean-opt:
 		$(WORKSPACE)/_4_OptSim/population \
 		$(WORKSPACE)/_4_OptSim/population_refined \
 		$(WORKSPACE)/_4_OptSim/results; do \
-		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 ! -name '.gitkeep' -delete; fi; \
+		if [ -d \"$$path\" ]; then find \"$$path\" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' -exec rm -rf {} +; fi; \
 		done; echo 'OptSim artifacts cleaned'"
 
 clean-all: clean clean-standard clean-envelope clean-opt

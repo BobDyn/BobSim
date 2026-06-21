@@ -2,6 +2,3 @@ line-length = 120
 
 [lint]
 select = ["E", "F"]
-
-[lint.per-file-ignores]
-"_0_Utils/external/BobLib/Generation/generate_vehicle_model.py" = ["E501"]

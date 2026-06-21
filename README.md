@@ -20,12 +20,13 @@ is healthy.
 - `_1_VisualSim/`: experimental/offline visualization tooling; core model
   visualization currently happens in OMEdit.
 - `_2_EnvelopeSim/`: GGV/YMD performance-envelope workflows.
-- `_3_StandardSim/`: standard vehicle studies: SteadyStateEval, TransientEval,
-  and FourPostEval.
+- `_3_StandardSim/`: standard vehicle studies: RampSteerEval, SteadyStateEval,
+  TransientEval, and FourPostEval.
 - `_4_OptSim/`: sensitivity and response-surface workflows.
 - `tests/`: release-polish and workflow regression checks.
-- `vehicle.yml`: active vehicle configuration copied into BobLib generation
-  inputs by the build targets.
+- `vehicle.yml`: active vehicle data used by BobSim projection, reporting, and
+  sensitivity workflows. The Modelica standard entry points now use checked-in
+  `BobLibVehicleInterfaces` records.
 
 ## Quick Start
 
@@ -86,13 +87,14 @@ Run the complete standard baseline:
 make standard-eval-all
 ```
 
-That target builds missing executables, then runs SteadyStateEval,
-TransientEval, and FourPostEval.
+That target builds missing executables, then runs RampSteerEval,
+SteadyStateEval, TransientEval, and FourPostEval.
 
 For focused standard work, build and run individual studies:
 
 ```bash
 make standard-build
+make standard-eval-ramp-steer
 make standard-eval-steady-state
 make standard-eval-transient
 

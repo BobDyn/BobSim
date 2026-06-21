@@ -1,0 +1,21 @@
+# Vehicle review / rubric coverage settings.
+# The review regenerates the active envelope artifacts by default so the
+# report stays aligned with the current vehicle.yml and .tir inputs.
+
+report:
+  brand: BobDyn
+  title: Vehicle Review and Rubric Coverage
+  subtitle: Active vehicle.yml cross-checked against StandardSim and EnvelopeSim
+  notes:
+    - Active vehicle definition comes from the repo-root vehicle.yml.
+    - Envelope inputs are loaded from the same active YAML used by the model generators.
+    - GGV and YMD are regenerated from the active config before the review is assembled.
+
+output:
+  results_dir: _2_EnvelopeSim/results/VehicleReview
+  pdf_filename: vehicle_review_report.pdf
+  metrics_csv_filename: vehicle_review_report_metrics.csv
+
+generation:
+  regenerate_ggv: true
+  regenerate_ymd: true

@@ -2,7 +2,7 @@
 # To add a new standard: uncomment or add a block under `standards`.
 # No Python changes required.
 
-boblib_path: ../../../_0_Utils/external/BobLib/BobLib/package.mo
+boblib_path: ../../../_0_Utils/external/BobLib/BobLibVehicleInterfaces/package.mo
 
 # Number of variants to compile in parallel.
 # Each worker runs a separate OMC process.
@@ -12,12 +12,12 @@ max_workers: 8  # 8 for the Framework 16 goat
 
 standards:
   SteadyStateEval:
-    model: BobLib.Standards.VehicleSim
+    model: BobLibVehicleInterfaces.Experiments.Standards.VehicleSim
     # SteadyStateEval simulation settings live in:
     #   _3_StandardSim/SteadyStateEval/steady_state_eval_config.yml
 
   # KnC_Fr:
-  #   model: BobLib.Standards.FrKnC
+  #   model: BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
   #   start_time: 0
   #   stop_time: 91
   #   intervals: 0
@@ -25,7 +25,7 @@ standards:
   #   solver: dassl
 
   # KnC_Rr:
-  #   model: BobLib.Standards.RrKnC
+  #   model: BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
   #   start_time: 0
   #   stop_time: 91
   #   intervals: 0

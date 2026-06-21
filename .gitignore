@@ -51,14 +51,21 @@ Thumbs.db
 
 # Project-generated outputs
 /results/
-_2_EnvelopeSim/results/*
+_2_EnvelopeSim/results/**
+!_2_EnvelopeSim/results/
 !_2_EnvelopeSim/results/.gitkeep
+_3_StandardSim/Build/
+_3_StandardSim/results/**
+!_3_StandardSim/results/
+!_3_StandardSim/results/.gitkeep
 _4_OptSim/Build/
-_4_OptSim/results/
+_4_OptSim/results/**
+!_4_OptSim/results/
+!_4_OptSim/results/.gitkeep
 _4_OptSim/population/
 _4_OptSim/population_refined/
-_4_OptSim/StandardSensitivities/results/
-_4_OptSim/EnvelopeSensitivities/results/
+_4_OptSim/StandardSens/results/
+_4_OptSim/EnvelopeSens/results/
 
 # BobLib is tracked as a git submodule (gitlink mode 160000);
 # keep this path visible even if future broad rules are added.

@@ -66,6 +66,8 @@ CASE_METADATA_KEYS = [
     "stopTime",
 ]
 
+CONTINUOUS_SINE_STOP_MARGIN_S = 1e-3
+
 
 def load_config(path):
     path = Path(path)
@@ -281,7 +283,10 @@ class TransientEvalSim:
             freqs = test.get("sweep_freq_hz", [1.0])
             f_min = min(float(f) for f in freqs)
             n_cycles = int(test.get("n_cycles", 5))
-            stop_time = max(stop_time, step_time + n_cycles / f_min)
+            stop_time = max(
+                stop_time,
+                step_time + n_cycles / f_min + CONTINUOUS_SINE_STOP_MARGIN_S,
+            )
 
         return stop_time
 
@@ -297,9 +302,9 @@ class TransientEvalSim:
         freq_hz: float,
         n_cycles: int,
     ) -> float:
-        # No buffer here: VehicleModel useMode=1 keeps generating sine.
-        # Stop exactly after nCycles.
-        return step_time + n_cycles / freq_hz
+        # Keep the requested nCycles of useful sine data, then add a tiny tail
+        # so DASKR does not end exactly on the final sine event.
+        return step_time + n_cycles / freq_hz + CONTINUOUS_SINE_STOP_MARGIN_S
 
     @staticmethod
     def _attach_case_metadata(results, metadata):
@@ -862,8 +867,9 @@ class TransientEvalSim:
           nCycles
           etc.
 
-        Do NOT include initialVel here either. The current generated model
-        reports that initialVel is not overrideable.
+        Do NOT include initialVel here either. VehicleSim uses targetVel for
+        the closed-loop speed target, while initial velocity stays with the
+        checked-in Modelica entrypoint defaults.
         """
         return {
             "useMode": use_mode,
@@ -1003,7 +1009,7 @@ class TransientEvalSim:
         ]
 
         with output_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
             writer.writeheader()
             writer.writerows(metrics)
 

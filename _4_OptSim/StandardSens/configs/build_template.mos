@@ -3,7 +3,8 @@ OpenModelica.Scripting.setCommandLineOptions(
 );
 
 clear();
-loadModel(Modelica);
+loadModel(Modelica, {"4.1.0"});
+loadModel(VehicleInterfaces, {"2.0.2"});
 loadFile("{boblib_path}");
 loadFile("{variant_mo_path}");
 

@@ -1332,6 +1332,7 @@ def save_metric_rows(rows: list[dict[str, float | str]], output_path: str | Path
         writer = csv.DictWriter(
             f,
             fieldnames=["standard", "metric", "value", "units", "description"],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -1346,7 +1347,7 @@ def save_trim_curve_csv(
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="") as f:
         fieldnames = ["speed_mps", "beta_deg", "hwa_deg", "ay_mps2", "ay_g", "mz_nm"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(f"Saved YMD trim curve CSV: {output}")

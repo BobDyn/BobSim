@@ -1,40 +1,45 @@
 standard,metric,value,units,description
-SteadyStateEval,n_cases,4,count,Total SteadyStateEval cases requested
-SteadyStateEval,n_successful_cases,4,count,Number of successful SteadyStateEval cases used in the summary
-SteadyStateEval,n_failed_cases,0,count,Number of failed SteadyStateEval cases skipped by the summary
-SteadyStateEval,standard_sweep_max_ay_mps2,18.0,m/s^2,Nominal positive lateral-acceleration target used for the SteadyStateEval sweep
+SteadyStateEval,n_cases,40,count,Total SteadyStateEval closed-loop target points requested
+SteadyStateEval,n_successful_cases,40,count,Number of settled SteadyStateEval cases available before finite-value filtering
+SteadyStateEval,n_failed_cases,0,count,Number of failed or unsettled SteadyStateEval cases skipped by the summary
+SteadyStateEval,standard_sweep_max_ay_mps2,18.0,m/s^2,Maximum requested closed-loop lateral-acceleration target
+SteadyStateEval,standard_sweep_target_count,10,count,Number of requested lateral-acceleration target points per velocity
 SteadyStateEval,metric_target_velocity_mps,15.0,m/s,Target velocity used to select the exported metric table
 SteadyStateEval,metric_source_velocity_mps,15.0,m/s,Velocity nearest the target used for the exported metric table
-SteadyStateEval,ay_min,1.001840491329601,m/s^2,Minimum measured lateral acceleration
-SteadyStateEval,ay_max,19.12176539359575,m/s^2,Maximum measured lateral acceleration
-SteadyStateEval,sideslip_gradient_rad_per_mps2,0.0003949237083525921,rad/(m/s^2),Linear ramp-response sideslip gradient versus measured Ay
-SteadyStateEval,sideslip_gradient_deg_per_g,0.22197547882656907,deg/g,Linear ramp-response sideslip gradient versus measured Ay
-SteadyStateEval,limit_ay_mps2,19.12176539359575,m/s^2,Largest absolute measured lateral acceleration reached by the ramp
-SteadyStateEval,limit_sideslip_gradient_rad_per_mps2,-0.006406849333070268,rad/(m/s^2),Endpoint local ramp-response sideslip gradient at the measured Ay limit
-SteadyStateEval,limit_sideslip_gradient_deg_per_g,-3.6011093241539065,deg/g,Endpoint local ramp-response sideslip gradient at the measured Ay limit
-SteadyStateEval,limit_understeer_gradient_rad_per_mps2,-0.001000469509341242,rad/(m/s^2),Endpoint local steer-excess derivative at the measured Ay limit
-SteadyStateEval,limit_understeer_gradient_deg_per_g,-0.5623356959596097,deg/g,Endpoint local steer-excess derivative at the measured Ay limit
-SteadyStateEval,understeer_gradient_rad_per_mps2,6.278129563471877e-05,rad/(m/s^2),Linear steer-excess derivative versus measured Ay
-SteadyStateEval,understeer_gradient_deg_per_g,0.03528759571817593,deg/g,Linear steer-excess derivative versus measured Ay
-SteadyStateEval,handwheel_angle_gradient_rad_per_mps2,0.02951480775597018,rad/(m/s^2),Linear raw handwheel angle gradient versus measured Ay
-SteadyStateEval,handwheel_angle_gradient_deg_per_g,16.589441063022505,deg/g,Linear raw handwheel angle gradient versus measured Ay
-SteadyStateEval,limit_handwheel_gradient_rad_per_mps2,0.03327360386339382,rad/(m/s^2),Endpoint local raw handwheel angle gradient at the measured Ay limit
-SteadyStateEval,limit_handwheel_gradient_deg_per_g,18.702154349437514,deg/g,Endpoint local raw handwheel angle gradient at the measured Ay limit
-SteadyStateEval,roll_gradient_deg_per_g,0.8911106465781029,deg/g,Linear ramp-response roll gradient versus measured Ay
-SteadyStateEval,limit_roll_gradient_rad_per_mps2,0.0014792286213425403,rad/(m/s^2),Endpoint local ramp-response roll gradient at the measured Ay limit
-SteadyStateEval,limit_roll_gradient_deg_per_g,0.8314326908510629,deg/g,Endpoint local ramp-response roll gradient at the measured Ay limit
-SteadyStateEval,peak_handwheel_torque_Nm,-21.46627475992344,N*m,Signed handwheel torque at maximum absolute handwheel torque
-SteadyStateEval,peak_handwheel_torque_ay_mps2,18.51289936804089,m/s^2,Measured lateral acceleration at peak absolute handwheel torque
-SteadyStateEval,roadwheel_fit_nrmse,0.0018332183332664892,fraction,Normalized fit residual for roadwheel angle versus measured Ay
-SteadyStateEval,handwheel_fit_nrmse,0.001785208847196549,fraction,Normalized fit residual for handwheel angle versus measured Ay
-SteadyStateEval,steer_excess_fit_nrmse,0.018374096028340708,fraction,Normalized fit residual for steer excess versus measured Ay
-SteadyStateEval,roll_fit_nrmse,0.00038804824342385816,fraction,Normalized fit residual for roll versus measured Ay
-SteadyStateEval,sideslip_fit_nrmse,0.015150320677395246,fraction,Normalized fit residual for sideslip versus measured Ay
-SteadyStateEval,sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.20537182116638888,deg/g per m/s,Linear fit slope of ramp-response sideslip gradient versus velocity
-SteadyStateEval,limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.2429357373552215,deg/g per m/s,Linear fit slope of endpoint sideslip gradient versus velocity
-SteadyStateEval,limit_understeer_gradient_velocity_slope_deg_per_g_per_mps,0.08267036912874365,deg/g per m/s,Linear fit slope of endpoint steer-excess gradient versus velocity
-SteadyStateEval,handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-1.8669915613851067,deg/g per m/s,Linear fit slope of raw handwheel angle gradient versus velocity
-SteadyStateEval,limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps,-2.025714632094266,deg/g per m/s,Linear fit slope of endpoint handwheel angle gradient versus velocity
-SteadyStateEval,limit_roll_gradient_velocity_slope_deg_per_g_per_mps,0.010399920502235368,deg/g per m/s,Linear fit slope of endpoint roll gradient versus velocity
-SteadyStateEval,understeer_gradient_velocity_slope_deg_per_g_per_mps,0.0010989199876353089,deg/g per m/s,Linear fit slope of steer-excess gradient versus velocity
-SteadyStateEval,roll_gradient_velocity_slope_deg_per_g_per_mps,0.0020904785157548514,deg/g per m/s,Linear fit slope of ramp-response roll gradient versus velocity
+SteadyStateEval,ay_min,1.945746597646378,m/s^2,Minimum measured settled lateral acceleration
+SteadyStateEval,ay_max,18.05022669364245,m/s^2,Maximum measured settled lateral acceleration
+SteadyStateEval,sideslip_gradient_rad_per_mps2,0.00023059431747614898,rad/(m/s^2),Linear steady-state sideslip gradient versus measured Ay
+SteadyStateEval,sideslip_gradient_deg_per_g,0.1296105162883256,deg/g,Linear steady-state sideslip gradient versus measured Ay
+SteadyStateEval,limit_ay_mps2,18.05022669364245,m/s^2,"Fitted measured lateral acceleration where local steering-gradient nonlinearity first reaches the configured threshold, or the largest settled fitted point if not reached"
+SteadyStateEval,limit_nonlinearity_fraction,0.14343598473125052,fraction,Local steering-gradient nonlinearity fraction at the reported fitted limit point
+SteadyStateEval,limit_nonlinearity_threshold_fraction,0.2,fraction,Configured local steering-gradient nonlinearity fraction used to define the fitted limit point
+SteadyStateEval,limit_nonlinearity_reached,0.0,boolean,Whether the fitted curve crossed the configured local steering-gradient nonlinearity threshold
+SteadyStateEval,limit_nonlinearity_metric,handwheel,signal,Fitted response gradient used for local nonlinearity detection
+SteadyStateEval,limit_sideslip_gradient_rad_per_mps2,-0.007571951807127745,rad/(m/s^2),Local steady-state sideslip gradient at the fitted nonlinearity limit
+SteadyStateEval,limit_sideslip_gradient_deg_per_g,-4.255979044816039,deg/g,Local steady-state sideslip gradient at the fitted nonlinearity limit
+SteadyStateEval,limit_understeer_gradient_rad_per_mps2,-0.003372283413865155,rad/(m/s^2),Local steer-excess derivative at the fitted nonlinearity limit
+SteadyStateEval,limit_understeer_gradient_deg_per_g,-1.8954647240465006,deg/g,Local steer-excess derivative at the fitted nonlinearity limit
+SteadyStateEval,understeer_gradient_rad_per_mps2,0.0005277151475372296,rad/(m/s^2),Linear steer-excess derivative versus measured Ay
+SteadyStateEval,understeer_gradient_deg_per_g,0.2966136957496569,deg/g,Linear steer-excess derivative versus measured Ay
+SteadyStateEval,handwheel_angle_gradient_rad_per_mps2,0.028850177874515624,rad/(m/s^2),Linear raw handwheel angle gradient versus measured Ay
+SteadyStateEval,handwheel_angle_gradient_deg_per_g,16.215865552336357,deg/g,Linear raw handwheel angle gradient versus measured Ay
+SteadyStateEval,limit_handwheel_gradient_rad_per_mps2,0.02471202420141274,rad/(m/s^2),Local raw handwheel angle gradient at the fitted nonlinearity limit
+SteadyStateEval,limit_handwheel_gradient_deg_per_g,13.889926908567428,deg/g,Local raw handwheel angle gradient at the fitted nonlinearity limit
+SteadyStateEval,roll_gradient_deg_per_g,0.8874524276530404,deg/g,Linear steady-state roll gradient versus measured Ay
+SteadyStateEval,limit_roll_gradient_rad_per_mps2,0.0017236266697765953,rad/(m/s^2),Local steady-state roll gradient at the fitted nonlinearity limit
+SteadyStateEval,limit_roll_gradient_deg_per_g,0.9688015949533479,deg/g,Local steady-state roll gradient at the fitted nonlinearity limit
+SteadyStateEval,peak_handwheel_torque_Nm,-21.02192695448116,N*m,Signed handwheel torque at maximum absolute handwheel torque
+SteadyStateEval,peak_handwheel_torque_ay_mps2,18.05022669364245,m/s^2,Measured lateral acceleration at peak absolute handwheel torque
+SteadyStateEval,roadwheel_fit_nrmse,0.00550031206937842,fraction,Normalized fit residual for roadwheel angle versus measured Ay
+SteadyStateEval,handwheel_fit_nrmse,0.005445174359333717,fraction,Normalized fit residual for handwheel angle versus measured Ay
+SteadyStateEval,steer_excess_fit_nrmse,0.05541545425302238,fraction,Normalized fit residual for steer excess versus measured Ay
+SteadyStateEval,roll_fit_nrmse,8.811134339415386e-05,fraction,Normalized fit residual for roll versus measured Ay
+SteadyStateEval,sideslip_fit_nrmse,0.0429597616558037,fraction,Normalized fit residual for sideslip versus measured Ay
+SteadyStateEval,sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.20477262239938054,deg/g per m/s,Linear fit slope of steady-state sideslip gradient versus velocity
+SteadyStateEval,limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps,-0.08817429421802157,deg/g per m/s,Linear fit slope of endpoint sideslip gradient versus velocity
+SteadyStateEval,limit_understeer_gradient_velocity_slope_deg_per_g_per_mps,0.18771592441224647,deg/g per m/s,Linear fit slope of endpoint steer-excess gradient versus velocity
+SteadyStateEval,handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps,-1.4816654312505122,deg/g per m/s,Linear fit slope of raw handwheel angle gradient versus velocity
+SteadyStateEval,limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps,-0.9742985175785659,deg/g per m/s,Linear fit slope of endpoint handwheel angle gradient versus velocity
+SteadyStateEval,limit_roll_gradient_velocity_slope_deg_per_g_per_mps,0.0076118174071205125,deg/g per m/s,Linear fit slope of endpoint roll gradient versus velocity
+SteadyStateEval,understeer_gradient_velocity_slope_deg_per_g_per_mps,-0.00703778602458159,deg/g per m/s,Linear fit slope of steer-excess gradient versus velocity
+SteadyStateEval,roll_gradient_velocity_slope_deg_per_g_per_mps,0.0020927002018251797,deg/g per m/s,Linear fit slope of steady-state roll gradient versus velocity

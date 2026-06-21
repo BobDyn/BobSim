@@ -2,7 +2,7 @@ standard: FourPostEval
 
 simulation:
   build_dir: _3_StandardSim/Build/FourPostSim
-  exec_name: BobLib.Standards.FourPostSim
+  exec_name: BobLibVehicleInterfaces.Experiments.Standards.FourPostSim
   solver: dassl
   # Optional OpenModelica output/integration step size.
   stepSize: 0.5
@@ -18,25 +18,24 @@ execution:
   cleanup: true
   stream_logs: false
 
-vehicle:
-  mass: 300.0
-  h_cg: 0.28
-  track_front: 1.20
-  track_rear: 1.20
-  wheelbase: 1.5494
-
-suspension:
-  front:
-    spring_rate: 30000.0
-    arb_rate: 750.0
-  rear:
-    spring_rate: 28000.0
-    arb_rate: 1200.0
+model_overrides:
+  suspension:
+    static_balance_tolerance_n: 5.0
+    static_balance_tolerance_pct: 0.5
+    static_balance_iterations: 4
+    static_balance_convergence_n: 0.01
+    front:
+      spring_rate_n_per_m: 26269.02525
+      stabar_rate_n_m_per_rad: 390
+    rear:
+      spring_rate_n_per_m: 43781.70875
+      stabar_rate_n_m_per_rad: 525
 
 procedure:
   steerMagnitude: 0.0
   heaveMagnitude: 0.03
-  rollMagnitude: 0.035
+  # 1.25 deg keeps the roll sweep inside the loaded contact-patch range.
+  rollMagnitude: 0.02181661564992912
   forceMagnitude: 1000
 
 report:
@@ -80,6 +79,12 @@ report:
       scale: 1.0
     avg_lltd_front_pct:
       unit: "%"
+      scale: 1.0
+    avg_roll_rate_distribution_front_pct:
+      unit: "%"
+      scale: 1.0
+    avg_antiroll_geometry_lltd_delta_pct:
+      unit: "pct-pts"
       scale: 1.0
     camber_gain_roll_rad_per_rad:
       unit: "deg/deg"
@@ -131,6 +136,7 @@ report:
       scale: 0.017453292519943295
   notes:
     - Heave and roll sweeps evaluate camber, toe, caster, KPI, trail, scrub, motion ratio, and jacking characteristics.
+    - Spring and stabar rates are applied from model_overrides.suspension before the model run.
     - Summary metrics use the same KnC-style table layout as the legacy report.
 
 plots:
@@ -304,11 +310,29 @@ plots:
           # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/T$)" }
         }
 
+  # contact_patch_force_roll:
+  #   layout: quad
+  #   title: "Contact Patch Fz vs Roll"
+  #   subplots:
+  #     - { title: "Front Left",  x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_l_fz_vs_roll, label: "Fz (N)" } }
+  #     - { title: "Front Right", x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_r_fz_vs_roll, label: "Fz (N)" } }
+  #     - { title: "Rear Left",   x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_l_fz_vs_roll, label: "Fz (N)" } }
+  #     - { title: "Rear Right",  x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_r_fz_vs_roll, label: "Fz (N)" } }
+
   lltd_roll:
     layout: single
-    title: "LLTD vs Roll"
+    title: "Load-Transfer LLTD vs Roll: Measured vs Roll-Rate Distribution"
+    xlim: [-1.0, 1.0]
     x: { key: lltd_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }
-    y: { key: lltd_vs_roll, scale: 100.0, label: "LLTD Front (%)" }
+    y: { key: lltd_contact_force_vs_roll, scale: 100.0, label: "LLTD Front (%)" }
+    label: "Measured baseline-delta load transfer"
+    overlay:
+      - x: { key: lltd_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }
+        y: { key: lltd_stiffness_vs_roll, scale: 100.0, label: "LLTD Front (%)" }
+        label: "Hand calc roll-rate distribution"
+        color: "black"
+        linestyle: "--"
+        linewidth: 2
     reference:
       - { type: horizontal, y: 50.0, label: "Neutral (50/50)" }
       - { type: horizontal, y: 60.0, color: "red", label: "Front Biased" }

@@ -18,6 +18,7 @@ class SingleLayout:
         xmins = []
         xmaxs = []
         has_data = False
+        group_colors = {}
 
         for idx, item in enumerate(series):
             x = np.asarray(item["x"], dtype=float)
@@ -41,6 +42,8 @@ class SingleLayout:
                 plot_kwargs["markersize"] = item["markersize"]
             if item.get("color") is not None:
                 plot_kwargs["color"] = item["color"]
+            elif item.get("match_color") and item.get("group") in group_colors:
+                plot_kwargs["color"] = group_colors[item["group"]]
             if item.get("linestyle") is not None:
                 plot_kwargs["linestyle"] = item["linestyle"]
             linewidth = item.get("linewidth", 2)
@@ -48,9 +51,12 @@ class SingleLayout:
             if item_style == "line":
                 line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
             elif item_style == "scatter":
-                line, = ax.plot(x, y, "o", label=label, **plot_kwargs)
+                line, = ax.plot(x, y, "o", linewidth=linewidth, label=label, **plot_kwargs)
             else:
                 line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
+
+            if item.get("group") is not None and not item.get("match_color"):
+                group_colors.setdefault(item["group"], line.get_color())
 
             fit = plotter.compute_fit(x, y, p_cfg) if item.get("fit", p_cfg.get("fit", False)) else None
             if fit is not None:
@@ -81,7 +87,9 @@ class SingleLayout:
         ax.set_xlabel(p_cfg["x"].get("label", p_cfg["x"]["key"]), fontsize=11)
         ax.set_ylabel(p_cfg["y"].get("label", p_cfg["y"]["key"]), fontsize=11)
 
-        if has_data and xmins and xmaxs:
+        if p_cfg.get("xlim") is not None:
+            ax.set_xlim(*p_cfg["xlim"])
+        elif has_data and xmins and xmaxs:
             ax.set_xlim(min(xmins), max(xmaxs))
 
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)

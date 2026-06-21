@@ -14,11 +14,10 @@ from _3_StandardSim._modelica_runner import ModelicaRunner
 
 DEFAULT_CONFIG_PATH = Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml")
 DEFAULT_BUILD_DIR = "_3_StandardSim/Build/FourPostSim"
-DEFAULT_EXEC_NAME = "BobLib.Standards.FourPostSim"
+DEFAULT_EXEC_NAME = "BobLibVehicleInterfaces.Experiments.Standards.FourPostSim"
 DEFAULT_METRICS_CSV_PATH = "_3_StandardSim/results/four_post_eval_report_metrics.csv"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_VEHICLE_YAML_CANDIDATES = (
-    REPO_ROOT / "_0_Utils/external/BobLib/Generation/vehicle.yml",
     REPO_ROOT / "vehicle.yml",
 )
 GRAVITY_MPS2 = 9.80665
@@ -37,6 +36,7 @@ FOUR_POST_EVAL_SIGNALS = [
     "frKnC.fx",
     "frKnC.fy",
     "frKnC.leftSpringLength",
+    "frKnC.leftFz",
     "frKnC.leftGamma",
     "frKnC.leftToe",
     "frKnC.leftCaster",
@@ -44,6 +44,7 @@ FOUR_POST_EVAL_SIGNALS = [
     "frKnC.leftMechTrail",
     "frKnC.leftMechScrub",
     "frKnC.rightSpringLength",
+    "frKnC.rightFz",
     "frKnC.rightGamma",
     "frKnC.rightToe",
     "frKnC.rightCaster",
@@ -57,6 +58,7 @@ FOUR_POST_EVAL_SIGNALS = [
     "rrKnC.fx",
     "rrKnC.fy",
     "rrKnC.leftSpringLength",
+    "rrKnC.leftFz",
     "rrKnC.leftGamma",
     "rrKnC.leftToe",
     "rrKnC.leftCaster",
@@ -64,6 +66,7 @@ FOUR_POST_EVAL_SIGNALS = [
     "rrKnC.leftMechTrail",
     "rrKnC.leftMechScrub",
     "rrKnC.rightSpringLength",
+    "rrKnC.rightFz",
     "rrKnC.rightGamma",
     "rrKnC.rightToe",
     "rrKnC.rightCaster",
@@ -104,7 +107,7 @@ def write_metrics_csv(summary: dict[str, Any], path: str | Path) -> Path:
     path.unlink(missing_ok=True)
 
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, lineterminator="\n")
         writer.writerow(["metric", "value"])
         for key in sorted(summary):
             value = summary[key]
@@ -177,6 +180,386 @@ def _table_array(table_like: Any) -> np.ndarray:
     if arr.ndim != 2 or arr.shape[1] < 2:
         raise ValueError("Expected a 2D table with at least two columns.")
     return arr[:, :2]
+
+
+def _side_spring_table(side: dict[str, Any]) -> np.ndarray:
+    shock = _nested_value(side, "actuation", "shock")
+    table = shock.get("spring_table")
+    if isinstance(table, dict):
+        table = table.get("table")
+    return _table_array(table)
+
+
+def _side_spring_free_length(side: dict[str, Any]) -> float:
+    return float(_nested_value(side, "actuation", "shock", "free_length_m"))
+
+
+def _side_stabar_rate(side: dict[str, Any]) -> float:
+    actuation = _nested_value(side, "actuation")
+    stabar = actuation.get("stabar")
+    if not isinstance(stabar, dict):
+        return 0.0
+    return float(stabar.get("rate_n_m_per_rad", 0.0))
+
+
+def _linearize_spring_table_rate(table: np.ndarray, rate_n_per_m: float) -> np.ndarray:
+    table = np.asarray(table, dtype=float).copy()
+    table[:, 1] = table[:, 0] * float(rate_n_per_m)
+    return table
+
+
+def _configured_float(
+    config: dict[str, Any],
+    keys: Sequence[str],
+    fallback: float,
+) -> float:
+    for key in keys:
+        value = config.get(key)
+        if value is not None:
+            return float(value)
+    return float(fallback)
+
+
+def _configured_optional_float(config: dict[str, Any], keys: Sequence[str]) -> float | None:
+    for key in keys:
+        value = config.get(key)
+        if value is not None:
+            return float(value)
+    return None
+
+
+def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
+    vehicle = _load_active_vehicle_yaml()
+    front_side = _side_data(vehicle, "front")
+    rear_side = _side_data(vehicle, "rear")
+    front_vehicle_table = _side_spring_table(front_side)
+    rear_vehicle_table = _side_spring_table(rear_side)
+
+    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
+    suspension_cfg = _as_mapping(
+        model_overrides.get("suspension"),
+        name="model_overrides.suspension",
+    )
+    front_cfg = _as_mapping(
+        suspension_cfg.get("front"),
+        name="model_overrides.suspension.front",
+    )
+    rear_cfg = _as_mapping(
+        suspension_cfg.get("rear"),
+        name="model_overrides.suspension.rear",
+    )
+
+    front_spring_rate = _configured_float(
+        front_cfg,
+        ("spring_rate_n_per_m", "spring_rate"),
+        _spring_rate_at_deflection(front_vehicle_table, 0.0),
+    )
+    rear_spring_rate = _configured_float(
+        rear_cfg,
+        ("spring_rate_n_per_m", "spring_rate"),
+        _spring_rate_at_deflection(rear_vehicle_table, 0.0),
+    )
+    front_stabar_rate = _configured_float(
+        front_cfg,
+        ("stabar_rate_n_m_per_rad", "bar_rate_n_m_per_rad", "arb_rate"),
+        _side_stabar_rate(front_side),
+    )
+    rear_stabar_rate = _configured_float(
+        rear_cfg,
+        ("stabar_rate_n_m_per_rad", "bar_rate_n_m_per_rad", "arb_rate"),
+        _side_stabar_rate(rear_side),
+    )
+    front_spring_table = _linearize_spring_table_rate(front_vehicle_table, front_spring_rate)
+    rear_spring_table = _linearize_spring_table_rate(rear_vehicle_table, rear_spring_rate)
+    corner_loads = _sprung_corner_loads(vehicle)
+
+    return {
+        "front_side": front_side,
+        "rear_side": rear_side,
+        "front_spring_rate": front_spring_rate,
+        "rear_spring_rate": rear_spring_rate,
+        "front_spring_table": front_spring_table,
+        "rear_spring_table": rear_spring_table,
+        "front_spring_free_length": _configured_spring_free_length(
+            config,
+            front_cfg,
+            "front",
+            front_side,
+            front_spring_table,
+            corner_loads["front"],
+        ),
+        "rear_spring_free_length": _configured_spring_free_length(
+            config,
+            rear_cfg,
+            "rear",
+            rear_side,
+            rear_spring_table,
+            corner_loads["rear"],
+        ),
+        "front_stabar_rate": front_stabar_rate,
+        "rear_stabar_rate": rear_stabar_rate,
+    }
+
+
+def _side_installed_spring_length(side: dict[str, Any]) -> float:
+    actuation = _nested_value(side, "actuation")
+    shock_mount = np.asarray(_nested_value(actuation, "shock", "mount_m"), dtype=float)
+    if "bellcrank" in actuation:
+        shock_pickup = np.asarray(_nested_value(actuation, "bellcrank", "pickups_m", "shock"), dtype=float)
+        return float(np.linalg.norm(shock_mount - shock_pickup))
+
+    rod_mount = np.asarray(_nested_value(actuation, "rod_mount_m"), dtype=float)
+    return float(np.linalg.norm(shock_mount - rod_mount))
+
+
+def _sprung_corner_loads(vehicle: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    sprung_mass_kg, sprung_cg_m = _combine_sprung_mass(vehicle)
+    front_side = _side_data(vehicle, "front")
+    rear_side = _side_data(vehicle, "rear")
+    front_wc = np.asarray(_nested_value(front_side, "suspension", "wheel_center_m"), dtype=float)
+    rear_wc = np.asarray(_nested_value(rear_side, "suspension", "wheel_center_m"), dtype=float)
+
+    front_x = float(front_wc[0])
+    rear_x = float(rear_wc[0])
+    wheelbase = abs(front_x - rear_x)
+    if wheelbase <= 0.0:
+        raise ValueError("Vehicle wheelbase must be positive.")
+
+    left_y = 0.5 * (float(front_wc[1]) + float(rear_wc[1]))
+    right_y = -left_y
+    if abs(left_y - right_y) <= 1e-12:
+        raise ValueError("Vehicle track width must be positive.")
+
+    front_fraction = (sprung_cg_m[0] - rear_x) / (front_x - rear_x)
+    rear_fraction = 1.0 - front_fraction
+    left_fraction = (sprung_cg_m[1] - right_y) / (left_y - right_y)
+    right_fraction = 1.0 - left_fraction
+
+    return {
+        "front": (
+            float(sprung_mass_kg * front_fraction * left_fraction * GRAVITY_MPS2),
+            float(sprung_mass_kg * front_fraction * right_fraction * GRAVITY_MPS2),
+        ),
+        "rear": (
+            float(sprung_mass_kg * rear_fraction * left_fraction * GRAVITY_MPS2),
+            float(sprung_mass_kg * rear_fraction * right_fraction * GRAVITY_MPS2),
+        ),
+    }
+
+
+def _metrics_csv_value(config: dict[str, Any], metric: str) -> float:
+    report_cfg = _as_mapping(config.get("report"), name="report")
+    metrics_path = Path(str(report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH)))
+    if not metrics_path.is_absolute():
+        metrics_path = REPO_ROOT / metrics_path
+    if not metrics_path.exists():
+        return float("nan")
+
+    with metrics_path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if row.get("metric") != metric:
+                continue
+            try:
+                return float(row.get("value", "nan"))
+            except ValueError:
+                return float("nan")
+    return float("nan")
+
+
+def _computed_motion_ratio(config: dict[str, Any], axle_name: str) -> float:
+    for metric in (
+        f"static_motion_ratio_{axle_name}",
+        f"avg_motion_ratio_{axle_name}",
+    ):
+        value = _metrics_csv_value(config, metric)
+        if np.isfinite(value) and abs(value) > 1e-12:
+            return value
+    return float("nan")
+
+
+def _static_balance_free_length(
+    side: dict[str, Any],
+    spring_table: np.ndarray,
+    motion_ratio: float,
+    sprung_corner_loads_n: tuple[float, float],
+) -> float:
+    if not np.isfinite(motion_ratio) or abs(motion_ratio) <= 1e-12:
+        return float("nan")
+
+    compressions = [
+        _force_to_deflection(spring_table, load_n * motion_ratio)
+        for load_n in sprung_corner_loads_n
+    ]
+    compression = float(np.nanmean(np.asarray(compressions, dtype=float)))
+    if not np.isfinite(compression):
+        return float("nan")
+    return _side_installed_spring_length(side) + compression
+
+
+def _configured_spring_free_length(
+    config: dict[str, Any],
+    axle_cfg: dict[str, Any],
+    axle_name: str,
+    side: dict[str, Any],
+    spring_table: np.ndarray,
+    sprung_corner_loads_n: tuple[float, float],
+) -> float:
+    explicit = _configured_optional_float(
+        axle_cfg,
+        ("spring_free_length_m", "free_length_m", "spring_free_length"),
+    )
+    if explicit is not None:
+        return explicit
+
+    motion_ratio = _computed_motion_ratio(config, axle_name)
+    balanced = _static_balance_free_length(
+        side,
+        spring_table,
+        motion_ratio,
+        sprung_corner_loads_n,
+    )
+    if np.isfinite(balanced):
+        return balanced
+    return _side_spring_free_length(side)
+
+
+def _static_balance_tolerances(config: dict[str, Any]) -> tuple[float, float]:
+    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
+    suspension_cfg = _as_mapping(
+        model_overrides.get("suspension"),
+        name="model_overrides.suspension",
+    )
+    return (
+        float(suspension_cfg.get("static_balance_tolerance_n", 5.0)),
+        float(suspension_cfg.get("static_balance_tolerance_pct", 0.5)),
+    )
+
+
+def _static_balance_iterations(config: dict[str, Any]) -> int:
+    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
+    suspension_cfg = _as_mapping(
+        model_overrides.get("suspension"),
+        name="model_overrides.suspension",
+    )
+    return max(1, int(suspension_cfg.get("static_balance_iterations", 3)))
+
+
+def _static_balance_convergence_n(config: dict[str, Any]) -> float:
+    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
+    suspension_cfg = _as_mapping(
+        model_overrides.get("suspension"),
+        name="model_overrides.suspension",
+    )
+    return max(0.0, float(suspension_cfg.get("static_balance_convergence_n", 0.01)))
+
+
+def _series_value_at(
+    series: dict[str, np.ndarray],
+    x_key: str,
+    y_key: str,
+    x_value: float,
+) -> float:
+    x = np.asarray(series.get(x_key, []), dtype=float).reshape(-1)
+    y = np.asarray(series.get(y_key, []), dtype=float).reshape(-1)
+    if x.size != y.size or x.size < 2:
+        return float("nan")
+    return _interp_with_extrap(float(x_value), x, y)
+
+
+def _static_balance_summary(setup: dict[str, Any]) -> dict[str, Any]:
+    errors_n: list[float] = []
+    errors_pct: list[float] = []
+    passes: list[bool] = []
+    static_motion_ratios: dict[str, list[float]] = {"front": [], "rear": []}
+
+    for axle_name in ("front", "rear"):
+        axle = setup.get(axle_name, {})
+        if not isinstance(axle, dict):
+            continue
+        axle_errors_n: list[float] = []
+        axle_errors_pct: list[float] = []
+        for side_name in ("left", "right"):
+            corner = axle.get(side_name, {})
+            if not isinstance(corner, dict):
+                continue
+            error_n = float(corner.get("static_fz_error_N", float("nan")))
+            error_pct = float(corner.get("static_fz_error_pct", float("nan")))
+            if np.isfinite(error_n):
+                axle_errors_n.append(error_n)
+            if np.isfinite(error_pct):
+                axle_errors_pct.append(error_pct)
+            static_mr = float(corner.get("motion_ratio", float("nan")))
+            if np.isfinite(static_mr):
+                static_motion_ratios[axle_name].append(static_mr)
+            passes.append(bool(corner.get("static_balance_ok", False)))
+        if axle_errors_n:
+            errors_n.append(abs(float(np.mean(axle_errors_n))))
+        if axle_errors_pct:
+            errors_pct.append(abs(float(np.mean(axle_errors_pct))))
+
+    return {
+        "static_balance_max_abs_fz_error_n": max(errors_n) if errors_n else float("nan"),
+        "static_balance_max_abs_fz_error_pct": max(errors_pct) if errors_pct else float("nan"),
+        "static_balance_pass": bool(passes and all(passes)),
+        "static_motion_ratio_front": (
+            float(np.mean(static_motion_ratios["front"]))
+            if static_motion_ratios["front"]
+            else float("nan")
+        ),
+        "static_motion_ratio_rear": (
+            float(np.mean(static_motion_ratios["rear"]))
+            if static_motion_ratios["rear"]
+            else float("nan")
+        ),
+    }
+
+
+def _static_balance_corrected_overrides(
+    overrides: dict[str, float],
+    setup: dict[str, Any],
+) -> dict[str, float]:
+    corrected = dict(overrides)
+    for axle_name, override_key in (
+        ("front", "pVehicle.pFrAxleDW.springFreeLength"),
+        ("rear", "pVehicle.pRrAxleDW.springFreeLength"),
+    ):
+        axle = setup.get(axle_name, {})
+        if not isinstance(axle, dict) or override_key not in corrected:
+            continue
+
+        length_corrections: list[float] = []
+        for side_name in ("left", "right"):
+            corner = axle.get(side_name, {})
+            if not isinstance(corner, dict):
+                continue
+
+            error_n = float(corner.get("static_fz_error_N", float("nan")))
+            motion_ratio = float(corner.get("motion_ratio", float("nan")))
+            spring_rate = float(corner.get("spring_rate_N_per_m", float("nan")))
+            if (
+                np.isfinite(error_n)
+                and np.isfinite(motion_ratio)
+                and np.isfinite(spring_rate)
+                and abs(motion_ratio) > 1e-12
+                and spring_rate > 0.0
+            ):
+                length_corrections.append(error_n * motion_ratio / spring_rate)
+
+        if length_corrections:
+            corrected[override_key] = float(
+                corrected[override_key] - np.mean(length_corrections)
+            )
+
+    return corrected
+
+
+def _indexed_table_overrides(prefix: str, table: np.ndarray) -> dict[str, float]:
+    table = np.asarray(table, dtype=float)
+    return {
+        f"{prefix}[{i + 1},{j + 1}]": float(table[i, j])
+        for i in range(table.shape[0])
+        for j in range(table.shape[1])
+    }
 
 
 def _interp_with_extrap(x: float, xp: np.ndarray, fp: np.ndarray) -> float:
@@ -315,9 +698,42 @@ class FourPostEvalSim:
             ),
         }
 
+    def build_model_setup_overrides(self) -> dict[str, float]:
+        setup = _configured_suspension_setup(self.config)
+        front_spring_table = setup["front_spring_table"]
+        rear_spring_table = setup["rear_spring_table"]
+        front_stabar_rate = float(setup["front_stabar_rate"])
+        rear_stabar_rate = float(setup["rear_stabar_rate"])
+
+        overrides: dict[str, float] = {
+            "pVehicle.pFrAxleDW.springFreeLength": float(setup["front_spring_free_length"]),
+            "pVehicle.pRrAxleDW.springFreeLength": float(setup["rear_spring_free_length"]),
+            "pVehicle.pFrStabar.barRate": front_stabar_rate,
+            "pVehicle.pRrStabar.barRate": rear_stabar_rate,
+            # FourPost templates zero the exposed bars for pure-K&C runs; set
+            # the public bar records for the physical load-transfer pass.
+            "pFrStabar.barRate": front_stabar_rate,
+            "pRrStabar.barRate": rear_stabar_rate,
+        }
+        overrides.update(
+            _indexed_table_overrides(
+                "pVehicle.pFrAxleDW.springTable",
+                front_spring_table,
+            )
+        )
+        overrides.update(
+            _indexed_table_overrides(
+                "pVehicle.pRrAxleDW.springTable",
+                rear_spring_table,
+            )
+        )
+        return overrides
+
     def build_setup(self, summary: dict[str, Any], series: dict[str, np.ndarray]) -> dict[str, Any]:
         vehicle = _load_active_vehicle_yaml()
         sprung_mass_kg, sprung_cg_m = _combine_sprung_mass(vehicle)
+        suspension_setup = _configured_suspension_setup(self.config)
+        static_balance_tol_n, static_balance_tol_pct = _static_balance_tolerances(self.config)
 
         front_side = _side_data(vehicle, "front")
         rear_side = _side_data(vehicle, "rear")
@@ -367,22 +783,6 @@ class FourPostEvalSim:
                 total += float(_nested_value(masses, key, "mass_kg"))
             return total
 
-        def spring_table(side: dict[str, Any]) -> np.ndarray:
-            shock = _nested_value(side, "actuation", "shock")
-            table = shock.get("spring_table")
-            if isinstance(table, dict):
-                table = table.get("table")
-            return _table_array(table)
-
-        def installed_length(side: dict[str, Any]) -> float:
-            actuation = _nested_value(side, "actuation")
-            shock_mount = np.asarray(_nested_value(actuation, "shock", "mount_m"), dtype=float)
-            if "bellcrank" in actuation:
-                shock_pickup = np.asarray(_nested_value(actuation, "bellcrank", "pickups_m", "shock"), dtype=float)
-                return float(np.linalg.norm(shock_mount - shock_pickup))
-            rod_mount = np.asarray(_nested_value(actuation, "rod_mount_m"), dtype=float)
-            return float(np.linalg.norm(shock_mount - rod_mount))
-
         def tire_rate(side: dict[str, Any]) -> float:
             return float(_nested_value(side, "tire", "vertical_stiffness_n_per_m"))
 
@@ -392,24 +792,33 @@ class FourPostEvalSim:
             side = axle["side"]
             axle_fraction = float(axle["axle_fraction"])
             axle_unsprung_mass = corner_unsprung_mass(side)
-            axle_installed_length_m = installed_length(side)
+            axle_installed_length_m = _side_installed_spring_length(side)
             axle_tire_rate = tire_rate(side)
-            axle_spring_table = spring_table(side)
+            axle_spring_table = (
+                suspension_setup["front_spring_table"]
+                if axle_name == "front"
+                else suspension_setup["rear_spring_table"]
+            )
             motion_ratio_key = (
                 "avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear"
             )
+            axle_sprung_loads = {
+                "left": sprung_mass_kg * axle_fraction * left_fraction * GRAVITY_MPS2,
+                "right": sprung_mass_kg * axle_fraction * right_fraction * GRAVITY_MPS2,
+            }
+            static_balance_target_load = float(np.mean(list(axle_sprung_loads.values())))
 
             for corner_name, corner_key in axle["corner_pairs"]:
                 corner_fraction = axle_fraction * (left_fraction if corner_name == "left" else right_fraction)
                 sprung_corner_mass = sprung_mass_kg * corner_fraction
-                sprung_corner_load = sprung_corner_mass * GRAVITY_MPS2
+                sprung_corner_load = float(axle_sprung_loads[corner_name])
 
                 static_mr = _static_motion_ratio(
                     series,
                     corner_key,
                     float(summary.get(motion_ratio_key, float("nan"))),
                 )
-                spring_force = sprung_corner_load * static_mr
+                spring_force = static_balance_target_load * static_mr
                 spring_compression_m = _force_to_deflection(axle_spring_table, spring_force)
                 spring_rate = _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
                 wheel_rate = (
@@ -418,6 +827,26 @@ class FourPostEvalSim:
                     else float("nan")
                 )
                 free_length_m = axle_installed_length_m + spring_compression_m
+                static_fz_n = _series_value_at(
+                    series,
+                    "heave",
+                    f"{corner_key}_fz_vs_heave",
+                    0.0,
+                )
+                static_fz_error_n = static_fz_n - static_balance_target_load
+                static_fz_error_pct = (
+                    100.0 * static_fz_error_n / static_balance_target_load
+                    if abs(static_balance_target_load) > 1e-12
+                    else float("nan")
+                )
+                static_balance_limit_n = max(
+                    static_balance_tol_n,
+                    abs(static_balance_target_load) * static_balance_tol_pct / 100.0,
+                )
+                static_balance_ok = bool(
+                    np.isfinite(static_fz_error_n)
+                    and abs(static_fz_error_n) <= static_balance_limit_n
+                )
                 sprung_mode_hz, unsprung_mode_hz = _quarter_car_frequencies(
                     sprung_corner_mass,
                     axle_unsprung_mass,
@@ -435,12 +864,18 @@ class FourPostEvalSim:
                     "sprung_mass_kg": float(sprung_corner_mass),
                     "unsprung_mass_kg": float(axle_unsprung_mass),
                     "sprung_load_N": float(sprung_corner_load),
+                    "static_balance_target_load_N": float(static_balance_target_load),
                     "motion_ratio": float(static_mr),
                     "spring_rate_N_per_m": float(spring_rate),
                     "spring_force_N": float(spring_force),
                     "spring_compression_m": float(spring_compression_m),
                     "spring_installed_length_m": float(axle_installed_length_m),
                     "spring_free_length_m": float(free_length_m),
+                    "static_fz_N": float(static_fz_n),
+                    "static_fz_error_N": float(static_fz_error_n),
+                    "static_fz_error_pct": float(static_fz_error_pct),
+                    "static_balance_limit_N": float(static_balance_limit_n),
+                    "static_balance_ok": static_balance_ok,
                     "wheel_rate_N_per_m": float(wheel_rate),
                     "sprung_frequency_hz": float(sprung_mode_hz),
                     "unsprung_frequency_hz": float(unsprung_mode_hz),
@@ -490,26 +925,61 @@ class FourPostEvalSim:
             },
         )
 
-        results = runner.run(
-            signals=FOUR_POST_EVAL_SIGNALS,
-            mode="raw",
-            cases=[self.build_overrides()],
-            execution=execution_cfg,
-        )
+        base_overrides = self.build_overrides()
+        setup_overrides = self.build_model_setup_overrides()
+        max_static_balance_iterations = _static_balance_iterations(self.config)
+        static_balance_convergence_n = _static_balance_convergence_n(self.config)
+        results: list[dict[str, Any]] = []
+        summary: dict[str, Any] = {}
+        series: dict[str, np.ndarray] = {}
+        setup: dict[str, Any] = {}
 
-        if not results:
-            raise RuntimeError("FourPostEval returned no cases.")
-
-        result = results[0]
-        if result.get("_status") != "ok":
-            raise RuntimeError(
-                "FourPostEval simulation failed:\n"
-                f"{result.get('_error', 'unknown error')}\n"
-                f"{result.get('_traceback', '')}"
+        for iteration_idx in range(max_static_balance_iterations):
+            results = runner.run(
+                signals=FOUR_POST_EVAL_SIGNALS,
+                mode="raw",
+                cases=[
+                    {
+                        **base_overrides,
+                        **setup_overrides,
+                        "_case_label": f"static balance {iteration_idx + 1}",
+                    }
+                ],
+                execution=execution_cfg,
             )
 
-        summary, series = self.summarize(result)
-        setup = self.build_setup(summary, series)
+            if not results:
+                raise RuntimeError("FourPostEval returned no cases.")
+
+            result = results[0]
+            if result.get("_status") != "ok":
+                raise RuntimeError(
+                    "FourPostEval simulation failed:\n"
+                    f"{result.get('_error', 'unknown error')}\n"
+                    f"{result.get('_traceback', '')}"
+                )
+
+            summary, series = self.summarize(result)
+            setup = self.build_setup(summary, series)
+            summary.update(_static_balance_summary(setup))
+            summary["static_balance_iterations"] = iteration_idx + 1
+            max_abs_error_n = float(
+                summary.get("static_balance_max_abs_fz_error_n", float("nan"))
+            )
+            if (
+                np.isfinite(max_abs_error_n)
+                and max_abs_error_n <= static_balance_convergence_n
+            ):
+                break
+
+            corrected_overrides = _static_balance_corrected_overrides(
+                setup_overrides,
+                setup,
+            )
+            if corrected_overrides == setup_overrides:
+                break
+            setup_overrides = corrected_overrides
+
         metrics_csv_path = write_metrics_csv(
             summary,
             report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH),
@@ -547,7 +1017,7 @@ class FourPostEvalSim:
             coeffs = np.polyfit(x, y, 1)
             return float(coeffs[0])
 
-        def nanmean_or_nan(values: Sequence[float]) -> float:
+        def nanmean_or_nan(values: Any) -> float:
             arr = np.asarray(list(values), dtype=float)
             if arr.size == 0 or not np.isfinite(arr).any():
                 return float("nan")
@@ -572,6 +1042,7 @@ class FourPostEvalSim:
             "kpi": "Kpi",
             "trail": "MechTrail",
             "scrub": "MechScrub",
+            "fz": "Fz",
         }
         corners = ["fr_l", "fr_r", "rr_l", "rr_r"]
 
@@ -652,14 +1123,22 @@ class FourPostEvalSim:
         fr_coeff_roll = fr_roll_jack_y / (fr_roll_fy + eps)
         rr_coeff_roll = rr_roll_jack_y / (rr_roll_fy + eps)
 
-        h_cg = float(self.config["vehicle"]["h_cg"])
-        track_front = float(self.config["vehicle"]["track_front"])
-        track_rear = float(self.config["vehicle"]["track_rear"])
-        wheelbase = float(self.config["vehicle"]["wheelbase"])
-        k_sf = float(self.config["suspension"]["front"]["spring_rate"])
-        k_sr = float(self.config["suspension"]["rear"]["spring_rate"])
-        k_arb_f = float(self.config["suspension"]["front"]["arb_rate"])
-        k_arb_r = float(self.config["suspension"]["rear"]["arb_rate"])
+        vehicle = _load_active_vehicle_yaml()
+        _, sprung_cg_m = _combine_sprung_mass(vehicle)
+        suspension_setup = _configured_suspension_setup(self.config)
+        front_side = suspension_setup["front_side"]
+        rear_side = suspension_setup["rear_side"]
+        front_wc = np.asarray(_nested_value(front_side, "suspension", "wheel_center_m"), dtype=float)
+        rear_wc = np.asarray(_nested_value(rear_side, "suspension", "wheel_center_m"), dtype=float)
+
+        h_cg = float(sprung_cg_m[2])
+        track_front = 2.0 * float(front_wc[1])
+        track_rear = 2.0 * float(rear_wc[1])
+        wheelbase = abs(float(front_wc[0]) - float(rear_wc[0]))
+        k_sf = float(suspension_setup["front_spring_rate"])
+        k_sr = float(suspension_setup["rear_spring_rate"])
+        k_arb_f = float(suspension_setup["front_stabar_rate"])
+        k_arb_r = float(suspension_setup["rear_stabar_rate"])
 
         ref_long = h_cg / wheelbase
         ref_roll = h_cg / ((track_front + track_rear) / 2.0)
@@ -733,6 +1212,56 @@ class FourPostEvalSim:
             mr = 1.0 / np.abs(ds_dphi)
             return phi, mr, float(np.nanmean(mr))
 
+        def sampled_series(
+            x: np.ndarray,
+            y: np.ndarray,
+            sample_x: np.ndarray,
+            fallback: float,
+        ) -> np.ndarray:
+            x = np.asarray(x, dtype=float).reshape(-1)
+            y = np.asarray(y, dtype=float).reshape(-1)
+            sample_x = np.asarray(sample_x, dtype=float).reshape(-1)
+
+            mask = np.isfinite(x) & np.isfinite(y)
+            x = x[mask]
+            y = y[mask]
+
+            if x.size < 2 or np.nanstd(x) < 1e-12:
+                return np.full_like(sample_x, float(fallback), dtype=float)
+
+            idx = np.argsort(x)
+            x = x[idx]
+            y = y[idx]
+
+            return np.asarray(
+                [_interp_with_extrap(float(xi), x, y) for xi in sample_x],
+                dtype=float,
+            )
+
+        def fill_from_finite_neighbors(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+            x = np.asarray(x, dtype=float).reshape(-1)
+            y = np.asarray(y, dtype=float).reshape(-1).copy()
+            finite = np.isfinite(x) & np.isfinite(y)
+            missing = np.isfinite(x) & ~np.isfinite(y)
+            if not missing.any() or finite.sum() < 2:
+                return y
+
+            y[missing] = np.asarray(
+                [_interp_with_extrap(float(xi), x[finite], y[finite]) for xi in x[missing]],
+                dtype=float,
+            )
+            return y
+
+        def bar_roll_stiffness(
+            bar_rate: float,
+            motion_ratio: np.ndarray,
+        ) -> np.ndarray:
+            motion_ratio = np.asarray(motion_ratio, dtype=float).reshape(-1)
+            out = np.full_like(motion_ratio, float("nan"), dtype=float)
+            mask = np.isfinite(motion_ratio) & (np.abs(motion_ratio) > 1e-12)
+            out[mask] = bar_rate / (motion_ratio[mask]**2)
+            return out
+
         motion_ratio_series: dict[str, np.ndarray] = {}
         motion_ratio_means: list[float] = []
         for corner in corners:
@@ -769,17 +1298,49 @@ class FourPostEvalSim:
         kw_r = k_sr / (mr_r**2)
         kphi_spr_f = 0.5 * kw_f * (track_front**2)
         kphi_spr_r = 0.5 * kw_r * (track_rear**2)
-        kphi_arb_f = k_arb_f / (smr_f**2)
-        kphi_arb_r = k_arb_r / (smr_r**2)
+        smr_f_roll = sampled_series(x_smr_f, y_smr_f, roll_vals, smr_f)
+        smr_r_roll = sampled_series(x_smr_r, y_smr_r, roll_vals, smr_r)
+        kphi_arb_f_roll = bar_roll_stiffness(k_arb_f, smr_f_roll)
+        kphi_arb_r_roll = bar_roll_stiffness(k_arb_r, smr_r_roll)
+        kphi_el_f_roll = kphi_spr_f + kphi_arb_f_roll
+        kphi_el_r_roll = kphi_spr_r + kphi_arb_r_roll
+        kphi_total_roll = kphi_el_f_roll + kphi_el_r_roll
+        lltd_stiffness_roll = np.divide(
+            kphi_el_f_roll,
+            kphi_total_roll,
+            out=np.full_like(kphi_total_roll, float("nan"), dtype=float),
+            where=np.abs(kphi_total_roll) > 1e-9,
+        )
+
+        fr_l_fz_roll = roll_series["fr_l_fz_vs_roll"]
+        fr_r_fz_roll = roll_series["fr_r_fz_vs_roll"]
+        rr_l_fz_roll = roll_series["rr_l_fz_vs_roll"]
+        rr_r_fz_roll = roll_series["rr_r_fz_vs_roll"]
+        fr_l_fz_ref = _interp_with_extrap(0.0, roll_vals, fr_l_fz_roll)
+        fr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, fr_r_fz_roll)
+        rr_l_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_l_fz_roll)
+        rr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_r_fz_roll)
+        front_load_transfer_roll = np.abs(
+            (fr_l_fz_roll - fr_l_fz_ref) - (fr_r_fz_roll - fr_r_fz_ref)
+        )
+        rear_load_transfer_roll = np.abs(
+            (rr_l_fz_roll - rr_l_fz_ref) - (rr_r_fz_roll - rr_r_fz_ref)
+        )
+        total_load_transfer_roll = front_load_transfer_roll + rear_load_transfer_roll
+        lltd_contact_roll = np.divide(
+            front_load_transfer_roll,
+            total_load_transfer_roll,
+            out=np.full_like(total_load_transfer_roll, float("nan"), dtype=float),
+            where=total_load_transfer_roll > 1e-9,
+        )
+        lltd_contact_roll = fill_from_finite_neighbors(roll_vals, lltd_contact_roll)
+        lltd_roll = lltd_contact_roll.copy()
+        lltd_geometry_delta_roll = lltd_contact_roll - lltd_stiffness_roll
+
+        kphi_arb_f = nanmean_or_nan(kphi_arb_f_roll)
+        kphi_arb_r = nanmean_or_nan(kphi_arb_r_roll)
         kphi_el_f = kphi_spr_f + kphi_arb_f
         kphi_el_r = kphi_spr_r + kphi_arb_r
-
-        n_roll = min(len(fr_anti_roll), len(rr_anti_roll))
-        af = fr_anti_roll[:n_roll] / 100.0
-        ar = rr_anti_roll[:n_roll] / 100.0
-        kphi_eff_f = kphi_el_f * (1.0 + af)
-        kphi_eff_r = kphi_el_r * (1.0 + ar)
-        lltd_roll = kphi_eff_f / (kphi_eff_f + kphi_eff_r + 1e-9)
 
         gains = {
             "camber_gain_heave_rad_per_m": compute_gain(
@@ -826,8 +1387,14 @@ class FourPostEvalSim:
             "avg_anti_squat_pct": float(np.mean(rr_anti_heave)),
             "avg_anti_roll_front_pct": float(np.mean(fr_anti_roll)),
             "avg_anti_roll_rear_pct": float(np.mean(rr_anti_roll)),
-            "avg_lltd_front_frac": float(np.mean(lltd_roll)),
-            "avg_lltd_front_pct": float(100.0 * np.mean(lltd_roll)),
+            "avg_lltd_front_frac": nanmean_or_nan(lltd_roll),
+            "avg_lltd_front_pct": float(100.0 * nanmean_or_nan(lltd_roll)),
+            "avg_roll_rate_distribution_front_pct": float(
+                100.0 * nanmean_or_nan(lltd_stiffness_roll)
+            ),
+            "avg_antiroll_geometry_lltd_delta_pct": float(
+                100.0 * nanmean_or_nan(lltd_geometry_delta_roll)
+            ),
             "avg_longitudinal_jacking_coeff_front": float(np.mean(fr_coeff_heave)),
             "avg_longitudinal_jacking_coeff_rear": float(np.mean(rr_coeff_heave)),
             "avg_lateral_jacking_coeff_front": float(np.mean(fr_coeff_roll)),
@@ -859,8 +1426,17 @@ class FourPostEvalSim:
             "rr_jacking_vs_roll_x": rr_roll_x,
             "fr_anti_vs_roll": fr_anti_roll,
             "rr_anti_vs_roll": rr_anti_roll,
-            "lltd_vs_roll_x": fr_roll_x[:n_roll],
+            "lltd_vs_roll_x": roll_vals,
             "lltd_vs_roll": lltd_roll,
+            "lltd_contact_force_vs_roll": lltd_contact_roll,
+            "lltd_stiffness_vs_roll": lltd_stiffness_roll,
+            "lltd_antiroll_geometry_delta_vs_roll": lltd_geometry_delta_roll,
+            "front_load_transfer_vs_roll": front_load_transfer_roll,
+            "rear_load_transfer_vs_roll": rear_load_transfer_roll,
+            "total_load_transfer_vs_roll": total_load_transfer_roll,
+            "front_roll_stiffness_vs_roll": kphi_el_f_roll,
+            "rear_roll_stiffness_vs_roll": kphi_el_r_roll,
+            "total_roll_stiffness_vs_roll": kphi_total_roll,
         }
 
         return summary, series

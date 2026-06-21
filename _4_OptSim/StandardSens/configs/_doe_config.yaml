@@ -1,9 +1,9 @@
 architecture:
   template: ../../vehicle.yml
-  vehicle: DWBCStabar_DWBCStabar
-  record: DWBCStabar_DWBCStabarRecord
+  vehicle: EVBatInvMotDiff_DWBCStabar_DWBCStabar
+  record: EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord
   source: configs/vehicle_architecture.yaml
-baseline_mo: ../../../_0_Utils/external/BobLib/BobLib/Resources/VehicleDefn/DWBCStabar_DWBCStabarRecord.mo
+baseline_mo: ../../../_0_Utils/external/BobLib/BobLibVehicleInterfaces/Records/VehicleDefn/EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord.mo
 variables:
 - path: sprung_mass.mass_kg
   range:
@@ -134,9 +134,8 @@ variables:
     - 1
   - block: pFrAxleDW
     param: springFreeLength
-    range:
-    - 0.1797
-    - 0.2197
+    operation: static_balance_free_length
+    axle: front
 - path: front.actuation.damper_rate_n_s_per_m
   range:
   - 680
@@ -188,9 +187,8 @@ variables:
     - 1
   - block: pRrAxleDW
     param: springFreeLength
-    range:
-    - 0.2434
-    - 0.2834
+    operation: static_balance_free_length
+    axle: rear
 - path: rear.actuation.damper_rate_n_s_per_m
   range:
   - 1040

@@ -17,6 +17,11 @@ class FourPostCornerSummary(TypedDict):
     spring_compression_m: float
     spring_installed_length_m: float
     spring_free_length_m: float
+    static_fz_N: float
+    static_fz_error_N: float
+    static_fz_error_pct: float
+    static_balance_limit_N: float
+    static_balance_ok: bool
     wheel_rate_N_per_m: float
     sprung_frequency_hz: float
     unsprung_frequency_hz: float
@@ -141,6 +146,9 @@ def add_four_post_setup_page(
             ("Installed length", "spring_installed_length_m", "mm", "{:.1f}", 1000.0),
             ("Compression", "spring_compression_m", "mm", "{:.1f}", 1000.0),
             ("Free length", "spring_free_length_m", "mm", "{:.1f}", 1000.0),
+            ("Balance target", "static_balance_target_load_N", "N", "{:.1f}", 1.0),
+            ("Static Fz", "static_fz_N", "N", "{:.1f}", 1.0),
+            ("Fz error", "static_fz_error_N", "N", "{:+.1f}", 1.0),
             ("Wheel rate", "wheel_rate_N_per_m", "N/m", "{:.0f}", 1.0),
             ("Sprung freq", "sprung_frequency_hz", "Hz", "{:.2f}", 1.0),
             ("Unsprung freq", "unsprung_frequency_hz", "Hz", "{:.2f}", 1.0),
@@ -172,23 +180,37 @@ def add_four_post_setup_page(
         ax.plot([x_metric, x_unit + 0.01], [header_y - 0.015, header_y - 0.015], color="#c8cfdb", linewidth=1.0)
 
         row_y = header_y - 0.040
-        row_step = 0.050
+        row_step = 0.043
+
+        def corner_value_color(corner: FourPostCornerSummary, key: str) -> str:
+            if key in {"static_fz_N", "static_fz_error_N"} and not corner.get("static_balance_ok", True):
+                return "#b91c1c"
+            return "#111827"
+
         for i, (label, key, unit, fmt, scale) in enumerate(rows):
             yy = row_y - i * row_step
             left_val = left_corner.get(key)
             right_val = right_corner.get(key)
-            label_color = "#20242b"
-            value_color = "#111827"
+            row_fails = (
+                key in {"static_fz_N", "static_fz_error_N"}
+                and (
+                    not left_corner.get("static_balance_ok", True)
+                    or not right_corner.get("static_balance_ok", True)
+                )
+            )
+            label_color = "#b91c1c" if row_fails else "#20242b"
+            left_color = corner_value_color(left_corner, key)
+            right_color = corner_value_color(right_corner, key)
 
             ax.text(x_metric, yy, label, fontsize=9.0, color=label_color)
-            ax.text(x_left, yy, _format_table_value(left_val, fmt, scale), fontsize=9.0, ha="right", color=value_color)
+            ax.text(x_left, yy, _format_table_value(left_val, fmt, scale), fontsize=9.0, ha="right", color=left_color)
             ax.text(
                 x_right,
                 yy,
                 _format_table_value(right_val, fmt, scale),
                 fontsize=9.0,
                 ha="right",
-                color=value_color,
+                color=right_color,
             )
             ax.text(x_unit, yy, unit, fontsize=9.0, color="#444b55")
 
@@ -222,7 +244,7 @@ def add_summary_page(pdf, summary, title=None):
             r"$\mathrm{m/s^2}$",
         ),
         (
-            "Linear Ramp Sideslip Gradient",
+            "Linear Sideslip Gradient",
             rf"${summary['sideslip_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
@@ -232,7 +254,7 @@ def add_summary_page(pdf, summary, title=None):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Limit Ramp Sideslip Gradient",
+            "Limit Sideslip Gradient",
             rf"${summary['limit_sideslip_gradient_rad_per_mps2']:.5f}$",
             r"$\frac{\mathrm{rad}}{\mathrm{m/s^2}}$",
         ),
@@ -282,12 +304,12 @@ def add_summary_page(pdf, summary, title=None):
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Linear Ramp Roll Gradient",
+            "Linear Roll Gradient",
             rf"${summary['roll_gradient_deg_per_g']:.3f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
         (
-            "Limit Ramp Roll Gradient",
+            "Limit Roll Gradient",
             rf"${summary['limit_roll_gradient_deg_per_g']:.3f}$",
             r"$\frac{\mathrm{deg}}{g}$",
         ),
@@ -365,9 +387,22 @@ def add_knc_summary_page(
 
     y_top = 0.88
 
-    def add_section(x_label, x_val, x_unit, y, title, rows):
+    def metric_color(key: str) -> str:
+        if key.startswith("static_balance_") and summary.get("static_balance_pass") is False:
+            return "#b91c1c"
+        return "black"
+
+    def add_section(x_label, x_val, x_unit, y, title, rows, section_color: str | None = None):
         x_title = 0.5 * (x_label + x_unit)
-        plt.text(x_title, y, title, fontsize=13, weight="bold", ha="center")
+        plt.text(
+            x_title,
+            y,
+            title,
+            fontsize=13,
+            weight="bold",
+            ha="center",
+            color=section_color or "black",
+        )
         y -= 0.045
 
         for label, key, unit, fmt in rows:
@@ -381,9 +416,10 @@ def add_knc_summary_page(
                 except (TypeError, ValueError):
                     val_str = fmt.format(val)
 
-            plt.text(x_label, y, label, fontsize=11)
-            plt.text(x_val, y, val_str, fontsize=11, ha="right")
-            plt.text(x_unit, y, unit, fontsize=11)
+            color = section_color or metric_color(key)
+            plt.text(x_label, y, label, fontsize=11, color=color)
+            plt.text(x_val, y, val_str, fontsize=11, ha="right", color=color)
+            plt.text(x_unit, y, unit, fontsize=11, color=color)
 
             y -= 0.035
 
@@ -418,6 +454,12 @@ def add_knc_summary_page(
             ("Rear Anti-Roll", "avg_anti_roll_rear_pct", "%", "{:.1f}"),
             ("LLTD (Front)", "avg_lltd_front_pct", "%", "{:.1f}"),
         ])
+
+    y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
+        "Setup Check", [
+            ("Max Static Fz Error", "static_balance_max_abs_fz_error_n", "N", "{:.1f}"),
+            ("Max Static Fz Error", "static_balance_max_abs_fz_error_pct", "%", "{:.2f}"),
+        ], section_color="#b91c1c")
 
     # ============================================================
     # RIGHT COLUMN

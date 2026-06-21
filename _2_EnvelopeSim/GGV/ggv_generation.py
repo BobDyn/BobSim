@@ -1713,6 +1713,7 @@ def save_metric_rows(rows: list[dict[str, float | str]], output_path: str | Path
         writer = csv.DictWriter(
             f,
             fieldnames=["standard", "metric", "value", "units", "description"],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -1758,7 +1759,7 @@ def save_track_profile_csv(
             if key not in fieldnames:
                 fieldnames.append(key)
     with output.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(f"Saved GGV track profile CSV: {output}")
@@ -1782,7 +1783,7 @@ def save_velocity_profile_csv(
         "radius_m",
     ]
     with output.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(f"Saved GGV track velocity profile CSV: {output}")

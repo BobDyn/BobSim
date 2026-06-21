@@ -1,0 +1,235 @@
+schema: bobsim.regression.baseline.v1
+name: default_vehicle_standard
+description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
+refresh:
+  make_targets:
+    - standard-build
+    - standard-eval-ramp-steer
+    - standard-eval-steady-state
+    - standard-eval-transient
+    - standard-build-four-post
+    - standard-eval-four-post
+workflows:
+  four_post:
+    standard: FourPostEval
+    artifacts:
+      metrics_csv: _3_StandardSim/results/four_post_eval_report_metrics.csv
+      report_pdf: _3_StandardSim/results/four_post_eval_report.pdf
+      min_report_bytes: 10000
+    metrics:
+      static_balance_pass:
+        value: true
+      static_balance_max_abs_fz_error_n:
+        value: 0.0004759526628390631
+        abs_tol: 0.5
+      static_motion_ratio_front:
+        value: 1.0053063275855492
+        rel_tol: 0.05
+      static_motion_ratio_rear:
+        value: 1.2386785254222528
+        rel_tol: 0.05
+      avg_motion_ratio_front:
+        value: 0.9871844690290896
+        rel_tol: 0.05
+      avg_motion_ratio_rear:
+        value: 1.2527535862365913
+        rel_tol: 0.05
+      avg_stabar_motion_ratio_front:
+        value: 0.12847949349204135
+        rel_tol: 0.10
+      avg_stabar_motion_ratio_rear:
+        value: 0.1547623168525175
+        rel_tol: 0.10
+      spring_roll_stiffness_front_Nm_per_rad:
+        value: 19805.295373212488
+        rel_tol: 0.05
+      spring_roll_stiffness_rear_Nm_per_rad:
+        value: 20497.24046267755
+        rel_tol: 0.05
+      arb_roll_stiffness_front_Nm_per_rad:
+        value: 23628.294539344817
+        rel_tol: 0.10
+      arb_roll_stiffness_rear_Nm_per_rad:
+        value: 21919.64693525173
+        rel_tol: 0.10
+      elastic_roll_stiffness_front_Nm_per_rad:
+        value: 43433.589912557305
+        rel_tol: 0.05
+      elastic_roll_stiffness_rear_Nm_per_rad:
+        value: 42416.887397929284
+        rel_tol: 0.05
+      avg_roll_rate_distribution_front_pct:
+        value: 50.59177144747363
+        abs_tol: 2.0
+      avg_lltd_front_pct:
+        value: 49.07757062833555
+        abs_tol: 3.0
+      avg_antiroll_geometry_lltd_delta_pct:
+        value: -1.514200819138073
+        abs_tol: 2.0
+  ramp_steer:
+    standard: RampSteerEval
+    artifacts:
+      metrics_csv: _3_StandardSim/results/ramp_steer_eval_report_metrics.csv
+      report_pdf: _3_StandardSim/results/ramp_steer_eval_report.pdf
+      min_report_bytes: 10000
+    metrics:
+      n_cases:
+        value: 4
+      n_successful_cases:
+        value: 4
+      n_failed_cases:
+        value: 0
+      standard_sweep_max_ay_mps2:
+        value: 18.0
+        abs_tol: 0.001
+      metric_source_velocity_mps:
+        value: 15.0
+        abs_tol: 0.001
+      ay_max:
+        value: 20.89523559276573
+        abs_tol: 0.75
+      limit_ay_mps2:
+        value: 20.89523559276573
+        abs_tol: 0.75
+      sideslip_gradient_deg_per_g:
+        value: -0.9635557717332586
+        abs_tol: 0.75
+      understeer_gradient_deg_per_g:
+        value: 0.2528621512993503
+        abs_tol: 0.75
+      handwheel_angle_gradient_deg_per_g:
+        value: 14.782597084070758
+        rel_tol: 0.10
+      roll_gradient_deg_per_g:
+        value: 0.8881186862201453
+        abs_tol: 0.08
+      peak_handwheel_torque_Nm:
+        value: -21.38462451627505
+        abs_tol: 1.0
+      roadwheel_fit_nrmse:
+        value: 0.011258672808393492
+        abs_tol: 0.03
+      steer_excess_fit_nrmse:
+        value: 0.0876623086560855
+        abs_tol: 0.08
+  steady_state:
+    standard: SteadyStateEval
+    artifacts:
+      metrics_csv: _3_StandardSim/results/steady_state_eval_report_metrics.csv
+      report_pdf: _3_StandardSim/results/steady_state_eval_report.pdf
+      min_report_bytes: 10000
+    metrics:
+      n_cases:
+        value: 40
+      n_successful_cases:
+        value: 40
+      n_failed_cases:
+        value: 0
+      standard_sweep_max_ay_mps2:
+        value: 18.0
+        abs_tol: 0.001
+      standard_sweep_target_count:
+        value: 10
+      metric_source_velocity_mps:
+        value: 15.0
+        abs_tol: 0.001
+      ay_max:
+        value: 18.05022669364245
+        abs_tol: 0.3
+      limit_ay_mps2:
+        value: 18.05022669364245
+        abs_tol: 0.3
+      sideslip_gradient_deg_per_g:
+        value: 0.1296105162883256
+        abs_tol: 0.2
+      understeer_gradient_deg_per_g:
+        value: 0.2966136957496569
+        abs_tol: 0.2
+      handwheel_angle_gradient_deg_per_g:
+        value: 16.215865552336357
+        abs_tol: 0.5
+      limit_handwheel_gradient_deg_per_g:
+        value: 13.889926908567428
+        abs_tol: 1.0
+      roll_gradient_deg_per_g:
+        value: 0.8874524276530404
+        abs_tol: 0.05
+      peak_handwheel_torque_Nm:
+        value: -21.02192695448116
+        abs_tol: 1.0
+      roadwheel_fit_nrmse:
+        value: 0.00550031206937842
+        abs_tol: 0.02
+      steer_excess_fit_nrmse:
+        value: 0.05541545425302238
+        abs_tol: 0.05
+  transient:
+    standard: TransientEval
+    artifacts:
+      metrics_csv: _3_StandardSim/results/transient_eval_report_metrics.csv
+      report_pdf: _3_StandardSim/results/transient_eval_report.pdf
+      min_report_bytes: 10000
+    metrics:
+      general.n_cases:
+        value: 8
+      general.n_successful_cases:
+        value: 8
+      general.n_failed_cases:
+        value: 0
+      general.representative_testVel_mps:
+        value: 15.0
+        abs_tol: 0.001
+      general.n_velocity_groups:
+        value: 2
+      step.ay_peak:
+        value: 3.180413801218347
+        rel_tol: 0.08
+      step.ay_ss:
+        value: 2.68279283482002
+        rel_tol: 0.08
+      step.ay_gain_dc:
+        value: 31.854113033319706
+        rel_tol: 0.06
+      step.ay_overshoot_pct:
+        value: 18.548616946478123
+        abs_tol: 4.0
+      step.yaw_gain_dc:
+        value: 2.1044106072547804
+        rel_tol: 0.06
+      step.yaw_overshoot_pct:
+        value: 16.59200809951627
+        abs_tol: 4.0
+      step.roll_gain_dc:
+        value: 0.0502744232206694
+        rel_tol: 0.08
+      step.settling_time_s:
+        value: 1.291508710893958
+        abs_tol: 0.35
+      frequency.ay_gain_peak:
+        value: 32.98617809385387
+        rel_tol: 0.06
+      frequency.yaw_gain_peak:
+        value: 2.127143693105744
+        rel_tol: 0.06
+      frequency.bandwidth_hz:
+        value: 1.0
+        abs_tol: 0.001
+      frequency.ay_phase_1hz:
+        value: -3.432434643788213
+        abs_tol: 3.0
+      frequency.yaw_phase_1hz:
+        value: -8.974611503174401
+        abs_tol: 3.0
+      frequency.lag_steer_to_ay:
+        value: 0.009534540677189479
+        abs_tol: 0.01
+      frequency.lag_steer_to_yaw:
+        value: 0.02492947639770667
+        abs_tol: 0.01
+      quality.ay_fit_error:
+        value: 0.008572101861218583
+        abs_tol: 0.02
+      quality.yaw_fit_error:
+        value: 0.006345633087192176
+        abs_tol: 0.02
