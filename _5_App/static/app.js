@@ -1,6 +1,17 @@
 const savedRotationSensitivity = Number(localStorage.getItem("bobsim-rotation-sensitivity"));
+const savedSetupPaneWidth = Number(localStorage.getItem("bobsim-setup-pane-width"));
+const savedGeometryShowFront = localStorage.getItem("bobsim-geometry-show-front");
+const savedGeometryShowRear = localStorage.getItem("bobsim-geometry-show-rear");
 const DEFAULT_VEHICLE_YAW = Math.PI - 0.72;
 const DEFAULT_VEHICLE_PITCH = 0.46;
+const DEFAULT_SETUP_PANE_WIDTH = 320;
+const MIN_SETUP_PANE_WIDTH = 260;
+const MAX_SETUP_PANE_WIDTH = 620;
+const MIN_VISUAL_PANE_WIDTH = 520;
+const MIN_PREVIEW_ZOOM = 0.55;
+const MAX_PREVIEW_ZOOM = 3.5;
+const MAX_PREVIEW_PAN_FRACTION = 0.42;
+const MAX_UNDO_STEPS = 80;
 
 const state = {
   status: null,
@@ -14,16 +25,51 @@ const state = {
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
   selectedJobId: null,
-  activeSimTab: "outputs",
+  activeSimTab: "setup",
+  simConfigPayload: null,
+  simConfigLibrary: null,
+  selectedSimConfigSource: "",
+  dirtySimConfig: false,
+  cleanSimConfigSignature: "",
+  loadingSimConfigFor: null,
   activeParamGroup: null,
+  vehicleStartOpen: true,
   dirtyVehicle: false,
   vehiclePreviewView: "iso",
   vehiclePreviewYaw: DEFAULT_VEHICLE_YAW,
   vehiclePreviewPitch: DEFAULT_VEHICLE_PITCH,
+  vehiclePreviewZoom: 1,
+  vehiclePreviewPanX: 0,
+  vehiclePreviewPanY: 0,
   rotationSensitivity: Number.isFinite(savedRotationSensitivity) && savedRotationSensitivity > 0
     ? savedRotationSensitivity
     : 1,
+  setupPaneWidth: Number.isFinite(savedSetupPaneWidth) && savedSetupPaneWidth > 0
+    ? savedSetupPaneWidth
+    : DEFAULT_SETUP_PANE_WIDTH,
   vehicleDrag: null,
+  geometryScene: null,
+  geometryHoverPointId: null,
+  geometrySelectedPointId: null,
+  geometryDrag: null,
+  geometryAxis: "x",
+  geometryShowFront: savedGeometryShowFront === null ? true : savedGeometryShowFront === "true",
+  geometryShowRear: savedGeometryShowRear === null ? true : savedGeometryShowRear === "true",
+  massScene: null,
+  massHoverPointId: null,
+  massSelectedPointId: null,
+  massEditorPositionFrame: null,
+  architectureScene: null,
+  architectureHoverId: null,
+  architectureSelectedId: null,
+  architectureSelectedOrderIndex: 0,
+  architectureModalOpen: false,
+  architectureModalAxle: null,
+  setupResize: null,
+  undoStack: [],
+  pendingUndoSnapshot: null,
+  cleanVehicleSignature: "",
+  suppressUndo: false,
   referenceOpen: false,
   dark: localStorage.getItem("bobsim-theme") === "dark",
 };
@@ -35,6 +81,7 @@ const PARAMETER_AREAS = [
   { id: "hardpoints", label: "Geometry", visual: "hardpoints", always: true },
   { id: "mass", label: "Mass", visual: "mass", always: true },
   { id: "suspension", label: "Suspension", visual: "suspension", always: true },
+  { id: "compliances", label: "Compliances", visual: "compliances", always: true },
   { id: "tires", label: "Tires", visual: "tires", always: true },
   { id: "aero", label: "Aero", visual: "aero", always: true },
   { id: "powertrain", label: "Powertrain", visual: "powertrain", always: true },
@@ -68,6 +115,13 @@ const SETUP_GUIDE = {
     purpose: "Convert wheel motion into force.",
     figure: "Spring and damper curves.",
     check: "Tables and linkage order make sense.",
+  },
+  compliances: {
+    title: "Compliances",
+    focus: "Chassis and elastic effects.",
+    purpose: "Model non-rigid structure.",
+    figure: "Torsional stiffness.",
+    check: "Stiffness magnitude is plausible.",
   },
   tires: {
     title: "Tires",
@@ -139,6 +193,54 @@ function selectedWorkflow() {
   return workflows.find((workflow) => workflow.id === state.selectedWorkflowId) || workflows[0] || null;
 }
 
+function selectedWorkflowConfigId(workflow = selectedWorkflow()) {
+  return workflow?.config_id || workflow?.id || "";
+}
+
+async function refreshSelectedSimConfig() {
+  const workflow = selectedWorkflow();
+  if (!workflow?.config_id) {
+    state.simConfigPayload = null;
+    state.simConfigLibrary = null;
+    state.cleanSimConfigSignature = "";
+    state.dirtySimConfig = false;
+    return;
+  }
+  state.loadingSimConfigFor = workflow.id;
+  const [payload, library] = await Promise.all([
+    api(`/api/configs/${encodeURIComponent(workflow.config_id)}`),
+    api(`/api/sim-configs?workflow_id=${encodeURIComponent(workflow.id)}`),
+  ]);
+  state.simConfigPayload = payload;
+  state.simConfigLibrary = library;
+  state.selectedSimConfigSource = library.sources?.[0]?.id || "";
+  acceptCleanSimConfigPayload();
+  state.loadingSimConfigFor = null;
+}
+
+function ensureSelectedSimConfigLoaded() {
+  const workflow = selectedWorkflow();
+  if (!workflow?.config_id || state.loadingSimConfigFor === workflow.id) return;
+  if (state.simConfigPayload?.id === workflow.config_id) return;
+  refreshSelectedSimConfig()
+    .then(renderStandard)
+    .catch((error) => {
+      state.loadingSimConfigFor = null;
+      state.simConfigPayload = null;
+      state.simConfigLibrary = { sources: [], error: error.message };
+      renderStandard();
+    });
+}
+
+function configDataSignature(data) {
+  return JSON.stringify(data ?? {});
+}
+
+function acceptCleanSimConfigPayload() {
+  state.cleanSimConfigSignature = configDataSignature(state.simConfigPayload?.data || {});
+  state.dirtySimConfig = false;
+}
+
 function activeVehicleName() {
   return state.vehiclePayload?.data?.vehicle?.name || "Active vehicle";
 }
@@ -153,6 +255,7 @@ async function refresh() {
   state.vehicleLibrary = await api("/api/vehicles");
   state.vehicleTemplates = await api("/api/vehicle-templates");
   state.vehiclePayload = await api("/api/configs/vehicle");
+  acceptCleanVehiclePayload();
   await refreshTirePayload();
   await refreshTireTemplates();
   if (!state.activeTir && state.tireTemplates?.templates?.length) {
@@ -161,7 +264,7 @@ async function refresh() {
   if (!state.selectedWorkflowId) {
     state.selectedWorkflowId = standardWorkflows()[0]?.id || null;
   }
-  state.dirtyVehicle = false;
+  await refreshSelectedSimConfig();
   render();
 }
 
@@ -169,10 +272,13 @@ function render() {
   renderTopbar();
   renderThemeButton();
   renderVehicleControls();
+  applySetupPaneWidth();
   renderMode();
   renderSetup();
   renderStandard();
   renderRailActions();
+  renderVehicleStartModal();
+  renderArchitectureConnectionModal();
 }
 
 function renderTopbar() {
@@ -203,6 +309,86 @@ function renderVehicleControls() {
   label.textContent = `${state.rotationSensitivity.toFixed(2).replace(/\.?0+$/, "")}x`;
 }
 
+function renderVehicleStartModal() {
+  const modal = document.getElementById("vehicle-start-modal");
+  if (!modal) return;
+  modal.hidden = !state.vehicleStartOpen;
+  if (!state.vehicleStartOpen) return;
+
+  const loadPicker = document.getElementById("start-load-picker");
+  const templatePicker = document.getElementById("start-template-picker");
+  const loadButton = document.getElementById("start-load-btn");
+  const createButton = document.getElementById("start-create-btn");
+  const loadSources = savedVehicleSources();
+  if (loadPicker) {
+    loadPicker.innerHTML = loadSources.length
+      ? loadSources.map((vehicle) => `<option value="${escapeHtml(vehicle.id)}">Saved: ${escapeHtml(vehicle.label)}</option>`).join("")
+      : `<option value="">No saved vehicles yet</option>`;
+  }
+  if (loadButton) loadButton.disabled = !loadSources.length;
+
+  const templates = state.vehicleTemplates?.templates || [];
+  if (templatePicker) {
+    templatePicker.innerHTML = templates.map((template) => `
+      <option value="${escapeHtml(template.id)}">${escapeHtml(templateArchitectureLabel(template))}</option>
+    `).join("");
+  }
+  if (createButton) createButton.disabled = !templates.length;
+  const nameInput = document.getElementById("start-vehicle-name");
+  if (nameInput && !nameInput.value) nameInput.value = nextVehicleName();
+}
+
+function vehicleLoadSources() {
+  return (state.vehicleLibrary?.vehicles || []).filter((vehicle) => vehicle.type !== "template");
+}
+
+function savedVehicleSources() {
+  return (state.vehicleLibrary?.vehicles || []).filter((vehicle) => vehicle.type === "saved");
+}
+
+function nextVehicleName() {
+  const count = (state.vehicleLibrary?.vehicles || []).filter((vehicle) => vehicle.type === "saved").length;
+  return count ? `Vehicle ${count + 1}` : "New Vehicle";
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function setupPaneBounds() {
+  const workspace = document.querySelector(".setup-workspace");
+  const width = workspace?.getBoundingClientRect().width || 0;
+  const maxByViewport = width > 0 ? width - MIN_VISUAL_PANE_WIDTH : MAX_SETUP_PANE_WIDTH;
+  const max = Math.max(
+    MIN_SETUP_PANE_WIDTH,
+    Math.min(MAX_SETUP_PANE_WIDTH, maxByViewport),
+  );
+  return { min: MIN_SETUP_PANE_WIDTH, max };
+}
+
+function setSetupPaneWidth(width, { persist = false, redraw = true } = {}) {
+  const { min, max } = setupPaneBounds();
+  const clamped = clamp(Number(width) || DEFAULT_SETUP_PANE_WIDTH, min, max);
+  state.setupPaneWidth = clamped;
+  applySetupPaneWidth(clamped, min, max);
+  if (persist) localStorage.setItem("bobsim-setup-pane-width", String(Math.round(clamped)));
+  if (redraw) requestAnimationFrame(drawVehicleFromForm);
+}
+
+function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
+  const workspace = document.querySelector(".setup-workspace");
+  if (!workspace) return;
+  const bounds = min === undefined || max === undefined ? setupPaneBounds() : { min, max };
+  const clamped = clamp(Number(width) || DEFAULT_SETUP_PANE_WIDTH, bounds.min, bounds.max);
+  workspace.style.setProperty("--setup-pane-width", `${Math.round(clamped)}px`);
+  const splitter = document.getElementById("setup-splitter");
+  if (splitter) {
+    splitter.setAttribute("aria-valuemin", String(Math.round(bounds.min)));
+    splitter.setAttribute("aria-valuemax", String(Math.round(bounds.max)));
+    splitter.setAttribute("aria-valuenow", String(Math.round(clamped)));
+  }
+}
+
 function renderMode() {
   document.querySelectorAll(".rail-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.view);
@@ -222,9 +408,9 @@ function renderRailActions() {
     secondary.disabled = false;
     return;
   }
-  primary.textContent = "Run Selected";
+  primary.textContent = "Run Simulation";
   primary.disabled = !selectedWorkflow();
-  secondary.textContent = "Back to Setup";
+  secondary.textContent = "Back to Vehicle";
   secondary.disabled = false;
 }
 
@@ -236,17 +422,24 @@ function renderSetup() {
 
 function renderVehicleLibrary() {
   const picker = document.getElementById("vehicle-library-picker");
-  const vehicles = state.vehicleLibrary?.vehicles || [];
+  const vehicles = vehicleLoadSources();
   if (!vehicles.some((vehicle) => vehicle.id === state.selectedVehicleSource)) {
     state.selectedVehicleSource = "active";
   }
   picker.innerHTML = vehicles.map((vehicle) => {
     const selected = vehicle.id === state.selectedVehicleSource ? " selected" : "";
-    const prefix = vehicle.type === "template" ? "Template" : vehicle.type === "saved" ? "Saved" : "Active";
+    const prefix = vehicle.type === "saved" ? "Saved" : "Active";
     return `<option value="${escapeHtml(vehicle.id)}"${selected}>${prefix}: ${escapeHtml(vehicle.label)}</option>`;
   }).join("");
-  document.getElementById("save-vehicle-name").value ||= activeVehicleName();
+  const saveName = document.getElementById("save-vehicle-name");
+  if (saveName && !saveName.value) saveName.value = activeVehicleName();
   syncVehicleLibraryActions();
+}
+
+function openVehicleStartModal() {
+  state.vehicleStartOpen = true;
+  document.querySelector(".model-menu")?.removeAttribute("open");
+  renderVehicleStartModal();
 }
 
 function selectedVehicleLibraryItem() {
@@ -286,11 +479,24 @@ function renderVehicleEditor() {
       ${parameterAreaFields(area)}
     </section>
   `).join("");
+  form.onfocusin = (event) => cacheUndoBaseline(event.target);
+  form.onpointerdown = (event) => cacheUndoBaseline(event.target);
+  form.onkeydown = (event) => {
+    if (!event.repeat && ["Enter", " "].includes(event.key)) cacheUndoBaseline(event.target);
+  };
   form.oninput = (event) => {
-    if (!event.target.closest("[data-tir-tools], [data-setup-filter]")) markVehicleDirty();
+    if (!event.target.closest("[data-tir-tools], [data-setup-filter]")) {
+      commitUndoBaseline("input");
+      markVehicleDirty();
+    }
   };
   form.onchange = (event) => {
-    if (!event.target.closest("[data-tir-tools], [data-setup-filter]")) markVehicleDirty();
+    if (!event.target.closest("[data-tir-tools], [data-setup-filter]")) {
+      if (!event.target.matches?.("input[type='text'], input[type='number'], textarea")) {
+        commitUndoBaseline("change");
+      }
+      markVehicleDirty();
+    }
   };
   form.onclick = handleArrayEditorClick;
   wireArchitectureTools();
@@ -303,57 +509,213 @@ function renderVehicleEditor() {
 }
 
 function wireFieldSubsections() {
-  document.querySelectorAll(".config-section").forEach((section) => {
-    section.querySelectorAll(".field-subsection").forEach((details) => {
-      details.addEventListener("toggle", () => {
-        if (!details.open) return;
-        section.querySelectorAll(".field-subsection").forEach((other) => {
-          if (other !== details) other.open = false;
-        });
-      });
-    });
+  document.querySelectorAll(".field-subsection").forEach((section) => {
+    section.classList.add("expanded");
   });
 }
 
 function setupGuide(areaId = state.activeParamGroup) {
   const area = PARAMETER_AREAS.find((item) => item.id === areaId) || PARAMETER_AREAS[0];
+  const config = SETUP_GUIDE[area.id] || {};
   return {
+    id: area.id,
     step: PARAMETER_AREAS.findIndex((item) => item.id === area.id) + 1,
     total: PARAMETER_AREAS.length,
-    title: SETUP_GUIDE[area.id]?.title || area.label,
-    focus: SETUP_GUIDE[area.id]?.focus || "",
+    title: config.title || area.label,
+    focus: config.focus || "",
+    purpose: config.purpose || "",
+    figure: config.figure || "",
+    check: config.check || "",
   };
 }
 
 function renderSetupFocus() {
   const guide = setupGuide();
-  document.getElementById("vehicle-preview-title").textContent =
-    `${String(guide.step).padStart(2, "0")} ${guide.title}`;
-  document.getElementById("vehicle-preview-subtitle").textContent = "";
+  const stepLabel = document.getElementById("setup-step-label");
+  const setupTitle = document.getElementById("setup-title");
+  const setupFocus = document.getElementById("setup-focus");
+  if (stepLabel) stepLabel.textContent = `Step ${guide.step} of ${guide.total}`;
+  if (setupTitle) setupTitle.textContent = guide.title;
+  if (setupFocus) setupFocus.textContent = guide.focus;
+  document.getElementById("vehicle-preview-title").textContent = guide.figure || guide.title;
+  document.getElementById("vehicle-preview-subtitle").textContent = guide.purpose || "";
   const heading = document.getElementById("editor-title");
-  if (heading) heading.textContent = guide.title;
+  if (heading) heading.textContent = `${String(guide.step).padStart(2, "0")} ${guide.title}`;
+  renderSetupStepActions();
   renderWorkflowGuide(guide);
+}
+
+function setupAreas() {
+  return state.vehiclePayload?.fields ? buildParameterAreas(state.vehiclePayload.fields) : PARAMETER_AREAS;
+}
+
+function activeParameterIndex(areas = setupAreas()) {
+  const index = areas.findIndex((area) => area.id === state.activeParamGroup);
+  return index >= 0 ? index : 0;
+}
+
+function renderSetupStepActions() {
+  const areas = setupAreas();
+  const index = activeParameterIndex(areas);
+  const previous = areas[index - 1];
+  const next = areas[index + 1];
+  const previousButton = document.getElementById("setup-prev-btn");
+  const nextButton = document.getElementById("setup-next-btn");
+  if (previousButton) {
+    previousButton.disabled = !previous;
+    previousButton.textContent = previous ? `Previous: ${setupGuide(previous.id).title}` : "Previous";
+  }
+  if (nextButton) {
+    nextButton.disabled = !next;
+    nextButton.textContent = next ? `Next: ${setupGuide(next.id).title}` : "Next";
+  }
+}
+
+function navigateParameterStep(delta) {
+  const areas = setupAreas();
+  const index = activeParameterIndex(areas);
+  const target = areas[index + delta];
+  if (target) activateParameterGroup(target.id);
+}
+
+function handleSetupStageKeys(event) {
+  if (state.view !== "setup") return;
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter")) return;
+  if (state.architectureModalOpen || state.vehicleStartOpen || document.querySelector(".model-menu[open]")) return;
+  event.preventDefault();
+  navigateParameterStep(event.key === "ArrowRight" ? 1 : -1);
 }
 
 function renderWorkflowGuide(guide = setupGuide()) {
   const panel = document.getElementById("workflow-guide");
   if (!panel) return;
-  const config = SETUP_GUIDE[PARAMETER_AREAS[guide.step - 1]?.id] || {};
   panel.innerHTML = `
-    <div class="guide-row"><span>Purpose</span><strong>${escapeHtml(config.purpose || guide.focus)}</strong></div>
-    <div class="guide-row"><span>Figure</span><strong>${escapeHtml(config.figure || "")}</strong></div>
-    <div class="guide-row"><span>Check</span><strong>${escapeHtml(config.check || "")}</strong></div>
+    <div class="guide-row"><span>Why</span><strong>${escapeHtml(guide.purpose || guide.focus)}</strong></div>
+    <div class="guide-row"><span>View</span><strong>${escapeHtml(guide.figure || "")}</strong></div>
+    <div class="guide-row"><span>Check</span><strong>${escapeHtml(guide.check || "")}</strong></div>
   `;
   panel.hidden = !state.referenceOpen;
   document.getElementById("reference-toggle-btn")?.classList.toggle("active", state.referenceOpen);
 }
 
+function cloneData(data) {
+  if (data === undefined) return undefined;
+  return JSON.parse(JSON.stringify(data));
+}
+
+function vehicleDataSignature(data) {
+  return JSON.stringify(data ?? {});
+}
+
+function acceptCleanVehiclePayload({ resetUndo = true } = {}) {
+  state.cleanVehicleSignature = vehicleDataSignature(state.vehiclePayload?.data || {});
+  state.dirtyVehicle = false;
+  state.pendingUndoSnapshot = null;
+  if (resetUndo) state.undoStack = [];
+}
+
+function snapshotVehicleState(label = "") {
+  if (!state.vehiclePayload) return null;
+  const data = currentVehicleFormData();
+  if (!data) return null;
+  return {
+    activeParamGroup: state.activeParamGroup,
+    geometrySelectedPointId: state.geometrySelectedPointId,
+    geometryAxis: state.geometryAxis,
+    label,
+    data: cloneData(data),
+  };
+}
+
+function pushUndoSnapshot(snapshot = snapshotVehicleState()) {
+  if (state.suppressUndo || !snapshot?.data) return;
+  const signature = vehicleDataSignature(snapshot.data);
+  const last = state.undoStack[state.undoStack.length - 1];
+  if (last && vehicleDataSignature(last.data) === signature) return;
+  state.undoStack.push(snapshot);
+  if (state.undoStack.length > MAX_UNDO_STEPS) state.undoStack.shift();
+}
+
+function cacheUndoBaseline(target) {
+  if (state.suppressUndo || !isUndoableVehicleTarget(target)) return;
+  state.pendingUndoSnapshot = snapshotVehicleState("edit");
+}
+
+function commitUndoBaseline(label = "edit") {
+  if (state.suppressUndo) return;
+  pushUndoSnapshot(state.pendingUndoSnapshot || snapshotVehicleState(label));
+  state.pendingUndoSnapshot = snapshotVehicleState(label);
+}
+
+function isUndoableVehicleTarget(target) {
+  return Boolean(target?.closest?.("#config-form [data-config-path], #config-form [data-array-path]"));
+}
+
+function shouldUseNativeUndo(event) {
+  const editable = event.target?.closest?.("textarea, input:not([type='checkbox']), [contenteditable='true']");
+  return Boolean(editable?.closest?.("#config-form, #geometry-point-editor, #config-text, #tir-editor"));
+}
+
+function updateDirtyState() {
+  const data = currentVehicleFormData();
+  const signature = data ? vehicleDataSignature(data) : "";
+  state.dirtyVehicle = Boolean(signature && signature !== state.cleanVehicleSignature);
+  document.getElementById("save-status").textContent = state.dirtyVehicle ? "Unsaved" : "Saved";
+}
+
+function applyVehicleDataToPayload(data) {
+  if (!state.vehiclePayload) return;
+  const nextData = cloneData(data);
+  state.vehiclePayload = {
+    ...state.vehiclePayload,
+    data: nextData,
+    fields: (state.vehiclePayload.fields || []).map((field) => {
+      const value = nestedValue(nextData, field.path || []);
+      return {
+        ...field,
+        value: cloneData(value),
+        array_shape: Array.isArray(value) ? valueArrayShape(value) : field.array_shape,
+      };
+    }),
+  };
+}
+
+function valueArrayShape(value) {
+  if (!Array.isArray(value)) return [];
+  if (!value.length || !Array.isArray(value[0])) return [value.length];
+  return [value.length, Math.max(0, ...value.map((row) => Array.isArray(row) ? row.length : 0))];
+}
+
+function undoVehicleEdit() {
+  const snapshot = state.undoStack.pop();
+  if (!snapshot) return false;
+  state.suppressUndo = true;
+  applyVehicleDataToPayload(snapshot.data);
+  state.activeParamGroup = snapshot.activeParamGroup || state.activeParamGroup;
+  state.geometrySelectedPointId = snapshot.geometrySelectedPointId || null;
+  state.geometryAxis = snapshot.geometryAxis || state.geometryAxis;
+  state.pendingUndoSnapshot = null;
+  state.suppressUndo = false;
+  state.dirtyVehicle = vehicleDataSignature(snapshot.data) !== state.cleanVehicleSignature;
+  renderSetup();
+  return true;
+}
+
+function handleUndoShortcut(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== "z") return;
+  if (shouldUseNativeUndo(event)) return;
+  if (state.view !== "setup") return;
+  if (!undoVehicleEdit()) return;
+  event.preventDefault();
+}
+
 function markVehicleDirty() {
-  state.dirtyVehicle = true;
-  document.getElementById("save-status").textContent = "Unsaved";
+  updateDirtyState();
   applyArchitectureVisibility();
   syncArchitectureDependentControls();
   renderArchitectureTemplateMatches();
+  renderArchitectureConnectionModal();
   drawVehicleFromForm();
   renderParameterTabCanvases();
 }
@@ -382,7 +744,9 @@ function parameterAreaForField(field) {
   ) {
     return "tires";
   }
-  if (path.includes("mass") || path.includes("inertia") || path.startsWith("body.")) return "mass";
+  if (fieldMatchesCompliance(path, group, label)) return "compliances";
+  if (path.includes("mass") || path.includes("inertia")) return "mass";
+  if (fieldMatchesArchitectureSetup(path)) return "vehicle";
   if (fieldMatchesGeometry(path, field)) return "hardpoints";
   if (fieldMatchesSuspensionSetup(path, label)) return "suspension";
   if (
@@ -427,17 +791,29 @@ function fieldMatchesGeometry(path, field) {
     );
 }
 
-function fieldMatchesSuspensionSetup(path, label) {
+function fieldMatchesArchitectureSetup(path) {
   return path.endsWith(".actuation.rod_to")
-    || path.endsWith(".actuation.shock.damper_model")
+    || path.endsWith(".actuation.bellcrank.order");
+}
+
+function fieldMatchesSuspensionSetup(path, label) {
+  return path.endsWith(".actuation.shock.damper_model")
     || path.endsWith(".actuation.shock.dyno_reference")
     || path.endsWith(".actuation.shock.spring_table.table")
     || path.endsWith(".actuation.shock.free_length_m")
     || path.endsWith(".actuation.shock.damper_table.table")
-    || path.endsWith(".actuation.bellcrank.order")
     || path.endsWith(".actuation.stabar.rate_n_m_per_rad")
     || label.includes("spring")
     || label.includes("damper");
+}
+
+function fieldMatchesCompliance(path, group, label) {
+  return path.startsWith("body.")
+    || path.includes(".compliance")
+    || path.includes("torsional_stiff")
+    || group.includes("compliance")
+    || label.includes("compliance")
+    || label.includes("torsional stiffness");
 }
 
 function parameterAreaFields(area) {
@@ -448,24 +824,97 @@ function parameterAreaFields(area) {
       : area.id === "powertrain"
         ? powertrainToolsHtml()
         : "";
-  const fields = area.id === "vehicle" ? area.fields.filter((field) => !isArchitectureField(field)) : area.fields;
+  const fields = area.id === "vehicle"
+    ? area.fields.filter((field) => !isArchitectureField(field) && !isArchitectureVisualOnlyField(field))
+    : area.fields;
   if (!fields.length) {
     return `${extra}<div class="area-empty">${escapeHtml(emptyAreaCopy(area.id))}</div>`;
   }
+  return `${extra}${fieldGroupSections(fields, area.id)}`;
+}
+
+function fieldGroupSections(fields, areaId = "") {
   const grouped = groupFields(fields);
-  return `${extra}${Object.entries(grouped).map(([group, fields]) => `
-    <details class="field-subsection">
-      <summary>
-        <span>${escapeHtml(group)}</span>
+  if (areaId === "suspension") {
+    return suspensionFieldSections(grouped);
+  }
+  const buckets = { front: [], rear: [], shared: [] };
+  Object.entries(grouped).forEach(([group, groupFields]) => {
+    buckets[fieldGroupAxle(group, groupFields)].push([group, groupFields]);
+  });
+  const sections = [];
+  if (buckets.front.length) sections.push(axleFieldBlock("front", buckets.front));
+  if (buckets.rear.length) sections.push(axleFieldBlock("rear", buckets.rear));
+  sections.push(...buckets.shared.map(([group, groupFields]) => fieldSubsectionHtml(group, groupFields)));
+  return sections.join("");
+}
+
+function suspensionFieldSections(grouped) {
+  const order = ["Front spring", "Front damper", "Front actuation", "Rear spring", "Rear damper", "Rear actuation"];
+  const entries = Object.entries(grouped);
+  return entries
+    .sort(([left], [right]) => {
+      const leftIndex = order.indexOf(left);
+      const rightIndex = order.indexOf(right);
+      return (leftIndex === -1 ? order.length : leftIndex) - (rightIndex === -1 ? order.length : rightIndex)
+        || left.localeCompare(right);
+    })
+    .map(([group, groupFields]) => fieldSubsectionHtml(group, groupFields))
+    .join("");
+}
+
+function axleFieldBlock(axle, grouped) {
+  const count = grouped.reduce((total, [, fields]) => total + fields.length, 0);
+  return `
+    <section class="axle-field-block field-group-${axle}" data-axle-block="${escapeHtml(axle)}">
+      <div class="axle-field-title">
+        <span>${humanizeToken(axle)} axle</span>
+        <small>${count}</small>
+      </div>
+      <div class="axle-field-groups">
+        ${grouped.map(([group, fields]) => fieldSubsectionHtml(group, fields, { nested: true })).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
+  return `
+    <section class="field-subsection expanded ${fieldGroupClass(group)}${nested ? " nested-subsection" : ""}">
+      <div class="field-subsection-title">
+        <span>${escapeHtml(humanizeToken(group))}</span>
         <small>${fields.length}</small>
-      </summary>
+      </div>
       <div class="field-grid">${fields.map(fieldControl).join("")}</div>
-    </details>
-  `).join("")}`;
+    </section>
+  `;
+}
+
+function fieldGroupAxle(group, fields) {
+  const groupName = String(group || "").toLowerCase();
+  const samplePath = fieldPathString(fields[0] || {});
+  if (groupName.includes("front") || samplePath.startsWith("front.")) return "front";
+  if (groupName.includes("rear") || samplePath.startsWith("rear.")) return "rear";
+  return "shared";
+}
+
+function fieldGroupClass(group) {
+  const name = String(group || "").toLowerCase();
+  if (name.includes("actuation") || name.includes("shock") || name.includes("stabar") || name.includes("spring") || name.includes("damper")) return "field-group-actuation";
+  if (name.includes("hardpoint")) return "field-group-hardpoints";
+  if (name.includes("compliance") || name.includes("body")) return "field-group-compliance";
+  if (name.includes("front")) return "field-group-front";
+  if (name.includes("rear")) return "field-group-rear";
+  if (name.includes("mass") || name.includes("body") || name.includes("driver")) return "field-group-mass";
+  return "field-group-general";
 }
 
 function isArchitectureField(field) {
   return fieldPathString(field).startsWith("architecture.");
+}
+
+function isArchitectureVisualOnlyField(field) {
+  return fieldPathString(field).endsWith(".actuation.bellcrank.order");
 }
 
 function architectureToolsHtml(fields) {
@@ -473,6 +922,10 @@ function architectureToolsHtml(fields) {
   const rearField = fields.find((field) => fieldPathString(field) === "architecture.rear");
   const powertrains = availablePowertrains();
   const activePowertrain = powertrainProfile(state.vehiclePayload?.data || {}).id;
+  const hiddenOrderFields = fields
+    .filter(isArchitectureVisualOnlyField)
+    .map((field) => `<div hidden>${fieldControl(field)}</div>`)
+    .join("");
   return `
     <div class="architecture-tools" data-architecture-tools>
       <div class="architecture-control-grid">
@@ -493,6 +946,7 @@ function architectureToolsHtml(fields) {
       </div>
       <div id="architecture-template-list" class="architecture-template-list"></div>
     </div>
+    ${hiddenOrderFields}
   `;
 }
 
@@ -601,6 +1055,7 @@ function emptyAreaCopy(areaId) {
     powertrain: "No powertrain block is present in vehicle.yml yet.",
     aero: "No aero block is present in vehicle.yml yet.",
     suspension: "No spring, damper, or suspension actuation fields are present in this vehicle config.",
+    compliances: "No compliance fields are present in this vehicle config yet.",
   }[areaId] || "No fields are available in this setup area.";
 }
 
@@ -613,6 +1068,7 @@ function applyArchitectureVisibility() {
     const wrappers = Array.from(section.querySelectorAll("[data-field-wrapper]"));
     section.hidden = wrappers.length > 0 && wrappers.every((wrapper) => wrapper.hidden);
   });
+  applyAxleInputVisibility();
 }
 
 function fieldVisibleForArchitecture(path, data) {
@@ -623,6 +1079,13 @@ function fieldVisibleForArchitecture(path, data) {
   if (path.includes(".actuation.bellcrank.")) return architecture.includes("bellcrank");
   if (path.includes(".actuation.stabar.")) return architecture.includes("stabar");
   return true;
+}
+
+function applyAxleInputVisibility(area = activeParameterArea()) {
+  const visible = new Set(area.id === "hardpoints" ? visibleGeometryAxles() : ["front", "rear"]);
+  document.querySelectorAll("[data-axle-block]").forEach((block) => {
+    block.hidden = !visible.has(block.dataset.axleBlock);
+  });
 }
 
 function syncArchitectureDependentControls(data = currentVehicleFormData() || state.vehiclePayload?.data || {}) {
@@ -677,17 +1140,25 @@ function syncChoiceArray(container, choices) {
 
 function groupFields(fields) {
   return fields.reduce((groups, field) => {
-    const group = field.group || field.path?.[0] || "Vehicle";
+    const group = fieldDisplayGroup(field);
     groups[group] ||= [];
     groups[group].push(field);
     return groups;
   }, {});
 }
 
+function fieldDisplayGroup(field) {
+  const path = fieldPathString(field);
+  const axle = field.path?.[0] === "front" ? "Front" : field.path?.[0] === "rear" ? "Rear" : "";
+  if (axle && path.includes(".actuation.shock.spring_table.")) return `${axle} spring`;
+  if (axle && path.includes(".actuation.shock.damper_table.")) return `${axle} damper`;
+  return field.group || field.path?.[0] || "Vehicle";
+}
+
 function renderParameterTabs(areas) {
   const tabs = document.getElementById("parameter-tabs");
   tabs.innerHTML = areas.map((area, index) => `
-    <button class="parameter-tab ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}" type="button">
+    <button class="parameter-tab ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}" type="button" title="${escapeHtml(setupGuide(area.id).focus)}">
       <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="step-name">${escapeHtml(setupGuide(area.id).title)}</span>
     </button>
@@ -725,43 +1196,94 @@ function renderParameterTabCanvases() {
 }
 
 function fieldControl(field) {
-  const unit = field.unit ? `<span>${escapeHtml(field.unit)}</span>` : "";
-  const attrs = `data-config-path="${escapeHtml(field.key)}" data-kind="${escapeHtml(field.kind)}"`;
-  const label = `<label>${escapeHtml(field.label)}${unit}</label>`;
+  const disabled = Boolean(field.disabled);
+  const disabledAttr = disabled ? " disabled" : "";
+  const attrs = `data-config-path="${escapeHtml(field.key)}" data-kind="${escapeHtml(field.kind)}"${disabledAttr}`;
+  const label = fieldLabelHtml(field);
   const value = field.value;
   const wrapperAttrs = fieldWrapperAttrs(field);
   if (isArrayField(field)) return arrayFieldControl(field, label);
   if (field.kind === "boolean") {
-    return `<div class="form-field toggle-field" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}></div>`;
+    return `<div class="form-field toggle-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}>${fieldHelpHtml(field)}</div>`;
   }
   if (field.kind === "number" || field.kind === "integer") {
     const step = field.kind === "integer" ? "1" : "any";
-    return `<div class="form-field" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}" required value="${escapeHtml(value ?? "")}"></div>`;
+    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
   }
   if (field.kind === "select") {
     const choices = field.choices.includes(value) ? field.choices : [value, ...field.choices].filter(Boolean);
     return `
-      <div class="form-field" ${wrapperAttrs}>
+      <div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>
         ${label}
         <select ${attrs}>
           ${choices.map((choice) => `<option value="${escapeHtml(choice)}"${choice === value ? " selected" : ""}>${escapeHtml(choice)}</option>`).join("")}
         </select>
+        ${fieldHelpHtml(field)}
       </div>
     `;
   }
   if (field.kind === "list" || field.kind === "json") {
     return `
-      <div class="form-field" ${wrapperAttrs}>
+      <div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>
         ${label}
         <textarea ${attrs}>${escapeHtml(JSON.stringify(value, null, 2))}</textarea>
+        ${fieldHelpHtml(field)}
       </div>
     `;
   }
-  return `<div class="form-field" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}"></div>`;
+  return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
+}
+
+function fieldLabelHtml(field) {
+  const unit = field.unit ? `<span>${escapeHtml(field.unit)}</span>` : "";
+  const planned = field.disabled ? `<span class="field-status-pill">Planned</span>` : "";
+  const meta = unit || planned ? `<span class="field-label-meta">${unit}${planned}</span>` : "";
+  const objectLabel = fieldObjectLabel(field);
+  const object = objectLabel ? `<span class="field-object-label">${escapeHtml(objectLabel)}</span>` : "";
+  return `${object}<label><span>${escapeHtml(fieldPropertyLabel(field))}</span>${meta}</label>`;
+}
+
+function fieldHelpHtml(field) {
+  const help = field.disabled ? field.placeholder : fieldHelpText(field);
+  return help
+    ? `<small class="field-placeholder-note">${escapeHtml(help)}</small>`
+    : "";
+}
+
+function fieldHelpText(field) {
+  const path = fieldPathString(field);
+  if (path.includes(".actuation.shock.spring_table.table")) return "Rows map shock deflection to spring force.";
+  if (path.includes(".actuation.shock.damper_table.table")) return "Rows map shock shaft velocity to damper force.";
+  return field.help;
+}
+
+function fieldObjectLabel(field) {
+  const path = field.path || [];
+  if (path[0] === "sprung_mass") return "Sprung mass";
+  if (path[0] === "driver_mass") return "Driver mass";
+  if ((path[0] === "front" || path[0] === "rear") && path[1] === "masses" && path[2]) {
+    return `${humanizeToken(path[0])} ${humanizeToken(path[2])}`;
+  }
+  return "";
+}
+
+function fieldPropertyLabel(field) {
+  const path = field.path || [];
+  const pathString = fieldPathString(field);
+  if (pathString.includes(".actuation.shock.spring_table.table")) return "Spring force curve";
+  if (pathString.includes(".actuation.shock.damper_table.table")) return "Damper force curve";
+  if (fieldObjectLabel(field)) {
+    return {
+      mass_kg: "Mass",
+      cg_m: "CG",
+      inertia_kg_m2: "Inertia",
+    }[path[path.length - 1]] || field.label;
+  }
+  return field.label;
 }
 
 function fieldWrapperAttrs(field) {
-  return `data-field-wrapper data-field-path="${escapeHtml(fieldPathString(field))}"`;
+  return `data-field-wrapper data-field-path="${escapeHtml(fieldPathString(field))}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
 }
 
 function isArrayField(field) {
@@ -774,9 +1296,9 @@ function isArrayField(field) {
 function arrayFieldControl(field, label) {
   const rank = field.array_shape.length;
   const elementKind = field.array_element_kind || "string";
-  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-array-element-kind="${escapeHtml(elementKind)}"`;
+  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-array-element-kind="${escapeHtml(elementKind)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
   const control = rank === 2 ? matrixControl(field) : vectorControl(field);
-  return `<div class="form-field array-field" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}</div>`;
+  return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}${fieldHelpHtml(field)}</div>`;
 }
 
 function vectorControl(field) {
@@ -811,6 +1333,7 @@ function matrixControl(field) {
   const fixed = matrixHasFixedShape(field);
   const body = rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, cols, fixed)).join("");
   return `
+    ${matrixPurposeHtml(field)}
     <div class="matrix-scroll">
       <div class="matrix-input" data-matrix-cols="${cols}">
         <div class="matrix-array-body">${body}</div>
@@ -818,6 +1341,27 @@ function matrixControl(field) {
     </div>
     ${fixed ? "" : `<button class="array-action" type="button" data-array-action="add-row">Add row</button>`}
   `;
+}
+
+function matrixPurposeHtml(field) {
+  const path = fieldPathString(field);
+  if (path.includes(".actuation.shock.spring_table.table")) {
+    return `
+      <div class="table-purpose">
+        <strong>Spring table</strong>
+        <span>Shock deflection (m) -> spring force (N)</span>
+      </div>
+    `;
+  }
+  if (path.includes(".actuation.shock.damper_table.table")) {
+    return `
+      <div class="table-purpose">
+        <strong>Damper table</strong>
+        <span>Shock shaft velocity (m/s) -> damper force (N)</span>
+      </div>
+    `;
+  }
+  return "";
 }
 
 function matrixRowControl(field, row, rowIndex, cols, fixed) {
@@ -857,8 +1401,8 @@ function matrixHasFixedShape(field) {
 
 function matrixColumnLabel(field, index) {
   const path = fieldPathString(field);
-  if (path.includes("spring_table")) return ["Travel", "Force"][index] || `C${index + 1}`;
-  if (path.includes("damper_table")) return ["Velocity", "Force"][index] || `C${index + 1}`;
+  if (path.includes("spring_table")) return ["Deflection (m)", "Force (N)"][index] || `C${index + 1}`;
+  if (path.includes("damper_table")) return ["Shaft velocity (m/s)", "Force (N)"][index] || `C${index + 1}`;
   if (path.endsWith("inertia_kg_m2")) return ["X", "Y", "Z"][index] || `C${index + 1}`;
   return `C${index + 1}`;
 }
@@ -909,6 +1453,7 @@ function handleArrayEditorClick(event) {
   if (!container) return;
   event.preventDefault();
   const action = button.dataset.arrayAction;
+  pushUndoSnapshot(snapshotVehicleState(`array-${action}`));
   if (action === "add-item") addArrayItem(container);
   else if (action === "remove-item") removeArrayItem(button, container);
   else if (action === "add-row") addMatrixRow(container);
@@ -1019,11 +1564,19 @@ function renumberArrayEditor(container) {
 }
 
 function collectVehicleValues({ reportInvalid = false } = {}) {
+  return collectConfigValues("#config-form", { reportInvalid });
+}
+
+function collectSimConfigValues({ reportInvalid = false } = {}) {
+  return collectConfigValues("#sim-config-form", { reportInvalid });
+}
+
+function collectConfigValues(rootSelector, { reportInvalid = false } = {}) {
   const values = {};
-  document.querySelectorAll("#config-form [data-array-path]").forEach((container) => {
+  document.querySelectorAll(`${rootSelector} [data-array-path]:not([data-field-disabled='true'])`).forEach((container) => {
     values[container.dataset.arrayPath] = collectArrayValue(container, reportInvalid);
   });
-  document.querySelectorAll("#config-form [data-config-path]").forEach((input) => {
+  document.querySelectorAll(`${rootSelector} [data-config-path]:not(:disabled)`).forEach((input) => {
     values[input.dataset.configPath] = collectPrimitiveValue(input, reportInvalid);
   });
   return values;
@@ -1088,8 +1641,8 @@ async function saveVehicleEdits() {
     body: JSON.stringify({ mode: "patch", values }),
   });
   state.vehiclePayload = payload;
+  acceptCleanVehiclePayload();
   await refreshTirePayload();
-  state.dirtyVehicle = false;
   renderSetup();
   return payload;
 }
@@ -1114,24 +1667,71 @@ async function saveRawVehicle() {
     body: JSON.stringify({ mode: "raw", text: document.getElementById("config-text").value }),
   });
   state.vehiclePayload = payload;
+  acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshTirePayload();
-  state.dirtyVehicle = false;
   renderSetup();
 }
 
 async function loadVehicleSource() {
   const sourceId = document.getElementById("vehicle-library-picker").value;
+  await loadVehicleSourceById(sourceId);
+}
+
+async function loadVehicleSourceById(sourceId) {
   state.vehiclePayload = await api("/api/vehicles/load", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source_id: sourceId }),
   });
+  acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshTirePayload();
   state.selectedVehicleSource = "active";
-  state.dirtyVehicle = false;
   renderSetup();
+}
+
+async function loadVehicleFromStart() {
+  const sourceId = document.getElementById("start-load-picker")?.value;
+  if (!sourceId) return;
+  state.vehicleStartOpen = false;
+  await loadVehicleSourceById(sourceId);
+  render();
+}
+
+async function createVehicleFromStart() {
+  const templateId = document.getElementById("start-template-picker")?.value;
+  const name = document.getElementById("start-vehicle-name")?.value.trim() || nextVehicleName();
+  if (!templateId) return;
+  state.vehiclePayload = await api("/api/vehicle-template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template_id: templateId }),
+  });
+  state.vehiclePayload = await api("/api/configs/vehicle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode: "patch",
+      values: { [JSON.stringify(["vehicle", "name"])]: name },
+    }),
+  });
+  acceptCleanVehiclePayload();
+  state.vehicleLibrary = await api("/api/vehicles/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  await refreshTirePayload();
+  await refreshTireTemplates();
+  if (state.tireTemplates?.templates?.length) {
+    await loadTirTemplate(defaultTirTemplateName());
+  }
+  state.selectedVehicleSource = state.vehicleLibrary.saved?.id || "active";
+  state.vehicleStartOpen = false;
+  const saveName = document.getElementById("save-vehicle-name");
+  if (saveName) saveName.value = name;
+  render();
 }
 
 async function importVehicleFile(file) {
@@ -1142,6 +1742,7 @@ async function importVehicleFile(file) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "raw", text }),
   });
+  acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
   state.vehicleTemplates = await api("/api/vehicle-templates");
   await refreshTirePayload();
@@ -1150,9 +1751,9 @@ async function importVehicleFile(file) {
     await loadTirTemplate(defaultTirTemplateName());
   }
   state.selectedVehicleSource = "active";
-  state.dirtyVehicle = false;
+  state.vehicleStartOpen = false;
   document.getElementById("save-vehicle-name").value = file.name.replace(/\.(ya?ml)$/i, "");
-  renderSetup();
+  render();
 }
 
 async function applyVehicleTemplate(templateId) {
@@ -1162,6 +1763,7 @@ async function applyVehicleTemplate(templateId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ template_id: templateId }),
   });
+  acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshTirePayload();
   await refreshTireTemplates();
@@ -1169,7 +1771,6 @@ async function applyVehicleTemplate(templateId) {
     await loadTirTemplate(defaultTirTemplateName());
   }
   state.selectedVehicleSource = "active";
-  state.dirtyVehicle = false;
   renderSetup();
 }
 
@@ -1185,6 +1786,72 @@ async function deleteSelectedVehicleConfig() {
   });
   state.selectedVehicleSource = "active";
   renderSetup();
+}
+
+async function applySimConfigEdits() {
+  if (!state.simConfigPayload) return null;
+  let values;
+  try {
+    values = collectSimConfigValues({ reportInvalid: true });
+  } catch (error) {
+    const status = document.getElementById("sim-config-status");
+    if (status) status.textContent = error.message;
+    return null;
+  }
+  const payload = await api(`/api/configs/${encodeURIComponent(state.simConfigPayload.id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "patch", values }),
+  });
+  state.simConfigPayload = payload;
+  acceptCleanSimConfigPayload();
+  renderSimSetup(selectedWorkflow());
+  return payload;
+}
+
+async function saveSimConfigAs() {
+  const workflow = selectedWorkflow();
+  if (!workflow) return;
+  const applied = await applySimConfigEdits();
+  if (!applied) return;
+  const name = document.getElementById("save-sim-config-name")?.value || `${workflow.label} setup`;
+  const payload = await api("/api/sim-configs/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workflow_id: workflow.id, name }),
+  });
+  state.simConfigLibrary = payload.library;
+  state.selectedSimConfigSource = payload.saved?.id || state.selectedSimConfigSource;
+  renderSimSetup(workflow);
+}
+
+async function loadSelectedSimConfig() {
+  const sourceId = document.getElementById("sim-config-picker")?.value || state.selectedSimConfigSource;
+  if (!sourceId) return;
+  const payload = await api("/api/sim-configs/load", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id: sourceId }),
+  });
+  state.simConfigPayload = payload.config;
+  state.simConfigLibrary = payload.library;
+  state.selectedSimConfigSource = payload.source?.id || sourceId;
+  acceptCleanSimConfigPayload();
+  renderStandard();
+}
+
+async function deleteSelectedSimConfig() {
+  const selected = (state.simConfigLibrary?.sources || []).find((source) => source.id === state.selectedSimConfigSource);
+  if (selected?.type !== "saved") return;
+  const confirmed = window.confirm(`Delete saved run config "${selected.label}"?`);
+  if (!confirmed) return;
+  state.simConfigLibrary = await api("/api/sim-configs/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id: selected.id }),
+  });
+  state.selectedSimConfigSource = state.simConfigLibrary.sources?.[0]?.id || "";
+  renderSimSetup(selectedWorkflow());
 }
 
 function defaultTirTemplateName() {
@@ -1232,6 +1899,7 @@ async function importTirFile(file) {
 function applyTirTemplate(target) {
   const name = document.getElementById("tir-template-picker")?.value || state.activeTir?.id;
   if (!name) return;
+  pushUndoSnapshot(snapshotVehicleState("tire-template"));
   const sides = target === "both" ? ["front", "rear"] : [target];
   sides.forEach((side) => {
     document.querySelectorAll("#config-form [data-config-path]").forEach((input) => {
@@ -1279,11 +1947,24 @@ function wireTireTools() {
 }
 
 function renderStandard() {
+  ensureSelectedSimConfigLoaded();
+  const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
-    `${activeVehicleName()} | ${activeArchitecture()} | StandardSim`;
+    `${activeVehicleName()} -> ${workflow?.label || "StandardSim"} | ${activeArchitecture()}`;
+  syncSimTabs();
   renderWorkflows();
-  renderOutputs(selectedWorkflow());
+  renderSimSetup(workflow);
+  renderOutputs(workflow);
   renderJobs();
+}
+
+function syncSimTabs() {
+  document.querySelectorAll(".tab").forEach((item) => {
+    item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
+  });
+  document.querySelectorAll(".panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `${state.activeSimTab}-panel`);
+  });
 }
 
 function renderWorkflows() {
@@ -1291,11 +1972,21 @@ function renderWorkflows() {
   const grid = document.getElementById("workflow-grid");
   grid.innerHTML = workflows.map(workflowCard).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
-    card.addEventListener("click", () => {
-      state.selectedWorkflowId = card.dataset.workflow;
-      renderStandard();
+    card.addEventListener("click", async () => {
+      await selectStandardWorkflow(card.dataset.workflow);
     });
   });
+}
+
+async function selectStandardWorkflow(workflowId) {
+  if (!workflowId || workflowId === state.selectedWorkflowId) return;
+  state.selectedWorkflowId = workflowId;
+  state.activeSimTab = "setup";
+  state.simConfigPayload = null;
+  state.simConfigLibrary = null;
+  renderStandard();
+  await refreshSelectedSimConfig();
+  renderStandard();
 }
 
 function workflowCard(workflow) {
@@ -1307,13 +1998,126 @@ function workflowCard(workflow) {
         <div class="card-title">${escapeHtml(workflow.label)}</div>
         <span class="mini-pill">${runLabel}</span>
       </div>
-      <div class="card-meta">${escapeHtml(workflow.config?.path || "")}</div>
+      <div class="card-meta">${escapeHtml(workflowDescription(workflow))}</div>
       <div class="signal-row">
         <span class="mini-pill ${workflow.config?.exists ? "ok" : "missing"}">Config</span>
         <span class="mini-pill ${outputCount ? "ok" : "missing"}">${outputCount}/${workflow.outputs.length} outputs</span>
       </div>
     </article>
   `;
+}
+
+function workflowDescription(workflow) {
+  return {
+    "ramp-steer": "Open-loop steering ramp across speed isolines.",
+    "steady-state": "Closed-loop lateral acceleration operating points.",
+    transient: "Step steer and sine response in the time domain.",
+    "four-post": "Heave, roll, and suspension response sweeps.",
+  }[workflow?.id] || workflow?.config?.path || "";
+}
+
+function simWorkflowGuide(workflow) {
+  return {
+    "ramp-steer": {
+      title: "Ramp Steer",
+      copy: "Configure velocity isolines, lateral acceleration limits, solver controls, and report settings.",
+      steps: ["Vehicle is selected", "Set speed sweep", "Build + run"],
+    },
+    "steady-state": {
+      title: "Steady State",
+      copy: "Configure target lateral accelerations and settled-point criteria for closed-loop characterization.",
+      steps: ["Vehicle is selected", "Set target grid", "Build + run"],
+    },
+    transient: {
+      title: "Transient",
+      copy: "Configure step and sine steering inputs for lateral transient response.",
+      steps: ["Vehicle is selected", "Set input cases", "Build + run"],
+    },
+    "four-post": {
+      title: "Four Post",
+      copy: "Configure suspension override rates and heave/roll/force procedure magnitudes.",
+      steps: ["Vehicle is selected", "Set procedure", "Build + run"],
+    },
+  }[workflow?.id] || {
+    title: workflow?.label || "Standard Sim",
+    copy: "Select a standard workflow, configure the run, then execute it.",
+    steps: ["Vehicle is selected", "Configure run", "Run"],
+  };
+}
+
+function renderSimSetup(workflow) {
+  const guide = simWorkflowGuide(workflow);
+  document.getElementById("sim-setup-title").textContent = guide.title;
+  document.getElementById("sim-setup-copy").textContent = guide.copy;
+  document.getElementById("sim-step-strip").innerHTML = guide.steps.map((step, index) => `
+    <div class="sim-step ${index === 1 ? "active" : ""}">
+      <span>${index + 1}</span>
+      <strong>${escapeHtml(step)}</strong>
+    </div>
+  `).join("");
+  renderSimConfigLibrary();
+  renderSimConfigForm();
+}
+
+function renderSimConfigLibrary() {
+  const picker = document.getElementById("sim-config-picker");
+  const sources = state.simConfigLibrary?.sources || [];
+  if (picker) {
+    if (!sources.some((source) => source.id === state.selectedSimConfigSource)) {
+      state.selectedSimConfigSource = sources[0]?.id || "";
+    }
+    picker.innerHTML = sources.length
+      ? sources.map((source) => `
+        <option value="${escapeHtml(source.id)}"${source.id === state.selectedSimConfigSource ? " selected" : ""}>
+          ${escapeHtml(source.type === "default" ? "Default" : `Saved: ${source.label}`)}
+        </option>
+      `).join("")
+      : `<option value="">No run configs</option>`;
+  }
+  const selected = sources.find((source) => source.id === state.selectedSimConfigSource);
+  const deleteButton = document.getElementById("delete-sim-config-btn");
+  if (deleteButton) {
+    const canDelete = selected?.type === "saved";
+    deleteButton.hidden = !canDelete;
+    deleteButton.disabled = !canDelete;
+  }
+  const saveName = document.getElementById("save-sim-config-name");
+  if (saveName && !saveName.value && selectedWorkflow()) saveName.value = `${selectedWorkflow().label} setup`;
+  updateSimConfigStatus();
+}
+
+function renderSimConfigForm() {
+  const form = document.getElementById("sim-config-form");
+  if (!form) return;
+  if (!state.simConfigPayload) {
+    form.innerHTML = `<div class="empty-state">Select a workflow to configure its simulation inputs.</div>`;
+    return;
+  }
+  form.innerHTML = fieldGroupSections(state.simConfigPayload.fields || [], "sim-config");
+  form.oninput = () => markSimConfigDirty();
+  form.onchange = () => markSimConfigDirty();
+}
+
+function markSimConfigDirty() {
+  state.dirtySimConfig = true;
+  updateSimConfigStatus();
+}
+
+function updateSimConfigStatus() {
+  const status = document.getElementById("sim-config-status");
+  if (!status) return;
+  const workflow = selectedWorkflow();
+  if (!workflow) {
+    status.textContent = "No standard workflow selected.";
+    return;
+  }
+  if (!state.simConfigPayload) {
+    status.textContent = "Loading run configuration.";
+    return;
+  }
+  status.textContent = state.dirtySimConfig
+    ? "Run config has unapplied edits."
+    : `Editing ${state.simConfigPayload.label || workflow.label} config.`;
 }
 
 function renderOutputs(workflow) {
@@ -1379,7 +2183,10 @@ function renderJobs() {
   const runButton = document.getElementById("run-workflow-btn");
   const workflow = selectedWorkflow();
   runButton.disabled = !workflow;
-  runButton.textContent = workflow ? `${workflow.actions.length > 1 ? "Build + Run" : "Run"} ${workflow.label}` : "No Workflow";
+  const runVerb = workflow?.actions.length > 1 ? "Build + Run" : "Run";
+  runButton.textContent = workflow
+    ? `${state.dirtySimConfig ? "Apply + " : ""}${runVerb} ${workflow.label}`
+    : "No Workflow";
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
@@ -1420,6 +2227,10 @@ async function loadJobLog() {
 async function startSelectedWorkflow() {
   const workflow = selectedWorkflow();
   if (!workflow) return;
+  if (state.dirtySimConfig) {
+    const applied = await applySimConfigEdits();
+    if (!applied) return;
+  }
   const job = await api(`/api/workflows/${workflow.id}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1475,6 +2286,8 @@ function setNestedValue(data, path, value) {
 
 function drawVehiclePreview(data) {
   const canvas = document.getElementById("vehicle-canvas");
+  const area = activeParameterArea();
+  syncPreviewModeControls(area);
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(420, Math.floor(rect.width));
   const height = Math.max(360, Math.floor(rect.height));
@@ -1485,52 +2298,72 @@ function drawVehiclePreview(data) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const area = activeParameterArea();
-  syncPreviewModeControls(area);
   if (area.visual === "overview") {
-    drawMbdReadinessPreview(ctx, width, height, data);
+    clearMassInteractionScene();
+    clearGeometryInteractionScene();
+    drawArchitecturePreview(ctx, width, height, data);
     return;
   }
   if (area.visual === "aero") {
+    clearMassInteractionScene();
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
     drawAeroMapPreview(ctx, width, height, data);
     return;
   }
   if (area.visual === "powertrain") {
+    clearMassInteractionScene();
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
     drawPowertrainPreview(ctx, width, height, data);
     return;
   }
   if (area.visual === "suspension") {
+    clearMassInteractionScene();
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
     drawSuspensionPreview(ctx, width, height, data);
     return;
   }
+  if (area.visual === "compliances") {
+    clearMassInteractionScene();
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
+    drawCompliancePreview(ctx, width, height, data);
+    return;
+  }
   if (area.visual === "tires") {
+    clearMassInteractionScene();
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
     drawTirePreview(ctx, width, height, data);
     return;
   }
+  if (area.visual === "mass") {
+    clearArchitectureInteractionScene();
+    clearGeometryInteractionScene();
+    drawMassPreview(ctx, width, height, data);
+    return;
+  }
 
-  const model = filterVehicleModel(buildVehicleGeometry(data), sectionFocus(area.id));
-  if (!model.points.length) return;
-  const projected = model.points.map((point) => ({ ...point, ...projectPoint(point, state.vehiclePreviewView) }));
-  const bounds = projected.reduce(
-    (acc, point) => ({
-      minX: Math.min(acc.minX, point.u - (point.shellRadiusM || 0)),
-      maxX: Math.max(acc.maxX, point.u + (point.shellRadiusM || 0)),
-      minY: Math.min(acc.minY, point.v - (point.shellRadiusM || 0)),
-      maxY: Math.max(acc.maxY, point.v + (point.shellRadiusM || 0)),
-    }),
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
-  );
-  const spanX = Math.max(0.1, bounds.maxX - bounds.minX);
-  const spanY = Math.max(0.1, bounds.maxY - bounds.minY);
-  const scale = Math.min((width - 60) / spanX, (height - 60) / spanY);
-  const map = new Map(projected.map((point) => [
-    point.id,
-    {
-      ...point,
-      x2: (point.u - (bounds.minX + bounds.maxX) / 2) * scale + width / 2,
-      y2: height / 2 - (point.v - (bounds.minY + bounds.maxY) / 2) * scale,
-    },
-  ]));
+  clearArchitectureInteractionScene();
+  clearMassInteractionScene();
+  const fullModel = buildVehicleGeometry(data);
+  let model = filterVehicleModel(fullModel, sectionFocus(area.id));
+  if (area.id === "hardpoints") model = filterGeometryAxles(model);
+  if (!model.points.length) {
+    clearGeometryInteractionScene();
+    return;
+  }
+  const frame = vehicleModelFrame(model);
+  const scene = projectVehicleModel(model, width, height, state.vehiclePreviewView, frame);
+  const { map, scale } = scene;
+  state.geometryScene = {
+    width,
+    height,
+    scale,
+    points: [...map.values()],
+  };
 
   drawPreviewGrid(ctx, width, height);
   [...model.links]
@@ -1540,22 +2373,871 @@ function drawVehiclePreview(data) {
   [...map.values()]
     .filter((point) => point.shellRadiusM)
     .sort((a, b) => a.depth - b.depth)
-    .forEach((point) => drawGyrationShell(ctx, point, scale));
+    .forEach((point) => drawGyrationShell(ctx, point, scale, state.vehiclePreviewView));
   [...map.values()]
     .sort((a, b) => a.depth - b.depth)
     .forEach((point) => drawSphere(ctx, point));
+  drawGeometryInteractionOverlay(ctx);
+  syncGeometryPointEditor();
+}
+
+function clearGeometryInteractionScene() {
+  state.geometryScene = null;
+  state.geometryHoverPointId = null;
+  state.geometryDrag = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("geometry-hot", "geometry-dragging");
+  syncGeometryPointEditor();
+}
+
+function clearArchitectureInteractionScene() {
+  state.architectureScene = null;
+  state.architectureHoverId = null;
+  state.architectureModalOpen = false;
+  state.architectureModalAxle = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("architecture-hot");
+  renderArchitectureConnectionModal();
+}
+
+function clearMassInteractionScene() {
+  state.massScene = null;
+  state.massHoverPointId = null;
+  state.massSelectedPointId = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("mass-hot");
+  syncMassPropertyEditor();
+}
+
+function isArchitecturePreviewArea(area = activeParameterArea()) {
+  return area.visual === "overview";
+}
+
+function selectedArchitectureHotspot() {
+  if (!state.architectureScene) return null;
+  return state.architectureScene.hotspots.find((hotspot) => hotspot.id === state.architectureSelectedId) || null;
+}
+
+function hitTestArchitectureHotspot(event) {
+  if (!isArchitecturePreviewArea() || !state.architectureScene) return null;
+  const point = pointerCanvasPoint(event);
+  if (!point) return null;
+  return [...state.architectureScene.hotspots]
+    .reverse()
+    .find((hotspot) => (
+      point.x >= hotspot.rect.x
+      && point.x <= hotspot.rect.x + hotspot.rect.width
+      && point.y >= hotspot.rect.y
+      && point.y <= hotspot.rect.y + hotspot.rect.height
+    )) || null;
+}
+
+function updateArchitectureHover(event) {
+  const hotspot = hitTestArchitectureHotspot(event);
+  const next = hotspot?.id || null;
+  if (next !== state.architectureHoverId) {
+    state.architectureHoverId = next;
+    drawVehicleFromForm();
+  }
+  document.getElementById("vehicle-canvas")?.classList.toggle("architecture-hot", Boolean(hotspot));
+}
+
+function selectArchitectureHotspot(hotspot) {
+  if (!hotspot) return;
+  state.architectureSelectedId = hotspot.id;
+  if (hotspot.type === "bellcrank-pickup") {
+    state.architectureSelectedOrderIndex = Number(hotspot.index) || 0;
+  }
+  if (hotspot.type === "axle" || hotspot.type === "bellcrank-pickup") {
+    openArchitectureConnectionModal(hotspot.axle);
+  } else {
+    state.architectureModalOpen = false;
+    state.architectureModalAxle = null;
+    renderArchitectureConnectionModal();
+  }
+  drawVehicleFromForm();
+}
+
+function openArchitectureConnectionModal(axle) {
+  if (!["front", "rear"].includes(axle)) return;
+  state.architectureModalOpen = true;
+  state.architectureModalAxle = axle;
+  if (!state.architectureSelectedId?.startsWith(`architecture-${axle}`)) {
+    state.architectureSelectedId = `architecture-${axle}`;
+  }
+  renderArchitectureConnectionModal();
+}
+
+function closeArchitectureConnectionModal() {
+  state.architectureModalOpen = false;
+  state.architectureModalAxle = null;
+  renderArchitectureConnectionModal();
+}
+
+function renderArchitectureConnectionModal(data = currentVehicleFormData() || state.vehiclePayload?.data || {}) {
+  const modal = document.getElementById("architecture-connection-modal");
+  if (!modal) return;
+  const axle = state.architectureModalAxle;
+  const active = state.architectureModalOpen && isArchitecturePreviewArea() && ["front", "rear"].includes(axle);
+  modal.hidden = !active;
+  if (!active) return;
+
+  const architecture = String(data.architecture?.[axle] || "");
+  const title = document.getElementById("architecture-connection-title");
+  const subtitle = document.getElementById("architecture-connection-subtitle");
+  const select = document.getElementById("architecture-modal-select");
+  const body = document.getElementById("architecture-connection-body");
+  if (title) title.textContent = `${humanizeToken(axle)} Connections`;
+  if (subtitle) subtitle.textContent = architecture.includes("bellcrank")
+    ? "Assign each bellcrank connection to the fixed pickup points."
+    : "Select a bellcrank architecture to assign pickup connections.";
+  if (select) {
+    select.innerHTML = architectureChoicesForAxle(axle).map((choice) => `
+      <option value="${escapeHtml(choice)}"${choice === architecture ? " selected" : ""}>${escapeHtml(humanizeToken(choice))}</option>
+    `).join("");
+  }
+  if (body) {
+    body.innerHTML = architecture.includes("bellcrank")
+      ? architectureConnectionEditorHtml(axle, data)
+      : architectureConnectionEmptyHtml(architecture);
+  }
+}
+
+function architectureConnectionEmptyHtml(architecture) {
+  return `
+    <div class="connection-empty">
+      <span>${escapeHtml(humanizeToken(architecture || "direct"))}</span>
+      <strong>No bellcrank connection map</strong>
+    </div>
+  `;
+}
+
+function architectureConnectionEditorHtml(axle, data) {
+  const path = [axle, "actuation", "bellcrank", "order"];
+  const choices = bellcrankOrderChoicesForPath(path, data) || ["rod", "shock"];
+  const values = architectureOrderValuesForData(axle, data);
+  const selectedIndex = clamp(state.architectureSelectedOrderIndex, 0, Math.max(0, values.length - 1));
+  const nodes = architectureConnectionNodes(axle, data, choices, values);
+  return `
+    <section class="connection-map-panel">
+      <div class="connection-map">
+        ${nodes.map((node) => node.kind === "pivot"
+          ? `<span class="connection-pivot-node" style="--node-x: ${node.x}%; --node-y: ${node.y}%" title="Bellcrank pivot"></span>`
+          : `
+            <button
+              class="connection-pickup-node ${node.slotIndex === selectedIndex ? "active" : ""}"
+              data-architecture-pickup="${escapeHtml(axle)}"
+              data-order-index="${node.slotIndex}"
+              style="--node-x: ${node.x}%; --node-y: ${node.y}%; --role-color: ${bellcrankRoleColor(node.role)}"
+              type="button"
+              title="${escapeHtml(humanizeToken(node.role))} pickup"
+            >
+              <span>${node.slotIndex + 1}</span>
+              <strong>${escapeHtml(humanizeToken(node.role))}</strong>
+            </button>
+          `).join("")}
+        <span class="connection-axis-label">Y / Z</span>
+      </div>
+    </section>
+    <section class="connection-assignment-panel">
+      <div class="connection-assignment-list">
+        <span>Connection order</span>
+        ${values.map((role, index) => `
+          <button
+            class="connection-assignment-row ${index === selectedIndex ? "active" : ""}"
+            data-architecture-pickup="${escapeHtml(axle)}"
+            data-order-index="${index}"
+            style="--role-color: ${bellcrankRoleColor(role)}"
+            type="button"
+          >
+            <span>${index + 1}</span>
+            <strong>${escapeHtml(humanizeToken(role))}</strong>
+          </button>
+        `).join("")}
+      </div>
+      <div class="connection-role-picker">
+        <span>Assign selected</span>
+        <div class="connection-role-grid">
+          ${choices.map((choice) => `
+            <button
+              class="bellcrank-role-button ${choice === values[selectedIndex] ? "active" : ""}"
+              data-architecture-role="${escapeHtml(axle)}"
+              data-order-index="${selectedIndex}"
+              data-role="${escapeHtml(choice)}"
+              style="--role-color: ${bellcrankRoleColor(choice)}"
+              type="button"
+            >${escapeHtml(humanizeToken(choice))}</button>
+          `).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function architectureConnectionNodes(axle, data, choices, values) {
+  const pickups = nestedValue(data, [axle, "actuation", "bellcrank", "pickups_m"]) || {};
+  const pivot = toPoint(nestedValue(data, [axle, "actuation", "bellcrank", "pivot_m"]));
+  const pickupNodes = choices
+    .map((role) => ({ kind: "pickup", role, point: toPoint(pickups[role]), slotIndex: values.indexOf(role) }))
+    .filter((node) => node.point && node.slotIndex >= 0);
+  const rawNodes = pivot ? [{ kind: "pivot", point: pivot }, ...pickupNodes] : pickupNodes;
+  if (!rawNodes.length) return [];
+  const bounds = rawNodes.reduce(
+    (acc, node) => ({
+      minY: Math.min(acc.minY, node.point[1]),
+      maxY: Math.max(acc.maxY, node.point[1]),
+      minZ: Math.min(acc.minZ, node.point[2]),
+      maxZ: Math.max(acc.maxZ, node.point[2]),
+    }),
+    { minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
+  );
+  const spanY = Math.max(0.01, bounds.maxY - bounds.minY);
+  const spanZ = Math.max(0.01, bounds.maxZ - bounds.minZ);
+  return rawNodes.map((node) => ({
+    ...node,
+    x: 14 + ((node.point[1] - bounds.minY) / spanY) * 72,
+    y: 86 - ((node.point[2] - bounds.minZ) / spanZ) * 72,
+  }));
+}
+
+function updateArchitectureModalArchitecture(value) {
+  const axle = state.architectureModalAxle;
+  if (!["front", "rear"].includes(axle)) return;
+  state.architectureSelectedId = `architecture-${axle}`;
+  setPrimitiveConfigValue(["architecture", axle], value);
+}
+
+function architectureChoicesForAxle(axle) {
+  const select = document.getElementById(`architecture-${axle}-select`);
+  const choices = select ? Array.from(select.options).map((option) => option.value) : [];
+  return choices.length ? choices : ["direct", "bellcrank", "bellcrank_stabar"];
+}
+
+function architectureOrderValues(axle) {
+  const container = architectureOrderContainer(axle);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll("[data-array-cell]")).map((input) => input.value);
+}
+
+function architectureOrderValuesForData(axle, data = currentVehicleFormData() || state.vehiclePayload?.data || {}) {
+  const path = [axle, "actuation", "bellcrank", "order"];
+  const choices = bellcrankOrderChoicesForPath(path, data) || ["rod", "shock"];
+  const domValues = architectureOrderValues(axle);
+  const rawValues = domValues.length ? domValues : nestedValue(data, path);
+  return normalizeBellcrankOrder(rawValues, choices);
+}
+
+function normalizeBellcrankOrder(values, choices) {
+  const seen = new Set();
+  const normalized = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    if (!choices.includes(value) || seen.has(value)) return;
+    seen.add(value);
+    normalized.push(value);
+  });
+  choices.forEach((choice) => {
+    if (seen.has(choice)) return;
+    seen.add(choice);
+    normalized.push(choice);
+  });
+  return normalized.slice(0, choices.length);
+}
+
+function bellcrankPickupLayout(count) {
+  if (count <= 2) {
+    return [
+      { x: 50, y: 22 },
+      { x: 30, y: 72 },
+    ];
+  }
+  return [
+    { x: 50, y: 18 },
+    { x: 28, y: 74 },
+    { x: 72, y: 74 },
+  ];
+}
+
+function bellcrankRoleColor(role) {
+  const palette = canvasPalette();
+  return {
+    rod: state.dark ? "#92bea6" : "#5e987c",
+    shock: palette.red,
+    stabar: state.dark ? "#b3a6d8" : "#8b7ab8",
+  }[role] || palette.amber;
+}
+
+function architectureOrderContainer(axle) {
+  const key = JSON.stringify([axle, "actuation", "bellcrank", "order"]);
+  return Array.from(document.querySelectorAll("#config-form [data-array-path]"))
+    .find((container) => container.dataset.arrayPath === key) || null;
+}
+
+function setArchitectureOrderValues(axle, values) {
+  const container = architectureOrderContainer(axle);
+  if (!container) return;
+  values.forEach((value, index) => {
+    const input = container.querySelector(`[data-array-cell][data-index="${index}"]`);
+    if (input) input.value = value;
+  });
+}
+
+function selectArchitectureOrderPickup(axle, index) {
+  state.architectureSelectedOrderIndex = Number(index) || 0;
+  state.architectureSelectedId = `architecture-${axle}-pickup-${state.architectureSelectedOrderIndex}`;
+  if (state.architectureModalOpen) state.architectureModalAxle = axle;
+  renderArchitectureConnectionModal();
+  drawVehicleFromForm();
+}
+
+function updateArchitectureOrderRole(axle, index, role) {
+  const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
+  const path = [axle, "actuation", "bellcrank", "order"];
+  const choices = bellcrankOrderChoicesForPath(path, data) || ["rod", "shock"];
+  if (!choices.includes(role)) return;
+  const targetIndex = clamp(Number(index) || 0, 0, choices.length - 1);
+  const values = architectureOrderValuesForData(axle, data);
+  const previousRole = values[targetIndex];
+  const sourceIndex = values.indexOf(role);
+  values[targetIndex] = role;
+  if (sourceIndex >= 0 && sourceIndex !== targetIndex) values[sourceIndex] = previousRole;
+  state.architectureSelectedOrderIndex = targetIndex;
+  state.architectureSelectedId = `architecture-${axle}-pickup-${targetIndex}`;
+  if (state.architectureModalOpen) state.architectureModalAxle = axle;
+  pushUndoSnapshot(snapshotVehicleState("architecture-order"));
+  setArchitectureOrderValues(axle, normalizeBellcrankOrder(values, choices));
+  markVehicleDirty();
+}
+
+function setPrimitiveConfigValue(path, value) {
+  const key = JSON.stringify(path);
+  const input = Array.from(document.querySelectorAll("#config-form [data-config-path]"))
+    .find((item) => item.dataset.configPath === key);
+  if (!input) return;
+  pushUndoSnapshot(snapshotVehicleState("primitive"));
+  input.value = value;
+  markVehicleDirty();
+}
+
+function editableGeometryPoint(point) {
+  return Array.isArray(point?.sourcePath) && point.sourcePath.length > 0;
+}
+
+function geometryPathKey(path) {
+  return JSON.stringify(path);
+}
+
+function selectedGeometryPoint() {
+  if (!state.geometryScene) return null;
+  return state.geometryScene.points.find((point) => point.id === state.geometrySelectedPointId) || null;
+}
+
+function geometryPointById(id) {
+  return state.geometryScene?.points.find((point) => point.id === id) || null;
+}
+
+function geometrySourceContainer(point) {
+  if (!editableGeometryPoint(point)) return null;
+  const key = geometryPathKey(point.sourcePath);
+  return Array.from(document.querySelectorAll("#config-form [data-array-path]"))
+    .find((container) => container.dataset.arrayPath === key) || null;
+}
+
+function geometrySourceValues(point) {
+  const container = geometrySourceContainer(point);
+  if (!container) return null;
+  const values = [0, 1, 2].map((index) => Number(container.querySelector(`[data-array-cell][data-index="${index}"]`)?.value));
+  return values.every(Number.isFinite) ? values : null;
+}
+
+function setGeometrySourceValues(point, values, { syncEditor = true, renderMini = true, pushUndo = true } = {}) {
+  const container = geometrySourceContainer(point);
+  if (!container || !Array.isArray(values)) return;
+  if (pushUndo) pushUndoSnapshot(snapshotVehicleState("geometry"));
+  [0, 1, 2].forEach((index) => {
+    const input = container.querySelector(`[data-array-cell][data-index="${index}"]`);
+    if (input && Number.isFinite(Number(values[index]))) {
+      input.value = Number(values[index]).toFixed(4).replace(/\.?0+$/, "");
+    }
+  });
+  markGeometryDirty({ renderMini });
+  if (syncEditor) syncGeometryPointEditor();
+}
+
+function markGeometryDirty({ renderMini = true } = {}) {
+  updateDirtyState();
+  drawVehicleFromForm();
+  if (renderMini) renderParameterTabCanvases();
+}
+
+function syncGeometryPointEditor() {
+  const editor = document.getElementById("geometry-point-editor");
+  if (!editor) return;
+  document.querySelectorAll(".geometry-source-active").forEach((item) => item.classList.remove("geometry-source-active"));
+  const point = selectedGeometryPoint();
+  if (!isSpatialPreviewArea() || !editableGeometryPoint(point)) {
+    editor.hidden = true;
+    return;
+  }
+  const values = geometrySourceValues(point);
+  if (!values) {
+    editor.hidden = true;
+    return;
+  }
+  editor.hidden = false;
+  document.getElementById("geometry-point-name").textContent = point.sourceLabel || humanizeToken(point.id);
+  document.getElementById("geometry-axis-label").textContent = state.geometryAxis.toUpperCase();
+  document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.geometryAxis === state.geometryAxis);
+  });
+  document.querySelectorAll("[data-geometry-coordinate]").forEach((input) => {
+    const index = axisIndex(input.dataset.geometryCoordinate);
+    if (index >= 0 && document.activeElement !== input) {
+      input.value = values[index].toFixed(4).replace(/\.?0+$/, "");
+    }
+  });
+  geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.classList.add("geometry-source-active");
+}
+
+function selectGeometryPoint(point, { scroll = false } = {}) {
+  if (!editableGeometryPoint(point)) return;
+  state.geometrySelectedPointId = point.id;
+  syncGeometryPointEditor();
+  if (scroll) {
+    geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }
+  drawVehicleFromForm();
+}
+
+function clearGeometrySelection() {
+  if (!state.geometrySelectedPointId) return false;
+  state.geometrySelectedPointId = null;
+  syncGeometryPointEditor();
+  drawVehicleFromForm();
+  return true;
+}
+
+function setGeometryAxis(axis, { redraw = true } = {}) {
+  if (!["x", "y", "z"].includes(axis)) return;
+  state.geometryAxis = axis;
+  if (state.geometryDrag) resetGeometryDragReference();
+  syncGeometryPointEditor();
+  if (redraw) drawVehicleFromForm();
+}
+
+function cycleGeometryAxis() {
+  const axes = ["x", "y", "z"];
+  setGeometryAxis(axes[(axes.indexOf(state.geometryAxis) + 1) % axes.length]);
+}
+
+function axisIndex(axis) {
+  return { x: 0, y: 1, z: 2 }[axis] ?? -1;
+}
+
+function hitTestGeometryPoint(event) {
+  if (!isSpatialPreviewArea() || !state.geometryScene) return null;
+  const canvasPoint = pointerCanvasPoint(event);
+  if (!canvasPoint) return null;
+  const hits = state.geometryScene.points
+    .filter(editableGeometryPoint)
+    .map((point) => {
+      const dx = point.x2 - canvasPoint.x;
+      const dy = point.y2 - canvasPoint.y;
+      return { point, distance: Math.hypot(dx, dy) };
+    })
+    .filter((hit) => hit.distance <= Math.max(12, (hit.point.radius || 5) + 8))
+    .sort((a, b) => a.distance - b.distance || b.point.depth - a.point.depth);
+  return hits[0]?.point || null;
+}
+
+function isMassPreviewArea(area = activeParameterArea()) {
+  return area.visual === "mass";
+}
+
+function selectedMassPoint() {
+  if (!state.massScene) return null;
+  return state.massScene.uniquePoints.find((point) => point.id === state.massSelectedPointId) || null;
+}
+
+function hitTestMassPoint(event) {
+  if (!isMassPreviewArea() || !state.massScene) return null;
+  const canvasPoint = pointerCanvasPoint(event);
+  if (!canvasPoint) return null;
+  const hits = state.massScene.points
+    .map((point) => {
+      const dx = point.x2 - canvasPoint.x;
+      const dy = point.y2 - canvasPoint.y;
+      return { point, distance: Math.hypot(dx, dy) };
+    })
+    .filter((hit) => hit.distance <= Math.max(18, (hit.point.radius || 5) + 10))
+    .sort((a, b) => a.distance - b.distance || b.point.depth - a.point.depth);
+  return hits[0]?.point || null;
+}
+
+function updateMassHover(event) {
+  const point = hitTestMassPoint(event);
+  const next = point?.id || null;
+  if (next !== state.massHoverPointId) {
+    state.massHoverPointId = next;
+    drawVehicleFromForm();
+  }
+  document.getElementById("vehicle-canvas")?.classList.toggle("mass-hot", Boolean(point));
+}
+
+function selectMassPoint(point) {
+  state.massSelectedPointId = point?.id || null;
+  syncMassPropertyEditor();
+  drawVehicleFromForm();
+}
+
+function syncMassPropertyEditor() {
+  const editor = document.getElementById("mass-property-editor");
+  if (!editor) return;
+  const point = selectedMassPoint();
+  if (!isMassPreviewArea() || !point) {
+    editor.hidden = true;
+    editor.style.transform = "";
+    return;
+  }
+  editor.hidden = false;
+  positionMassPropertyEditor();
+  document.getElementById("mass-property-name").textContent = massDisplayName(point);
+  document.getElementById("mass-property-role").textContent = point.aggregate ? "Effective" : "Source";
+  const grid = document.getElementById("mass-property-grid");
+  if (!grid) return;
+  grid.innerHTML = massPropertyRows(point).map(([label, value]) => `
+    <div class="mass-property-row">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join("");
+}
+
+function positionMassPropertyEditor() {
+  const editor = document.getElementById("mass-property-editor");
+  if (!editor || editor.hidden) return;
+  const stage = document.querySelector(".visual-stage");
+  editor.style.transform = `translateY(${stage?.scrollTop || 0}px)`;
+}
+
+function queueMassPropertyEditorPosition() {
+  if (state.massEditorPositionFrame) return;
+  state.massEditorPositionFrame = requestAnimationFrame(() => {
+    state.massEditorPositionFrame = null;
+    positionMassPropertyEditor();
+  });
+}
+
+function massPropertyRows(point) {
+  const radius = massGyrationRadius(point);
+  return [
+    ["Name", massDisplayName(point)],
+    ["Mass", formatMassValue(point.massKg)],
+    ["CG", formatVector([point.x, point.y, point.z], "m")],
+    ["Inertia", formatInertia(point.inertiaKgM2) || "Not set"],
+    ["Rg", Number.isFinite(radius) ? `${formatNumber(radius)} m` : "Not set"],
+    ["Axle", point.axle ? humanizeToken(point.axle) : "Vehicle"],
+    ["Side", point.side ? humanizeToken(point.side) : "Both"],
+    ["Source", massSourceLabel(point)],
+  ];
+}
+
+function massDisplayName(point) {
+  return (point.sourceLabel || humanizeToken(point.id)).replace(/\s+mass$/i, "");
+}
+
+function formatMassValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${formatNumber(numeric)} kg` : "Not set";
+}
+
+function formatVector(values, unit = "") {
+  if (!Array.isArray(values)) return "";
+  const formatted = values.slice(0, 3).map((value) => formatNumber(value)).join(", ");
+  return unit ? `[${formatted}] ${unit}` : `[${formatted}]`;
+}
+
+function formatInertia(inertia) {
+  const diagonal = inertiaDiagonal(inertia);
+  return diagonal.some((value) => value > 0) ? formatVector(diagonal, "kg m2") : "";
+}
+
+function massGyrationRadius(point) {
+  if (Number.isFinite(point?.shellRadiusM) && point.shellRadiusM > 0) return point.shellRadiusM;
+  const mass = Number(point?.massKg);
+  if (!Number.isFinite(mass) || mass <= 0) return null;
+  const diagonal = inertiaDiagonal(point?.inertiaKgM2).filter((value) => value > 0);
+  if (!diagonal.length) return null;
+  const meanInertia = diagonal.reduce((sum, value) => sum + value, 0) / diagonal.length;
+  return Math.sqrt(meanInertia / mass);
+}
+
+function massSourceLabel(point) {
+  if (point.aggregate) {
+    const count = Number(point.sourceCount);
+    return Number.isFinite(count) && count > 0 ? `${count} mass blocks` : "Computed";
+  }
+  return Array.isArray(point.sourcePath) ? point.sourcePath.join(".") : "Config";
+}
+
+function pointerCanvasPoint(event) {
+  const canvas = document.getElementById("vehicle-canvas");
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function drawGeometryInteractionOverlay(ctx) {
+  const point = selectedGeometryPoint();
+  if (!editableGeometryPoint(point)) return;
+  const vector = geometryAxisScreenVector(point, state.geometryAxis);
+  const length = Math.hypot(vector.x, vector.y);
+  if (length < 0.001) return;
+  const ux = vector.x / length;
+  const uy = vector.y / length;
+  const palette = canvasPalette();
+  ctx.save();
+  ctx.strokeStyle = palette.amber;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(point.x2 - ux * 58, point.y2 - uy * 58);
+  ctx.lineTo(point.x2 + ux * 58, point.y2 + uy * 58);
+  ctx.stroke();
+  ctx.fillStyle = palette.amber;
+  ctx.beginPath();
+  ctx.arc(point.x2 + ux * 66, point.y2 + uy * 66, 12, 0, Math.PI * 2);
+  ctx.fill();
+  drawCanvasText(ctx, state.geometryAxis.toUpperCase(), point.x2 + ux * 66, point.y2 + uy * 66, {
+    align: "center",
+    color: "#ffffff",
+    size: 11,
+    weight: 820,
+  });
+  ctx.restore();
+}
+
+function geometryAxisScreenVector(point, axis) {
+  const index = axisIndex(axis);
+  if (index < 0 || !state.geometryScene) return { x: 1, y: 0 };
+  const sign = point.sourceSign?.[index] ?? 1;
+  const shifted = { ...point };
+  if (axis === "x") shifted.x += sign;
+  if (axis === "y") shifted.y += sign;
+  if (axis === "z") shifted.z += sign;
+  const projected = projectPoint(shifted, state.vehiclePreviewView);
+  return {
+    x: (projected.u - point.u) * state.geometryScene.scale,
+    y: -(projected.v - point.v) * state.geometryScene.scale,
+  };
+}
+
+function startGeometryDrag(event, point) {
+  const canvas = document.getElementById("vehicle-canvas");
+  const values = geometrySourceValues(point);
+  if (!canvas || !values) return;
+  pushUndoSnapshot(snapshotVehicleState("geometry-drag"));
+  state.geometryDrag = {
+    pointerId: event.pointerId,
+    pointId: point.id,
+    startX: event.clientX,
+    startY: event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    startValues: [...values],
+    axis: state.geometryAxis,
+    vector: geometryAxisScreenVector(point, state.geometryAxis),
+  };
+  canvas.classList.add("geometry-dragging");
+  canvas.setPointerCapture(event.pointerId);
+}
+
+function updateGeometryDrag(event) {
+  const drag = state.geometryDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const point = geometryPointById(drag.pointId);
+  if (!point) return;
+  drag.lastX = event.clientX;
+  drag.lastY = event.clientY;
+  const axis = drag.axis;
+  const index = axisIndex(axis);
+  const vector = drag.vector;
+  const denom = vector.x * vector.x + vector.y * vector.y;
+  if (index < 0 || denom < 0.001) return;
+  const dx = event.clientX - drag.startX;
+  const dy = event.clientY - drag.startY;
+  const delta = (dx * vector.x + dy * vector.y) / denom;
+  const values = [...drag.startValues];
+  values[index] = drag.startValues[index] + delta;
+  setGeometrySourceValues(point, values, { syncEditor: true, renderMini: false, pushUndo: false });
+}
+
+function resetGeometryDragReference() {
+  const drag = state.geometryDrag;
+  if (!drag) return;
+  const point = geometryPointById(drag.pointId);
+  const values = point ? geometrySourceValues(point) : null;
+  if (!point || !values) return;
+  drag.axis = state.geometryAxis;
+  drag.startX = drag.lastX;
+  drag.startY = drag.lastY;
+  drag.startValues = [...values];
+  drag.vector = geometryAxisScreenVector(point, state.geometryAxis);
+}
+
+function finishGeometryDrag(pointerId) {
+  const drag = state.geometryDrag;
+  if (!drag || drag.pointerId !== pointerId) return false;
+  state.geometryDrag = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("geometry-dragging");
+  renderParameterTabCanvases();
+  return true;
+}
+
+function startPreviewDrag(event, mode = "rotate") {
+  const canvas = document.getElementById("vehicle-canvas");
+  if (!canvas || event.button !== 0) return;
+  const width = state.geometryScene?.width || canvas.getBoundingClientRect().width || 800;
+  const height = state.geometryScene?.height || canvas.getBoundingClientRect().height || 600;
+  canvas.setPointerCapture(event.pointerId);
+  state.vehicleDrag = {
+    pointerId: event.pointerId,
+    mode,
+    x: event.clientX,
+    y: event.clientY,
+    yaw: state.vehiclePreviewYaw,
+    pitch: state.vehiclePreviewPitch,
+    panX: state.vehiclePreviewPanX,
+    panY: state.vehiclePreviewPanY,
+    width,
+    height,
+  };
+  canvas.classList.toggle("preview-panning", mode === "pan");
+  event.preventDefault();
+}
+
+function updatePreviewDrag(event) {
+  const drag = state.vehicleDrag;
+  if (!drag || drag.pointerId !== event.pointerId || !isSpatialPreviewArea()) return false;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  if (drag.mode === "pan") {
+    setPreviewPan(drag.panX + dx, drag.panY + dy, drag.width, drag.height);
+  } else {
+    state.vehiclePreviewView = "iso";
+    const sensitivity = 0.01 * state.rotationSensitivity;
+    state.vehiclePreviewYaw = drag.yaw - dx * sensitivity;
+    state.vehiclePreviewPitch = Math.max(-1.1, Math.min(1.1, drag.pitch + dy * sensitivity));
+    syncViewButtons();
+  }
+  drawVehicleFromForm();
+  return true;
+}
+
+function finishPreviewDrag(pointerId) {
+  const drag = state.vehicleDrag;
+  if (!drag || drag.pointerId !== pointerId) return false;
+  state.vehicleDrag = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("preview-panning");
+  return true;
+}
+
+function handlePreviewWheel(event) {
+  if (!isSpatialPreviewArea()) return;
+  event.preventDefault();
+  const anchor = pointerCanvasPoint(event);
+  const factor = Math.exp(-event.deltaY * 0.0012);
+  setPreviewZoom(state.vehiclePreviewZoom * factor, anchor);
+  drawVehicleFromForm();
+}
+
+function updateGeometryHover(event) {
+  if (state.geometryDrag || state.vehicleDrag) return;
+  const point = hitTestGeometryPoint(event);
+  const next = point?.id || null;
+  if (next !== state.geometryHoverPointId) {
+    state.geometryHoverPointId = next;
+    drawVehicleFromForm();
+  }
+  document.getElementById("vehicle-canvas")?.classList.toggle("geometry-hot", Boolean(point));
 }
 
 function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
+  const geometryToggles = document.getElementById("geometry-axle-toggles");
   const canvas = document.getElementById("vehicle-canvas");
+  const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
-  if (controls) controls.hidden = !usesSpatialView;
-  if (canvas) canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
+  const usesMassScroll = area.id === "mass";
+  if (controls) {
+    controls.hidden = true;
+    controls.style.display = "none";
+  }
+  if (geometryToggles) {
+    geometryToggles.hidden = area.id !== "hardpoints";
+    syncGeometryAxleToggles();
+  }
+  if (stage) stage.classList.toggle("mass-scroll-stage", usesMassScroll);
+  if (canvas) {
+    canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
+    canvas.classList.toggle("mass-scroll-canvas", usesMassScroll);
+    if (usesMassScroll) {
+      const stageHeight = Math.max(360, stage?.clientHeight || canvas.clientHeight || 360);
+      const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
+      canvas.style.height = `${Math.max(900, (stageHeight - toolbarHeight - 28) * 2 + 64)}px`;
+    } else {
+      canvas.style.height = "";
+    }
+  }
 }
 
 function isSpatialPreviewArea(area = activeParameterArea()) {
-  return ["hardpoints", "mass"].includes(area.visual);
+  return area.visual === "hardpoints";
+}
+
+function visibleGeometryAxles() {
+  if (!state.geometryShowFront && !state.geometryShowRear) {
+    state.geometryShowFront = true;
+    state.geometryShowRear = true;
+  }
+  const axles = [];
+  if (state.geometryShowFront) axles.push("front");
+  if (state.geometryShowRear) axles.push("rear");
+  return axles;
+}
+
+function filterGeometryAxles(model) {
+  const visible = new Set(visibleGeometryAxles());
+  const points = model.points.filter((point) => !point.axle || visible.has(point.axle));
+  const pointIds = new Set(points.map((point) => point.id));
+  return {
+    points,
+    links: model.links.filter((link) => pointIds.has(link.from) && pointIds.has(link.to)),
+  };
+}
+
+function syncGeometryAxleToggles() {
+  const front = document.getElementById("geometry-show-front");
+  const rear = document.getElementById("geometry-show-rear");
+  if (!front || !rear) return;
+  visibleGeometryAxles();
+  front.checked = state.geometryShowFront;
+  rear.checked = state.geometryShowRear;
+  front.disabled = state.geometryShowFront && !state.geometryShowRear;
+  rear.disabled = state.geometryShowRear && !state.geometryShowFront;
+}
+
+function updateGeometryAxleVisibility(axle, visible) {
+  if (axle === "front") state.geometryShowFront = visible;
+  if (axle === "rear") state.geometryShowRear = visible;
+  visibleGeometryAxles();
+  localStorage.setItem("bobsim-geometry-show-front", String(state.geometryShowFront));
+  localStorage.setItem("bobsim-geometry-show-rear", String(state.geometryShowRear));
+  syncGeometryAxleToggles();
+  applyAxleInputVisibility();
+  drawVehicleFromForm();
 }
 
 function activeParameterArea() {
@@ -1564,16 +3246,16 @@ function activeParameterArea() {
 
 function canvasPalette() {
   return {
-    bg: state.dark ? "#1d2630" : "#f7f9fb",
-    surface: state.dark ? "#171e25" : "#ffffff",
-    ink: state.dark ? "#e7edf3" : "#17202a",
-    muted: state.dark ? "#9cacbb" : "#617181",
-    line: state.dark ? "#303b47" : "#d8e0e7",
-    blue: state.dark ? "#6aa7e8" : "#2567b3",
-    green: state.dark ? "#78d0a8" : "#21835b",
-    amber: state.dark ? "#e1aa5c" : "#a86612",
-    red: state.dark ? "#e37a7a" : "#b43636",
-    magenta: state.dark ? "#ff9dbe" : "#c2466f",
+    bg: state.dark ? "#2a343d" : "#f0f4f7",
+    surface: state.dark ? "#222a32" : "#fbfcfd",
+    ink: state.dark ? "#e3e9ee" : "#18232e",
+    muted: state.dark ? "#aab5bf" : "#687887",
+    line: state.dark ? "#3f4a54" : "#cfdae2",
+    blue: state.dark ? "#91b4d7" : "#4f7fa8",
+    green: state.dark ? "#9bc8b4" : "#5f967f",
+    amber: state.dark ? "#d4b47d" : "#b68a57",
+    red: state.dark ? "#d19494" : "#b96a6a",
+    magenta: state.dark ? "#d8a8c0" : "#a86c86",
   };
 }
 
@@ -1599,6 +3281,583 @@ function drawCanvasText(ctx, text, x, y, options = {}) {
   ctx.textBaseline = "middle";
   ctx.fillText(String(text), x, y);
   ctx.restore();
+}
+
+function drawArchitecturePreview(ctx, width, height, data) {
+  const palette = canvasPalette();
+  const architecture = data.architecture || {};
+  const profile = powertrainProfile(data);
+  const hoverId = state.architectureHoverId;
+  const selectedId = state.architectureModalOpen && state.architectureModalAxle
+    ? `architecture-${state.architectureModalAxle}`
+    : state.architectureSelectedId;
+  const hotspots = [];
+  drawPreviewGrid(ctx, width, height);
+  drawCanvasText(ctx, "Architecture Assembly", 28, 30, { size: 18, weight: 780 });
+  drawCanvasText(ctx, "Front views use the actual axle pickup points.", 28, 52, {
+    size: 12,
+    weight: 650,
+    color: palette.muted,
+  });
+
+  const fullModel = buildVehicleGeometry(data);
+  const geometryModel = filterVehicleModel(fullModel, sectionFocus("geometry"));
+  const referencePoints = fullModel.points.filter((point) => point.id === "vehicle-mass");
+  const model = {
+    points: [...geometryModel.points, ...referencePoints],
+    links: geometryModel.links,
+  };
+  if (!model.points.length) {
+    drawCanvasText(ctx, "No vehicle geometry is available.", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    state.architectureScene = { hotspots };
+    return;
+  }
+
+  const panelEntries = architectureAxlePanels(width, height)
+    .map((panel) => ({ panel, panelModel: architectureViewportModel(model, panel) }))
+    .filter(({ panelModel }) => panelModel.points.length);
+  const sharedFrames = architectureSharedProjectionFrames(panelEntries);
+  panelEntries.forEach(({ panel, panelModel }) => {
+    if (!panelModel.points.length) return;
+    drawArchitectureAxlePanel(ctx, panel, architecture[panel.axle] || "direct", hotspots, hoverId, selectedId);
+    panel.views.forEach((viewport) => {
+      const scene = projectArchitectureScene(panelModel, viewport, sharedFrames[viewport.view]);
+      drawArchitectureViewport(ctx, viewport);
+      drawArchitectureAssemblyScene(ctx, scene, panelModel);
+      drawArchitectureAxle3d(ctx, scene.points, viewport.axle, architecture[viewport.axle] || "direct", data, hotspots, null, null, viewport);
+    });
+  });
+  drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId);
+  drawArchitectureLegend(ctx, width, height, data);
+
+  state.architectureScene = { hotspots };
+}
+
+function architectureAxlePanels(width, height) {
+  const top = 78;
+  const margin = 28;
+  const gap = 16;
+  const availableHeight = Math.max(250, height - top - 48);
+  const panelHeight = (availableHeight - gap) / 2;
+  return ["front", "rear"].map((axle, index) => (
+    architectureAxlePanel(axle, margin, top + index * (panelHeight + gap), width - margin * 2, panelHeight)
+  ));
+}
+
+function architectureAxlePanel(axle, x, y, width, height) {
+  const inset = 12;
+  const headerHeight = 34;
+  const viewHeight = Math.max(1, height - headerHeight - inset * 2);
+  const viewWidth = width - inset * 2;
+  const viewX = x + inset;
+  const topY = y + headerHeight + inset;
+  return {
+    id: `architecture-${axle}`,
+    axle,
+    x,
+    y,
+    width,
+    height,
+    views: [
+      { id: `${axle}-front`, axle, label: "Front", view: "front", x: viewX, y: topY, width: viewWidth, height: viewHeight },
+    ],
+  };
+}
+
+function drawArchitectureAxlePanel(ctx, panel, architecture, hotspots, hoverId, selectedId) {
+  const palette = canvasPalette();
+  const rect = { x: panel.x, y: panel.y, width: panel.width, height: panel.height };
+  hotspots.push({ id: panel.id, type: "axle", axle: panel.axle, rect });
+  drawArchitecture3dHotspotFrame(ctx, rect, panel.id, hoverId, selectedId);
+  drawCanvasText(ctx, `${humanizeToken(panel.axle)} axle`, panel.x + 14, panel.y + 18, {
+    size: 12,
+    weight: 820,
+    color: palette.ink,
+  });
+  drawCanvasText(ctx, humanizeToken(architecture), panel.x + panel.width - 14, panel.y + 18, {
+    align: "right",
+    size: 10,
+    weight: 760,
+    color: palette.muted,
+  });
+}
+
+function architectureViewportModel(model, viewport) {
+  const points = model.points.filter((point) => point.axle === viewport.axle);
+  const pointIds = new Set(points.map((point) => point.id));
+  return {
+    points,
+    links: model.links.filter((link) => pointIds.has(link.from) && pointIds.has(link.to)),
+  };
+}
+
+function architectureSharedProjectionFrames(panelEntries) {
+  const views = new Set(panelEntries.flatMap(({ panel }) => panel.views.map((viewport) => viewport.view)));
+  return Object.fromEntries([...views].map((view) => [
+    view,
+    architectureProjectionFrame(panelEntries.flatMap(({ panelModel }) => panelModel.points), view),
+  ]));
+}
+
+function architectureProjectionFrame(points, view) {
+  if (!points.length) return { centerU: 0, centerV: 0, spanU: 1, spanV: 1 };
+  const bounds = points
+    .map((point) => projectAssemblyPoint(point, view))
+    .reduce(
+      (acc, point) => ({
+        minU: Math.min(acc.minU, point.u),
+        maxU: Math.max(acc.maxU, point.u),
+        minV: Math.min(acc.minV, point.v),
+        maxV: Math.max(acc.maxV, point.v),
+      }),
+      { minU: Infinity, maxU: -Infinity, minV: Infinity, maxV: -Infinity },
+    );
+  return {
+    centerU: (bounds.minU + bounds.maxU) / 2,
+    centerV: (bounds.minV + bounds.maxV) / 2,
+    spanU: Math.max(0.1, bounds.maxU - bounds.minU),
+    spanV: Math.max(0.1, bounds.maxV - bounds.minV),
+  };
+}
+
+function projectArchitectureScene(model, viewport, sharedFrame = null) {
+  const projected = model.points.map((point) => ({
+    ...point,
+    ...projectAssemblyPoint(point, viewport.view),
+  }));
+  const localFrame = architectureProjectionFrame(model.points, viewport.view);
+  const scaleFrame = sharedFrame || localFrame;
+  const scale = Math.min(
+    Math.max(20, viewport.width - 52) / scaleFrame.spanU,
+    Math.max(20, viewport.height - 32) / scaleFrame.spanV,
+  );
+  const map = new Map(projected.map((point) => [
+    point.id,
+    {
+      ...point,
+      x2: (point.u - localFrame.centerU) * scale + viewport.x + viewport.width / 2,
+      y2: viewport.y + viewport.height / 2 - (point.v - localFrame.centerV) * scale + 10,
+      architectureView: viewport.view,
+    },
+  ]));
+  return { map, points: [...map.values()], scale, viewport };
+}
+
+function projectAssemblyPoint(point, view) {
+  const { x, y, z } = point;
+  if (view === "front") return { u: y, v: z, depth: -x };
+  return { u: y, v: x, depth: z };
+}
+
+function drawArchitectureViewport(ctx, viewport) {
+  const palette = canvasPalette();
+  drawCanvasText(ctx, viewport.label, viewport.x + 4, viewport.y + 11, {
+    size: 10,
+    weight: 820,
+    color: palette.muted,
+  });
+  const axis = viewport.view === "front" ? "Y / Z" : "Y / X";
+  drawCanvasText(ctx, axis, viewport.x + viewport.width - 4, viewport.y + 11, {
+    align: "right",
+    size: 10,
+    weight: 760,
+    color: palette.muted,
+  });
+}
+
+function drawArchitectureAssemblyScene(ctx, scene, model) {
+  const { viewport } = scene;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewport.x + 1, viewport.y + 1, viewport.width - 2, viewport.height - 2);
+  ctx.clip();
+  drawArchitectureReferencePlane(ctx, scene.points, viewport);
+  [...model.links]
+    .sort((a, b) => ((scene.map.get(a.from)?.depth || 0) + (scene.map.get(a.to)?.depth || 0))
+      - ((scene.map.get(b.from)?.depth || 0) + (scene.map.get(b.to)?.depth || 0)))
+    .forEach((link) => drawCylinder(ctx, scene.map.get(link.from), scene.map.get(link.to), {
+      ...link,
+      width: Math.max(2, link.width * 0.78),
+      opacity: Math.min(link.opacity ?? 1, link.detail ? 0.8 : 0.9),
+    }));
+  [...scene.points]
+    .filter((point) => point.role !== "mass" && point.role !== "effective-mass")
+    .sort((a, b) => a.depth - b.depth)
+    .forEach((point) => drawSphere(ctx, { ...point, radius: Math.max(4, (point.radius || 5) * 0.78) }));
+  ctx.restore();
+}
+
+function drawArchitectureReferencePlane(ctx, points, viewport) {
+  const bounds = screenBounds(points.filter((point) => point.role !== "effective-mass" && point.role !== "mass"));
+  if (!bounds) return;
+  const palette = canvasPalette();
+  const rect = expandedRect(bounds, 22);
+  ctx.save();
+  ctx.fillStyle = state.dark ? "rgba(106,167,232,0.035)" : "rgba(37,103,179,0.035)";
+  ctx.strokeStyle = colorWithAlpha(palette.line, 0.72);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (viewport.view === "front") {
+    if (ctx.roundRect) ctx.roundRect(rect.x, rect.y, rect.width, rect.height, 8);
+    else ctx.rect(rect.x, rect.y, rect.width, rect.height);
+  } else {
+    ctx.ellipse(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width * 0.54,
+      Math.max(30, rect.height * 0.34),
+      0,
+      0,
+      Math.PI * 2,
+    );
+  }
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArchitectureAxle3d(ctx, points, axle, architecture, data, hotspots, hoverId, selectedId, viewport) {
+  if (architecture.includes("bellcrank")) {
+    drawArchitecturePickupReferences(ctx, points, axle, data, hotspots, hoverId, selectedId, viewport);
+  }
+}
+
+function drawArchitecturePowertrain3d(ctx, points, profile, hotspots, hoverId, selectedId, viewport) {
+  const mass = points.find((point) => point.id === "vehicle-mass");
+  const fallback = screenBounds(points);
+  if (!mass && !fallback) return;
+  const cx = mass?.x2 || fallback.x + fallback.width / 2;
+  const cy = mass?.y2 || fallback.y + fallback.height / 2;
+  const rect = constrainRectToViewport({ x: cx - 78, y: cy - 34, width: 156, height: 68 }, viewport, 9, 31);
+  const id = "architecture-powertrain";
+  hotspots.push({ id, type: "powertrain", view: viewport.view, rect });
+  drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
+  drawArchitecturePowertrainBlock(ctx, rect.x + rect.width / 2, rect.y + rect.height / 2 + 4, 78, 34);
+  drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
+}
+
+function drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId) {
+  const rect = {
+    x: Math.max(28, width - 238),
+    y: 18,
+    width: Math.min(210, width - 56),
+    height: 46,
+  };
+  const id = "architecture-powertrain";
+  hotspots.push({ id, type: "powertrain", rect });
+  drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
+  drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
+}
+
+function drawArchitecturePickupReferences(ctx, points, axle, data, hotspots, hoverId, selectedId, viewport) {
+  const values = architectureOrderValuesForData(axle, data);
+  const palette = canvasPalette();
+  values.forEach((role, index) => {
+    ["left", "right"].forEach((side) => {
+      const point = points.find((item) => item.id === `${axle}-${side}-bellcrank-${role}`);
+      if (!point) return;
+      const id = `architecture-${axle}-pickup-${index}`;
+      const radius = id === selectedId ? 12 : id === hoverId ? 11 : 10;
+      const color = bellcrankRoleColor(role);
+      ctx.save();
+      ctx.fillStyle = colorWithAlpha(color, id === selectedId ? 0.36 : 0.24);
+      ctx.strokeStyle = id === selectedId ? palette.amber : id === hoverId ? palette.blue : color;
+      ctx.lineWidth = id === selectedId ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(point.x2, point.y2, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      drawCanvasText(ctx, String(index + 1), point.x2, point.y2, {
+        align: "center",
+        size: 9,
+        weight: 860,
+        color: palette.ink,
+      });
+      drawCanvasText(ctx, humanizeToken(role), point.x2 + 14, point.y2 - 13, {
+        size: 9,
+        weight: 760,
+        color: palette.ink,
+      });
+      ctx.restore();
+    });
+  });
+}
+
+function drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId) {
+  const palette = canvasPalette();
+  const selected = id === selectedId;
+  const active = selected || id === hoverId;
+  ctx.save();
+  ctx.fillStyle = active
+    ? colorWithAlpha(selected ? palette.amber : palette.blue, state.dark ? 0.12 : 0.08)
+    : colorWithAlpha(palette.surface, state.dark ? 0.06 : 0.14);
+  ctx.strokeStyle = selected ? palette.amber : active ? palette.blue : colorWithAlpha(palette.line, 0.76);
+  ctx.lineWidth = selected ? 2.5 : 1.25;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(rect.x, rect.y, rect.width, rect.height, 8);
+  else ctx.rect(rect.x, rect.y, rect.width, rect.height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawArchitectureBadge(ctx, x, y, title, value, color) {
+  const palette = canvasPalette();
+  ctx.save();
+  ctx.fillStyle = colorWithAlpha(color, state.dark ? 0.18 : 0.12);
+  ctx.strokeStyle = colorWithAlpha(color, 0.48);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x - 7, y - 11, 118, 38, 7);
+  else ctx.rect(x - 7, y - 11, 118, 38);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  drawCanvasText(ctx, title, x, y - 1, { size: 11, weight: 820, color: palette.ink });
+  drawCanvasText(ctx, value, x, y + 16, { size: 10, weight: 700, color: palette.muted });
+}
+
+function drawArchitecturePowertrainBlock(ctx, cx, cy, width, height) {
+  const palette = canvasPalette();
+  const depth = 14;
+  ctx.save();
+  ctx.fillStyle = state.dark ? "#1d2b23" : "#e8f5ee";
+  ctx.strokeStyle = palette.green;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(cx - width / 2, cy - height / 2, width, height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = state.dark ? "rgba(120,208,168,0.16)" : "rgba(33,131,91,0.14)";
+  ctx.beginPath();
+  ctx.moveTo(cx - width / 2, cy - height / 2);
+  ctx.lineTo(cx - width / 2 + depth, cy - height / 2 - depth);
+  ctx.lineTo(cx + width / 2 + depth, cy - height / 2 - depth);
+  ctx.lineTo(cx + width / 2, cy - height / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + width / 2, cy - height / 2);
+  ctx.lineTo(cx + width / 2 + depth, cy - height / 2 - depth);
+  ctx.lineTo(cx + width / 2 + depth, cy + height / 2 - depth);
+  ctx.lineTo(cx + width / 2, cy + height / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function screenBounds(points) {
+  if (!points.length) return null;
+  const bounds = points.reduce(
+    (acc, point) => ({
+      x: Math.min(acc.x, point.x2),
+      y: Math.min(acc.y, point.y2),
+      right: Math.max(acc.right, point.x2),
+      bottom: Math.max(acc.bottom, point.y2),
+    }),
+    { x: Infinity, y: Infinity, right: -Infinity, bottom: -Infinity },
+  );
+  return {
+    ...bounds,
+    width: bounds.right - bounds.x,
+    height: bounds.bottom - bounds.y,
+  };
+}
+
+function expandedRect(bounds, padding) {
+  return {
+    x: bounds.x - padding,
+    y: bounds.y - padding,
+    width: bounds.right - bounds.x + padding * 2,
+    height: bounds.bottom - bounds.y + padding * 2,
+  };
+}
+
+function constrainRect(rect, width, height, margin = 18, topMargin = margin) {
+  const maxX = Math.max(margin, width - rect.width - margin);
+  const maxY = Math.max(topMargin, height - rect.height - margin);
+  return {
+    ...rect,
+    x: clamp(rect.x, margin, maxX),
+    y: clamp(rect.y, topMargin, maxY),
+  };
+}
+
+function constrainRectToViewport(rect, viewport, margin = 8, topMargin = margin) {
+  const minX = viewport.x + margin;
+  const minY = viewport.y + topMargin;
+  const maxX = Math.max(minX, viewport.x + viewport.width - rect.width - margin);
+  const maxY = Math.max(minY, viewport.y + viewport.height - rect.height - margin);
+  return {
+    ...rect,
+    x: clamp(rect.x, minX, maxX),
+    y: clamp(rect.y, minY, maxY),
+  };
+}
+
+function drawArchitectureAxle(ctx, cx, y, halfTrack, axle, architecture, data, hotspots, hoverId, selectedId) {
+  const palette = canvasPalette();
+  const id = `architecture-${axle}`;
+  const rect = {
+    x: cx - halfTrack - 68,
+    y: y - 62,
+    width: halfTrack * 2 + 136,
+    height: 124,
+  };
+  hotspots.push({ id, type: "axle", axle, rect });
+  drawArchitectureHotspotFrame(ctx, rect, id, hoverId, selectedId);
+  ctx.strokeStyle = palette.blue;
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - halfTrack, y);
+  ctx.lineTo(cx + halfTrack, y);
+  ctx.stroke();
+  drawWheelGlyph(ctx, cx - halfTrack, y, 28, 0, palette.muted);
+  drawWheelGlyph(ctx, cx + halfTrack, y, 28, 0, palette.muted);
+  drawCanvasText(ctx, `${humanizeToken(axle)} axle`, rect.x + 14, rect.y + 20, { size: 12, weight: 820 });
+  drawCanvasText(ctx, humanizeToken(architecture), rect.x + 14, rect.y + 40, {
+    size: 11,
+    weight: 680,
+    color: palette.muted,
+  });
+  if (architecture.includes("bellcrank")) {
+    drawBellcrankGlyph(ctx, cx - halfTrack * 0.45, y, axle);
+    drawBellcrankGlyph(ctx, cx + halfTrack * 0.45, y, axle);
+    drawArchitectureOrderPreview(ctx, rect.x + rect.width - 146, rect.y + 16, 124, 82, axle, data, hotspots, hoverId, selectedId);
+  }
+  if (architecture.includes("stabar")) {
+    ctx.strokeStyle = "#7c5cc4";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfTrack * 0.65, y + 32);
+    ctx.lineTo(cx + halfTrack * 0.65, y + 32);
+    ctx.stroke();
+    drawCanvasText(ctx, "Stabar", cx, y + 50, { align: "center", size: 10, weight: 720, color: palette.muted });
+  }
+}
+
+function drawArchitecturePowertrain(ctx, cx, cy, profile, hotspots, hoverId, selectedId) {
+  const palette = canvasPalette();
+  const id = "architecture-powertrain";
+  const rect = { x: cx - 86, y: cy - 44, width: 172, height: 88 };
+  hotspots.push({ id, type: "powertrain", rect });
+  drawArchitectureHotspotFrame(ctx, rect, id, hoverId, selectedId);
+  drawPanel(ctx, rect.x + 12, rect.y + 16, rect.width - 24, rect.height - 32, state.dark ? "#1d2630" : "#f7f9fb");
+  drawCanvasText(ctx, "Powertrain", cx, cy - 8, { align: "center", size: 12, weight: 820 });
+  drawCanvasText(ctx, profile.id, cx, cy + 12, { align: "center", size: 11, weight: 680, color: palette.muted });
+}
+
+function drawArchitectureHotspotFrame(ctx, rect, id, hoverId, selectedId) {
+  const palette = canvasPalette();
+  const active = id === hoverId || id === selectedId;
+  ctx.save();
+  ctx.strokeStyle = id === selectedId ? palette.amber : active ? palette.blue : palette.line;
+  ctx.fillStyle = active
+    ? colorWithAlpha(id === selectedId ? palette.amber : palette.blue, state.dark ? 0.14 : 0.1)
+    : colorWithAlpha(palette.surface, state.dark ? 0.16 : 0.42);
+  ctx.lineWidth = id === selectedId ? 3 : 1.5;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(rect.x, rect.y, rect.width, rect.height, 8);
+  else ctx.rect(rect.x, rect.y, rect.width, rect.height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBellcrankGlyph(ctx, x, y, axle) {
+  const palette = canvasPalette();
+  ctx.save();
+  ctx.strokeStyle = palette.amber;
+  ctx.fillStyle = state.dark ? "rgba(225, 170, 92, 0.18)" : "rgba(168, 102, 18, 0.14)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 24);
+  ctx.lineTo(x - 22, y + 16);
+  ctx.lineTo(x + 22, y + 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  drawCanvasText(ctx, axle === "front" ? "BC" : "BC", x, y + 3, { align: "center", size: 10, weight: 820, color: palette.amber });
+  ctx.restore();
+}
+
+function drawArchitectureOrderPreview(ctx, x, y, width, height, axle, data, hotspots, hoverId, selectedId) {
+  const values = architectureOrderValuesForData(axle, data);
+  if (!values.length) return;
+  const palette = canvasPalette();
+  const layout = bellcrankPickupLayout(values.length);
+  const points = layout.map((item) => ({
+    x: x + (item.x / 100) * width,
+    y: y + (item.y / 100) * height,
+  }));
+  drawCanvasText(ctx, "Pickups", x, y - 2, { size: 10, weight: 820, color: palette.muted });
+  ctx.save();
+  ctx.strokeStyle = state.dark ? "rgba(225,170,92,0.55)" : "rgba(168,102,18,0.5)";
+  ctx.fillStyle = state.dark ? "rgba(225,170,92,0.08)" : "rgba(168,102,18,0.08)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  if (points.length > 2) ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  points.forEach((point, index) => {
+    const value = values[index];
+    const id = `architecture-${axle}-pickup-${index}`;
+    const radius = id === selectedId ? 17 : id === hoverId ? 16 : 15;
+    hotspots.push({
+      id,
+      type: "bellcrank-pickup",
+      axle,
+      index,
+      rect: { x: point.x - 22, y: point.y - 22, width: 44, height: 44 },
+    });
+    ctx.save();
+    ctx.fillStyle = colorWithAlpha(bellcrankRoleColor(value), id === selectedId ? 0.28 : 0.18);
+    ctx.strokeStyle = id === selectedId ? palette.amber : id === hoverId ? palette.blue : bellcrankRoleColor(value);
+    ctx.lineWidth = id === selectedId ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    drawCanvasText(ctx, String(index + 1), point.x, point.y - 3, { align: "center", size: 10, weight: 860 });
+    drawCanvasText(ctx, humanizeToken(value), point.x, point.y + 18, {
+      align: "center",
+      size: 9,
+      weight: 760,
+      color: palette.ink,
+    });
+    ctx.restore();
+  });
+}
+
+function drawArchitectureLegend(ctx, width, height, data) {
+  const checks = mbdReadinessChecks(data);
+  const ready = checks.filter((check) => check.ok).length;
+  drawCanvasText(ctx, `${ready}/${checks.length} setup checks ready`, width - 28, height - 26, {
+    align: "right",
+    size: 12,
+    weight: 760,
+    color: ready === checks.length ? canvasPalette().green : canvasPalette().amber,
+  });
+}
+
+function colorWithAlpha(color, alpha) {
+  if (!String(color).startsWith("#") || String(color).length !== 7) return color;
+  const r = Number.parseInt(color.slice(1, 3), 16);
+  const g = Number.parseInt(color.slice(3, 5), 16);
+  const b = Number.parseInt(color.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function drawMbdReadinessPreview(ctx, width, height, data) {
@@ -1717,10 +3976,14 @@ function drawRunSummary(ctx, x, y, width, checks) {
 
 function drawStatusDot(ctx, x, y, ok) {
   const palette = canvasPalette();
-  ctx.fillStyle = ok ? palette.green : palette.amber;
+  const color = ok ? palette.green : palette.amber;
+  ctx.fillStyle = colorWithAlpha(color, state.dark ? 0.72 : 0.86);
+  ctx.strokeStyle = colorWithAlpha(color, state.dark ? 0.55 : 0.7);
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(x + 5, y, 5, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
 }
 
 function drawAssemblyPipeline(ctx, x, y, width, profile) {
@@ -1757,8 +4020,9 @@ function drawAssemblyPipeline(ctx, x, y, width, profile) {
 
 function drawReadinessCard(ctx, x, y, width, height, check) {
   const palette = canvasPalette();
+  const color = check.ok ? palette.green : palette.amber;
   drawPanel(ctx, x, y, width, height, palette.surface);
-  ctx.fillStyle = check.ok ? palette.green : palette.amber;
+  ctx.fillStyle = colorWithAlpha(color, state.dark ? 0.72 : 0.86);
   ctx.beginPath();
   ctx.arc(x + 18, y + 22, 6, 0, Math.PI * 2);
   ctx.fill();
@@ -1970,8 +4234,9 @@ function drawHeatmapPanel(ctx, x, y, width, height, title, table, xGrid, yGrid, 
 
 function heatColor(t) {
   const hue = 212 - Math.max(0, Math.min(1, t)) * 202;
-  const light = state.dark ? 48 : 56;
-  return `hsl(${hue}, 72%, ${light}%)`;
+  const saturation = state.dark ? 38 : 46;
+  const light = state.dark ? 56 : 66;
+  return `hsl(${hue}, ${saturation}%, ${light}%)`;
 }
 
 function drawPowertrainPreview(ctx, width, height, data) {
@@ -2383,6 +4648,215 @@ function drawSuspensionPreview(ctx, width, height, data) {
   });
 }
 
+function drawCompliancePreview(ctx, width, height, data) {
+  const palette = canvasPalette();
+  const torsionalStiffness = Number(nestedValue(data, ["body", "torsional_stiff_n_m_per_rad"]));
+  const hasTorsionalStiffness = Number.isFinite(torsionalStiffness) && torsionalStiffness > 0;
+  const channels = compliancePreviewChannels(data);
+  drawPreviewGrid(ctx, width, height);
+  drawCanvasText(ctx, "Compliances", 28, 30, { size: 18, weight: 780 });
+  drawCanvasText(ctx, "Chassis torsion is active. Wheel compliance channels are staged for BobLib wiring.", 28, 52, {
+    size: 12,
+    weight: 650,
+    color: palette.muted,
+  });
+
+  const top = 76;
+  const gap = 14;
+  const panelWidth = width - 56;
+  const sketchHeight = Math.min(Math.max(176, height * 0.42), 260);
+  const matrixHeight = Math.max(122, height - top - sketchHeight - gap - 28);
+  drawPanel(ctx, 28, top, panelWidth, sketchHeight, palette.surface);
+  drawCleanComplianceChassis(ctx, 28, top, panelWidth, sketchHeight, {
+    active: hasTorsionalStiffness,
+    value: torsionalStiffness,
+  });
+  drawComplianceChannelMatrix(ctx, 28, top + sketchHeight + gap, panelWidth, matrixHeight, channels);
+}
+
+function compliancePreviewChannels(data) {
+  return [
+    {
+      label: "Wheel center X / Fx",
+      unit: "m/N",
+      front: nestedValue(data, ["front", "compliances", "wheel_center_x_per_fx_m_per_n"]),
+      rear: nestedValue(data, ["rear", "compliances", "wheel_center_x_per_fx_m_per_n"]),
+    },
+    {
+      label: "Wheel center Y / Fy",
+      unit: "m/N",
+      front: nestedValue(data, ["front", "compliances", "wheel_center_y_per_fy_m_per_n"]),
+      rear: nestedValue(data, ["rear", "compliances", "wheel_center_y_per_fy_m_per_n"]),
+    },
+    {
+      label: "Toe / Mz",
+      unit: "rad/(N m)",
+      front: nestedValue(data, ["front", "compliances", "toe_per_mz_rad_per_n_m"]),
+      rear: nestedValue(data, ["rear", "compliances", "toe_per_mz_rad_per_n_m"]),
+    },
+    {
+      label: "Camber / Fy",
+      unit: "rad/N",
+      front: nestedValue(data, ["front", "compliances", "camber_per_fy_rad_per_n"]),
+      rear: nestedValue(data, ["rear", "compliances", "camber_per_fy_rad_per_n"]),
+    },
+  ];
+}
+
+function drawCleanComplianceChassis(ctx, x, y, width, height, { active, value }) {
+  const palette = canvasPalette();
+  const tileMinWidth = Math.min(210, Math.max(140, width * 0.36));
+  const diagramWidth = Math.max(
+    150,
+    Math.min(width * 0.56, 560, width - 22 - 20 - tileMinWidth - 18),
+  );
+  const diagramX = x + 22;
+  const diagramY = y + 42;
+  const diagramH = height - 62;
+  const centerY = diagramY + diagramH / 2;
+  const bodyLeft = diagramX + 50;
+  const bodyRight = diagramX + diagramWidth - 34;
+  const halfTrack = Math.min(56, diagramH * 0.34);
+  const axleInset = Math.max(36, (bodyRight - bodyLeft) * 0.16);
+  const frontX = bodyLeft + axleInset;
+  const rearX = bodyRight - axleInset;
+
+  drawCanvasText(ctx, "Chassis torsional stiffness", x + 14, y + 20, { size: 13, weight: 780 });
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  ctx.strokeStyle = colorWithAlpha(palette.line, 0.9);
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(bodyLeft, centerY - halfTrack);
+  ctx.lineTo(bodyRight, centerY - halfTrack);
+  ctx.moveTo(bodyLeft, centerY + halfTrack);
+  ctx.lineTo(bodyRight, centerY + halfTrack);
+  ctx.moveTo(frontX, centerY - halfTrack - 14);
+  ctx.lineTo(frontX, centerY + halfTrack + 14);
+  ctx.moveTo(rearX, centerY - halfTrack - 14);
+  ctx.lineTo(rearX, centerY + halfTrack + 14);
+  ctx.stroke();
+
+  ctx.strokeStyle = active ? palette.magenta : palette.muted;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(bodyLeft, centerY - halfTrack);
+  ctx.lineTo(bodyRight, centerY + halfTrack);
+  ctx.moveTo(bodyLeft, centerY + halfTrack);
+  ctx.lineTo(bodyRight, centerY - halfTrack);
+  ctx.stroke();
+
+  [
+    [frontX, centerY - halfTrack],
+    [frontX, centerY + halfTrack],
+    [rearX, centerY - halfTrack],
+    [rearX, centerY + halfTrack],
+  ].forEach(([px, py]) => {
+    ctx.fillStyle = active ? palette.magenta : palette.muted;
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.strokeStyle = palette.blue;
+  ctx.lineWidth = 3;
+  drawComplianceArrow(ctx, frontX, centerY, -1);
+  drawComplianceArrow(ctx, rearX, centerY, 1);
+  ctx.restore();
+
+  drawCanvasText(ctx, "front torque", frontX, centerY + halfTrack + 32, { size: 10, weight: 720, align: "center", color: palette.muted });
+  drawCanvasText(ctx, "rear reaction", rearX, centerY + halfTrack + 32, { size: 10, weight: 720, align: "center", color: palette.muted });
+
+  const tileX = diagramX + diagramWidth + 20;
+  const tileW = Math.max(120, x + width - tileX - 18);
+  const tileY = y + 48;
+  const tileH = Math.max(96, height - 76);
+  drawPanel(ctx, tileX, tileY, tileW, tileH, state.dark ? "#1d2630" : "#f7f9fb");
+  drawCanvasText(ctx, "Active input", tileX + 14, tileY + 20, { size: 11, weight: 760, color: palette.muted });
+  drawCanvasText(ctx, active ? `${formatNumber(value)} N m/rad` : "Unset", tileX + 14, tileY + 51, {
+    size: tileW < 160 ? 13 : 17,
+    weight: 820,
+    color: active ? palette.ink : palette.muted,
+  });
+  drawCanvasText(ctx, "k = torque / twist", tileX + 14, tileY + 82, { size: 11, weight: 700, color: palette.muted });
+}
+
+function drawComplianceArrow(ctx, x, y, direction) {
+  const radius = 28;
+  const start = direction > 0 ? -0.8 : Math.PI - 0.8;
+  const end = direction > 0 ? 0.8 : Math.PI + 0.8;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, start, end, direction < 0);
+  ctx.stroke();
+  const arrowX = x + Math.cos(end) * radius;
+  const arrowY = y + Math.sin(end) * radius;
+  ctx.beginPath();
+  ctx.moveTo(arrowX, arrowY);
+  ctx.lineTo(arrowX - direction * 8, arrowY - 5);
+  ctx.lineTo(arrowX - direction * 4, arrowY + 8);
+  ctx.stroke();
+}
+
+function drawComplianceChannelMatrix(ctx, x, y, width, height, channels) {
+  const palette = canvasPalette();
+  drawPanel(ctx, x, y, width, height, palette.surface);
+  drawCanvasText(ctx, "Wheel compliance channels", x + 14, y + 20, { size: 13, weight: 780 });
+  if (width > 560) {
+    drawCanvasText(ctx, "Inputs reserved for the compliance layer.", x + width - 14, y + 20, {
+      size: 11,
+      weight: 650,
+      align: "right",
+      color: palette.muted,
+    });
+  }
+  const tableX = x + 14;
+  const tableY = y + 42;
+  const tableW = width - 28;
+  const rowH = Math.max(28, Math.min(38, (height - 56) / Math.max(1, channels.length + 1)));
+  const labelW = Math.max(150, Math.min(260, tableW * 0.36));
+  const unitW = Math.max(82, Math.min(120, tableW * 0.18));
+  const cellW = (tableW - labelW - unitW) / 2;
+
+  drawComplianceMatrixCell(ctx, tableX, tableY, labelW, rowH, "Channel", true);
+  drawComplianceMatrixCell(ctx, tableX + labelW, tableY, cellW, rowH, "Front", true);
+  drawComplianceMatrixCell(ctx, tableX + labelW + cellW, tableY, cellW, rowH, "Rear", true);
+  drawComplianceMatrixCell(ctx, tableX + labelW + cellW * 2, tableY, unitW, rowH, "Unit", true);
+  channels.forEach((channel, index) => {
+    const rowY = tableY + rowH * (index + 1);
+    drawComplianceMatrixCell(ctx, tableX, rowY, labelW, rowH, channel.label, false);
+    drawComplianceMatrixCell(ctx, tableX + labelW, rowY, cellW, rowH, complianceCellValue(channel.front), false, true);
+    drawComplianceMatrixCell(ctx, tableX + labelW + cellW, rowY, cellW, rowH, complianceCellValue(channel.rear), false, true);
+    drawComplianceMatrixCell(ctx, tableX + labelW + cellW * 2, rowY, unitW, rowH, channel.unit, false);
+  });
+}
+
+function drawComplianceMatrixCell(ctx, x, y, width, height, text, header = false, staged = false) {
+  const palette = canvasPalette();
+  ctx.save();
+  ctx.fillStyle = header
+    ? colorWithAlpha(palette.blue, state.dark ? 0.16 : 0.12)
+    : staged
+      ? colorWithAlpha(palette.muted, state.dark ? 0.08 : 0.1)
+      : colorWithAlpha(palette.bg, 0.55);
+  ctx.strokeStyle = palette.line;
+  ctx.lineWidth = 1;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeRect(x, y, width, height);
+  ctx.restore();
+  drawCanvasText(ctx, text, x + 10, y + height / 2, {
+    size: 10,
+    weight: header ? 800 : staged ? 740 : 700,
+    color: staged ? palette.muted : palette.ink,
+  });
+}
+
+function complianceCellValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? formatNumber(numeric) : "planned";
+}
+
 function drawLinePanel(ctx, x, y, width, height, title, table, xLabel, yLabel) {
   const palette = canvasPalette();
   drawPanel(ctx, x, y, width, height, palette.surface);
@@ -2471,11 +4945,306 @@ function projectPointWithAngles(point, view, yaw, pitch) {
   return { u: xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
 }
 
+function vehicleModelFrame(model) {
+  const points = model.points || [];
+  if (!points.length) return { center: { x: 0, y: 0, z: 0 }, radius: 1 };
+  const bounds = points.reduce(
+    (acc, point) => {
+      const shell = point.shellRadiusM || 0;
+      return {
+        minX: Math.min(acc.minX, point.x - shell),
+        maxX: Math.max(acc.maxX, point.x + shell),
+        minY: Math.min(acc.minY, point.y - shell),
+        maxY: Math.max(acc.maxY, point.y + shell),
+        minZ: Math.min(acc.minZ, point.z - shell),
+        maxZ: Math.max(acc.maxZ, point.z + shell),
+      };
+    },
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
+  );
+  const center = {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+    z: (bounds.minZ + bounds.maxZ) / 2,
+  };
+  const radius = points.reduce((maxRadius, point) => {
+    const shell = point.shellRadiusM || 0;
+    return Math.max(maxRadius, Math.hypot(point.x - center.x, point.y - center.y, point.z - center.z) + shell);
+  }, 0.1);
+  return { center, radius: Math.max(0.1, radius) };
+}
+
+function projectVehicleModel(model, width, height, view, frame = vehicleModelFrame(model)) {
+  clampPreviewCamera(width, height);
+  return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view, frame);
+}
+
+function projectVehicleModelInRect(model, viewport, view, frame = vehicleModelFrame(model)) {
+  const centerProjection = projectPoint(frame.center, view);
+  const baseScale = Math.min(
+    Math.max(40, viewport.width - 70) / (frame.radius * 2),
+    Math.max(40, viewport.height - 70) / (frame.radius * 2),
+  );
+  const scale = baseScale * state.vehiclePreviewZoom;
+  const map = new Map((model.points || []).map((point) => {
+    const projected = projectPoint(point, view);
+    return [
+      point.id,
+      {
+        ...point,
+        ...projected,
+        x2: (projected.u - centerProjection.u) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
+        y2: viewport.y + viewport.height / 2 - (projected.v - centerProjection.v) * scale + state.vehiclePreviewPanY,
+      },
+    ];
+  }));
+  return { map, scale, frame };
+}
+
+function previewPanLimit(width, height) {
+  return {
+    x: Math.max(80, width * MAX_PREVIEW_PAN_FRACTION),
+    y: Math.max(80, height * MAX_PREVIEW_PAN_FRACTION),
+  };
+}
+
+function clampPreviewCamera(width = state.geometryScene?.width || 800, height = state.geometryScene?.height || 600) {
+  state.vehiclePreviewZoom = clamp(Number(state.vehiclePreviewZoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
+  const limit = previewPanLimit(width, height);
+  state.vehiclePreviewPanX = clamp(Number(state.vehiclePreviewPanX) || 0, -limit.x, limit.x);
+  state.vehiclePreviewPanY = clamp(Number(state.vehiclePreviewPanY) || 0, -limit.y, limit.y);
+}
+
+function setPreviewPan(x, y, width = state.geometryScene?.width, height = state.geometryScene?.height) {
+  const limit = previewPanLimit(width || 800, height || 600);
+  state.vehiclePreviewPanX = clamp(Number(x) || 0, -limit.x, limit.x);
+  state.vehiclePreviewPanY = clamp(Number(y) || 0, -limit.y, limit.y);
+}
+
+function setPreviewZoom(zoom, anchor = null) {
+  const oldZoom = state.vehiclePreviewZoom;
+  const nextZoom = clamp(Number(zoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
+  if (Math.abs(nextZoom - oldZoom) < 0.001) return;
+  const width = state.geometryScene?.width || 800;
+  const height = state.geometryScene?.height || 600;
+  if (anchor) {
+    const ratio = nextZoom / oldZoom;
+    const anchorX = anchor.x - width / 2;
+    const anchorY = anchor.y - height / 2;
+    setPreviewPan(
+      anchorX - (anchorX - state.vehiclePreviewPanX) * ratio,
+      anchorY - (anchorY - state.vehiclePreviewPanY) * ratio,
+      width,
+      height,
+    );
+  }
+  state.vehiclePreviewZoom = nextZoom;
+  clampPreviewCamera(width, height);
+}
+
+function projectedViewFrame(model, view) {
+  const projected = (model.points || []).map((point) => projectPoint(point, view));
+  if (!projected.length) {
+    return { centerU: 0, centerV: 0, spanU: 1, spanV: 1 };
+  }
+  const bounds = projected.reduce(
+    (acc, point) => ({
+      minU: Math.min(acc.minU, point.u),
+      maxU: Math.max(acc.maxU, point.u),
+      minV: Math.min(acc.minV, point.v),
+      maxV: Math.max(acc.maxV, point.v),
+    }),
+    { minU: Infinity, maxU: -Infinity, minV: Infinity, maxV: -Infinity },
+  );
+  return {
+    centerU: (bounds.minU + bounds.maxU) / 2,
+    centerV: (bounds.minV + bounds.maxV) / 2,
+    spanU: Math.max(0.35, bounds.maxU - bounds.minU),
+    spanV: Math.max(0.35, bounds.maxV - bounds.minV),
+  };
+}
+
+function projectVehicleModelToViewFrame(model, viewport, view, frame) {
+  const scale = Math.min(
+    Math.max(40, viewport.width - 34) / frame.spanU,
+    Math.max(40, viewport.height - 34) / frame.spanV,
+  );
+  const map = new Map((model.points || []).map((point) => {
+    const projected = projectPoint(point, view);
+    return [
+      point.id,
+      {
+        ...point,
+        ...projected,
+        x2: (projected.u - frame.centerU) * scale + viewport.x + viewport.width / 2,
+        y2: viewport.y + viewport.height / 2 - (projected.v - frame.centerV) * scale,
+      },
+    ];
+  }));
+  return { map, scale, frame };
+}
+
+function drawMassPreview(ctx, width, height, data) {
+  const fullModel = buildVehicleGeometry(data);
+  const massModel = filterVehicleModel(fullModel, sectionFocus("mass"));
+  if (!massModel.points.length) {
+    state.massScene = null;
+    syncMassPropertyEditor();
+    drawPreviewGrid(ctx, width, height);
+    drawCanvasText(ctx, "No mass properties are available.", width / 2, height / 2, {
+      align: "center",
+      color: canvasPalette().muted,
+    });
+    return;
+  }
+  const scenePoints = [];
+  drawPreviewGrid(ctx, width, height);
+  massViewPanels(width, height).forEach((panel) => {
+    scenePoints.push(...drawMassViewPanel(ctx, panel, fullModel, massModel));
+  });
+  state.massScene = {
+    points: scenePoints,
+    uniquePoints: uniqueMassPoints(scenePoints),
+  };
+  syncMassPropertyEditor();
+}
+
+function massViewPanels(width, height) {
+  const margin = 24;
+  const gap = 16;
+  const panelHeight = Math.max(130, (height - margin * 2 - gap) / 2);
+  return [
+    { label: "Top", axis: "X / Y", view: "top", x: margin, y: margin, width: width - margin * 2, height: panelHeight },
+    { label: "Side", axis: "X / Z", view: "side", x: margin, y: margin + panelHeight + gap, width: width - margin * 2, height: panelHeight },
+  ];
+}
+
+function drawMassViewPanel(ctx, panel, fullModel, massModel) {
+  const palette = canvasPalette();
+  drawPanel(ctx, panel.x, panel.y, panel.width, panel.height, colorWithAlpha(palette.surface, 0.72));
+  drawCanvasText(ctx, panel.label, panel.x + 14, panel.y + 18, {
+    size: 12,
+    weight: 840,
+    color: palette.ink,
+  });
+  drawCanvasText(ctx, panel.axis, panel.x + panel.width - 14, panel.y + 18, {
+    align: "right",
+    size: 10,
+    weight: 760,
+    color: palette.muted,
+  });
+  const viewport = {
+    x: panel.x + 10,
+    y: panel.y + 30,
+    width: panel.width - 20,
+    height: panel.height - 40,
+  };
+  const frame = massViewFrame(fullModel, massModel, panel.view);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height);
+  ctx.clip();
+  drawMassContext(ctx, fullModel, viewport, panel.view, frame);
+  const { map, scale } = projectVehicleModelToViewFrame(massModel, viewport, panel.view, frame);
+  const massPoints = [...map.values()].map((point) => ({
+    ...point,
+    massView: panel.view,
+    panelLabel: panel.label,
+  }));
+  [...map.values()]
+    .filter((point) => point.shellRadiusM)
+    .sort((a, b) => a.depth - b.depth)
+    .forEach((point) => drawGyrationShell(ctx, point, scale, panel.view));
+  massPoints
+    .sort((a, b) => a.depth - b.depth)
+    .forEach((point) => drawSphere(ctx, point));
+  massPoints
+    .sort((a, b) => a.depth - b.depth)
+    .filter(shouldDrawMassLabel)
+    .forEach((point) => drawMassLabel(ctx, point));
+  ctx.restore();
+  return massPoints;
+}
+
+function uniqueMassPoints(points) {
+  const byId = new Map();
+  points.forEach((point) => {
+    if (!byId.has(point.id)) byId.set(point.id, point);
+  });
+  return [...byId.values()];
+}
+
+function shouldDrawMassLabel(point) {
+  return point.id === state.massHoverPointId || point.id === state.massSelectedPointId;
+}
+
+function drawMassLabel(ctx, point) {
+  const label = massDisplayName(point);
+  const palette = canvasPalette();
+  const x = point.x2 + (point.role === "effective-mass" ? 16 : 10);
+  const y = point.y2 - (point.role === "effective-mass" ? 17 : 12);
+  const paddingX = 7;
+  ctx.save();
+  ctx.font = "760 10px Inter, sans-serif";
+  const width = Math.min(170, Math.ceil(ctx.measureText(label).width) + paddingX * 2);
+  const height = 20;
+  ctx.fillStyle = state.dark ? "rgba(32,40,49,0.88)" : "rgba(248,250,252,0.9)";
+  ctx.strokeStyle = colorWithAlpha(point.color, point.id === state.massSelectedPointId ? 0.72 : 0.36);
+  ctx.lineWidth = point.id === state.massSelectedPointId ? 1.5 : 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y - height / 2, width, height, 6);
+  else ctx.rect(x, y - height / 2, width, height);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = palette.ink;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x + paddingX, y, width - paddingX * 2);
+  ctx.restore();
+}
+
+function massViewFrame(fullModel, massModel, view) {
+  const contextPoints = massContextPoints(fullModel);
+  const massCenters = massModel.points.map((point) => ({ ...point, shellRadiusM: 0 }));
+  return projectedViewFrame({ points: [...contextPoints, ...massCenters] }, view);
+}
+
+function drawMassContext(ctx, fullModel, viewport, view, frame) {
+  const contextPoints = massContextPoints(fullModel);
+  const pointIds = new Set(contextPoints.map((point) => point.id));
+  const contextModel = {
+    points: contextPoints,
+    links: fullModel.links.filter((link) => pointIds.has(link.from) && pointIds.has(link.to)),
+  };
+  const { map } = projectVehicleModelToViewFrame(contextModel, viewport, view, frame);
+  [...contextModel.links]
+    .sort((a, b) => ((map.get(a.from)?.depth || 0) + (map.get(a.to)?.depth || 0))
+      - ((map.get(b.from)?.depth || 0) + (map.get(b.to)?.depth || 0)))
+    .forEach((link) => drawCylinder(ctx, map.get(link.from), map.get(link.to), {
+      ...link,
+      width: Math.max(1.5, Math.min(3, link.width * 0.48)),
+      opacity: link.detail ? 0.12 : 0.18,
+    }));
+  [...map.values()]
+    .filter((point) => !point.detail && ["upright", "hardpoint"].includes(point.role))
+    .sort((a, b) => a.depth - b.depth)
+    .forEach((point) => drawSphere(ctx, {
+      ...point,
+      radius: Math.max(2.5, Math.min(4, (point.radius || 5) * 0.48)),
+      opacity: 0.2,
+    }));
+}
+
+function massContextPoints(model) {
+  return model.points.filter((point) => !["mass", "effective-mass", "wheel"].includes(point.role));
+}
+
 function sectionFocus(group) {
   const name = String(group || "").toLowerCase();
   const axle = name.includes("front") ? "front" : name.includes("rear") ? "rear" : null;
   let role = "overview";
-  if (name.includes("mass")) role = "mass";
+  if (name === "hardpoints" || name === "geometry") role = "geometry";
+  else if (name.includes("mass")) role = "mass";
   else if (name.includes("actuation") || name.includes("shock") || name.includes("bellcrank") || name.includes("stabar")) role = "actuation";
   else if (name.includes("hardpoint") || name.includes("suspension")) role = "hardpoints";
   else if (name.includes("wheel") || name.includes("tire")) role = "wheel";
@@ -2492,15 +5261,26 @@ function filterVehicleModel(model, focus) {
     pointIds.has(link.from) && pointIds.has(link.to) && linkVisibleForFocus(link, focus)
   ));
   if (points.length >= 2) return { points, links };
+  if (focus.role === "mass") {
+    return {
+      points: model.points.filter((point) => ["mass", "effective-mass"].includes(point.role)),
+      links: [],
+    };
+  }
   return {
-    points: model.points.filter((point) => !point.detail || point.role === "mass"),
+    points: model.points.filter((point) => (
+      !point.detail
+      && point.role !== "mass"
+      && point.role !== "effective-mass"
+    )),
     links: model.links.filter((link) => !link.detail),
   };
 }
 
 function pointVisibleForFocus(point, focus) {
-  if (point.role === "mass") return !focus.axle || focus.role === "mass" || focus.role === "aero";
-  if (focus.role === "mass") return point.role === "wheel";
+  if (focus.role === "mass") return ["mass", "effective-mass"].includes(point.role);
+  if (point.role === "mass" || point.role === "effective-mass") return false;
+  if (focus.role === "geometry") return geometryPointRoles().includes(point.role);
   if (!focus.axle) return !point.detail;
   if (point.axle && point.axle !== focus.axle) return false;
   if (focus.role === "actuation") {
@@ -2520,6 +5300,7 @@ function pointVisibleForFocus(point, focus) {
 
 function linkVisibleForFocus(link, focus) {
   if (focus.role === "mass") return false;
+  if (focus.role === "geometry") return geometryLinkRoles().includes(link.role);
   if (!focus.axle) return !link.detail;
   if (link.axle && link.axle !== focus.axle) return false;
   if (focus.role === "actuation") {
@@ -2535,6 +5316,14 @@ function linkVisibleForFocus(link, focus) {
     return ["steering", "wheel", "upright"].includes(link.role);
   }
   return !link.detail;
+}
+
+function geometryPointRoles() {
+  return ["hardpoint", "upright", "wheel", "steering", "actuation", "bellcrank", "stabar"];
+}
+
+function geometryLinkRoles() {
+  return ["lower", "upper", "upright", "steering", "wheel", "pushrod", "shock", "bellcrank", "stabar"];
 }
 
 function drawMiniVehiclePreview(canvas, data, group) {
@@ -2604,7 +5393,7 @@ function drawMiniVehiclePreview(canvas, data, group) {
     ctx.stroke();
   });
   [...map.values()].sort((a, b) => a.depth - b.depth).forEach((point) => {
-    const radius = point.role === "mass" ? 4 : 2.4;
+    const radius = ["mass", "effective-mass"].includes(point.role) ? 4 : 2.4;
     ctx.fillStyle = point.color;
     ctx.beginPath();
     ctx.arc(point.x2, point.y2, radius, 0, Math.PI * 2);
@@ -2681,7 +5470,7 @@ function drawMiniTires(ctx, width, height) {
 
 function drawPreviewGrid(ctx, width, height) {
   ctx.save();
-  ctx.strokeStyle = state.dark ? "#26323d" : "#e8edf2";
+  ctx.strokeStyle = state.dark ? "rgba(74, 88, 102, 0.46)" : "rgba(196, 210, 222, 0.62)";
   ctx.lineWidth = 1;
   for (let x = 36; x < width; x += 72) {
     ctx.beginPath();
@@ -2698,7 +5487,7 @@ function drawPreviewGrid(ctx, width, height) {
   ctx.restore();
 }
 
-function drawGyrationShell(ctx, point, scale) {
+function drawGyrationShell(ctx, point, scale, view = "iso") {
   const radius = Math.max(14, Math.min(190, point.shellRadiusM * scale));
   ctx.save();
   ctx.fillStyle = state.dark ? "rgba(194, 70, 111, 0.12)" : "rgba(194, 70, 111, 0.1)";
@@ -2708,30 +5497,42 @@ function drawGyrationShell(ctx, point, scale) {
   ctx.arc(point.x2, point.y2, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(point.x2, point.y2, radius, radius * 0.34, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  if (view === "side") {
+    ctx.beginPath();
+    ctx.moveTo(point.x2 - radius * 0.78, point.y2);
+    ctx.lineTo(point.x2 + radius * 0.78, point.y2);
+    ctx.stroke();
+  } else if (view !== "top") {
+    ctx.beginPath();
+    ctx.ellipse(point.x2, point.y2, radius, radius * 0.34, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 function drawCylinder(ctx, from, to, link) {
   if (!from || !to) return;
   const width = link.width || 5;
+  const opacity = Number.isFinite(link.opacity) ? clamp(link.opacity, 0.08, 1) : 1;
+  const shadowOpacity = (state.dark ? 0.45 : 0.2) * opacity;
+  const highlightOpacity = 0.45 * opacity;
   ctx.save();
   ctx.lineCap = "round";
-  ctx.strokeStyle = state.dark ? "rgba(0,0,0,0.45)" : "rgba(16,25,34,0.2)";
+  ctx.strokeStyle = state.dark
+    ? `rgba(0,0,0,${shadowOpacity})`
+    : `rgba(16,25,34,${shadowOpacity})`;
   ctx.lineWidth = width + 3;
   ctx.beginPath();
   ctx.moveTo(from.x2, from.y2 + 1.5);
   ctx.lineTo(to.x2, to.y2 + 1.5);
   ctx.stroke();
-  ctx.strokeStyle = link.color;
+  ctx.strokeStyle = opacity < 1 ? colorWithAlpha(link.color, opacity) : link.color;
   ctx.lineWidth = width;
   ctx.beginPath();
   ctx.moveTo(from.x2, from.y2);
   ctx.lineTo(to.x2, to.y2);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.strokeStyle = `rgba(255,255,255,${highlightOpacity})`;
   ctx.lineWidth = Math.max(1, width * 0.28);
   ctx.beginPath();
   ctx.moveTo(from.x2, from.y2 - width * 0.22);
@@ -2743,11 +5544,22 @@ function drawCylinder(ctx, from, to, link) {
 function drawSphere(ctx, point) {
   const radius = point.radius || 5;
   if (radius <= 0) return;
+  const selected = point.id === state.geometrySelectedPointId || point.id === state.massSelectedPointId;
+  const hovered = point.id === state.geometryHoverPointId || point.id === state.massHoverPointId;
+  const opacity = Number.isFinite(point.opacity) ? clamp(point.opacity, 0.12, 1) : 1;
   const gradient = ctx.createRadialGradient(point.x2 - radius * 0.35, point.y2 - radius * 0.45, 1, point.x2, point.y2, radius);
   gradient.addColorStop(0, "#ffffff");
   gradient.addColorStop(0.28, point.color);
   gradient.addColorStop(1, state.dark ? "#0b1117" : "#24313f");
   ctx.save();
+  if (hovered || selected) {
+    ctx.strokeStyle = selected ? canvasPalette().amber : canvasPalette().blue;
+    ctx.lineWidth = selected ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(point.x2, point.y2, radius + (selected ? 8 : 5), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = opacity;
   ctx.fillStyle = state.dark ? "rgba(0,0,0,0.36)" : "rgba(16,25,34,0.18)";
   ctx.beginPath();
   ctx.ellipse(point.x2 + 1.5, point.y2 + 2.5, radius * 1.05, radius * 0.75, 0, 0, Math.PI * 2);
@@ -2777,8 +5589,17 @@ function buildVehicleGeometry(data) {
       color: pointColor(group),
       role: meta.role || group,
       axle: meta.axle || null,
+      side: meta.side || null,
       detail: Boolean(meta.detail),
       shellRadiusM: meta.shellRadiusM || 0,
+      sourcePath: meta.sourcePath || null,
+      sourceSign: meta.sourceSign || [1, 1, 1],
+      sourceLabel: meta.sourceLabel || "",
+      massKg: Number.isFinite(meta.massKg) ? meta.massKg : null,
+      inertiaKgM2: meta.inertiaKgM2 || null,
+      aggregate: Boolean(meta.aggregate),
+      sourceCount: Number.isFinite(meta.sourceCount) ? meta.sourceCount : null,
+      opacity: Number.isFinite(meta.opacity) ? meta.opacity : 1,
     };
     points.push(mapped);
     pointById.add(id);
@@ -2795,25 +5616,45 @@ function buildVehicleGeometry(data) {
         role: meta.role || group,
         axle: meta.axle || null,
         detail: Boolean(meta.detail),
+        opacity: Number.isFinite(meta.opacity) ? meta.opacity : 1,
       });
     }
   };
-  const addMassProperty = (rawCg, mass, inertia) => {
+  const addMassProperty = (rawCg, mass, inertia, meta = {}) => {
     const cg = toPoint(rawCg);
     const massValue = Number(mass);
     if (!cg || !Number.isFinite(massValue) || massValue <= 0) return;
     massProperties.push({ cg, mass: massValue, inertia });
+    if (meta.id) {
+      addPoint(meta.id, cg, "mass", massRadius(massValue), {
+        role: "mass",
+        axle: meta.axle || null,
+        side: meta.side || null,
+        sourceLabel: meta.label || "",
+        massKg: massValue,
+        inertiaKgM2: inertia,
+        sourcePath: meta.sourcePath || null,
+      });
+    }
   };
 
-  addMassProperty(data.sprung_mass?.cg_m, data.sprung_mass?.mass_kg, data.sprung_mass?.inertia_kg_m2);
-  addMassProperty(data.driver_mass?.cg_m, data.driver_mass?.mass_kg, data.driver_mass?.inertia_kg_m2);
+  addMassProperty(data.sprung_mass?.cg_m, data.sprung_mass?.mass_kg, data.sprung_mass?.inertia_kg_m2, {
+    id: "sprung-mass",
+    label: "Sprung mass",
+    sourcePath: ["sprung_mass"],
+  });
+  addMassProperty(data.driver_mass?.cg_m, data.driver_mass?.mass_kg, data.driver_mass?.inertia_kg_m2, {
+    id: "driver-mass",
+    label: "Driver mass",
+    sourcePath: ["driver_mass"],
+  });
   ["front", "rear"].forEach((axleName) => {
     const axle = data[axleName];
     if (!axle) return;
     const architecture = String(data.architecture?.[axleName] || "");
     ["left", "right"].forEach((sideName) => {
       addAxleSide(axleName, sideName, axle, architecture, addPoint, addLink);
-      collectAxleMasses(sideName, axle, addMassProperty);
+      collectAxleMasses(axleName, sideName, axle, addMassProperty);
     });
     if (architecture.includes("stabar")) {
       addLink(`${axleName}-left-stabar-bar`, `${axleName}-right-stabar-bar`, "stabar", 4, {
@@ -2826,22 +5667,34 @@ function buildVehicleGeometry(data) {
   const aggregate = aggregateMassProperties(massProperties);
   if (aggregate) {
     addPoint("vehicle-mass", aggregate.cg, "mass", massRadius(aggregate.mass), {
-      role: "mass",
+      role: "effective-mass",
       shellRadiusM: aggregate.gyrationRadius,
+      opacity: 0.3,
+      sourceLabel: "Effective mass",
+      massKg: aggregate.mass,
+      inertiaKgM2: aggregate.inertia,
+      aggregate: true,
+      sourceCount: aggregate.count,
     });
   }
   return { points, links };
 }
 
-function collectAxleMasses(sideName, axle, addMassProperty) {
+function collectAxleMasses(axleName, sideName, axle, addMassProperty) {
   const side = sideName === "right" ? -1 : 1;
   const mirror = (raw) => {
     const point = toPoint(raw);
     if (!point) return null;
     return [point[0], point[1] * side, point[2]];
   };
-  Object.values(axle.masses || {}).forEach((mass) => {
-    addMassProperty(mirror(mass.cg_m), mass.mass_kg, mass.inertia_kg_m2);
+  Object.entries(axle.masses || {}).forEach(([name, mass]) => {
+    addMassProperty(mirror(mass.cg_m), mass.mass_kg, mass.inertia_kg_m2, {
+      id: `${axleName}-${sideName}-${name}-mass`,
+      axle: axleName,
+      side: sideName,
+      label: `${humanizeToken(axleName)} ${humanizeToken(sideName)} ${humanizeToken(name)} mass`,
+      sourcePath: [axleName, "masses", name],
+    });
   });
 }
 
@@ -2866,12 +5719,17 @@ function aggregateMassProperties(masses) {
   return {
     mass: totalMass,
     cg,
+    inertia,
     gyrationRadius: Math.max(0.08, Math.min(0.95, Math.sqrt(meanInertia / totalMass))),
+    count: validMasses.length,
   };
 }
 
 function inertiaDiagonal(inertia) {
   if (!Array.isArray(inertia)) return [0, 0, 0];
+  if (inertia.every((value) => Number.isFinite(Number(value)))) {
+    return inertia.slice(0, 3).map((value) => Math.max(0, Number(value)));
+  }
   return [0, 1, 2].map((idx) => {
     const value = Number(inertia[idx]?.[idx]);
     return Number.isFinite(value) && value > 0 ? value : 0;
@@ -2895,31 +5753,43 @@ function addAxleSide(axleName, sideName, axle, architecture, addPoint, addLink) 
     if (!point) return null;
     return [point[0], point[1] * side, point[2]];
   };
-  const pointMeta = (role, detail = false) => ({ axle: axleName, role, detail });
-  const linkMeta = (role, detail = false) => ({ axle: axleName, role, detail });
+  const source = (...parts) => [axleName, ...parts];
+  const pointMeta = (role, detail = false, sourcePath = null, label = "") => ({
+    axle: axleName,
+    side: sideName,
+    role,
+    detail,
+    sourcePath,
+    sourceSign: [1, side, 1],
+    sourceLabel: label
+      ? `${humanizeToken(axleName)} ${humanizeToken(sideName)} ${label}`
+      : "",
+  });
+  const linkMeta = (role, detail = false, extra = {}) => ({ axle: axleName, role, detail, ...extra });
+  const referenceLink = { opacity: 0.32 };
 
-  addPoint(`${prefix}-lower-fore-i`, mirror(suspension.lower_fore_i_m), "hardpoint", 5, pointMeta("hardpoint"));
-  addPoint(`${prefix}-lower-aft-i`, mirror(suspension.lower_aft_i_m), "hardpoint", 5, pointMeta("hardpoint"));
-  addPoint(`${prefix}-lower-o`, mirror(suspension.lower_o_m), "upright", 6, pointMeta("upright"));
-  addPoint(`${prefix}-upper-fore-i`, mirror(suspension.upper_fore_i_m), "hardpoint", 5, pointMeta("hardpoint"));
-  addPoint(`${prefix}-upper-aft-i`, mirror(suspension.upper_aft_i_m), "hardpoint", 5, pointMeta("hardpoint"));
-  addPoint(`${prefix}-upper-o`, mirror(suspension.upper_o_m), "upright", 6, pointMeta("upright"));
-  addPoint(`${prefix}-tie-o`, mirror(suspension.tie_o_m), "steering", 5, pointMeta("steering"));
-  addPoint(`${prefix}-wheel-center`, mirror(suspension.wheel_center_m), "wheel", 7, pointMeta("wheel"));
-  addPoint(`${prefix}-rack`, mirror(steering.rack_pickup_m), "steering", 5, pointMeta("steering"));
-  addPoint(`${prefix}-rod`, mirror(actuation.rod_mount_m), "actuation", 5, pointMeta("actuation", true));
-  addPoint(`${prefix}-shock-mount`, mirror(shock.mount_m), "actuation", 5, pointMeta("actuation", true));
+  addPoint(`${prefix}-lower-fore-i`, mirror(suspension.lower_fore_i_m), "hardpoint", 5, pointMeta("hardpoint", false, source("suspension", "lower_fore_i_m"), "lower fore inner"));
+  addPoint(`${prefix}-lower-aft-i`, mirror(suspension.lower_aft_i_m), "hardpoint", 5, pointMeta("hardpoint", false, source("suspension", "lower_aft_i_m"), "lower aft inner"));
+  addPoint(`${prefix}-lower-o`, mirror(suspension.lower_o_m), "upright", 6, pointMeta("upright", false, source("suspension", "lower_o_m"), "lower outer"));
+  addPoint(`${prefix}-upper-fore-i`, mirror(suspension.upper_fore_i_m), "hardpoint", 5, pointMeta("hardpoint", false, source("suspension", "upper_fore_i_m"), "upper fore inner"));
+  addPoint(`${prefix}-upper-aft-i`, mirror(suspension.upper_aft_i_m), "hardpoint", 5, pointMeta("hardpoint", false, source("suspension", "upper_aft_i_m"), "upper aft inner"));
+  addPoint(`${prefix}-upper-o`, mirror(suspension.upper_o_m), "upright", 6, pointMeta("upright", false, source("suspension", "upper_o_m"), "upper outer"));
+  addPoint(`${prefix}-tie-o`, mirror(suspension.tie_o_m), "steering", 5, pointMeta("steering", false, source("suspension", "tie_o_m"), "tie rod outer"));
+  addPoint(`${prefix}-wheel-center`, mirror(suspension.wheel_center_m), "wheel", 7, pointMeta("wheel", false, source("suspension", "wheel_center_m"), "wheel center"));
+  addPoint(`${prefix}-rack`, mirror(steering.rack_pickup_m), "steering", 5, pointMeta("steering", false, source("steering", "rack_pickup_m"), "rack pickup"));
+  addPoint(`${prefix}-rod`, mirror(actuation.rod_mount_m), "actuation", 5, pointMeta("actuation", true, source("actuation", "rod_mount_m"), "rod mount"));
+  addPoint(`${prefix}-shock-mount`, mirror(shock.mount_m), "actuation", 5, pointMeta("actuation", true, source("actuation", "shock", "mount_m"), "shock mount"));
   if (hasBellcrank) {
-    addPoint(`${prefix}-bellcrank-pivot`, mirror(bellcrank.pivot_m), "bellcrank", 6, pointMeta("bellcrank", true));
-    addPoint(`${prefix}-bellcrank-rod`, mirror(pickups.rod), "bellcrank", 5, pointMeta("bellcrank", true));
-    addPoint(`${prefix}-bellcrank-shock`, mirror(pickups.shock), "bellcrank", 5, pointMeta("bellcrank", true));
+    addPoint(`${prefix}-bellcrank-pivot`, mirror(bellcrank.pivot_m), "bellcrank", 6, pointMeta("bellcrank", true, source("actuation", "bellcrank", "pivot_m"), "bellcrank pivot"));
+    addPoint(`${prefix}-bellcrank-rod`, mirror(pickups.rod), "bellcrank", 5, pointMeta("bellcrank", true, source("actuation", "bellcrank", "pickups_m", "rod"), "bellcrank rod pickup"));
+    addPoint(`${prefix}-bellcrank-shock`, mirror(pickups.shock), "bellcrank", 5, pointMeta("bellcrank", true, source("actuation", "bellcrank", "pickups_m", "shock"), "bellcrank shock pickup"));
     if (hasStabar) {
-      addPoint(`${prefix}-bellcrank-stabar`, mirror(pickups.stabar), "bellcrank", 5, pointMeta("bellcrank", true));
+      addPoint(`${prefix}-bellcrank-stabar`, mirror(pickups.stabar), "bellcrank", 5, pointMeta("bellcrank", true, source("actuation", "bellcrank", "pickups_m", "stabar"), "bellcrank stabar pickup"));
     }
   }
   if (hasStabar) {
-    addPoint(`${prefix}-stabar-arm`, mirror(stabar.arm_end_m), "stabar", 5, pointMeta("stabar", true));
-    addPoint(`${prefix}-stabar-bar`, mirror(stabar.bar_end_m), "stabar", 5, pointMeta("stabar", true));
+    addPoint(`${prefix}-stabar-arm`, mirror(stabar.arm_end_m), "stabar", 5, pointMeta("stabar", true, source("actuation", "stabar", "arm_end_m"), "stabar arm end"));
+    addPoint(`${prefix}-stabar-bar`, mirror(stabar.bar_end_m), "stabar", 5, pointMeta("stabar", true, source("actuation", "stabar", "bar_end_m"), "stabar bar end"));
   }
 
   addLink(`${prefix}-lower-fore-i`, `${prefix}-lower-o`, "lower", 6, linkMeta("lower"));
@@ -2928,13 +5798,17 @@ function addAxleSide(axleName, sideName, axle, architecture, addPoint, addLink) 
   addLink(`${prefix}-upper-aft-i`, `${prefix}-upper-o`, "upper", 5, linkMeta("upper"));
   addLink(`${prefix}-upper-o`, `${prefix}-lower-o`, "upright", 7, linkMeta("upright"));
   addLink(`${prefix}-rack`, `${prefix}-tie-o`, "steering", 4, linkMeta("steering"));
-  addLink(`${prefix}-tie-o`, `${prefix}-wheel-center`, "steering", 4, linkMeta("steering"));
-  addLink(`${prefix}-upper-o`, `${prefix}-wheel-center`, "wheel", 3, linkMeta("wheel"));
-  addLink(`${prefix}-lower-o`, `${prefix}-wheel-center`, "wheel", 3, linkMeta("wheel"));
-  addLink(`${prefix}-rod`, `${prefix}-lower-o`, "pushrod", 5, linkMeta("pushrod", true));
-  addLink(`${prefix}-rod`, `${prefix}-bellcrank-rod`, "pushrod", 5, linkMeta("pushrod", true));
-  addLink(`${prefix}-shock-mount`, `${prefix}-rod`, "shock", 6, linkMeta("shock", true));
-  addLink(`${prefix}-shock-mount`, `${prefix}-bellcrank-shock`, "shock", 6, linkMeta("shock", true));
+  addLink(`${prefix}-tie-o`, `${prefix}-wheel-center`, "steering", 4, linkMeta("steering", false, referenceLink));
+  addLink(`${prefix}-upper-o`, `${prefix}-wheel-center`, "wheel", 3, linkMeta("wheel", false, referenceLink));
+  addLink(`${prefix}-lower-o`, `${prefix}-wheel-center`, "wheel", 3, linkMeta("wheel", false, referenceLink));
+  const rodTarget = String(actuation.rod_to || "lower").includes("upper") ? "upper-o" : "lower-o";
+  addLink(`${prefix}-rod`, `${prefix}-${rodTarget}`, "pushrod", 4, linkMeta("pushrod", true, referenceLink));
+  if (hasBellcrank) {
+    addLink(`${prefix}-rod`, `${prefix}-bellcrank-rod`, "pushrod", 5, linkMeta("pushrod", true));
+    addLink(`${prefix}-shock-mount`, `${prefix}-bellcrank-shock`, "shock", 6, linkMeta("shock", true));
+  } else {
+    addLink(`${prefix}-shock-mount`, `${prefix}-rod`, "shock", 6, linkMeta("shock", true));
+  }
   if (hasStabar) {
     addLink(`${prefix}-stabar-arm`, `${prefix}-stabar-bar`, "stabar", 4, linkMeta("stabar", true));
     addLink(`${prefix}-stabar-arm`, `${prefix}-bellcrank-stabar`, "stabar", 4, linkMeta("stabar", true));
@@ -2954,32 +5828,34 @@ function toPoint(raw) {
 }
 
 function pointColor(group) {
+  const palette = canvasPalette();
   return {
-    hardpoint: "#2567b3",
-    upright: "#4d5965",
-    steering: "#21835b",
-    wheel: "#6b7280",
-    actuation: "#b43636",
-    bellcrank: "#a86612",
-    stabar: "#7c5cc4",
-    mass: "#c2466f",
-    inertia: "#3b82a0",
-  }[group] || "#2567b3";
+    hardpoint: palette.blue,
+    upright: state.dark ? "#8794a1" : "#687683",
+    steering: palette.green,
+    wheel: state.dark ? "#8b96a2" : "#7e8994",
+    actuation: palette.red,
+    bellcrank: palette.amber,
+    stabar: state.dark ? "#b3a6d8" : "#8b7ab8",
+    mass: palette.magenta,
+    inertia: state.dark ? "#94bdc8" : "#5c95a5",
+  }[group] || palette.blue;
 }
 
 function linkColor(group) {
+  const palette = canvasPalette();
   return {
-    lower: "#1f5f8d",
-    upper: "#2d7a63",
-    upright: "#4d5965",
-    steering: "#21835b",
-    wheel: "#7b8793",
-    pushrod: "#2f8d58",
-    shock: "#b43636",
-    bellcrank: "#a86612",
-    stabar: "#7c5cc4",
-    inertia: "#3b82a0",
-  }[group] || "#334155";
+    lower: state.dark ? "#7fa8c8" : "#4f7fa8",
+    upper: palette.green,
+    upright: state.dark ? "#8794a1" : "#687683",
+    steering: palette.green,
+    wheel: state.dark ? "#8995a1" : "#84909a",
+    pushrod: state.dark ? "#92bea6" : "#5e987c",
+    shock: palette.red,
+    bellcrank: palette.amber,
+    stabar: state.dark ? "#b3a6d8" : "#8b7ab8",
+    inertia: state.dark ? "#94bdc8" : "#5c95a5",
+  }[group] || palette.muted;
 }
 
 function massRadius(mass) {
@@ -2999,39 +5875,168 @@ function wireVehicleCanvas() {
   const canvas = document.getElementById("vehicle-canvas");
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   canvas.addEventListener("pointerdown", (event) => {
+    if (isArchitecturePreviewArea()) {
+      const hotspot = hitTestArchitectureHotspot(event);
+      if (hotspot) {
+        selectArchitectureHotspot(hotspot);
+        event.preventDefault();
+      }
+      return;
+    }
+    if (isMassPreviewArea()) {
+      const hit = hitTestMassPoint(event);
+      if (hit) {
+        selectMassPoint(hit);
+        event.preventDefault();
+      } else {
+        selectMassPoint(null);
+      }
+      return;
+    }
     if (!isSpatialPreviewArea()) return;
-    canvas.setPointerCapture(event.pointerId);
-    state.vehicleDrag = {
-      x: event.clientX,
-      y: event.clientY,
-      yaw: state.vehiclePreviewYaw,
-      pitch: state.vehiclePreviewPitch,
-    };
+    if (event.ctrlKey) {
+      startPreviewDrag(event, "pan");
+      return;
+    }
+    const hit = hitTestGeometryPoint(event);
+    if (hit) {
+      selectGeometryPoint(hit, { scroll: true });
+      startGeometryDrag(event, hit);
+      event.preventDefault();
+      return;
+    }
+    startPreviewDrag(event, "rotate");
   });
   canvas.addEventListener("pointermove", (event) => {
-    if (!state.vehicleDrag || !isSpatialPreviewArea()) return;
-    state.vehiclePreviewView = "iso";
-    const sensitivity = 0.01 * state.rotationSensitivity;
-    state.vehiclePreviewYaw = state.vehicleDrag.yaw - (event.clientX - state.vehicleDrag.x) * sensitivity;
-    state.vehiclePreviewPitch = Math.max(
-      -1.1,
-      Math.min(1.1, state.vehicleDrag.pitch + (event.clientY - state.vehicleDrag.y) * sensitivity),
-    );
-    syncViewButtons();
+    if (isArchitecturePreviewArea()) {
+      updateArchitectureHover(event);
+      return;
+    }
+    if (isMassPreviewArea()) {
+      updateMassHover(event);
+      return;
+    }
+    if (state.geometryDrag) {
+      updateGeometryDrag(event);
+      return;
+    }
+    if (updatePreviewDrag(event)) return;
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (finishGeometryDrag(event.pointerId)) return;
+    if (finishPreviewDrag(event.pointerId)) return;
+  });
+  canvas.addEventListener("pointercancel", (event) => {
+    if (finishGeometryDrag(event.pointerId)) return;
+    if (finishPreviewDrag(event.pointerId)) return;
+  });
+  canvas.addEventListener("wheel", handlePreviewWheel, { passive: false });
+  canvas.addEventListener("pointermove", updateGeometryHover);
+  canvas.addEventListener("pointerleave", () => {
+    state.geometryHoverPointId = null;
+    state.architectureHoverId = null;
+    state.massHoverPointId = null;
+    canvas.classList.remove("geometry-hot");
+    canvas.classList.remove("architecture-hot");
+    canvas.classList.remove("mass-hot");
+    canvas.classList.remove("preview-panning");
     drawVehicleFromForm();
   });
-  canvas.addEventListener("pointerup", () => {
-    state.vehicleDrag = null;
+  canvas.addEventListener("dblclick", () => {
+    if (isSpatialPreviewArea()) resetVehicleView();
   });
-  canvas.addEventListener("pointercancel", () => {
-    state.vehicleDrag = null;
+}
+
+function wireGeometryEditor() {
+  document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
+    button.addEventListener("click", () => setGeometryAxis(button.dataset.geometryAxis));
   });
+  document.querySelectorAll("[data-geometry-coordinate]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const point = selectedGeometryPoint();
+      if (!point) return;
+      const values = ["x", "y", "z"].map((axis) => Number(document.querySelector(`[data-geometry-coordinate="${axis}"]`)?.value));
+      if (!values.every(Number.isFinite)) return;
+      setGeometrySourceValues(point, values, { syncEditor: false });
+    });
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isSpatialPreviewArea() && clearGeometrySelection()) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Shift" && !event.repeat && isSpatialPreviewArea() && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      cycleGeometryAxis();
+    }
+  });
+}
+
+function isTextEntryTarget(target) {
+  return Boolean(target?.closest?.("input, textarea, select, [contenteditable='true']"));
+}
+
+function wireSetupSplitter() {
+  const splitter = document.getElementById("setup-splitter");
+  const workspace = document.querySelector(".setup-workspace");
+  if (!splitter || !workspace) return;
+  applySetupPaneWidth();
+  splitter.addEventListener("pointerdown", (event) => {
+    const rect = workspace.getBoundingClientRect();
+    state.setupResize = {
+      pointerId: event.pointerId,
+      left: rect.left,
+    };
+    splitter.classList.add("active");
+    document.body.classList.add("resizing-panes");
+    splitter.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  splitter.addEventListener("pointermove", (event) => {
+    if (!state.setupResize || state.setupResize.pointerId !== event.pointerId) return;
+    setSetupPaneWidth(event.clientX - state.setupResize.left, { redraw: false });
+    drawVehicleFromForm();
+  });
+  splitter.addEventListener("pointerup", (event) => finishSetupResize(event.pointerId));
+  splitter.addEventListener("pointercancel", (event) => finishSetupResize(event.pointerId));
+  splitter.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSetupPaneWidth(state.setupPaneWidth - step, { persist: true });
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSetupPaneWidth(state.setupPaneWidth + step, { persist: true });
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setSetupPaneWidth(MIN_SETUP_PANE_WIDTH, { persist: true });
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setSetupPaneWidth(setupPaneBounds().max, { persist: true });
+    }
+  });
+}
+
+function finishSetupResize(pointerId) {
+  const resize = state.setupResize;
+  if (!resize || resize.pointerId !== pointerId) return;
+  state.setupResize = null;
+  document.getElementById("setup-splitter")?.classList.remove("active");
+  document.body.classList.remove("resizing-panes");
+  localStorage.setItem("bobsim-setup-pane-width", String(Math.round(state.setupPaneWidth)));
+  drawVehicleFromForm();
 }
 
 function resetVehicleView() {
   state.vehiclePreviewView = "iso";
   state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;
   state.vehiclePreviewPitch = DEFAULT_VEHICLE_PITCH;
+  state.vehiclePreviewZoom = 1;
+  state.vehiclePreviewPanX = 0;
+  state.vehiclePreviewPanY = 0;
   syncViewButtons();
   drawVehicleFromForm();
 }
@@ -3046,6 +6051,43 @@ function wireEvents() {
   document.getElementById("refresh-btn").addEventListener("click", refresh);
   document.getElementById("theme-toggle-btn").addEventListener("click", toggleTheme);
   document.getElementById("reference-toggle-btn").addEventListener("click", toggleReferencePanel);
+  document.getElementById("open-vehicle-start-btn").addEventListener("click", openVehicleStartModal);
+  document.getElementById("start-load-btn").addEventListener("click", loadVehicleFromStart);
+  document.getElementById("start-create-btn").addEventListener("click", createVehicleFromStart);
+  document.getElementById("start-active-btn").addEventListener("click", () => {
+    state.vehicleStartOpen = false;
+    renderVehicleStartModal();
+  });
+  document.getElementById("start-import-btn").addEventListener("click", () => {
+    document.getElementById("start-import-input").click();
+  });
+  document.getElementById("start-import-input").addEventListener("change", (event) => {
+    importVehicleFile(event.target.files?.[0]);
+    event.target.value = "";
+  });
+  document.getElementById("architecture-connection-close").addEventListener("click", closeArchitectureConnectionModal);
+  document.getElementById("architecture-connection-modal").addEventListener("pointerdown", (event) => {
+    if (event.target.id === "architecture-connection-modal") closeArchitectureConnectionModal();
+  });
+  document.getElementById("architecture-modal-select").addEventListener("change", (event) => {
+    updateArchitectureModalArchitecture(event.target.value);
+  });
+  document.getElementById("architecture-connection-body").addEventListener("click", (event) => {
+    const pickup = event.target.closest("[data-architecture-pickup]");
+    if (pickup) {
+      selectArchitectureOrderPickup(pickup.dataset.architecturePickup, pickup.dataset.orderIndex);
+      return;
+    }
+    const role = event.target.closest("[data-architecture-role]");
+    if (role) {
+      updateArchitectureOrderRole(role.dataset.architectureRole, role.dataset.orderIndex, role.dataset.role);
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.architectureModalOpen) closeArchitectureConnectionModal();
+  });
+  window.addEventListener("keydown", handleUndoShortcut);
+  window.addEventListener("keydown", handleSetupStageKeys);
   document.getElementById("vehicle-library-picker").addEventListener("change", syncVehicleLibraryActions);
   document.getElementById("load-vehicle-btn").addEventListener("click", loadVehicleSource);
   document.getElementById("delete-vehicle-btn").addEventListener("click", deleteSelectedVehicleConfig);
@@ -3056,6 +6098,14 @@ function wireEvents() {
   document.getElementById("save-vehicle-btn").addEventListener("click", saveVehicleAs);
   document.getElementById("save-raw-btn").addEventListener("click", saveRawVehicle);
   document.getElementById("run-workflow-btn").addEventListener("click", startSelectedWorkflow);
+  document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
+  document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
+  document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);
+  document.getElementById("delete-sim-config-btn").addEventListener("click", deleteSelectedSimConfig);
+  document.getElementById("sim-config-picker").addEventListener("change", (event) => {
+    state.selectedSimConfigSource = event.target.value;
+    renderSimConfigLibrary();
+  });
   document.getElementById("clear-log-btn").addEventListener("click", () => {
     document.getElementById("job-log").textContent = "";
   });
@@ -3064,9 +6114,17 @@ function wireEvents() {
     localStorage.setItem("bobsim-rotation-sensitivity", String(state.rotationSensitivity));
     renderVehicleControls();
   });
+  document.getElementById("geometry-show-front").addEventListener("change", (event) => {
+    updateGeometryAxleVisibility("front", event.target.checked);
+  });
+  document.getElementById("geometry-show-rear").addEventListener("change", (event) => {
+    updateGeometryAxleVisibility("rear", event.target.checked);
+  });
   document.getElementById("reset-view-btn").addEventListener("click", resetVehicleView);
+  document.getElementById("setup-prev-btn")?.addEventListener("click", () => navigateParameterStep(-1));
+  document.getElementById("setup-next-btn")?.addEventListener("click", () => navigateParameterStep(1));
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
-    if (state.view === "setup") await saveVehicleEdits();
+    if (state.view === "setup") await saveVehicleAs();
     else await startSelectedWorkflow();
   });
   document.getElementById("rail-secondary-btn").addEventListener("click", () => {
@@ -3078,12 +6136,7 @@ function wireEvents() {
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeSimTab = button.dataset.tab;
-      document.querySelectorAll(".tab").forEach((item) => {
-        item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
-      });
-      document.querySelectorAll(".panel").forEach((panel) => {
-        panel.classList.toggle("active", panel.id === `${state.activeSimTab}-panel`);
-      });
+      syncSimTabs();
     });
   });
   document.querySelectorAll(".view-button[data-view]").forEach((button) => {
@@ -3097,8 +6150,16 @@ function wireEvents() {
       drawVehicleFromForm();
     });
   });
+  document.querySelector(".visual-stage")?.addEventListener("scroll", () => {
+    if (state.massSelectedPointId) queueMassPropertyEditorPosition();
+  });
+  wireSetupSplitter();
+  wireGeometryEditor();
   wireVehicleCanvas();
-  window.addEventListener("resize", drawVehicleFromForm);
+  window.addEventListener("resize", () => {
+    applySetupPaneWidth();
+    drawVehicleFromForm();
+  });
 }
 
 wireEvents();

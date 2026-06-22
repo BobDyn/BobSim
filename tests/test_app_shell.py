@@ -86,6 +86,8 @@ def test_app_vehicle_setup_exposes_vehicle_parameters_without_repo_paths() -> No
     assert fields_by_path[("sprung_mass", "cg_m")]["array_element_kind"] == "number"
     assert fields_by_path[("aero", "drag_table_n")]["array_shape"] == [5, 5]
     assert fields_by_path[("front", "actuation", "bellcrank", "order")]["choices"] == ["rod", "shock", "stabar"]
+    assert fields_by_path[("front", "actuation", "shock", "spring_table", "table")]["label"] == "Spring force curve"
+    assert fields_by_path[("front", "actuation", "shock", "damper_table", "table")]["label"] == "Damper force curve"
 
 
 def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
@@ -178,6 +180,51 @@ def test_app_can_save_and_load_named_vehicle_configs(tmp_path: Path, monkeypatch
     assert all(vehicle["id"] != "saved:my-saved-vehicle" for vehicle in library["vehicles"])
     with pytest.raises(ValueError):
         app.delete_saved_vehicle("template:TemplateVehicle")
+
+
+def test_app_can_save_load_and_delete_sim_configs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "ramp.yml"
+    config_path.write_text(
+        "simulation:\n"
+        "  solver: dassl\n"
+        "sweep:\n"
+        "  testVels: [12.5, 15.0]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.setattr(app, "SAVED_SIM_CONFIG_ROOT", Path("_5_App/sim_configs"))
+    monkeypatch.setattr(
+        app,
+        "BASE_CONFIG_SPECS",
+        {
+            "ramp-steer": app.ConfigSpec(
+                id="ramp-steer",
+                group="standard",
+                label="Ramp",
+                path="ramp.yml",
+                workflow_id="ramp-steer",
+                fields=(app.FieldSpec(("simulation", "solver"), "Solver", kind="select", choices=("dassl", "ida")),),
+            )
+        },
+    )
+
+    library = app.sim_config_library_payload("ramp-steer")
+    assert library["sources"][0]["id"] == "default:ramp-steer"
+
+    app.patch_config("ramp-steer", {'["simulation","solver"]': "ida"})
+    saved = app.save_active_sim_config("ramp-steer", "Fast Ramp")
+    source_id = saved["saved"]["id"]
+    assert source_id == "saved:ramp-steer:fast-ramp"
+
+    app.patch_config("ramp-steer", {'["simulation","solver"]': "dassl"})
+    loaded = app.load_sim_config_source(source_id)
+    assert loaded["config"]["data"]["simulation"]["solver"] == "ida"
+
+    app.load_sim_config_source("default:ramp-steer")
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["simulation"]["solver"] == "dassl"
+
+    library = app.delete_saved_sim_config(source_id)
+    assert all(source["id"] != source_id for source in library["sources"])
 
 
 def test_app_patch_config_updates_registered_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

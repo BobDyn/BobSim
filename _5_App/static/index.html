@@ -37,22 +37,46 @@
         </aside>
 
         <section id="setup-view" class="screen active">
-          <div class="screen-head">
+          <div class="screen-head setup-head">
             <div>
-              <h2>Vehicle Model</h2>
+              <span id="setup-step-label" class="context-label">Setup</span>
+              <h2 id="setup-title">Vehicle Model</h2>
+              <p id="setup-focus" class="setup-focus"></p>
             </div>
-            <div class="vehicle-source">
-              <select id="vehicle-library-picker" class="config-picker"></select>
-              <button id="load-vehicle-btn" class="ghost-button" type="button">Load</button>
-              <button id="delete-vehicle-btn" class="ghost-button danger-button" type="button">Delete</button>
-              <label class="file-import compact-import">
-                <input id="vehicle-import-input" type="file" accept=".yml,.yaml">
-                <span>Import YAML</span>
-              </label>
-              <input id="save-vehicle-name" class="name-input" type="text" placeholder="Save as name">
-              <button id="save-vehicle-btn" class="run-button" type="button">Save As</button>
+            <div class="setup-head-actions">
+              <div class="workflow-nav" aria-label="Setup step navigation">
+                <button id="setup-prev-btn" class="step-nav-button" type="button">Previous</button>
+                <button id="setup-next-btn" class="step-nav-button primary-step" type="button">Next</button>
+              </div>
+              <details class="model-menu">
+                <summary>Vehicle</summary>
+                <div class="model-menu-body">
+                  <button id="open-vehicle-start-btn" class="run-button menu-primary" type="button">Open / Create Vehicle</button>
+                  <div class="vehicle-source">
+                    <select id="vehicle-library-picker" class="config-picker"></select>
+                    <button id="load-vehicle-btn" class="ghost-button" type="button">Load</button>
+                    <button id="delete-vehicle-btn" class="ghost-button danger-button" type="button">Delete</button>
+                    <label class="file-import compact-import">
+                      <input id="vehicle-import-input" type="file" accept=".yml,.yaml">
+                      <span>Import YAML</span>
+                    </label>
+                    <input id="save-vehicle-name" class="name-input" type="text" placeholder="Save as name">
+                    <button id="save-vehicle-btn" class="run-button" type="button">Save As</button>
+                  </div>
+                  <details class="raw-block">
+                    <summary>Raw vehicle YAML</summary>
+                    <div class="raw-actions">
+                      <span id="config-path"></span>
+                      <button id="save-raw-btn" class="ghost-button" type="button">Save Raw</button>
+                    </div>
+                    <textarea id="config-text" class="code-view"></textarea>
+                  </details>
+                </div>
+              </details>
             </div>
           </div>
+
+          <div id="parameter-tabs" class="parameter-tabs"></div>
 
           <div class="setup-workspace">
             <aside class="editor-pane">
@@ -63,18 +87,22 @@
                   <span id="save-status"></span>
                 </div>
               </div>
-              <div id="parameter-tabs" class="parameter-tabs"></div>
               <div id="workflow-guide" class="workflow-guide" hidden></div>
               <form id="config-form" class="config-form"></form>
-              <details class="raw-block">
-                <summary>Raw vehicle YAML</summary>
-                <div class="raw-actions">
-                  <span id="config-path"></span>
-                  <button id="save-raw-btn" class="ghost-button" type="button">Save Raw</button>
-                </div>
-                <textarea id="config-text" class="code-view"></textarea>
-              </details>
             </aside>
+
+            <div
+              id="setup-splitter"
+              class="splitter"
+              role="separator"
+              aria-label="Resize setup and visual panes"
+              aria-orientation="vertical"
+              aria-valuemin="260"
+              aria-valuemax="620"
+              aria-valuenow="320"
+              tabindex="0"
+              title="Drag to resize"
+            ></div>
 
             <section class="visual-stage">
               <div class="preview-toolbar">
@@ -82,7 +110,7 @@
                   <h3 id="vehicle-preview-title">Vehicle</h3>
                   <p id="vehicle-preview-subtitle"></p>
                 </div>
-                <div class="preview-controls">
+                <div class="preview-controls" hidden>
                   <label class="range-control" for="rotation-sensitivity">
                     <span>Rotation</span>
                     <input id="rotation-sensitivity" type="range" min="0.25" max="1.75" step="0.05">
@@ -95,6 +123,55 @@
                     <button id="reset-view-btn" class="view-button" type="button">Reset</button>
                   </div>
                 </div>
+                <div id="geometry-axle-toggles" class="geometry-axle-toggles" hidden>
+                  <label>
+                    <input id="geometry-show-front" type="checkbox" checked>
+                    <span>Show Front</span>
+                  </label>
+                  <label>
+                    <input id="geometry-show-rear" type="checkbox" checked>
+                    <span>Show Rear</span>
+                  </label>
+                </div>
+              </div>
+              <div id="geometry-point-editor" class="geometry-point-editor" hidden>
+                <div class="geometry-editor-head">
+                  <div>
+                    <span class="tool-label">Selected point</span>
+                    <strong id="geometry-point-name"></strong>
+                  </div>
+                  <span id="geometry-axis-label" class="mini-pill">X</span>
+                </div>
+                <div class="geometry-axis-picker" aria-label="Drag axis">
+                  <button class="axis-button active" data-geometry-axis="x" type="button">X</button>
+                  <button class="axis-button" data-geometry-axis="y" type="button">Y</button>
+                  <button class="axis-button" data-geometry-axis="z" type="button">Z</button>
+                </div>
+                <div class="geometry-coordinate-grid">
+                  <label>
+                    <span>X</span>
+                    <input data-geometry-coordinate="x" type="number" step="0.001">
+                  </label>
+                  <label>
+                    <span>Y</span>
+                    <input data-geometry-coordinate="y" type="number" step="0.001">
+                  </label>
+                  <label>
+                    <span>Z</span>
+                    <input data-geometry-coordinate="z" type="number" step="0.001">
+                  </label>
+                </div>
+                <p>Drag point moves axis. Empty drag rotates. Ctrl-drag pans.</p>
+              </div>
+              <div id="mass-property-editor" class="mass-property-editor" hidden>
+                <div class="mass-editor-head">
+                  <div>
+                    <span class="tool-label">Selected mass</span>
+                    <strong id="mass-property-name"></strong>
+                  </div>
+                  <span id="mass-property-role" class="mini-pill">Mass</span>
+                </div>
+                <div id="mass-property-grid" class="mass-property-grid"></div>
               </div>
               <canvas id="vehicle-canvas"></canvas>
             </section>
@@ -116,11 +193,39 @@
             </section>
             <section class="sim-pane">
               <div class="sim-tabs">
-                <button class="tab active" data-tab="outputs" type="button">Review</button>
+                <button class="tab active" data-tab="setup" type="button">Setup</button>
+                <button class="tab" data-tab="outputs" type="button">Review</button>
                 <button class="tab" data-tab="jobs" type="button">Run Log</button>
               </div>
 
-              <div id="outputs-panel" class="panel active">
+              <div id="setup-panel" class="panel active">
+                <div class="sim-setup-shell">
+                  <section class="sim-guide-panel">
+                    <span class="context-label">Simulation setup</span>
+                    <h3 id="sim-setup-title">Select a Workflow</h3>
+                    <p id="sim-setup-copy"></p>
+                    <div id="sim-step-strip" class="sim-step-strip"></div>
+                  </section>
+
+                  <section class="sim-config-tools">
+                    <div class="sim-config-row">
+                      <select id="sim-config-picker" class="config-picker"></select>
+                      <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
+                      <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+                    </div>
+                    <div class="sim-config-row">
+                      <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
+                      <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
+                      <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
+                    </div>
+                    <span id="sim-config-status" class="sim-config-status"></span>
+                  </section>
+
+                  <form id="sim-config-form" class="sim-config-form"></form>
+                </div>
+              </div>
+
+              <div id="outputs-panel" class="panel">
                 <h3 id="selected-title">Outputs</h3>
                 <div id="output-list" class="output-list"></div>
                 <div id="preview" class="preview"></div>
@@ -138,6 +243,65 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div id="vehicle-start-modal" class="vehicle-start-modal" role="dialog" aria-modal="true" aria-labelledby="vehicle-start-title">
+      <div class="vehicle-start-card">
+        <div class="vehicle-start-head">
+          <div>
+            <span class="context-label">Vehicle setup</span>
+            <h2 id="vehicle-start-title">Choose a Vehicle</h2>
+            <p>Load a saved vehicle, or create a new working vehicle from a template.</p>
+          </div>
+        </div>
+
+        <div class="vehicle-start-options">
+          <section class="vehicle-start-panel">
+            <div>
+              <span class="tool-label">Load</span>
+              <h3>Saved Vehicle</h3>
+            </div>
+            <select id="start-load-picker" class="config-picker"></select>
+            <button id="start-load-btn" class="run-button" type="button">Load Vehicle</button>
+          </section>
+
+          <section class="vehicle-start-panel">
+            <div>
+              <span class="tool-label">Create</span>
+              <h3>From Template</h3>
+            </div>
+            <select id="start-template-picker" class="config-picker"></select>
+            <input id="start-vehicle-name" class="name-input" type="text" placeholder="New vehicle name">
+            <button id="start-create-btn" class="run-button" type="button">Create Vehicle</button>
+          </section>
+        </div>
+
+        <div class="vehicle-start-footer">
+          <input id="start-import-input" type="file" accept=".yml,.yaml" hidden>
+          <button id="start-import-btn" class="ghost-button" type="button">Import YAML</button>
+          <button id="start-active-btn" class="ghost-button" type="button">Continue Active File</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="architecture-connection-modal" class="connection-modal" role="dialog" aria-modal="true" aria-labelledby="architecture-connection-title" hidden>
+      <div class="connection-card">
+        <div class="connection-head">
+          <div>
+            <span class="context-label">Architecture</span>
+            <h2 id="architecture-connection-title">Connections</h2>
+            <p id="architecture-connection-subtitle"></p>
+          </div>
+          <button id="architecture-connection-close" class="ghost-button" type="button">Close</button>
+        </div>
+
+        <label class="connection-architecture-field">
+          <span>Suspension architecture</span>
+          <select id="architecture-modal-select"></select>
+        </label>
+
+        <div id="architecture-connection-body" class="connection-body"></div>
+      </div>
     </div>
 
     <script src="/static/app.js"></script>

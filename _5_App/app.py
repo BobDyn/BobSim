@@ -27,6 +27,7 @@ from _0_Utils.vehicle_io import parse_tir
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 SAVED_VEHICLE_ROOT = Path("_5_App/vehicle_configs")
+SAVED_SIM_CONFIG_ROOT = Path("_5_App/sim_configs")
 MAX_LOG_CHARS = 120_000
 
 
@@ -66,6 +67,9 @@ class FieldSpec:
     group: str | None = None
     unit: str | None = None
     choices: tuple[str, ...] = ()
+    disabled: bool = False
+    placeholder: str | None = None
+    help_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -351,6 +355,9 @@ def _field(
     group: str | None = None,
     unit: str | None = None,
     choices: tuple[str, ...] = (),
+    disabled: bool = False,
+    placeholder: str | None = None,
+    help_text: str | None = None,
 ) -> FieldSpec:
     return FieldSpec(
         path=tuple(path.split(".")),
@@ -359,6 +366,9 @@ def _field(
         group=group,
         unit=unit,
         choices=choices,
+        disabled=disabled,
+        placeholder=placeholder,
+        help_text=help_text,
     )
 
 
@@ -411,7 +421,13 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
     _field("sprung_mass.cg_m", "Sprung CG", kind="list", group="Mass", unit="m"),
     _field("driver_mass.mass_kg", "Driver mass", kind="number", group="Mass", unit="kg"),
     _field("driver_mass.cg_m", "Driver CG", kind="list", group="Mass", unit="m"),
-    _field("body.torsional_stiff_n_m_per_rad", "Torsional stiffness", kind="number", group="Body", unit="N m/rad"),
+    _field(
+        "body.torsional_stiff_n_m_per_rad",
+        "Torsional stiffness",
+        kind="number",
+        group="Chassis compliance",
+        unit="N m/rad",
+    ),
     _field("front.wheel.radius_m", "Front tire radius", kind="number", group="Front wheel", unit="m"),
     _field("front.wheel.toe_deg", "Front toe", kind="number", group="Front wheel", unit="deg"),
     _field("front.wheel.camber_deg", "Front camber", kind="number", group="Front wheel", unit="deg"),
@@ -425,6 +441,22 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         kind="number",
         group="Front actuation",
         unit="m",
+    ),
+    _field(
+        "front.actuation.shock.spring_table.table",
+        "Spring force curve",
+        kind="list",
+        group="Front spring",
+        unit="m -> N",
+        help_text="Rows map shock deflection to spring force.",
+    ),
+    _field(
+        "front.actuation.shock.damper_table.table",
+        "Damper force curve",
+        kind="list",
+        group="Front damper",
+        unit="m/s -> N",
+        help_text="Rows map shock shaft velocity to damper force.",
     ),
     _field(
         "front.actuation.stabar.rate_n_m_per_rad",
@@ -444,6 +476,22 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         "rear.actuation.shock.free_length_m", "Rear spring free length", kind="number", group="Rear actuation", unit="m"
     ),
     _field(
+        "rear.actuation.shock.spring_table.table",
+        "Spring force curve",
+        kind="list",
+        group="Rear spring",
+        unit="m -> N",
+        help_text="Rows map shock deflection to spring force.",
+    ),
+    _field(
+        "rear.actuation.shock.damper_table.table",
+        "Damper force curve",
+        kind="list",
+        group="Rear damper",
+        unit="m/s -> N",
+        help_text="Rows map shock shaft velocity to damper force.",
+    ),
+    _field(
         "rear.actuation.stabar.rate_n_m_per_rad",
         "Rear stabar rate",
         kind="number",
@@ -451,6 +499,49 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         unit="N m/rad",
     ),
 )
+
+
+def _wheel_compliance_fields(axle: str, label: str) -> tuple[FieldSpec, ...]:
+    group = f"{label} compliance"
+    planned = "Planned BobLib compliance input."
+    return (
+        _field(
+            f"{axle}.compliances.wheel_center_x_per_fx_m_per_n",
+            "Wheel center X / Fx",
+            kind="number",
+            group=group,
+            unit="m/N",
+            disabled=True,
+            placeholder=planned,
+        ),
+        _field(
+            f"{axle}.compliances.wheel_center_y_per_fy_m_per_n",
+            "Wheel center Y / Fy",
+            kind="number",
+            group=group,
+            unit="m/N",
+            disabled=True,
+            placeholder=planned,
+        ),
+        _field(
+            f"{axle}.compliances.toe_per_mz_rad_per_n_m",
+            "Toe / Mz",
+            kind="number",
+            group=group,
+            unit="rad/(N m)",
+            disabled=True,
+            placeholder=planned,
+        ),
+        _field(
+            f"{axle}.compliances.camber_per_fy_rad_per_n",
+            "Camber / Fy",
+            kind="number",
+            group=group,
+            unit="rad/N",
+            disabled=True,
+            placeholder=planned,
+        ),
+    )
 
 
 def _hardpoint_fields(axle: str, label: str) -> tuple[FieldSpec, ...]:
@@ -496,7 +587,13 @@ def _hardpoint_fields(axle: str, label: str) -> tuple[FieldSpec, ...]:
     )
 
 
-VEHICLE_FIELDS = VEHICLE_FIELDS + _hardpoint_fields("front", "Front") + _hardpoint_fields("rear", "Rear")
+VEHICLE_FIELDS = (
+    VEHICLE_FIELDS
+    + _wheel_compliance_fields("front", "Front")
+    + _wheel_compliance_fields("rear", "Rear")
+    + _hardpoint_fields("front", "Front")
+    + _hardpoint_fields("rear", "Rear")
+)
 
 VISUAL_FIELDS = (
     _field("render.show_signals", "Show signals", kind="boolean", group="Render"),
@@ -917,7 +1014,12 @@ def _set_nested(data: Any, path: tuple[PathPart, ...], value: Any) -> None:
 
 
 def _field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:
-    value = _get_nested(data, field.path)
+    try:
+        value = _get_nested(data, field.path)
+    except (KeyError, IndexError, TypeError):
+        if not field.disabled:
+            raise
+        value = None
     kind = _infer_field_kind(value) if field.kind == "auto" else field.kind
     choices = _field_choices(field, data)
     return {
@@ -929,6 +1031,9 @@ def _field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:
         "unit": field.unit,
         "choices": list(choices),
         "value": value,
+        "disabled": field.disabled,
+        "placeholder": field.placeholder,
+        "help": field.help_text,
         **_array_payload(value),
     }
 
@@ -950,10 +1055,17 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
 def _vehicle_config_fields(data: Any) -> list[dict[str, Any]]:
     overrides = {_field_key(field.path): field for field in VEHICLE_FIELDS}
     fields: list[FieldSpec] = []
+    seen: set[str] = set()
     for field in _discover_fields(data):
         if not field.path or field.path[0] in {"schema", "paths"}:
             continue
-        fields.append(overrides.get(_field_key(field.path), field))
+        key = _field_key(field.path)
+        fields.append(overrides.get(key, field))
+        seen.add(key)
+    for field in VEHICLE_FIELDS:
+        key = _field_key(field.path)
+        if field.disabled and key not in seen:
+            fields.append(field)
     return [_field_payload(field, data) for field in fields]
 
 
@@ -982,8 +1094,16 @@ def config_payload(config_id: str) -> dict[str, Any]:
 def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
     spec = _config_spec(config_id)
     path, _, data = _load_yaml_config(spec)
+    disabled_paths = {
+        field.path
+        for field in (VEHICLE_FIELDS if spec.id == "vehicle" else spec.fields)
+        if field.disabled
+    }
     for raw_key, value in values.items():
-        _set_nested(data, _decode_field_key(raw_key), value)
+        decoded_path = _decode_field_key(raw_key)
+        if decoded_path in disabled_paths:
+            continue
+        _set_nested(data, decoded_path, value)
     _write_yaml_config(path, data)
     return config_payload(config_id)
 
@@ -996,6 +1116,128 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
         raise TypeError("Config must contain a YAML mapping or list")
     path.write_text(text if text.endswith("\n") else f"{text}\n", encoding="utf-8")
     return config_payload(config_id)
+
+
+def _standard_workflow_ids() -> set[str]:
+    return {workflow.id for workflow in WORKFLOWS if workflow.group == "standard"}
+
+
+def _sim_config_spec(workflow_id: str) -> ConfigSpec:
+    spec = _config_spec(workflow_id)
+    if spec.workflow_id not in _standard_workflow_ids():
+        raise ValueError("Only standard simulation configs are supported here")
+    return spec
+
+
+def _sim_config_slug(raw_name: str) -> str:
+    base = raw_name.strip() or "sim-config"
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", base).strip("-_.").lower()
+    return slug or "sim-config"
+
+
+def _saved_sim_config_dir(workflow_id: str) -> Path:
+    _sim_config_spec(workflow_id)
+    root = _safe_repo_path(SAVED_SIM_CONFIG_ROOT / workflow_id)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _default_sim_config_path(workflow_id: str) -> Path:
+    _sim_config_spec(workflow_id)
+    path = _safe_repo_path(SAVED_SIM_CONFIG_ROOT / "_defaults" / f"{workflow_id}.yml")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _ensure_default_sim_config(workflow_id: str) -> Path:
+    spec = _sim_config_spec(workflow_id)
+    default_path = _default_sim_config_path(workflow_id)
+    if not default_path.is_file():
+        source = _safe_repo_path(spec.path)
+        default_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    return default_path
+
+
+def _sim_config_summary(source_id: str, source_type: str, path: Path, workflow_id: str) -> dict[str, Any]:
+    stat = path.stat()
+    label = "Default" if source_type == "default" else path.stem.replace("-", " ").replace("_", " ").title()
+    return {
+        "id": source_id,
+        "type": source_type,
+        "workflow_id": workflow_id,
+        "label": label,
+        "modified": stat.st_mtime,
+        **_path_payload(path.relative_to(ROOT).as_posix()),
+    }
+
+
+def sim_config_library_payload(workflow_id: str) -> dict[str, Any]:
+    spec = _sim_config_spec(workflow_id)
+    default_path = _ensure_default_sim_config(workflow_id)
+    sources = [_sim_config_summary(f"default:{workflow_id}", "default", default_path, workflow_id)]
+    saved_dir = _saved_sim_config_dir(workflow_id)
+    for path in sorted(saved_dir.glob("*.yml")):
+        sources.append(_sim_config_summary(f"saved:{workflow_id}:{path.stem}", "saved", path, workflow_id))
+    return {
+        "workflow_id": workflow_id,
+        "config_id": spec.id,
+        "active": config_payload(spec.id),
+        "sources": sources,
+    }
+
+
+def _parse_sim_config_source(source_id: str) -> tuple[str, str, str | None]:
+    parts = source_id.split(":", 2)
+    if len(parts) < 2 or parts[0] not in {"default", "saved"}:
+        raise ValueError("Invalid sim config source")
+    workflow_id = parts[1]
+    _sim_config_spec(workflow_id)
+    slug = parts[2] if len(parts) == 3 else None
+    if parts[0] == "saved" and not slug:
+        raise ValueError("Saved sim config id is missing a name")
+    return parts[0], workflow_id, slug
+
+
+def load_sim_config_source(source_id: str) -> dict[str, Any]:
+    source_type, workflow_id, slug = _parse_sim_config_source(source_id)
+    spec = _sim_config_spec(workflow_id)
+    source = (
+        _ensure_default_sim_config(workflow_id)
+        if source_type == "default"
+        else _saved_sim_config_dir(workflow_id) / f"{slug}.yml"
+    )
+    if not source.is_file():
+        raise FileNotFoundError(source_id)
+    target = _safe_repo_path(spec.path)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    return {
+        "source": _sim_config_summary(source_id, source_type, source, workflow_id),
+        "library": sim_config_library_payload(workflow_id),
+        "config": config_payload(spec.id),
+    }
+
+
+def save_active_sim_config(workflow_id: str, name: str | None = None) -> dict[str, Any]:
+    spec = _sim_config_spec(workflow_id)
+    source = _safe_repo_path(spec.path)
+    slug = _sim_config_slug(name or f"{spec.label} Config")
+    saved_path = _saved_sim_config_dir(workflow_id) / f"{slug}.yml"
+    saved_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    return {
+        "saved": _sim_config_summary(f"saved:{workflow_id}:{slug}", "saved", saved_path, workflow_id),
+        "library": sim_config_library_payload(workflow_id),
+    }
+
+
+def delete_saved_sim_config(source_id: str) -> dict[str, Any]:
+    source_type, workflow_id, slug = _parse_sim_config_source(source_id)
+    if source_type != "saved" or not slug:
+        raise ValueError("Only saved simulation configs can be deleted")
+    path = _saved_sim_config_dir(workflow_id) / f"{slug}.yml"
+    if not path.is_file():
+        raise FileNotFoundError(source_id)
+    path.unlink()
+    return sim_config_library_payload(workflow_id)
 
 
 def vehicle_template_payloads() -> dict[str, Any]:
@@ -1690,6 +1932,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(vehicle_library_payload())
             elif parsed.path == "/api/vehicle-templates":
                 self._send_json(vehicle_template_payloads())
+            elif parsed.path == "/api/sim-configs":
+                self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
             elif parsed.path == "/api/tires/eval":
                 self._send_json(tire_eval_payload())
             elif parsed.path == "/api/tires/templates":
@@ -1752,6 +1996,15 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(payload)
             elif parsed.path == "/api/vehicles/delete":
                 payload = delete_saved_vehicle(str(body.get("source_id", "")))
+                self._send_json(payload)
+            elif parsed.path == "/api/sim-configs/load":
+                payload = load_sim_config_source(str(body.get("source_id", "")))
+                self._send_json(payload)
+            elif parsed.path == "/api/sim-configs/save":
+                payload = save_active_sim_config(str(body.get("workflow_id", "")), str(body.get("name", "")))
+                self._send_json(payload)
+            elif parsed.path == "/api/sim-configs/delete":
+                payload = delete_saved_sim_config(str(body.get("source_id", "")))
                 self._send_json(payload)
             elif parsed.path == "/api/tires/template":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
