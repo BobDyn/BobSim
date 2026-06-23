@@ -22,6 +22,7 @@ import re
 import yaml
 
 from _0_Utils.vehicle_io import parse_tir
+from _5_App.kinematics import kinematic_curves_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -779,6 +780,20 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         label="StandardSens DOE",
         path="_4_OptSim/StandardSens/configs/_doe_config.yaml",
         workflow_id="standard-sens",
+        fields=(
+            _field("architecture.vehicle", "Vehicle model", kind="string", group="Architecture"),
+            _field("architecture.record", "Vehicle record", kind="string", group="Architecture"),
+            _field(
+                "sampling.method",
+                "Sampling method",
+                kind="select",
+                choices=("interval_splice", "lhs", "response_surface_pairs"),
+                group="Sampling",
+            ),
+            _field("sampling.intervals", "Intervals", kind="integer", group="Sampling"),
+            _field("samples", "LHS samples", kind="integer", group="Sampling"),
+            _field("seed", "Random seed", kind="integer", group="Sampling"),
+        ),
     ),
     "standard-sens-compiler": ConfigSpec(
         id="standard-sens-compiler",
@@ -810,7 +825,13 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="_4_OptSim/EnvelopeSens/config.yml",
         workflow_id="envelope-sens",
         fields=(
-            _field("sampling.method", "Sampling method", kind="string", group="Sampling"),
+            _field(
+                "sampling.method",
+                "Sampling method",
+                kind="select",
+                choices=("interval_splice",),
+                group="Sampling",
+            ),
             _field("sampling.intervals", "Intervals", kind="integer", group="Sampling"),
         ),
     ),
@@ -1118,14 +1139,14 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     return config_payload(config_id)
 
 
-def _standard_workflow_ids() -> set[str]:
-    return {workflow.id for workflow in WORKFLOWS if workflow.group == "standard"}
+def _configurable_workflow_ids() -> set[str]:
+    return {workflow.id for workflow in WORKFLOWS if workflow.config}
 
 
 def _sim_config_spec(workflow_id: str) -> ConfigSpec:
     spec = _config_spec(workflow_id)
-    if spec.workflow_id not in _standard_workflow_ids():
-        raise ValueError("Only standard simulation configs are supported here")
+    if spec.workflow_id not in _configurable_workflow_ids():
+        raise ValueError("Only runnable workflow configs are supported here")
     return spec
 
 
@@ -1835,6 +1856,11 @@ def tire_eval_payload() -> dict[str, Any]:
     }
 
 
+def kinematic_curves_from_active_vehicle() -> dict[str, Any]:
+    vehicle = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
+    return kinematic_curves_payload(vehicle)
+
+
 def read_text_payload(raw_path: str) -> dict[str, Any]:
     path = _safe_repo_path(raw_path)
     if not path.is_file():
@@ -1936,6 +1962,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
             elif parsed.path == "/api/tires/eval":
                 self._send_json(tire_eval_payload())
+            elif parsed.path == "/api/kinematics/curves":
+                self._send_json(kinematic_curves_from_active_vehicle())
             elif parsed.path == "/api/tires/templates":
                 self._send_json(tire_template_library_payload())
             elif parsed.path == "/api/tires/template":
@@ -2006,6 +2034,16 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/sim-configs/delete":
                 payload = delete_saved_sim_config(str(body.get("source_id", "")))
                 self._send_json(payload)
+            elif parsed.path == "/api/kinematics/curves":
+                vehicle = body.get("vehicle")
+                if vehicle is None:
+                    vehicle = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
+                if not isinstance(vehicle, dict):
+                    raise TypeError("vehicle must be an object")
+                sweep_m = body.get("sweep_m")
+                if sweep_m is not None and not isinstance(sweep_m, list):
+                    raise TypeError("sweep_m must be a list")
+                self._send_json(kinematic_curves_payload(vehicle, sweep_m=sweep_m))
             elif parsed.path == "/api/tires/template":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)

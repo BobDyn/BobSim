@@ -108,6 +108,22 @@ def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
     assert any(abs(point["fy_n"]) > 1 for point in front["curves"]["lateral"])
 
 
+def test_app_generates_live_kinematic_curves_for_active_vehicle() -> None:
+    payload = app.kinematic_curves_from_active_vehicle()
+
+    assert payload["model"].startswith("BobSim native")
+    if not payload["available"]:
+        pytest.skip(payload["warnings"][0])
+    assert payload["axles"]["front"]["ok"] is True
+    assert payload["axles"]["rear"]["ok"] is True
+    assert len(payload["sweep_m"]) == 20
+    assert len(payload["roll_deg"]) == 20
+    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 20
+    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 20
+    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 20
+    assert payload["warnings"] == []
+
+
 def test_app_lists_reads_and_saves_tire_templates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "vehicle.yml").write_text(
         "schema: boblib.vehicle.v1\n"
@@ -222,6 +238,50 @@ def test_app_can_save_load_and_delete_sim_configs(tmp_path: Path, monkeypatch: p
 
     app.load_sim_config_source("default:ramp-steer")
     assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["simulation"]["solver"] == "dassl"
+
+    library = app.delete_saved_sim_config(source_id)
+    assert all(source["id"] != source_id for source in library["sources"])
+
+
+def test_app_can_save_load_and_delete_study_configs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "ggv.yml"
+    config_path.write_text(
+        "generation:\n"
+        "  ay_max_g: 4.5\n"
+        "  ay_points: 321\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.setattr(app, "SAVED_SIM_CONFIG_ROOT", Path("_5_App/sim_configs"))
+    monkeypatch.setattr(
+        app,
+        "BASE_CONFIG_SPECS",
+        {
+            "ggv": app.ConfigSpec(
+                id="ggv",
+                group="envelope",
+                label="GGV",
+                path="ggv.yml",
+                workflow_id="ggv",
+                fields=(app.FieldSpec(("generation", "ay_max_g"), "Max lateral acceleration", kind="number"),),
+            )
+        },
+    )
+
+    library = app.sim_config_library_payload("ggv")
+    assert library["sources"][0]["id"] == "default:ggv"
+
+    app.patch_config("ggv", {'["generation","ay_max_g"]': 3.8})
+    saved = app.save_active_sim_config("ggv", "Wet Skidpad")
+    source_id = saved["saved"]["id"]
+    assert source_id == "saved:ggv:wet-skidpad"
+
+    app.patch_config("ggv", {'["generation","ay_max_g"]': 4.5})
+    loaded = app.load_sim_config_source(source_id)
+    assert loaded["config"]["data"]["generation"]["ay_max_g"] == 3.8
+
+    app.load_sim_config_source("default:ggv")
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["generation"]["ay_max_g"] == 4.5
 
     library = app.delete_saved_sim_config(source_id)
     assert all(source["id"] != source_id for source in library["sources"])

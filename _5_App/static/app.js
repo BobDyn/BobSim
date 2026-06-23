@@ -1,17 +1,50 @@
 const savedRotationSensitivity = Number(localStorage.getItem("bobsim-rotation-sensitivity"));
 const savedSetupPaneWidth = Number(localStorage.getItem("bobsim-setup-pane-width"));
+const savedGeometryPlotHeight = Number(localStorage.getItem("bobsim-geometry-plot-height"));
 const savedGeometryShowFront = localStorage.getItem("bobsim-geometry-show-front");
 const savedGeometryShowRear = localStorage.getItem("bobsim-geometry-show-rear");
+const savedGeometryPlotSelections = (() => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("bobsim-geometry-plots") || "[]");
+    if (!Array.isArray(parsed)) return [];
+    const keyFor = (item) => {
+      if (typeof item === "string") {
+        return `${item.startsWith("roll_") ? "roll_deg" : "jounce_mm"}:${item}`;
+      }
+      if (!item || typeof item !== "object") return "";
+      const y = String(item.y || item.id || "");
+      const x = String(item.x || (y.startsWith("roll_") ? "roll_deg" : "jounce_mm"));
+      return `${x}:${y}`;
+    };
+    const keys = parsed.map(keyFor).filter(Boolean);
+    const oldDefaults = [
+      ["jounce_mm:bump_camber_deg", "jounce_mm:bump_toe_deg", "jounce_mm:bump_rc_z_mm"],
+      ["jounce_mm:bump_camber_deg", "jounce_mm:bump_toe_deg", "roll_deg:roll_camber_deg"],
+    ];
+    if (oldDefaults.some((defaults) => (
+      defaults.length === keys.length && defaults.every((key, index) => key === keys[index])
+    ))) {
+      return [];
+    }
+    return parsed;
+  } catch {
+    return [];
+  }
+})();
 const DEFAULT_VEHICLE_YAW = Math.PI - 0.72;
 const DEFAULT_VEHICLE_PITCH = 0.46;
 const DEFAULT_SETUP_PANE_WIDTH = 320;
 const MIN_SETUP_PANE_WIDTH = 260;
 const MAX_SETUP_PANE_WIDTH = 620;
+const DEFAULT_GEOMETRY_PLOT_HEIGHT = 252;
+const MIN_GEOMETRY_PLOT_HEIGHT = 150;
+const MAX_GEOMETRY_PLOT_HEIGHT = 560;
 const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
 const MAX_PREVIEW_PAN_FRACTION = 0.42;
 const MAX_UNDO_STEPS = 80;
+const MAX_GEOMETRY_PLOTS = 3;
 
 const state = {
   status: null,
@@ -21,17 +54,29 @@ const state = {
   tirePayload: null,
   tireTemplates: null,
   activeTir: null,
+  kinematicsPayload: null,
+  kinematicsStatus: "idle",
+  kinematicsRequestId: 0,
+  kinematicsRefreshTimer: null,
   view: "setup",
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
+  selectedStudyWorkflowId: null,
   selectedJobId: null,
   activeSimTab: "setup",
+  activeStudyTab: "setup",
   simConfigPayload: null,
   simConfigLibrary: null,
   selectedSimConfigSource: "",
   dirtySimConfig: false,
   cleanSimConfigSignature: "",
   loadingSimConfigFor: null,
+  studyConfigPayload: null,
+  studyConfigLibrary: null,
+  selectedStudyConfigSource: "",
+  dirtyStudyConfig: false,
+  cleanStudyConfigSignature: "",
+  loadingStudyConfigFor: null,
   activeParamGroup: null,
   vehicleStartOpen: true,
   dirtyVehicle: false,
@@ -47,6 +92,9 @@ const state = {
   setupPaneWidth: Number.isFinite(savedSetupPaneWidth) && savedSetupPaneWidth > 0
     ? savedSetupPaneWidth
     : DEFAULT_SETUP_PANE_WIDTH,
+  geometryPlotHeight: Number.isFinite(savedGeometryPlotHeight) && savedGeometryPlotHeight > 0
+    ? savedGeometryPlotHeight
+    : DEFAULT_GEOMETRY_PLOT_HEIGHT,
   vehicleDrag: null,
   geometryScene: null,
   geometryHoverPointId: null,
@@ -55,10 +103,20 @@ const state = {
   geometryAxis: "x",
   geometryShowFront: savedGeometryShowFront === null ? true : savedGeometryShowFront === "true",
   geometryShowRear: savedGeometryShowRear === null ? true : savedGeometryShowRear === "true",
+  geometryPlotSelections: savedGeometryPlotSelections,
+  geometryPlotDraftX: "jounce_mm",
+  geometryPlotDraftY: "",
+  geometryPlotScene: null,
+  geometryPlotHover: null,
   massScene: null,
   massHoverPointId: null,
   massSelectedPointId: null,
   massEditorPositionFrame: null,
+  suspensionPlotScene: null,
+  suspensionPlotHover: null,
+  suspensionPlotModalKey: null,
+  suspensionPlotModalScene: null,
+  suspensionPlotModalHover: null,
   architectureScene: null,
   architectureHoverId: null,
   architectureSelectedId: null,
@@ -66,6 +124,7 @@ const state = {
   architectureModalOpen: false,
   architectureModalAxle: null,
   setupResize: null,
+  geometryPlotResize: null,
   undoStack: [],
   pendingUndoSnapshot: null,
   cleanVehicleSignature: "",
@@ -85,6 +144,12 @@ const PARAMETER_AREAS = [
   { id: "tires", label: "Tires", visual: "tires", always: true },
   { id: "aero", label: "Aero", visual: "aero", always: true },
   { id: "powertrain", label: "Powertrain", visual: "powertrain", always: true },
+];
+
+const STUDY_GROUPS = [
+  { id: "envelope", label: "Envelope", accent: "blue" },
+  { id: "report", label: "Review", accent: "green" },
+  { id: "opt", label: "Optimization", accent: "amber" },
 ];
 
 const SETUP_GUIDE = {
@@ -146,6 +211,25 @@ const SETUP_GUIDE = {
   },
 };
 
+const DEFAULT_KINEMATIC_CURVES = [
+  { id: "bump_camber_deg", label: "Bump Camber", unit: "deg", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Camber" },
+  { id: "bump_toe_deg", label: "Bump Toe", unit: "deg", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Toe" },
+  { id: "bump_caster_deg", label: "Bump Caster", unit: "deg", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Caster" },
+  { id: "bump_kpi_deg", label: "Bump KPI", unit: "deg", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Kingpin inclination" },
+  { id: "bump_mech_trail_mm", label: "Bump Mechanical Trail", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Mechanical Trail" },
+  { id: "bump_scrub_mm", label: "Bump Scrub Radius", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Scrub Radius" },
+  { id: "bump_rc_y_mm", label: "Bump RC y-Migration", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC y-Position" },
+  { id: "bump_rc_z_mm", label: "Bump RC z-Migration", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC z-Position" },
+  { id: "roll_camber_deg", label: "Roll Camber", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Camber" },
+  { id: "roll_toe_deg", label: "Roll Toe", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Toe" },
+  { id: "roll_caster_deg", label: "Roll Caster", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Caster" },
+  { id: "roll_kpi_deg", label: "Roll KPI", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Kingpin inclination" },
+  { id: "roll_mech_trail_mm", label: "Roll Mechanical Trail", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Mechanical Trail" },
+  { id: "roll_scrub_mm", label: "Roll Scrub Radius", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Scrub Radius" },
+  { id: "roll_rc_y_mm", label: "Roll RC y-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC y-Position" },
+  { id: "roll_rc_z_mm", label: "Roll RC z-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC z-Position" },
+];
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const data = await response.json();
@@ -159,6 +243,53 @@ async function refreshTirePayload() {
   } catch (error) {
     state.tirePayload = { model: error.message, sides: [] };
   }
+}
+
+async function refreshKinematicsPayload(vehicle = state.vehiclePayload?.data || {}) {
+  const requestId = state.kinematicsRequestId + 1;
+  state.kinematicsRequestId = requestId;
+  state.kinematicsStatus = state.kinematicsPayload ? "refreshing" : "loading";
+  try {
+    const payload = await api("/api/kinematics/curves", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle }),
+    });
+    if (requestId !== state.kinematicsRequestId) return;
+    state.kinematicsPayload = payload;
+    state.kinematicsStatus = "ready";
+  } catch (error) {
+    if (requestId !== state.kinematicsRequestId) return;
+    state.kinematicsPayload = {
+      model: error.message,
+      available: false,
+      sweep_m: [],
+      axles: {},
+      warnings: [error.message],
+    };
+    state.kinematicsStatus = "error";
+  }
+}
+
+function queueKinematicsRefresh({ force = false } = {}) {
+  window.clearTimeout(state.kinematicsRefreshTimer);
+  if (!force && !isKinematicPlotArea()) return;
+  state.kinematicsStatus = state.kinematicsPayload ? "refreshing" : "loading";
+  state.kinematicsRefreshTimer = window.setTimeout(() => {
+    refreshKinematicsPayload(currentVehicleFormData()).then(() => {
+      if (isKinematicPlotArea()) {
+        drawVehicleFromForm();
+        renderGeometryPlotControls();
+      }
+    });
+  }, 220);
+}
+
+async function refreshVehicleDiagnostics(vehicle = state.vehiclePayload?.data || {}) {
+  await Promise.all([
+    refreshTirePayload(),
+    refreshKinematicsPayload(vehicle),
+  ]);
 }
 
 async function refreshTireTemplates() {
@@ -188,9 +319,21 @@ function standardWorkflows() {
   return (state.status?.workflows || []).filter((workflow) => workflow.group === "standard");
 }
 
+function studyWorkflows() {
+  const studyGroups = new Set(STUDY_GROUPS.map((group) => group.id));
+  return (state.status?.workflows || []).filter((workflow) => studyGroups.has(workflow.group));
+}
+
 function selectedWorkflow() {
   const workflows = standardWorkflows();
   return workflows.find((workflow) => workflow.id === state.selectedWorkflowId) || workflows[0] || null;
+}
+
+function selectedStudyWorkflow() {
+  const workflows = studyWorkflows();
+  const workflow = workflows.find((item) => item.id === state.selectedStudyWorkflowId) || workflows[0] || null;
+  if (workflow && !state.selectedStudyWorkflowId) state.selectedStudyWorkflowId = workflow.id;
+  return workflow;
 }
 
 function selectedWorkflowConfigId(workflow = selectedWorkflow()) {
@@ -232,6 +375,41 @@ function ensureSelectedSimConfigLoaded() {
     });
 }
 
+async function refreshSelectedStudyConfig() {
+  const workflow = selectedStudyWorkflow();
+  if (!workflow?.config_id) {
+    state.studyConfigPayload = null;
+    state.studyConfigLibrary = null;
+    state.cleanStudyConfigSignature = "";
+    state.dirtyStudyConfig = false;
+    return;
+  }
+  state.loadingStudyConfigFor = workflow.id;
+  const [payload, library] = await Promise.all([
+    api(`/api/configs/${encodeURIComponent(workflow.config_id)}`),
+    api(`/api/sim-configs?workflow_id=${encodeURIComponent(workflow.id)}`),
+  ]);
+  state.studyConfigPayload = payload;
+  state.studyConfigLibrary = library;
+  state.selectedStudyConfigSource = library.sources?.[0]?.id || "";
+  acceptCleanStudyConfigPayload();
+  state.loadingStudyConfigFor = null;
+}
+
+function ensureSelectedStudyConfigLoaded() {
+  const workflow = selectedStudyWorkflow();
+  if (!workflow?.config_id || state.loadingStudyConfigFor === workflow.id) return;
+  if (state.studyConfigPayload?.id === workflow.config_id) return;
+  refreshSelectedStudyConfig()
+    .then(renderStudies)
+    .catch((error) => {
+      state.loadingStudyConfigFor = null;
+      state.studyConfigPayload = null;
+      state.studyConfigLibrary = { sources: [], error: error.message };
+      renderStudies();
+    });
+}
+
 function configDataSignature(data) {
   return JSON.stringify(data ?? {});
 }
@@ -239,6 +417,11 @@ function configDataSignature(data) {
 function acceptCleanSimConfigPayload() {
   state.cleanSimConfigSignature = configDataSignature(state.simConfigPayload?.data || {});
   state.dirtySimConfig = false;
+}
+
+function acceptCleanStudyConfigPayload() {
+  state.cleanStudyConfigSignature = configDataSignature(state.studyConfigPayload?.data || {});
+  state.dirtyStudyConfig = false;
 }
 
 function activeVehicleName() {
@@ -256,13 +439,16 @@ async function refresh() {
   state.vehicleTemplates = await api("/api/vehicle-templates");
   state.vehiclePayload = await api("/api/configs/vehicle");
   acceptCleanVehiclePayload();
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   await refreshTireTemplates();
   if (!state.activeTir && state.tireTemplates?.templates?.length) {
     await loadTirTemplate(defaultTirTemplateName());
   }
   if (!state.selectedWorkflowId) {
     state.selectedWorkflowId = standardWorkflows()[0]?.id || null;
+  }
+  if (!state.selectedStudyWorkflowId) {
+    state.selectedStudyWorkflowId = studyWorkflows()[0]?.id || null;
   }
   await refreshSelectedSimConfig();
   render();
@@ -276,6 +462,7 @@ function render() {
   renderMode();
   renderSetup();
   renderStandard();
+  renderStudies();
   renderRailActions();
   renderVehicleStartModal();
   renderArchitectureConnectionModal();
@@ -352,6 +539,7 @@ function nextVehicleName() {
 }
 
 function clamp(value, min, max) {
+  if (max < min) return min;
   return Math.min(max, Math.max(min, value));
 }
 
@@ -389,6 +577,44 @@ function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
   }
 }
 
+function geometryPlotHeightBounds() {
+  const stage = document.querySelector(".visual-stage");
+  const height = stage?.getBoundingClientRect().height || 0;
+  const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
+  const maxByViewport = height > 0
+    ? height - toolbarHeight - 260
+    : MAX_GEOMETRY_PLOT_HEIGHT;
+  const max = Math.max(
+    MIN_GEOMETRY_PLOT_HEIGHT,
+    Math.min(MAX_GEOMETRY_PLOT_HEIGHT, maxByViewport),
+  );
+  return { min: MIN_GEOMETRY_PLOT_HEIGHT, max };
+}
+
+function setGeometryPlotHeight(height, { persist = false, redraw = true } = {}) {
+  const { min, max } = geometryPlotHeightBounds();
+  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, min, max);
+  state.geometryPlotHeight = clamped;
+  applyGeometryPlotHeight(clamped, min, max);
+  if (persist) localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(clamped)));
+  if (redraw) requestAnimationFrame(drawVehicleFromForm);
+}
+
+function applyGeometryPlotHeight(height = state.geometryPlotHeight, min, max) {
+  const stage = document.querySelector(".visual-stage");
+  if (!stage) return;
+  const bounds = min === undefined || max === undefined ? geometryPlotHeightBounds() : { min, max };
+  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, bounds.min, bounds.max);
+  state.geometryPlotHeight = clamped;
+  stage.style.setProperty("--geometry-plot-height", `${Math.round(clamped)}px`);
+  const splitter = document.getElementById("geometry-plot-splitter");
+  if (splitter) {
+    splitter.setAttribute("aria-valuemin", String(Math.round(bounds.min)));
+    splitter.setAttribute("aria-valuemax", String(Math.round(bounds.max)));
+    splitter.setAttribute("aria-valuenow", String(Math.round(clamped)));
+  }
+}
+
 function renderMode() {
   document.querySelectorAll(".rail-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.view);
@@ -408,8 +634,13 @@ function renderRailActions() {
     secondary.disabled = false;
     return;
   }
-  primary.textContent = "Run Simulation";
-  primary.disabled = !selectedWorkflow();
+  if (state.view === "studies") {
+    primary.textContent = "Run Study";
+    primary.disabled = !selectedStudyWorkflow();
+  } else {
+    primary.textContent = "Run Simulation";
+    primary.disabled = !selectedWorkflow();
+  }
   secondary.textContent = "Back to Vehicle";
   secondary.disabled = false;
 }
@@ -581,7 +812,7 @@ function navigateParameterStep(delta) {
 function handleSetupStageKeys(event) {
   if (state.view !== "setup") return;
   if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter")) return;
+  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter, #geometry-plot-splitter")) return;
   if (state.architectureModalOpen || state.vehicleStartOpen || document.querySelector(".model-menu[open]")) return;
   event.preventDefault();
   navigateParameterStep(event.key === "ArrowRight" ? 1 : -1);
@@ -718,6 +949,7 @@ function markVehicleDirty() {
   renderArchitectureConnectionModal();
   drawVehicleFromForm();
   renderParameterTabCanvases();
+  queueKinematicsRefresh();
 }
 
 function buildParameterAreas(fields) {
@@ -1178,6 +1410,7 @@ function activateParameterGroup(group) {
   document.querySelectorAll(".config-section").forEach((section) => {
     section.classList.toggle("active", section.dataset.paramGroup === group);
   });
+  if (isKinematicPlotArea()) queueKinematicsRefresh({ force: true });
   drawVehicleFromForm();
 }
 
@@ -1453,13 +1686,16 @@ function handleArrayEditorClick(event) {
   if (!container) return;
   event.preventDefault();
   const action = button.dataset.arrayAction;
-  pushUndoSnapshot(snapshotVehicleState(`array-${action}`));
+  const vehicleForm = container.closest("#config-form");
+  if (vehicleForm) pushUndoSnapshot(snapshotVehicleState(`array-${action}`));
   if (action === "add-item") addArrayItem(container);
   else if (action === "remove-item") removeArrayItem(button, container);
   else if (action === "add-row") addMatrixRow(container);
   else if (action === "remove-row") removeMatrixRow(button, container);
   renumberArrayEditor(container);
-  markVehicleDirty();
+  if (vehicleForm) markVehicleDirty();
+  else if (container.closest("#sim-config-form")) markSimConfigDirty();
+  else if (container.closest("#study-config-form")) markStudyConfigDirty();
 }
 
 function addArrayItem(container) {
@@ -1571,6 +1807,22 @@ function collectSimConfigValues({ reportInvalid = false } = {}) {
   return collectConfigValues("#sim-config-form", { reportInvalid });
 }
 
+function collectStudyConfigValues({ reportInvalid = false } = {}) {
+  return collectConfigValues("#study-config-form", { reportInvalid });
+}
+
+function currentStudyConfigData() {
+  if (!state.studyConfigPayload) return {};
+  try {
+    const data = JSON.parse(JSON.stringify(state.studyConfigPayload.data || {}));
+    const values = collectStudyConfigValues();
+    Object.entries(values).forEach(([key, value]) => setNestedValue(data, JSON.parse(key), value));
+    return data;
+  } catch {
+    return state.studyConfigPayload.data || {};
+  }
+}
+
 function collectConfigValues(rootSelector, { reportInvalid = false } = {}) {
   const values = {};
   document.querySelectorAll(`${rootSelector} [data-array-path]:not([data-field-disabled='true'])`).forEach((container) => {
@@ -1642,7 +1894,7 @@ async function saveVehicleEdits() {
   });
   state.vehiclePayload = payload;
   acceptCleanVehiclePayload();
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   renderSetup();
   return payload;
 }
@@ -1669,7 +1921,7 @@ async function saveRawVehicle() {
   state.vehiclePayload = payload;
   acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   renderSetup();
 }
 
@@ -1686,7 +1938,7 @@ async function loadVehicleSourceById(sourceId) {
   });
   acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   state.selectedVehicleSource = "active";
   renderSetup();
 }
@@ -1722,7 +1974,7 @@ async function createVehicleFromStart() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
   });
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   await refreshTireTemplates();
   if (state.tireTemplates?.templates?.length) {
     await loadTirTemplate(defaultTirTemplateName());
@@ -1745,7 +1997,7 @@ async function importVehicleFile(file) {
   acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
   state.vehicleTemplates = await api("/api/vehicle-templates");
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   await refreshTireTemplates();
   if (state.tireTemplates?.templates?.length) {
     await loadTirTemplate(defaultTirTemplateName());
@@ -1765,7 +2017,7 @@ async function applyVehicleTemplate(templateId) {
   });
   acceptCleanVehiclePayload();
   state.vehicleLibrary = await api("/api/vehicles");
-  await refreshTirePayload();
+  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   await refreshTireTemplates();
   if (state.tireTemplates?.templates?.length) {
     await loadTirTemplate(defaultTirTemplateName());
@@ -1852,6 +2104,73 @@ async function deleteSelectedSimConfig() {
   });
   state.selectedSimConfigSource = state.simConfigLibrary.sources?.[0]?.id || "";
   renderSimSetup(selectedWorkflow());
+}
+
+async function applyStudyConfigEdits() {
+  if (!state.studyConfigPayload) return null;
+  let values;
+  try {
+    values = collectStudyConfigValues({ reportInvalid: true });
+  } catch (error) {
+    const status = document.getElementById("study-config-status");
+    if (status) status.textContent = error.message;
+    return null;
+  }
+  const payload = await api(`/api/configs/${encodeURIComponent(state.studyConfigPayload.id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "patch", values }),
+  });
+  state.studyConfigPayload = payload;
+  acceptCleanStudyConfigPayload();
+  renderStudySetup(selectedStudyWorkflow());
+  renderStudyDiagnostic(selectedStudyWorkflow());
+  return payload;
+}
+
+async function saveStudyConfigAs() {
+  const workflow = selectedStudyWorkflow();
+  if (!workflow) return;
+  const applied = await applyStudyConfigEdits();
+  if (!applied) return;
+  const name = document.getElementById("save-study-config-name")?.value || `${workflow.label} study`;
+  const payload = await api("/api/sim-configs/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workflow_id: workflow.id, name }),
+  });
+  state.studyConfigLibrary = payload.library;
+  state.selectedStudyConfigSource = payload.saved?.id || state.selectedStudyConfigSource;
+  renderStudySetup(workflow);
+}
+
+async function loadSelectedStudyConfig() {
+  const sourceId = document.getElementById("study-config-picker")?.value || state.selectedStudyConfigSource;
+  if (!sourceId) return;
+  const payload = await api("/api/sim-configs/load", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id: sourceId }),
+  });
+  state.studyConfigPayload = payload.config;
+  state.studyConfigLibrary = payload.library;
+  state.selectedStudyConfigSource = payload.source?.id || sourceId;
+  acceptCleanStudyConfigPayload();
+  renderStudies();
+}
+
+async function deleteSelectedStudyConfig() {
+  const selected = (state.studyConfigLibrary?.sources || []).find((source) => source.id === state.selectedStudyConfigSource);
+  if (selected?.type !== "saved") return;
+  const confirmed = window.confirm(`Delete saved study config "${selected.label}"?`);
+  if (!confirmed) return;
+  state.studyConfigLibrary = await api("/api/sim-configs/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id: selected.id }),
+  });
+  state.selectedStudyConfigSource = state.studyConfigLibrary.sources?.[0]?.id || "";
+  renderStudySetup(selectedStudyWorkflow());
 }
 
 function defaultTirTemplateName() {
@@ -2016,6 +2335,470 @@ function workflowDescription(workflow) {
   }[workflow?.id] || workflow?.config?.path || "";
 }
 
+function studyGroupMeta(groupId) {
+  return STUDY_GROUPS.find((group) => group.id === groupId) || { id: groupId, label: humanizeToken(groupId || "Study") };
+}
+
+function studyDescription(workflow) {
+  return {
+    ggv: "Acceleration envelope and track-profile grip proxies.",
+    ymd: "Beta and steer sweeps for yaw moment authority.",
+    "vehicle-review": "Report-ready vehicle, envelope, and rubric coverage.",
+    "standard-sens": "Modelica DOE around the standard simulation model.",
+    "envelope-sens": "Fast reduced-order sensitivity sweep for envelope metrics.",
+  }[workflow?.id] || workflow?.config?.path || "";
+}
+
+function studyWorkflowGuide(workflow) {
+  return {
+    ggv: {
+      title: "GGV Envelope",
+      copy: "Set the speed grid and acceleration search bounds, then generate the tire-limited acceleration envelope.",
+      steps: ["Vehicle selected", "Set grid", "Run envelope"],
+    },
+    ymd: {
+      title: "Yaw Moment Diagram",
+      copy: "Set beta, handwheel, and speed grids to inspect lateral force and yaw moment authority.",
+      steps: ["Vehicle selected", "Set map", "Run YMD"],
+    },
+    "vehicle-review": {
+      title: "Vehicle Review",
+      copy: "Choose report labels and whether envelope artifacts should be regenerated before assembly.",
+      steps: ["Vehicle selected", "Set report", "Run review"],
+    },
+    "standard-sens": {
+      title: "Standard Sensitivity",
+      copy: "Configure the DOE sampler for the Modelica-backed standard simulation sensitivity study.",
+      steps: ["Vehicle selected", "Set sampler", "Run DOE"],
+    },
+    "envelope-sens": {
+      title: "Envelope Sensitivity",
+      copy: "Configure a quick reduced-order sensitivity sweep around envelope-level controls.",
+      steps: ["Vehicle selected", "Set sampler", "Run study"],
+    },
+  }[workflow?.id] || {
+    title: workflow?.label || "Study",
+    copy: "Select a study, configure the run, then execute it.",
+    steps: ["Vehicle selected", "Configure", "Run"],
+  };
+}
+
+function configValue(data, path, fallback = null) {
+  if (!data || !path) return fallback;
+  const parts = path.split(".");
+  let current = data;
+  for (const part of parts) {
+    if (current == null || typeof current !== "object" || !(part in current)) return fallback;
+    current = current[part];
+  }
+  return current;
+}
+
+function arrayRangeLabel(values, unit = "") {
+  if (!Array.isArray(values) || !values.length) return "Not set";
+  const numbers = values
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .map(Number)
+    .filter(Number.isFinite);
+  if (!numbers.length) return `${values.length} items`;
+  const suffix = unit ? ` ${unit}` : "";
+  if (numbers.length === 1) return `${formatNumber(numbers[0])}${suffix}`;
+  return `${formatNumber(Math.min(...numbers))} to ${formatNumber(Math.max(...numbers))}${suffix}`;
+}
+
+function scalarLabel(value, unit = "") {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return `${formatNumber(numeric)}${unit ? ` ${unit}` : ""}`;
+  if (value === true) return "On";
+  if (value === false) return "Off";
+  return value == null || value === "" ? "Not set" : String(value);
+}
+
+function studyVariables(data) {
+  return Array.isArray(data?.variables) ? data.variables : [];
+}
+
+function studyMetric(label, value) {
+  return `
+    <div class="study-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function studyMetrics(workflow, data) {
+  if (workflow?.id === "ggv") {
+    return [
+      studyMetric("Speeds", arrayRangeLabel(configValue(data, "generation.speeds_mps"), "m/s")),
+      studyMetric("Lat grid", scalarLabel(configValue(data, "generation.ay_points"), "pts")),
+      studyMetric("Long grid", scalarLabel(configValue(data, "generation.ax_search_points"), "pts")),
+    ];
+  }
+  if (workflow?.id === "ymd") {
+    return [
+      studyMetric("Speed", scalarLabel(configValue(data, "generation.speed_mps"), "m/s")),
+      studyMetric("Beta", `${scalarLabel(configValue(data, "generation.beta_min_deg"), "deg")} to ${scalarLabel(configValue(data, "generation.beta_max_deg"), "deg")}`),
+      studyMetric("Handwheel", `${scalarLabel(configValue(data, "generation.hwa_min_deg"), "deg")} to ${scalarLabel(configValue(data, "generation.hwa_max_deg"), "deg")}`),
+    ];
+  }
+  if (workflow?.id === "vehicle-review") {
+    return [
+      studyMetric("Report", scalarLabel(configValue(data, "report.brand"))),
+      studyMetric("GGV", scalarLabel(configValue(data, "generation.regenerate_ggv"))),
+      studyMetric("YMD", scalarLabel(configValue(data, "generation.regenerate_ymd"))),
+    ];
+  }
+  if (workflow?.group === "opt") {
+    const variables = studyVariables(data);
+    return [
+      studyMetric("Variables", scalarLabel(variables.length)),
+      studyMetric("Sampler", scalarLabel(configValue(data, "sampling.method"))),
+      studyMetric("Intervals", scalarLabel(configValue(data, "sampling.intervals"))),
+    ];
+  }
+  return [
+    studyMetric("Config", workflow?.config?.exists ? "Ready" : "Missing"),
+    studyMetric("Outputs", `${workflow?.outputs?.filter((output) => output.exists).length || 0}`),
+    studyMetric("Action", workflow?.actions?.[0]?.label || "Run"),
+  ];
+}
+
+function studyDiagnosticHtml(workflow, data) {
+  if (!workflow) return `<div class="empty-state">Select a study to inspect its setup.</div>`;
+  const group = studyGroupMeta(workflow.group);
+  return `
+    <div class="study-diagnostic-summary">
+      <div>
+        <span class="context-label">${escapeHtml(group.label)}</span>
+        <h3>${escapeHtml(workflow.label)}</h3>
+        <p>${escapeHtml(studyDescription(workflow))}</p>
+      </div>
+      <div class="study-metrics">
+        ${studyMetrics(workflow, data).join("")}
+      </div>
+    </div>
+    <div class="study-figure-shell">
+      ${studyFigureHtml(workflow, data)}
+    </div>
+  `;
+}
+
+function studyFigureHtml(workflow, data) {
+  if (workflow?.id === "ggv") return ggvFigureHtml(data);
+  if (workflow?.id === "ymd") return ymdFigureHtml(data);
+  if (workflow?.id === "vehicle-review") return reviewFigureHtml(data);
+  if (workflow?.group === "opt") return optFigureHtml(data);
+  return `<div class="study-figure-empty">Study diagnostic</div>`;
+}
+
+function ggvFigureHtml(data) {
+  const ay = Number(configValue(data, "generation.ay_max_g", 0));
+  const axMin = Number(configValue(data, "generation.ax_search_min_g", 0));
+  const axMax = Number(configValue(data, "generation.ax_search_max_g", 0));
+  return `
+    <div class="study-figure ggv-figure">
+      <div class="ggv-axis ggv-axis-x"></div>
+      <div class="ggv-axis ggv-axis-y"></div>
+      <div class="ggv-envelope"></div>
+      <span class="ggv-label top">Ay ${escapeHtml(scalarLabel(ay, "g"))}</span>
+      <span class="ggv-label left">${escapeHtml(scalarLabel(axMin, "g"))}</span>
+      <span class="ggv-label right">${escapeHtml(scalarLabel(axMax, "g"))}</span>
+    </div>
+  `;
+}
+
+function ymdFigureHtml(data) {
+  const cells = Array.from({ length: 54 }, (_, index) => {
+    const heat = Math.abs((index % 9) - 4) + Math.abs(Math.floor(index / 9) - 2);
+    return `<span class="heat-${Math.max(0, Math.min(4, heat))}"></span>`;
+  }).join("");
+  return `
+    <div class="study-figure ymd-figure">
+      <div class="ymd-grid">${cells}</div>
+      <div class="ymd-zero-line"></div>
+      <span class="ymd-label beta">Beta ${escapeHtml(arrayRangeLabel([configValue(data, "generation.beta_min_deg"), configValue(data, "generation.beta_max_deg")], "deg"))}</span>
+      <span class="ymd-label steer">Handwheel ${escapeHtml(arrayRangeLabel([configValue(data, "generation.hwa_min_deg"), configValue(data, "generation.hwa_max_deg")], "deg"))}</span>
+    </div>
+  `;
+}
+
+function reviewFigureHtml(data) {
+  const items = [
+    ["GGV", configValue(data, "generation.regenerate_ggv")],
+    ["YMD", configValue(data, "generation.regenerate_ymd")],
+    ["PDF", configValue(data, "output.pdf_filename")],
+    ["Metrics", configValue(data, "output.metrics_csv_filename")],
+  ];
+  return `
+    <div class="study-figure review-figure">
+      ${items.map(([label, value]) => `
+        <div class="review-row">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(scalarLabel(value))}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function optFigureHtml(data) {
+  const variables = studyVariables(data).slice(0, 6);
+  if (!variables.length) {
+    return `<div class="study-figure-empty">No variables listed in this study config.</div>`;
+  }
+  return `
+    <div class="study-figure opt-figure">
+      ${variables.map((variable, index) => {
+        const range = Array.isArray(variable.range) ? variable.range : variable.values;
+        return `
+          <div class="opt-range-row">
+            <span>${escapeHtml(variable.label || variable.path || `Variable ${index + 1}`)}</span>
+            <div class="opt-range-track"><i style="width: ${Math.max(18, 96 - index * 8)}%"></i></div>
+            <strong>${escapeHtml(arrayRangeLabel(range))}</strong>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderStudies() {
+  ensureSelectedStudyConfigLoaded();
+  const workflow = selectedStudyWorkflow();
+  const context = document.getElementById("studies-context");
+  if (context) {
+    context.textContent = `${activeVehicleName()} -> ${workflow?.label || "Study"} | ${activeArchitecture()}`;
+  }
+  syncStudyTabs();
+  renderStudyCatalog();
+  renderStudyDiagnostic(workflow);
+  renderStudySetup(workflow);
+  renderStudyOutputs(workflow);
+  renderStudyJobs();
+}
+
+function syncStudyTabs() {
+  document.querySelectorAll(".study-tab").forEach((item) => {
+    item.classList.toggle("active", item.dataset.studyTab === state.activeStudyTab);
+  });
+  document.querySelectorAll(".study-panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `study-${state.activeStudyTab}-panel`);
+  });
+}
+
+function renderStudyCatalog() {
+  const grid = document.getElementById("study-catalog-grid");
+  if (!grid) return;
+  const workflows = studyWorkflows();
+  if (!workflows.length) {
+    grid.innerHTML = `<div class="empty-state">No studies are registered.</div>`;
+    return;
+  }
+  grid.innerHTML = STUDY_GROUPS
+    .map((group) => {
+      const groupWorkflows = workflows.filter((workflow) => workflow.group === group.id);
+      if (!groupWorkflows.length) return "";
+      return `
+        <section class="study-group study-group-${escapeHtml(group.accent)}">
+          <div class="study-group-title">
+            <span>${escapeHtml(group.label)}</span>
+            <small>${groupWorkflows.length}</small>
+          </div>
+          <div class="workflow-grid">
+            ${groupWorkflows.map(studyWorkflowCard).join("")}
+          </div>
+        </section>
+      `;
+    })
+    .join("");
+  grid.querySelectorAll("[data-study-workflow]").forEach((card) => {
+    card.addEventListener("click", async () => {
+      await selectStudyWorkflow(card.dataset.studyWorkflow);
+    });
+  });
+}
+
+function studyWorkflowCard(workflow) {
+  const outputCount = workflow.outputs.filter((output) => output.exists).length;
+  const group = studyGroupMeta(workflow.group);
+  return `
+    <article class="workflow-card study-card ${workflow.id === state.selectedStudyWorkflowId ? "active" : ""}" data-study-workflow="${workflow.id}">
+      <div class="card-head">
+        <div class="card-title">${escapeHtml(workflow.label)}</div>
+        <span class="mini-pill">${escapeHtml(group.label)}</span>
+      </div>
+      <div class="card-meta">${escapeHtml(studyDescription(workflow))}</div>
+      <div class="signal-row">
+        <span class="mini-pill ${workflow.config?.exists ? "ok" : "missing"}">Config</span>
+        <span class="mini-pill ${outputCount ? "ok" : "missing"}">${outputCount}/${workflow.outputs.length} outputs</span>
+      </div>
+    </article>
+  `;
+}
+
+async function selectStudyWorkflow(workflowId) {
+  if (!workflowId || workflowId === state.selectedStudyWorkflowId) return;
+  state.selectedStudyWorkflowId = workflowId;
+  state.activeStudyTab = "setup";
+  state.studyConfigPayload = null;
+  state.studyConfigLibrary = null;
+  state.selectedStudyConfigSource = "";
+  const saveName = document.getElementById("save-study-config-name");
+  if (saveName) saveName.value = "";
+  renderStudies();
+  await refreshSelectedStudyConfig();
+  renderStudies();
+}
+
+function renderStudyDiagnostic(workflow = selectedStudyWorkflow()) {
+  const target = document.getElementById("study-diagnostic");
+  if (!target) return;
+  target.innerHTML = studyDiagnosticHtml(workflow, currentStudyConfigData());
+}
+
+function renderStudySetup(workflow) {
+  const guide = studyWorkflowGuide(workflow);
+  const title = document.getElementById("study-setup-title");
+  const copy = document.getElementById("study-setup-copy");
+  const steps = document.getElementById("study-step-strip");
+  if (title) title.textContent = guide.title;
+  if (copy) copy.textContent = guide.copy;
+  if (steps) {
+    steps.innerHTML = guide.steps.map((step, index) => `
+      <div class="sim-step ${index === 1 ? "active" : ""}">
+        <span>${index + 1}</span>
+        <strong>${escapeHtml(step)}</strong>
+      </div>
+    `).join("");
+  }
+  renderStudyConfigLibrary();
+  renderStudyConfigForm();
+}
+
+function renderStudyConfigLibrary() {
+  const picker = document.getElementById("study-config-picker");
+  const sources = state.studyConfigLibrary?.sources || [];
+  if (picker) {
+    if (!sources.some((source) => source.id === state.selectedStudyConfigSource)) {
+      state.selectedStudyConfigSource = sources[0]?.id || "";
+    }
+    picker.innerHTML = sources.length
+      ? sources.map((source) => `
+        <option value="${escapeHtml(source.id)}"${source.id === state.selectedStudyConfigSource ? " selected" : ""}>
+          ${escapeHtml(source.type === "default" ? "Default" : `Saved: ${source.label}`)}
+        </option>
+      `).join("")
+      : `<option value="">No study configs</option>`;
+  }
+  const selected = sources.find((source) => source.id === state.selectedStudyConfigSource);
+  const deleteButton = document.getElementById("delete-study-config-btn");
+  if (deleteButton) {
+    const canDelete = selected?.type === "saved";
+    deleteButton.hidden = !canDelete;
+    deleteButton.disabled = !canDelete;
+  }
+  const workflow = selectedStudyWorkflow();
+  const saveName = document.getElementById("save-study-config-name");
+  if (saveName && !saveName.value && workflow) saveName.value = `${workflow.label} study`;
+  updateStudyConfigStatus();
+}
+
+function renderStudyConfigForm() {
+  const form = document.getElementById("study-config-form");
+  if (!form) return;
+  if (!state.studyConfigPayload) {
+    form.innerHTML = `<div class="empty-state">Select a study to configure its inputs.</div>`;
+    return;
+  }
+  const fields = state.studyConfigPayload.fields || [];
+  form.innerHTML = fields.length
+    ? fieldGroupSections(fields, "study-config")
+    : `<div class="empty-state">This study has no editable fields yet. Its YAML can still be wired into the backend.</div>`;
+  form.oninput = () => {
+    markStudyConfigDirty();
+    renderStudyDiagnostic(selectedStudyWorkflow());
+  };
+  form.onchange = () => {
+    markStudyConfigDirty();
+    renderStudyDiagnostic(selectedStudyWorkflow());
+  };
+  form.onclick = handleArrayEditorClick;
+}
+
+function markStudyConfigDirty() {
+  state.dirtyStudyConfig = true;
+  updateStudyConfigStatus();
+}
+
+function updateStudyConfigStatus() {
+  const status = document.getElementById("study-config-status");
+  if (!status) return;
+  const workflow = selectedStudyWorkflow();
+  if (!workflow) {
+    status.textContent = "No study selected.";
+    return;
+  }
+  if (!state.studyConfigPayload) {
+    status.textContent = "Loading study configuration.";
+    return;
+  }
+  status.textContent = state.dirtyStudyConfig
+    ? "Study config has unapplied edits."
+    : `Editing ${state.studyConfigPayload.label || workflow.label} config.`;
+}
+
+function renderStudyOutputs(workflow) {
+  const title = document.getElementById("study-selected-title");
+  const list = document.getElementById("study-output-list");
+  const preview = document.getElementById("study-preview");
+  if (!list || !preview) return;
+  if (title) title.textContent = workflow?.label ? `${workflow.label} Outputs` : "Study Outputs";
+  if (!workflow?.outputs.length) {
+    list.innerHTML = `<div class="empty-state">This study does not register static outputs yet.</div>`;
+    preview.innerHTML = `<div class="empty-state">Run logs will still show execution details.</div>`;
+    return;
+  }
+  list.innerHTML = workflow.outputs.map(outputItem).join("");
+  list.querySelectorAll("[data-file-path]").forEach((button) => {
+    button.addEventListener("click", () => previewFile(button.dataset.filePath, button.dataset.fileKind, "study-preview"));
+  });
+  const first = workflow.outputs.find((output) => output.exists);
+  if (first) previewFile(first.path, first.kind, "study-preview");
+  else preview.innerHTML = `<div class="empty-state">No output file yet.</div>`;
+}
+
+function renderStudyJobs() {
+  const jobs = state.status?.jobs || [];
+  const list = document.getElementById("study-job-list");
+  const runButton = document.getElementById("run-study-btn");
+  const workflow = selectedStudyWorkflow();
+  if (runButton) {
+    runButton.disabled = !workflow;
+    const runVerb = workflow?.actions.length > 1 ? "Build + Run" : "Run";
+    runButton.textContent = workflow
+      ? `${state.dirtyStudyConfig ? "Apply + " : ""}${runVerb} ${workflow.label}`
+      : "No Study";
+  }
+  if (!list) return;
+  if (!jobs.length) {
+    list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
+    const log = document.getElementById("study-job-log");
+    if (log) log.textContent = "";
+    return;
+  }
+  if (!state.selectedJobId) state.selectedJobId = jobs[0].id;
+  list.innerHTML = jobs.map(jobItem).join("");
+  list.querySelectorAll("[data-job]").forEach((item) => {
+    item.addEventListener("click", async () => {
+      state.selectedJobId = item.dataset.job;
+      await loadJobLog("study-job-log");
+      renderStudyJobs();
+    });
+  });
+  loadJobLog("study-job-log");
+}
+
 function simWorkflowGuide(workflow) {
   return {
     "ramp-steer": {
@@ -2096,6 +2879,7 @@ function renderSimConfigForm() {
   form.innerHTML = fieldGroupSections(state.simConfigPayload.fields || [], "sim-config");
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
+  form.onclick = handleArrayEditorClick;
 }
 
 function markSimConfigDirty() {
@@ -2153,8 +2937,9 @@ function outputItem(output) {
   `;
 }
 
-async function previewFile(path, kind) {
-  const preview = document.getElementById("preview");
+async function previewFile(path, kind, targetId = "preview") {
+  const preview = document.getElementById(targetId);
+  if (!preview) return;
   if (kind === "pdf") {
     preview.innerHTML = `<iframe src="/files/${encodeURIComponent(path)}"></iframe>`;
     return;
@@ -2216,10 +3001,11 @@ function jobItem(job) {
   `;
 }
 
-async function loadJobLog() {
+async function loadJobLog(targetId = "job-log") {
   if (!state.selectedJobId) return;
   const job = await api(`/api/jobs/${state.selectedJobId}`);
-  const log = document.getElementById("job-log");
+  const log = document.getElementById(targetId);
+  if (!log) return;
   log.textContent = job.log || "";
   log.scrollTop = log.scrollHeight;
 }
@@ -2241,11 +3027,29 @@ async function startSelectedWorkflow() {
   renderStandard();
 }
 
+async function startSelectedStudyWorkflow() {
+  const workflow = selectedStudyWorkflow();
+  if (!workflow) return;
+  if (state.dirtyStudyConfig) {
+    const applied = await applyStudyConfigEdits();
+    if (!applied) return;
+  }
+  const job = await api(`/api/workflows/${workflow.id}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  state.selectedJobId = job.id;
+  state.activeStudyTab = "jobs";
+  state.status = await api("/api/status");
+  renderStudies();
+}
+
 function setView(view) {
   state.view = view;
   renderMode();
   renderRailActions();
   if (view === "standard") renderStandard();
+  if (view === "studies") renderStudies();
   if (view === "setup") renderSetup();
 }
 
@@ -2255,6 +3059,8 @@ function toggleTheme() {
   document.body.classList.toggle("dark", state.dark);
   renderThemeButton();
   drawVehicleFromForm();
+  drawSuspensionPlotModal();
+  drawGeometryPlotPanel();
 }
 
 function renderVehiclePreview(data) {
@@ -2288,6 +3094,7 @@ function drawVehiclePreview(data) {
   const canvas = document.getElementById("vehicle-canvas");
   const area = activeParameterArea();
   syncPreviewModeControls(area);
+  if (!isKinematicPlotArea(area)) clearSuspensionPlotInteractionScene();
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(420, Math.floor(rect.width));
   const height = Math.max(360, Math.floor(rect.height));
@@ -2379,6 +3186,8 @@ function drawVehiclePreview(data) {
     .forEach((point) => drawSphere(ctx, point));
   drawGeometryInteractionOverlay(ctx);
   syncGeometryPointEditor();
+  renderGeometryPlotControls();
+  drawGeometryPlotPanel();
 }
 
 function clearGeometryInteractionScene() {
@@ -2387,6 +3196,11 @@ function clearGeometryInteractionScene() {
   state.geometryDrag = null;
   document.getElementById("vehicle-canvas")?.classList.remove("geometry-hot", "geometry-dragging");
   syncGeometryPointEditor();
+}
+
+function clearGeometryPlotScene() {
+  state.geometryPlotScene = null;
+  state.geometryPlotHover = null;
 }
 
 function clearArchitectureInteractionScene() {
@@ -2406,8 +3220,19 @@ function clearMassInteractionScene() {
   syncMassPropertyEditor();
 }
 
+function clearSuspensionPlotInteractionScene() {
+  state.suspensionPlotScene = null;
+  state.suspensionPlotHover = null;
+  closeSuspensionPlotModal({ redraw: false });
+  document.getElementById("vehicle-canvas")?.classList.remove("kinematic-hot");
+}
+
 function isArchitecturePreviewArea(area = activeParameterArea()) {
   return area.visual === "overview";
+}
+
+function isKinematicPlotArea(area = activeParameterArea()) {
+  return area.id === "hardpoints";
 }
 
 function selectedArchitectureHotspot() {
@@ -2764,6 +3589,7 @@ function markGeometryDirty({ renderMini = true } = {}) {
   updateDirtyState();
   drawVehicleFromForm();
   if (renderMini) renderParameterTabCanvases();
+  queueKinematicsRefresh();
 }
 
 function syncGeometryPointEditor() {
@@ -3164,13 +3990,489 @@ function updateGeometryHover(event) {
   document.getElementById("vehicle-canvas")?.classList.toggle("geometry-hot", Boolean(point));
 }
 
+function updateSuspensionPlotHover(event) {
+  const canvas = document.getElementById("vehicle-canvas");
+  if (activeParameterArea().visual !== "suspension" || !state.suspensionPlotScene) {
+    if (state.suspensionPlotHover) {
+      state.suspensionPlotHover = null;
+      canvas?.classList.remove("kinematic-hot");
+      drawVehicleFromForm();
+    } else {
+      canvas?.classList.remove("kinematic-hot");
+    }
+    return;
+  }
+  const hover = hitTestSuspensionPlot(event);
+  const nextId = hover?.id || null;
+  const previous = state.suspensionPlotHover;
+  const moved = hover && previous && (
+    Math.abs(hover.pointerX - previous.pointerX) > 4
+    || Math.abs(hover.pointerY - previous.pointerY) > 4
+  );
+  if ((previous?.id || null) !== nextId || moved) {
+    state.suspensionPlotHover = hover;
+    drawVehicleFromForm();
+  } else if (hover) {
+    state.suspensionPlotHover = hover;
+  }
+  canvas?.classList.toggle("kinematic-hot", Boolean(hover));
+}
+
+function hitTestSuspensionPlot(event) {
+  const point = pointerCanvasPoint(event);
+  if (!point || !state.suspensionPlotScene) return null;
+  const chart = state.suspensionPlotScene.charts.find((item) => pointInRect(point, item.plot, 3));
+  if (!chart) return null;
+  const sample = nearestPlotSample(chart, point);
+  if (!sample) return null;
+  return {
+    id: `${chart.key}:${sample.sampleKey}`,
+    chartKey: chart.key,
+    sampleKey: sample.sampleKey,
+    pointerX: point.x,
+    pointerY: point.y,
+  };
+}
+
+function handleSuspensionPlotClick(event) {
+  void event;
+  return false;
+}
+
+function clearSuspensionPlotFocus() {
+  if (state.suspensionPlotModalKey) {
+    closeSuspensionPlotModal();
+    return true;
+  }
+  if (!state.suspensionPlotHover) return false;
+  state.suspensionPlotHover = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("kinematic-hot");
+  drawVehicleFromForm();
+  return true;
+}
+
+function nearestPlotSample(chart, point) {
+  return chart.samples.reduce((best, sample) => {
+    const distance = Math.abs(sample.canvasX - point.x);
+    return !best || distance < best.distance ? { ...sample, distance } : best;
+  }, null);
+}
+
+function pointInRect(point, rect, pad = 0) {
+  return point.x >= rect.x - pad
+    && point.x <= rect.x + rect.width + pad
+    && point.y >= rect.y - pad
+    && point.y <= rect.y + rect.height + pad;
+}
+
+function openSuspensionPlotModal(key) {
+  state.suspensionPlotModalKey = key;
+  state.suspensionPlotModalHover = null;
+  renderSuspensionPlotModal();
+}
+
+function closeSuspensionPlotModal({ redraw = true } = {}) {
+  state.suspensionPlotModalKey = null;
+  state.suspensionPlotModalScene = null;
+  state.suspensionPlotModalHover = null;
+  const modal = document.getElementById("kinematic-plot-modal");
+  if (modal) modal.hidden = true;
+  if (redraw) drawVehicleFromForm();
+}
+
+function renderSuspensionPlotModal() {
+  const modal = document.getElementById("kinematic-plot-modal");
+  if (!modal) return;
+  const descriptor = suspensionPlotModalDescriptor();
+  modal.hidden = !descriptor;
+  if (!descriptor) {
+    state.suspensionPlotModalScene = null;
+    return;
+  }
+  document.getElementById("kinematic-plot-title").textContent = descriptor.label || humanizeKinematicCurve(descriptor.id);
+  document.getElementById("kinematic-plot-subtitle").textContent = [
+    `${descriptor.x_label || "Jounce"}${descriptor.x_unit ? ` (${descriptor.x_unit})` : ""}`,
+    `${descriptor.y_label || descriptor.label}${descriptor.y_unit || descriptor.unit ? ` (${descriptor.y_unit || descriptor.unit})` : ""}`,
+  ].join(" vs ");
+  requestAnimationFrame(drawSuspensionPlotModal);
+}
+
+function suspensionPlotModalDescriptor() {
+  const key = state.suspensionPlotModalKey;
+  if (!key) return null;
+  return [
+    ...geometryPlotDescriptors(),
+    ...kinematicCurveDescriptors(state.kinematicsPayload),
+  ].find((item) => item.id === key) || null;
+}
+
+function drawSuspensionPlotModal() {
+  const modal = document.getElementById("kinematic-plot-modal");
+  const canvas = document.getElementById("kinematic-plot-modal-canvas");
+  const descriptor = suspensionPlotModalDescriptor();
+  if (!modal || modal.hidden || !canvas || !descriptor || !state.kinematicsPayload?.available) return;
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(460, Math.floor(rect.width));
+  const height = Math.max(320, Math.floor(rect.height));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const chart = drawKinematicChart(
+    ctx,
+    16,
+    16,
+    width - 32,
+    height - 32,
+    state.kinematicsPayload,
+    descriptor,
+    { focused: true, hover: state.suspensionPlotModalHover, axles: visibleGeometryAxles() },
+  );
+  state.suspensionPlotModalScene = chart ? { charts: [chart] } : null;
+}
+
+function updateSuspensionPlotModalHover(event) {
+  const hover = hitTestSuspensionPlotScene(
+    event,
+    state.suspensionPlotModalScene,
+    document.getElementById("kinematic-plot-modal-canvas"),
+  );
+  const previous = state.suspensionPlotModalHover;
+  const moved = hover && previous && (
+    Math.abs(hover.pointerX - previous.pointerX) > 4
+    || Math.abs(hover.pointerY - previous.pointerY) > 4
+  );
+  if ((previous?.id || null) !== (hover?.id || null) || moved) {
+    state.suspensionPlotModalHover = hover;
+    drawSuspensionPlotModal();
+  } else if (hover) {
+    state.suspensionPlotModalHover = hover;
+  }
+}
+
+function hitTestSuspensionPlotScene(event, scene, canvas) {
+  const point = pointerCanvasPointFor(event, canvas);
+  if (!point || !scene) return null;
+  const chart = scene.charts.find((item) => pointInRect(point, item.plot, 3));
+  if (!chart) return null;
+  const sample = nearestPlotSample(chart, point);
+  if (!sample) return null;
+  return {
+    id: `${chart.key}:${sample.sampleKey}`,
+    chartKey: chart.key,
+    sampleKey: sample.sampleKey,
+    pointerX: point.x,
+    pointerY: point.y,
+  };
+}
+
+function pointerCanvasPointFor(event, canvas) {
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function geometryPlotDescriptorMap() {
+  const descriptors = new Map(DEFAULT_KINEMATIC_CURVES.map((item) => [item.id, item]));
+  kinematicCurveDescriptors(state.kinematicsPayload).forEach((item) => descriptors.set(item.id, item));
+  return descriptors;
+}
+
+function descriptorXAxisId(descriptor) {
+  if (descriptor?.x_id) return descriptor.x_id;
+  return String(descriptor?.id || "").startsWith("roll_") ? "roll_deg" : "jounce_mm";
+}
+
+function geometryXAxisOptions(payload = state.kinematicsPayload) {
+  const axisIds = new Set();
+  Object.keys(payload?.x_axes || {}).forEach((key) => axisIds.add(key));
+  DEFAULT_KINEMATIC_CURVES.forEach((item) => axisIds.add(item.x_id || "jounce_mm"));
+  return [...axisIds]
+    .filter(Boolean)
+    .map((id) => ({
+      id,
+      label: id === "roll_deg" ? "Roll" : id === "jounce_mm" ? "Jounce" : humanizeToken(id),
+      unit: id === "roll_deg" ? "deg" : id === "jounce_mm" ? "mm" : "",
+    }))
+    .sort((left, right) => (left.id === "jounce_mm" ? -1 : right.id === "jounce_mm" ? 1 : left.label.localeCompare(right.label)));
+}
+
+function geometryXAxisOption(id) {
+  return geometryXAxisOptions().find((item) => item.id === id) || { id, label: humanizeToken(id), unit: "" };
+}
+
+function geometryPlotKey(plot) {
+  return `${plot.x}:${plot.y}`;
+}
+
+function normalizeGeometryPlotSelection(selection, descriptorMap) {
+  if (typeof selection === "string") {
+    const descriptor = descriptorMap.get(selection);
+    return descriptor ? { x: descriptorXAxisId(descriptor), y: selection } : null;
+  }
+  if (!selection || typeof selection !== "object") return null;
+  const y = String(selection.y || selection.id || "");
+  const descriptor = descriptorMap.get(y);
+  if (!descriptor) return null;
+  const descriptorX = descriptorXAxisId(descriptor);
+  const x = String(selection.x || descriptorX);
+  if (descriptorX !== x) return { x: descriptorX, y };
+  return { x, y };
+}
+
+function cleanGeometryPlotSelections() {
+  const descriptorMap = geometryPlotDescriptorMap();
+  const seen = new Set();
+  const selected = [];
+  state.geometryPlotSelections.forEach((selection) => {
+    const plot = normalizeGeometryPlotSelection(selection, descriptorMap);
+    if (!plot) return;
+    const key = geometryPlotKey(plot);
+    if (seen.has(key) || selected.length >= MAX_GEOMETRY_PLOTS) return;
+    seen.add(key);
+    selected.push(plot);
+  });
+  state.geometryPlotSelections = selected;
+  return descriptorMap;
+}
+
+function geometryPlotDescriptors() {
+  const descriptorMap = cleanGeometryPlotSelections();
+  return state.geometryPlotSelections
+    .map((plot) => {
+      const yDescriptor = descriptorMap.get(plot.y);
+      if (!yDescriptor) return null;
+      const xAxis = geometryXAxisOption(plot.x);
+      const yLabel = yDescriptor.y_label || yDescriptor.label || humanizeKinematicCurve(yDescriptor.id);
+      return {
+        id: geometryPlotKey(plot),
+        x_id: xAxis.id,
+        x_label: xAxis.label,
+        x_unit: xAxis.unit,
+        y_id: yDescriptor.id,
+        y_label: yLabel,
+        y_unit: yDescriptor.unit || inferCurveUnit(yDescriptor.id),
+        label: `${yLabel} vs ${xAxis.label}`,
+        source_plot: yDescriptor.source_plot,
+      };
+    })
+    .filter(Boolean);
+}
+
+function kinematicPayloadHasCurve(payload, key) {
+  return ["front", "rear"].some((axle) => {
+    const curve = payload?.axles?.[axle]?.curves?.[key];
+    return Array.isArray(curve) && curve.length > 1;
+  });
+}
+
+function renderGeometryPlotControls() {
+  const panel = document.getElementById("geometry-plot-panel");
+  if (!panel || panel.hidden) return;
+  const descriptorMap = cleanGeometryPlotSelections();
+  const descriptors = [...descriptorMap.values()];
+  const selected = new Set(state.geometryPlotSelections.map(geometryPlotKey));
+  const xSelect = document.getElementById("geometry-plot-x-axis");
+  const ySelect = document.getElementById("geometry-plot-y-axis");
+  const addButton = document.getElementById("geometry-add-plot-btn");
+  const list = document.getElementById("geometry-plot-list");
+  const xChoices = geometryXAxisOptions();
+  if (!xChoices.some((item) => item.id === state.geometryPlotDraftX)) {
+    state.geometryPlotDraftX = xChoices[0]?.id || "jounce_mm";
+  }
+  const yChoices = descriptors.filter((item) => descriptorXAxisId(item) === state.geometryPlotDraftX);
+  if (!yChoices.some((item) => item.id === state.geometryPlotDraftY)) {
+    state.geometryPlotDraftY = yChoices[0]?.id || "";
+  }
+  const draftKey = geometryPlotKey({ x: state.geometryPlotDraftX, y: state.geometryPlotDraftY });
+  const draftAlreadySelected = selected.has(draftKey);
+  const trayFull = state.geometryPlotSelections.length >= MAX_GEOMETRY_PLOTS;
+  if (xSelect) {
+    xSelect.innerHTML = xChoices.map((item) => (
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.unit ? ` (${escapeHtml(item.unit)})` : ""}</option>`
+    )).join("");
+    xSelect.value = state.geometryPlotDraftX;
+  }
+  if (ySelect) {
+    ySelect.innerHTML = yChoices.length
+      ? yChoices.map((item) => (
+        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || humanizeKinematicCurve(item.id))}</option>`
+      )).join("")
+      : '<option value="">No compatible signals</option>';
+    ySelect.value = state.geometryPlotDraftY;
+    ySelect.disabled = false;
+  }
+  if (addButton) {
+    addButton.disabled = !yChoices.length || draftAlreadySelected || trayFull;
+    addButton.title = !yChoices.length
+      ? "No compatible signals for this x-axis"
+      : draftAlreadySelected
+        ? "This plot is already in the tray"
+        : trayFull
+          ? `Keep the tray to ${MAX_GEOMETRY_PLOTS} active plots`
+          : "Add selected plot";
+  }
+  if (list) {
+    list.innerHTML = geometryPlotDescriptors().map((item) => `
+      <span class="geometry-plot-chip">
+        ${escapeHtml(item.label || humanizeKinematicCurve(item.id))}
+        <button type="button" data-geometry-plot-remove="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(item.label || item.id)}">x</button>
+      </span>
+    `).join("");
+  }
+}
+
+function persistGeometryPlotSelections() {
+  localStorage.setItem("bobsim-geometry-plots", JSON.stringify(state.geometryPlotSelections));
+}
+
+function addGeometryPlotSelection() {
+  const x = document.getElementById("geometry-plot-x-axis")?.value || state.geometryPlotDraftX;
+  const y = document.getElementById("geometry-plot-y-axis")?.value || state.geometryPlotDraftY;
+  if (!x || !y) return;
+  const plot = { x, y };
+  const key = geometryPlotKey(plot);
+  if (state.geometryPlotSelections.some((item) => geometryPlotKey(item) === key)) return;
+  if (state.geometryPlotSelections.length >= MAX_GEOMETRY_PLOTS) return;
+  state.geometryPlotSelections.push(plot);
+  persistGeometryPlotSelections();
+  renderGeometryPlotControls();
+  drawGeometryPlotPanel();
+}
+
+function removeGeometryPlotSelection(key) {
+  const next = state.geometryPlotSelections.filter((item) => geometryPlotKey(item) !== key);
+  if (next.length === state.geometryPlotSelections.length) return;
+  state.geometryPlotSelections = next;
+  persistGeometryPlotSelections();
+  renderGeometryPlotControls();
+  drawGeometryPlotPanel();
+}
+
+function drawGeometryPlotPanel() {
+  const panel = document.getElementById("geometry-plot-panel");
+  const canvas = document.getElementById("geometry-plot-canvas");
+  if (!panel || panel.hidden || !canvas) {
+    clearGeometryPlotScene();
+    return;
+  }
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(420, Math.floor(rect.width));
+  const height = Math.max(120, Math.floor(rect.height));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const palette = canvasPalette();
+  if (!state.kinematicsPayload) {
+    drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
+  if (!state.kinematicsPayload.available) {
+    drawCanvasText(ctx, state.kinematicsPayload.warnings?.[0] || "Kinematics unavailable", width / 2, height / 2, {
+      align: "center",
+      color: palette.amber,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
+  const descriptors = geometryPlotDescriptors();
+  if (!descriptors.length) {
+    drawCanvasText(ctx, "Add a signal above", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
+  const missingCurve = descriptors.find((descriptor) => !kinematicPayloadHasCurve(state.kinematicsPayload, descriptor.y_id));
+  if (missingCurve) {
+    if (state.kinematicsStatus !== "loading" && state.kinematicsStatus !== "refreshing") {
+      queueKinematicsRefresh({ force: true });
+    }
+    drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
+  const columns = Math.min(descriptors.length, width > 760 ? 3 : width > 520 ? 2 : 1);
+  const rows = Math.ceil(descriptors.length / columns);
+  const gap = 10;
+  const chartWidth = (width - gap * (columns + 1)) / columns;
+  const chartHeight = (height - gap * (rows + 1)) / rows;
+  const charts = [];
+  descriptors.forEach((descriptor, index) => {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const chart = drawKinematicChart(
+      ctx,
+      gap + col * (chartWidth + gap),
+      gap + row * (chartHeight + gap),
+      chartWidth,
+      chartHeight,
+      state.kinematicsPayload,
+      descriptor,
+      { hover: state.geometryPlotHover, axles: visibleGeometryAxles() },
+    );
+    if (chart) charts.push(chart);
+  });
+  state.geometryPlotScene = charts.length ? { charts } : null;
+}
+
+function updateGeometryPlotHover(event) {
+  const hover = hitTestSuspensionPlotScene(
+    event,
+    state.geometryPlotScene,
+    document.getElementById("geometry-plot-canvas"),
+  );
+  const previous = state.geometryPlotHover;
+  const moved = hover && previous && (
+    Math.abs(hover.pointerX - previous.pointerX) > 4
+    || Math.abs(hover.pointerY - previous.pointerY) > 4
+  );
+  if ((previous?.id || null) !== (hover?.id || null) || moved) {
+    state.geometryPlotHover = hover;
+    drawGeometryPlotPanel();
+  } else if (hover) {
+    state.geometryPlotHover = hover;
+  }
+}
+
+function handleGeometryPlotClick(event) {
+  const hover = hitTestSuspensionPlotScene(
+    event,
+    state.geometryPlotScene,
+    document.getElementById("geometry-plot-canvas"),
+  );
+  if (!hover) return;
+  state.geometryPlotHover = hover;
+  openSuspensionPlotModal(hover.chartKey);
+  drawGeometryPlotPanel();
+}
+
 function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
+  const geometryPlotPanel = document.getElementById("geometry-plot-panel");
+  const geometryPlotSplitter = document.getElementById("geometry-plot-splitter");
   const canvas = document.getElementById("vehicle-canvas");
   const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
   const usesMassScroll = area.id === "mass";
+  const usesGeometryPlots = area.id === "hardpoints";
   if (controls) {
     controls.hidden = true;
     controls.style.display = "none";
@@ -3179,14 +4481,29 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     geometryToggles.hidden = area.id !== "hardpoints";
     syncGeometryAxleToggles();
   }
-  if (stage) stage.classList.toggle("mass-scroll-stage", usesMassScroll);
+  if (geometryPlotPanel) {
+    geometryPlotPanel.hidden = !usesGeometryPlots;
+    if (usesGeometryPlots) renderGeometryPlotControls();
+    else clearGeometryPlotScene();
+  }
+  if (geometryPlotSplitter) {
+    geometryPlotSplitter.hidden = !usesGeometryPlots;
+    if (usesGeometryPlots) applyGeometryPlotHeight();
+  }
+  if (stage) {
+    stage.classList.toggle("mass-scroll-stage", usesMassScroll);
+    stage.classList.toggle("geometry-plot-stage", usesGeometryPlots);
+  }
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
     canvas.classList.toggle("mass-scroll-canvas", usesMassScroll);
     if (usesMassScroll) {
       const stageHeight = Math.max(360, stage?.clientHeight || canvas.clientHeight || 360);
       const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
-      canvas.style.height = `${Math.max(900, (stageHeight - toolbarHeight - 28) * 2 + 64)}px`;
+      const contentHeight = Math.max(360, stageHeight - toolbarHeight - 28);
+      const plotMinimumHeight = 900;
+      const targetHeight = contentHeight * 2 + 64;
+      canvas.style.height = `${Math.max(plotMinimumHeight, targetHeight)}px`;
     } else {
       canvas.style.height = "";
     }
@@ -3238,6 +4555,7 @@ function updateGeometryAxleVisibility(axle, visible) {
   syncGeometryAxleToggles();
   applyAxleInputVisibility();
   drawVehicleFromForm();
+  drawSuspensionPlotModal();
 }
 
 function activeParameterArea() {
@@ -4630,22 +5948,463 @@ function drawSuspensionPreview(ctx, width, height, data) {
   const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
   drawCanvasText(ctx, "Suspension Rates", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Live spring and damper tables from vehicle.yml", 28, 52, { size: 12, weight: 650, color: palette.muted });
+  drawCanvasText(ctx, "Spring and damper tables feeding the force-based run.", 28, 52, {
+    size: 12,
+    weight: 650,
+    color: palette.muted,
+  });
   const maps = [
-    ["Front spring", nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]), "deflection", "force"],
-    ["Front damper", nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]), "velocity", "force"],
-    ["Rear spring", nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]), "deflection", "force"],
-    ["Rear damper", nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]), "velocity", "force"],
+    ["front-spring", "Front spring", nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
+    ["front-damper", "Front damper", nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
+    ["rear-spring", "Rear spring", nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
+    ["rear-damper", "Rear damper", nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
   ];
   const gap = 14;
   const top = 76;
+  const plotCharts = [];
+  const rateTop = top;
+  const rateHeight = Math.max(260, height - rateTop - 28);
   const panelWidth = (width - 56 - gap) / 2;
-  const panelHeight = (height - top - 28 - gap) / 2;
-  maps.forEach(([title, table, xLabel, yLabel], index) => {
+  const panelHeight = Math.max(82, (rateHeight - gap) / 2);
+  maps.forEach(([key, title, table, xLabel, xUnit, yLabel, yUnit], index) => {
     const col = index % 2;
     const row = Math.floor(index / 2);
-    drawLinePanel(ctx, 28 + col * (panelWidth + gap), top + row * (panelHeight + gap), panelWidth, panelHeight, title, table, xLabel, yLabel);
+    const chart = drawLinePanel(
+      ctx,
+      28 + col * (panelWidth + gap),
+      rateTop + row * (panelHeight + gap),
+      panelWidth,
+      panelHeight,
+      title,
+      table,
+      xLabel,
+      xUnit,
+      yLabel,
+      yUnit,
+      { key },
+    );
+    if (chart) plotCharts.push(chart);
   });
+  state.suspensionPlotScene = plotCharts.length ? { charts: plotCharts } : null;
+}
+
+function kinematicCurveDescriptors(payload) {
+  const meta = Array.isArray(payload?.curve_meta) && payload.curve_meta.length
+    ? payload.curve_meta
+    : DEFAULT_KINEMATIC_CURVES;
+  const curveKeys = new Set();
+  ["front", "rear"].forEach((axle) => {
+    Object.keys(payload?.axles?.[axle]?.curves || {}).forEach((key) => curveKeys.add(key));
+  });
+  const descriptors = [];
+  const seen = new Set();
+  meta.forEach((item) => {
+    const id = String(item?.id || "");
+    if (!id || seen.has(id)) return;
+    if (curveKeys.size && !curveKeys.has(id)) return;
+    seen.add(id);
+    descriptors.push({
+      id,
+      label: item?.label || humanizeKinematicCurve(id),
+      unit: item?.unit || inferCurveUnit(id),
+      x_id: item?.x_id || "jounce_mm",
+      x_label: item?.x_label || "Jounce",
+      x_unit: item?.x_unit || "mm",
+      y_label: item?.y_label || item?.label || humanizeKinematicCurve(id),
+    });
+  });
+  [...curveKeys].sort().forEach((id) => {
+    if (seen.has(id)) return;
+    const rollCurve = id.startsWith("roll_");
+    descriptors.push({
+      id,
+      label: humanizeKinematicCurve(id),
+      unit: inferCurveUnit(id),
+      x_id: rollCurve ? "roll_deg" : "jounce_mm",
+      x_label: rollCurve ? "Roll" : "Jounce",
+      x_unit: rollCurve ? "deg" : "mm",
+      y_label: humanizeKinematicCurve(id),
+    });
+  });
+  return descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES;
+}
+
+function humanizeKinematicCurve(id) {
+  return humanizeToken(String(id).replace(/_(deg|mm|m|rad)$/i, ""));
+}
+
+function inferCurveUnit(id) {
+  if (String(id).endsWith("_deg")) return "deg";
+  if (String(id).endsWith("_mm")) return "mm";
+  if (String(id).endsWith("_rad")) return "rad";
+  return "";
+}
+
+function drawKinematicChart(
+  ctx,
+  x,
+  y,
+  width,
+  height,
+  payload,
+  descriptor,
+  { focused = false, hover = undefined, axles = null } = {},
+) {
+  const palette = canvasPalette();
+  const key = descriptor.id;
+  const yKey = descriptor.y_id || descriptor.id;
+  const title = descriptor.label || humanizeKinematicCurve(key);
+  const unit = descriptor.y_unit || descriptor.unit || inferCurveUnit(yKey);
+  const xValues = kinematicChartXValues(payload, descriptor);
+  const visibleAxles = new Set(Array.isArray(axles) && axles.length ? axles : ["front", "rear"]);
+  const series = [
+    { axle: "front", label: "Front", shortLabel: "F", color: palette.blue, values: payload.axles?.front?.curves?.[yKey] || [] },
+    { axle: "rear", label: "Rear", shortLabel: "R", color: palette.green, values: payload.axles?.rear?.curves?.[yKey] || [] },
+  ].filter((item) => visibleAxles.has(item.axle)).map((item) => ({
+    ...item,
+    points: item.values
+      .map((value, index) => ({
+        index,
+        sampleKey: String(index),
+        xValue: xValues[index],
+        yValue: Number(value),
+      }))
+      .filter((point) => Number.isFinite(point.xValue) && Number.isFinite(point.yValue)),
+  }));
+  ctx.save();
+  ctx.fillStyle = colorWithAlpha(palette.bg, state.dark ? 0.2 : 0.42);
+  ctx.strokeStyle = focused ? palette.amber : palette.line;
+  ctx.lineWidth = focused ? 1.5 : 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, width, height, 6);
+  else ctx.rect(x, y, width, height);
+  ctx.fill();
+  ctx.stroke();
+  drawCanvasText(ctx, title, x + 10, y + (focused ? 18 : 14), { size: focused ? 14 : 11, weight: 780 });
+  const chart = createPlotChart({
+    key,
+    title,
+    x,
+    y,
+    width,
+    height,
+    xLabel: descriptor.x_label || "Jounce",
+    xUnit: descriptor.x_unit || "mm",
+    yLabel: descriptor.y_label || title,
+    yUnit: unit,
+    series,
+    includeZeroY: true,
+    margins: focused
+      ? { left: 62, right: 18, top: 48, bottom: 44 }
+      : { left: 50, right: 14, top: 36, bottom: 36 },
+  });
+  if (!chart) {
+    drawCanvasText(ctx, "Waiting for curve data", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
+    ctx.restore();
+    return null;
+  }
+  drawPlotGrid(ctx, chart);
+  chart.series.forEach((item) => drawPlotSeries(ctx, item, chart.plot));
+  drawCanvasText(ctx, chart.yUnit, x + width - 10, y + 14, {
+    size: 10,
+    weight: 650,
+    align: "right",
+    color: palette.muted,
+  });
+  drawKinematicLegend(ctx, chart.series, x + 10, y + height - 12);
+  drawPlotHover(ctx, chart, hover);
+  ctx.restore();
+  return chart;
+}
+
+function kinematicChartXValues(payload, descriptor) {
+  const xId = descriptor?.x_id || "jounce_mm";
+  const axisValues = payload?.x_axes?.[xId];
+  if (Array.isArray(axisValues) && axisValues.length) {
+    return axisValues.map(Number);
+  }
+  if (xId === "roll_deg" && Array.isArray(payload?.roll_deg)) {
+    return payload.roll_deg.map(Number);
+  }
+  return (payload?.sweep_m || []).map((value) => Number(value) * 1000);
+}
+
+function drawPlotSeries(ctx, item, plot) {
+  if (!item.points.length) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plot.x, plot.y, plot.width, plot.height);
+  ctx.clip();
+  ctx.strokeStyle = item.color;
+  ctx.lineWidth = 2.4;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  item.points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.canvasX, point.canvasY);
+    else ctx.lineTo(point.canvasX, point.canvasY);
+  });
+  ctx.stroke();
+  if (item.points.length <= 18) {
+    ctx.fillStyle = item.color;
+    item.points.forEach((point) => {
+      ctx.beginPath();
+      ctx.arc(point.canvasX, point.canvasY, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  ctx.restore();
+}
+
+function drawKinematicLegend(ctx, series, x, y) {
+  series.forEach((item, index) => {
+    const offset = index * 30;
+    ctx.fillStyle = item.color;
+    ctx.beginPath();
+    ctx.arc(x + offset, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    drawCanvasText(ctx, item.shortLabel || item.label, x + offset + 7, y, { size: 9, weight: 760, color: canvasPalette().muted });
+  });
+}
+
+function createPlotChart({
+  key,
+  title,
+  x,
+  y,
+  width,
+  height,
+  xLabel,
+  xUnit,
+  yLabel,
+  yUnit,
+  series,
+  includeZeroY = false,
+  margins = { left: 52, right: 16, top: 38, bottom: 38 },
+}) {
+  const validSeries = series
+    .map((item) => ({
+      ...item,
+      points: (item.points || []).filter((point) => (
+        Number.isFinite(point.xValue) && Number.isFinite(point.yValue)
+      )),
+    }))
+    .filter((item) => item.points.length);
+  const allPoints = validSeries.flatMap((item) => item.points);
+  if (allPoints.length < 2) return null;
+  const [minX, maxX] = plotDomain(allPoints.map((point) => point.xValue), { padFraction: 0.02 });
+  const [minY, maxY] = plotDomain(allPoints.map((point) => point.yValue), { includeZero: includeZeroY, padFraction: 0.12 });
+  const plot = {
+    x: x + margins.left,
+    y: y + margins.top,
+    width: Math.max(36, width - margins.left - margins.right),
+    height: Math.max(24, height - margins.top - margins.bottom),
+  };
+  const toX = (value) => plot.x + ((value - minX) / Math.max(1e-9, maxX - minX)) * plot.width;
+  const toY = (value) => plot.y + plot.height - ((value - minY) / Math.max(1e-9, maxY - minY)) * plot.height;
+  const sampleMap = new Map();
+  const chartSeries = validSeries.map((item) => ({
+    ...item,
+    points: item.points.map((point) => {
+      const sampleKey = String(point.sampleKey ?? point.index);
+      const canvasX = toX(point.xValue);
+      const canvasY = toY(point.yValue);
+      if (!sampleMap.has(sampleKey)) {
+        sampleMap.set(sampleKey, {
+          sampleKey,
+          index: point.index,
+          xValue: point.xValue,
+          canvasX,
+        });
+      }
+      return {
+        ...point,
+        sampleKey,
+        canvasX,
+        canvasY,
+      };
+    }),
+  }));
+  return {
+    key,
+    title,
+    x,
+    y,
+    width,
+    height,
+    bounds: { x, y, width, height },
+    plot,
+    xDomain: [minX, maxX],
+    yDomain: [minY, maxY],
+    xLabel,
+    xUnit,
+    yLabel,
+    yUnit,
+    series: chartSeries,
+    samples: [...sampleMap.values()].sort((left, right) => left.xValue - right.xValue),
+  };
+}
+
+function plotDomain(values, { includeZero = false, padFraction = 0.08 } = {}) {
+  const finite = values.map(Number).filter(Number.isFinite);
+  if (!finite.length) return [-1, 1];
+  let min = Math.min(...finite);
+  let max = Math.max(...finite);
+  if (includeZero) {
+    min = Math.min(min, 0);
+    max = Math.max(max, 0);
+  }
+  const span = max - min;
+  const pad = span > 0
+    ? span * padFraction
+    : Math.max(Math.abs(max) * 0.12, 1e-3);
+  return [min - pad, max + pad];
+}
+
+function drawPlotGrid(ctx, chart) {
+  const palette = canvasPalette();
+  const { plot } = chart;
+  const xTicks = niceTickValues(chart.xDomain[0], chart.xDomain[1], 5);
+  const yTicks = niceTickValues(chart.yDomain[0], chart.yDomain[1], 5);
+  const toX = (value) => plot.x + ((value - chart.xDomain[0]) / Math.max(1e-9, chart.xDomain[1] - chart.xDomain[0])) * plot.width;
+  const toY = (value) => plot.y + plot.height - ((value - chart.yDomain[0]) / Math.max(1e-9, chart.yDomain[1] - chart.yDomain[0])) * plot.height;
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.42 : 0.68);
+  xTicks.forEach((tick) => {
+    const px = toX(tick);
+    ctx.beginPath();
+    ctx.moveTo(px, plot.y);
+    ctx.lineTo(px, plot.y + plot.height);
+    ctx.stroke();
+    drawCanvasText(ctx, formatNumber(tick), px, plot.y + plot.height + 13, {
+      size: 9,
+      weight: 650,
+      align: "center",
+      color: palette.muted,
+    });
+  });
+  yTicks.forEach((tick) => {
+    const py = toY(tick);
+    ctx.beginPath();
+    ctx.moveTo(plot.x, py);
+    ctx.lineTo(plot.x + plot.width, py);
+    ctx.stroke();
+    drawCanvasText(ctx, formatNumber(tick), plot.x - 7, py, {
+      size: 9,
+      weight: 650,
+      align: "right",
+      color: palette.muted,
+    });
+  });
+  ctx.strokeStyle = palette.line;
+  ctx.strokeRect(plot.x, plot.y, plot.width, plot.height);
+  ctx.restore();
+  drawCanvasText(ctx, `${chart.xLabel}${chart.xUnit ? ` (${chart.xUnit})` : ""}`, plot.x + plot.width / 2, chart.y + chart.height - 11, {
+    size: 9,
+    weight: 720,
+    align: "center",
+    color: palette.muted,
+  });
+}
+
+function niceTickValues(min, max, targetCount = 5) {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
+  if (min === max) return [min];
+  const span = Math.abs(max - min);
+  const rawStep = span / Math.max(1, targetCount - 1);
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const fraction = rawStep / magnitude;
+  const niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+  const step = niceFraction * magnitude;
+  const start = Math.ceil(min / step) * step;
+  const ticks = [];
+  for (let value = start; value <= max + step * 0.5; value += step) {
+    ticks.push(Math.abs(value) < step * 1e-6 ? 0 : value);
+    if (ticks.length > 12) break;
+  }
+  return ticks.length ? ticks : [min, max];
+}
+
+function drawPlotHover(ctx, chart, hoverState = undefined) {
+  const activeHover = hoverState === undefined ? state.suspensionPlotHover : hoverState;
+  const hover = suspensionHoverForChart(chart, activeHover);
+  if (!hover) return;
+  const palette = canvasPalette();
+  const { plot } = chart;
+  ctx.save();
+  ctx.strokeStyle = colorWithAlpha(palette.ink, state.dark ? 0.36 : 0.28);
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(hover.sample.canvasX, plot.y);
+  ctx.lineTo(hover.sample.canvasX, plot.y + plot.height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  hover.items.forEach((item) => {
+    ctx.fillStyle = item.color;
+    ctx.strokeStyle = palette.surface;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(item.point.canvasX, item.point.canvasY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  const lines = [
+    `${chart.xLabel}: ${formatSignedNumber(hover.sample.xValue)} ${chart.xUnit}`.trim(),
+    ...hover.items.map((item) => `${item.label}: ${formatNumber(item.point.yValue)} ${chart.yUnit}`.trim()),
+  ];
+  ctx.font = "700 11px Inter, sans-serif";
+  const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+  const tooltipW = Math.min(chart.bounds.width - 16, textWidth + 22);
+  const tooltipH = 14 + lines.length * 16;
+  let tooltipX = hover.sample.canvasX + 12;
+  if (tooltipX + tooltipW > chart.bounds.x + chart.bounds.width - 8) {
+    tooltipX = hover.sample.canvasX - tooltipW - 12;
+  }
+  tooltipX = clamp(tooltipX, chart.bounds.x + 8, chart.bounds.x + chart.bounds.width - tooltipW - 8);
+  const requestedY = Number.isFinite(activeHover?.pointerY)
+    ? activeHover.pointerY - tooltipH - 10
+    : plot.y + 8;
+  const tooltipY = clamp(requestedY, plot.y + 8, plot.y + plot.height - tooltipH - 8);
+  ctx.fillStyle = state.dark ? "#1c242b" : "#ffffff";
+  ctx.strokeStyle = palette.line;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(tooltipX, tooltipY, tooltipW, tooltipH, 7);
+  else ctx.rect(tooltipX, tooltipY, tooltipW, tooltipH);
+  ctx.fill();
+  ctx.stroke();
+  lines.forEach((line, index) => {
+    const item = index > 0 ? hover.items[index - 1] : null;
+    ctx.fillStyle = item?.color || palette.muted;
+    ctx.font = `${index === 0 ? 760 : 700} 11px Inter, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(line, tooltipX + 11, tooltipY + 13 + index * 16);
+  });
+  ctx.restore();
+}
+
+function suspensionHoverForChart(chart, hover = state.suspensionPlotHover) {
+  if (!hover || hover.chartKey !== chart.key) return null;
+  const sample = chart.samples.find((item) => item.sampleKey === hover.sampleKey);
+  if (!sample) return null;
+  const items = chart.series
+    .map((series) => {
+      const point = series.points.find((item) => item.sampleKey === hover.sampleKey);
+      return point ? { label: series.label, color: series.color, point } : null;
+    })
+    .filter(Boolean);
+  if (!items.length) return null;
+  return { sample, items };
+}
+
+function formatSignedNumber(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric === 0) return formatNumber(value);
+  return `${numeric > 0 ? "+" : ""}${formatNumber(numeric)}`;
 }
 
 function drawCompliancePreview(ctx, width, height, data) {
@@ -4857,50 +6616,54 @@ function complianceCellValue(value) {
   return Number.isFinite(numeric) ? formatNumber(numeric) : "planned";
 }
 
-function drawLinePanel(ctx, x, y, width, height, title, table, xLabel, yLabel) {
+function drawLinePanel(ctx, x, y, width, height, title, table, xLabel, xUnit, yLabel, yUnit, { key = title } = {}) {
   const palette = canvasPalette();
   drawPanel(ctx, x, y, width, height, palette.surface);
   drawCanvasText(ctx, title, x + 12, y + 17, { size: 13, weight: 780 });
   if (!Array.isArray(table) || table.length < 2) {
     drawCanvasText(ctx, "No table", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
-    return;
+    return null;
   }
   const points = table
-    .map((row) => Array.isArray(row) ? [Number(row[0]), Number(row[1])] : null)
-    .filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
-  if (points.length < 2) return;
-  const xs = points.map((point) => point[0]);
-  const ys = points.map((point) => point[1]);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const chartX = x + 42;
-  const chartY = y + 40;
-  const chartW = width - 60;
-  const chartH = height - 70;
-  ctx.strokeStyle = palette.line;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(chartX, chartY, chartW, chartH);
-  ctx.strokeStyle = palette.blue;
-  ctx.lineWidth = 3;
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    const px = chartX + ((point[0] - minX) / Math.max(1e-9, maxX - minX)) * chartW;
-    const py = chartY + chartH - ((point[1] - minY) / Math.max(1e-9, maxY - minY)) * chartH;
-    if (index === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
+    .map((row, index) => (Array.isArray(row)
+      ? {
+        index,
+        sampleKey: String(index),
+        xValue: Number(row[0]),
+        yValue: Number(row[1]),
+      }
+      : null))
+    .filter((point) => point && Number.isFinite(point.xValue) && Number.isFinite(point.yValue));
+  const chart = createPlotChart({
+    key,
+    title,
+    x,
+    y,
+    width,
+    height,
+    xLabel,
+    xUnit,
+    yLabel,
+    yUnit,
+    series: [{
+      label: title,
+      color: key.includes("damper") ? palette.red : palette.blue,
+      points,
+    }],
+    includeZeroY: true,
+    margins: { left: 54, right: 16, top: 40, bottom: 36 },
   });
-  ctx.stroke();
-  drawCanvasText(ctx, xLabel, chartX + chartW / 2, y + height - 14, { size: 10, weight: 700, align: "center", color: palette.muted });
-  drawCanvasText(ctx, yLabel, x + 16, chartY + chartH / 2, { size: 10, weight: 700, align: "center", color: palette.muted });
-  drawCanvasText(ctx, `${formatNumber(minY)} to ${formatNumber(maxY)}`, x + width - 12, y + 17, {
-    size: 11,
+  if (!chart) return null;
+  drawPlotGrid(ctx, chart);
+  chart.series.forEach((item) => drawPlotSeries(ctx, item, chart.plot));
+  drawCanvasText(ctx, `${yLabel}${yUnit ? ` (${yUnit})` : ""}`, x + width - 12, y + 17, {
+    size: 10,
     weight: 650,
     align: "right",
     color: palette.muted,
   });
+  drawPlotHover(ctx, chart);
+  return chart;
 }
 
 function nestedValue(data, path) {
@@ -5893,6 +7656,7 @@ function wireVehicleCanvas() {
       }
       return;
     }
+    if (handleSuspensionPlotClick(event)) return;
     if (!isSpatialPreviewArea()) return;
     if (event.ctrlKey) {
       startPreviewDrag(event, "pan");
@@ -5932,13 +7696,16 @@ function wireVehicleCanvas() {
   });
   canvas.addEventListener("wheel", handlePreviewWheel, { passive: false });
   canvas.addEventListener("pointermove", updateGeometryHover);
+  canvas.addEventListener("pointermove", updateSuspensionPlotHover);
   canvas.addEventListener("pointerleave", () => {
     state.geometryHoverPointId = null;
     state.architectureHoverId = null;
     state.massHoverPointId = null;
+    state.suspensionPlotHover = null;
     canvas.classList.remove("geometry-hot");
     canvas.classList.remove("architecture-hot");
     canvas.classList.remove("mass-hot");
+    canvas.classList.remove("kinematic-hot");
     canvas.classList.remove("preview-panning");
     drawVehicleFromForm();
   });
@@ -5961,6 +7728,10 @@ function wireGeometryEditor() {
     });
   });
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && activeParameterArea().visual === "suspension" && clearSuspensionPlotFocus()) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape" && isSpatialPreviewArea() && clearGeometrySelection()) {
       event.preventDefault();
       return;
@@ -6018,6 +7789,60 @@ function wireSetupSplitter() {
       setSetupPaneWidth(setupPaneBounds().max, { persist: true });
     }
   });
+}
+
+function wireGeometryPlotSplitter() {
+  const splitter = document.getElementById("geometry-plot-splitter");
+  if (!splitter) return;
+  applyGeometryPlotHeight();
+  splitter.addEventListener("pointerdown", (event) => {
+    state.geometryPlotResize = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: state.geometryPlotHeight,
+    };
+    splitter.classList.add("active");
+    document.body.classList.add("resizing-plot-pane");
+    splitter.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  splitter.addEventListener("pointermove", (event) => {
+    const resize = state.geometryPlotResize;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    setGeometryPlotHeight(resize.startHeight - (event.clientY - resize.startY), { redraw: false });
+    drawVehicleFromForm();
+  });
+  splitter.addEventListener("pointerup", (event) => finishGeometryPlotResize(event.pointerId));
+  splitter.addEventListener("pointercancel", (event) => finishGeometryPlotResize(event.pointerId));
+  splitter.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setGeometryPlotHeight(state.geometryPlotHeight + step, { persist: true });
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setGeometryPlotHeight(state.geometryPlotHeight - step, { persist: true });
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setGeometryPlotHeight(MIN_GEOMETRY_PLOT_HEIGHT, { persist: true });
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setGeometryPlotHeight(geometryPlotHeightBounds().max, { persist: true });
+    }
+  });
+}
+
+function finishGeometryPlotResize(pointerId) {
+  const resize = state.geometryPlotResize;
+  if (!resize || resize.pointerId !== pointerId) return;
+  state.geometryPlotResize = null;
+  document.getElementById("geometry-plot-splitter")?.classList.remove("active");
+  document.body.classList.remove("resizing-plot-pane");
+  localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(state.geometryPlotHeight)));
+  drawVehicleFromForm();
 }
 
 function finishSetupResize(pointerId) {
@@ -6083,7 +7908,42 @@ function wireEvents() {
       updateArchitectureOrderRole(role.dataset.architectureRole, role.dataset.orderIndex, role.dataset.role);
     }
   });
+  document.getElementById("kinematic-plot-close").addEventListener("click", () => closeSuspensionPlotModal());
+  document.getElementById("kinematic-plot-modal").addEventListener("pointerdown", (event) => {
+    if (event.target.id === "kinematic-plot-modal") closeSuspensionPlotModal();
+  });
+  document.getElementById("kinematic-plot-modal-canvas").addEventListener("pointermove", updateSuspensionPlotModalHover);
+  document.getElementById("kinematic-plot-modal-canvas").addEventListener("pointerleave", () => {
+    if (!state.suspensionPlotModalHover) return;
+    state.suspensionPlotModalHover = null;
+    drawSuspensionPlotModal();
+  });
+  document.getElementById("geometry-add-plot-btn").addEventListener("click", addGeometryPlotSelection);
+  document.getElementById("geometry-plot-x-axis").addEventListener("change", (event) => {
+    state.geometryPlotDraftX = event.target.value;
+    state.geometryPlotDraftY = "";
+    renderGeometryPlotControls();
+  });
+  document.getElementById("geometry-plot-y-axis").addEventListener("change", (event) => {
+    state.geometryPlotDraftY = event.target.value;
+  });
+  document.getElementById("geometry-plot-list").addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-geometry-plot-remove]");
+    if (remove) removeGeometryPlotSelection(remove.dataset.geometryPlotRemove);
+  });
+  document.getElementById("geometry-plot-canvas").addEventListener("pointermove", updateGeometryPlotHover);
+  document.getElementById("geometry-plot-canvas").addEventListener("pointerleave", () => {
+    if (!state.geometryPlotHover) return;
+    state.geometryPlotHover = null;
+    drawGeometryPlotPanel();
+  });
+  document.getElementById("geometry-plot-canvas").addEventListener("click", handleGeometryPlotClick);
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.suspensionPlotModalKey) {
+      closeSuspensionPlotModal();
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape" && state.architectureModalOpen) closeArchitectureConnectionModal();
   });
   window.addEventListener("keydown", handleUndoShortcut);
@@ -6098,16 +7958,28 @@ function wireEvents() {
   document.getElementById("save-vehicle-btn").addEventListener("click", saveVehicleAs);
   document.getElementById("save-raw-btn").addEventListener("click", saveRawVehicle);
   document.getElementById("run-workflow-btn").addEventListener("click", startSelectedWorkflow);
+  document.getElementById("run-study-btn").addEventListener("click", startSelectedStudyWorkflow);
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
   document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
   document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);
   document.getElementById("delete-sim-config-btn").addEventListener("click", deleteSelectedSimConfig);
+  document.getElementById("apply-study-config-btn").addEventListener("click", applyStudyConfigEdits);
+  document.getElementById("save-study-config-btn").addEventListener("click", saveStudyConfigAs);
+  document.getElementById("load-study-config-btn").addEventListener("click", loadSelectedStudyConfig);
+  document.getElementById("delete-study-config-btn").addEventListener("click", deleteSelectedStudyConfig);
   document.getElementById("sim-config-picker").addEventListener("change", (event) => {
     state.selectedSimConfigSource = event.target.value;
     renderSimConfigLibrary();
   });
+  document.getElementById("study-config-picker").addEventListener("change", (event) => {
+    state.selectedStudyConfigSource = event.target.value;
+    renderStudyConfigLibrary();
+  });
   document.getElementById("clear-log-btn").addEventListener("click", () => {
     document.getElementById("job-log").textContent = "";
+  });
+  document.getElementById("clear-study-log-btn").addEventListener("click", () => {
+    document.getElementById("study-job-log").textContent = "";
   });
   document.getElementById("rotation-sensitivity").addEventListener("input", (event) => {
     state.rotationSensitivity = Number(event.target.value);
@@ -6125,6 +7997,7 @@ function wireEvents() {
   document.getElementById("setup-next-btn")?.addEventListener("click", () => navigateParameterStep(1));
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs();
+    else if (state.view === "studies") await startSelectedStudyWorkflow();
     else await startSelectedWorkflow();
   });
   document.getElementById("rail-secondary-btn").addEventListener("click", () => {
@@ -6137,6 +8010,12 @@ function wireEvents() {
     button.addEventListener("click", () => {
       state.activeSimTab = button.dataset.tab;
       syncSimTabs();
+    });
+  });
+  document.querySelectorAll(".study-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeStudyTab = button.dataset.studyTab;
+      syncStudyTabs();
     });
   });
   document.querySelectorAll(".view-button[data-view]").forEach((button) => {
@@ -6154,11 +8033,15 @@ function wireEvents() {
     if (state.massSelectedPointId) queueMassPropertyEditorPosition();
   });
   wireSetupSplitter();
+  wireGeometryPlotSplitter();
   wireGeometryEditor();
   wireVehicleCanvas();
   window.addEventListener("resize", () => {
     applySetupPaneWidth();
+    applyGeometryPlotHeight();
     drawVehicleFromForm();
+    drawSuspensionPlotModal();
+    drawGeometryPlotPanel();
   });
 }
 
@@ -6167,6 +8050,7 @@ refresh();
 setInterval(async () => {
   if ((state.status?.jobs || []).some((job) => job.status === "running" || job.status === "queued")) {
     state.status = await api("/api/status");
-    renderStandard();
+    if (state.view === "studies") renderStudies();
+    else renderStandard();
   }
 }, 2000);

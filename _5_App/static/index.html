@@ -29,6 +29,7 @@
           <div class="rail-stack">
             <button class="rail-item active" data-view="setup" type="button">Setup</button>
             <button class="rail-item" data-view="standard" type="button">Standard Sim</button>
+            <button class="rail-item" data-view="studies" type="button">Studies</button>
           </div>
           <div class="rail-actions">
             <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
@@ -174,6 +175,40 @@
                 <div id="mass-property-grid" class="mass-property-grid"></div>
               </div>
               <canvas id="vehicle-canvas"></canvas>
+              <div
+                id="geometry-plot-splitter"
+                class="geometry-plot-splitter"
+                role="separator"
+                aria-label="Resize geometry plot pane"
+                aria-orientation="horizontal"
+                aria-valuemin="150"
+                aria-valuemax="520"
+                aria-valuenow="252"
+                tabindex="0"
+                title="Drag to resize plots"
+                hidden
+              ></div>
+              <section id="geometry-plot-panel" class="geometry-plot-panel" aria-label="Geometry plots" hidden>
+                <div class="geometry-plot-head">
+                  <div>
+                    <span class="tool-label">Geometry plots</span>
+                    <strong>Kinematic signals</strong>
+                  </div>
+                  <div class="geometry-plot-controls">
+                    <label class="geometry-axis-select">
+                      <span>X</span>
+                      <select id="geometry-plot-x-axis" class="config-picker" aria-label="Plot x-axis"></select>
+                    </label>
+                    <label class="geometry-axis-select">
+                      <span>Y</span>
+                      <select id="geometry-plot-y-axis" class="config-picker" aria-label="Plot y-axis"></select>
+                    </label>
+                    <button id="geometry-add-plot-btn" class="ghost-button" type="button">Add</button>
+                  </div>
+                </div>
+                <div id="geometry-plot-list" class="geometry-plot-list"></div>
+                <canvas id="geometry-plot-canvas"></canvas>
+              </section>
             </section>
           </div>
         </section>
@@ -242,6 +277,74 @@
             </section>
           </div>
         </section>
+
+        <section id="studies-view" class="screen">
+          <div class="screen-head">
+            <div>
+              <h2>Studies</h2>
+              <p id="studies-context"></p>
+            </div>
+            <button id="run-study-btn" class="run-button" type="button">Run Study</button>
+          </div>
+
+          <div class="standard-workspace studies-workspace">
+            <section class="workflow-list study-catalog">
+              <div id="study-catalog-grid" class="study-catalog-grid"></div>
+            </section>
+
+            <section class="sim-pane study-pane">
+              <div id="study-diagnostic" class="study-diagnostic"></div>
+
+              <div class="sim-tabs study-tabs">
+                <button class="study-tab active" data-study-tab="setup" type="button">Setup</button>
+                <button class="study-tab" data-study-tab="outputs" type="button">Review</button>
+                <button class="study-tab" data-study-tab="jobs" type="button">Run Log</button>
+              </div>
+
+              <div id="study-setup-panel" class="study-panel active">
+                <div class="sim-setup-shell">
+                  <section class="sim-guide-panel">
+                    <span class="context-label">Study setup</span>
+                    <h3 id="study-setup-title">Select a Study</h3>
+                    <p id="study-setup-copy"></p>
+                    <div id="study-step-strip" class="sim-step-strip"></div>
+                  </section>
+
+                  <section class="sim-config-tools">
+                    <div class="sim-config-row">
+                      <select id="study-config-picker" class="config-picker"></select>
+                      <button id="load-study-config-btn" class="ghost-button" type="button">Load</button>
+                      <button id="delete-study-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+                    </div>
+                    <div class="sim-config-row">
+                      <input id="save-study-config-name" class="name-input" type="text" placeholder="Save study config as">
+                      <button id="save-study-config-btn" class="run-button" type="button">Save Config</button>
+                      <button id="apply-study-config-btn" class="ghost-button" type="button">Apply Edits</button>
+                    </div>
+                    <span id="study-config-status" class="sim-config-status"></span>
+                  </section>
+
+                  <form id="study-config-form" class="sim-config-form"></form>
+                </div>
+              </div>
+
+              <div id="study-outputs-panel" class="study-panel">
+                <h3 id="study-selected-title">Study Outputs</h3>
+                <div id="study-output-list" class="output-list"></div>
+                <div id="study-preview" class="preview"></div>
+              </div>
+
+              <div id="study-jobs-panel" class="study-panel">
+                <div class="panel-heading">
+                  <h3>Jobs</h3>
+                  <button id="clear-study-log-btn" class="ghost-button" type="button">Clear View</button>
+                </div>
+                <div id="study-job-list" class="job-list"></div>
+                <pre id="study-job-log" class="log-view"></pre>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -301,6 +404,22 @@
         </label>
 
         <div id="architecture-connection-body" class="connection-body"></div>
+      </div>
+    </div>
+
+    <div id="kinematic-plot-modal" class="plot-modal" role="dialog" aria-modal="true" aria-labelledby="kinematic-plot-title" hidden>
+      <div class="plot-card">
+        <div class="plot-modal-head">
+          <div>
+            <span class="context-label">Kinematics</span>
+            <h2 id="kinematic-plot-title">Plot</h2>
+            <p id="kinematic-plot-subtitle"></p>
+          </div>
+          <button id="kinematic-plot-close" class="ghost-button" type="button">Close</button>
+        </div>
+        <div class="plot-modal-body">
+          <canvas id="kinematic-plot-modal-canvas"></canvas>
+        </div>
       </div>
     </div>
 

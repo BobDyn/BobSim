@@ -87,7 +87,7 @@ help:
 		'  regression-baseline       Run default StandardSim baseline regressions' \
 		'  standard-regression-four-post  Alias for regression-baseline' \
 		'' \
-		'  ci                        Run lint, typecheck, StandardSim regressions, and tests' \
+		'  ci                        Run lint, typecheck, tests, and StandardSim regressions' \
 		'  clean-all                 Remove caches and generated workflow artifacts'
 
 init:
@@ -113,7 +113,7 @@ typecheck:
 		--exclude '(^|/)$(BOBLIB_PATH)/'
 
 test:
-	$(RUN) env BOBSIM_BASELINE_REGRESSION=1 $(PYTHON) -m pytest tests
+	$(RUN) $(PYTHON) -m pytest tests
 
 regression-invariants:
 	$(RUN) $(PYTHON) -m pytest tests/test_simulation_regression.py
@@ -121,7 +121,7 @@ regression-invariants:
 regression-baseline:
 	$(RUN) env BOBSIM_BASELINE_REGRESSION=1 $(PYTHON) -m pytest tests/test_simulation_regression.py
 
-ci: lint typecheck test
+ci: lint typecheck test regression-baseline
 
 shell: shell-bobsim
 

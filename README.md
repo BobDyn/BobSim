@@ -74,6 +74,7 @@ This runs:
 - `make lint`
 - `make typecheck`
 - `make test`
+- `make regression-baseline`
 
 GitHub Actions runs the same make targets directly on the runner with the BobLib
 submodule checked out recursively.
