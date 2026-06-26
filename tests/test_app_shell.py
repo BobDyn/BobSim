@@ -104,6 +104,18 @@ def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
     assert len(front["curves"]["combined"]["fy_by_kappa"]) == 3
     assert len(front["curves"]["combined"]["fx_by_alpha"][0]["points"]) == 61
     assert len(front["curves"]["combined"]["fy_by_kappa"][0]["points"]) == 61
+    assert len(front["curves"]["pure"]["longitudinal_by_fz"]) >= 5
+    assert len(front["curves"]["pure"]["lateral_by_fz"]) >= 5
+    assert len(front["curves"]["pure"]["longitudinal_by_fz"][0]["points"]) == 61
+    assert len(front["curves"]["pure"]["lateral_by_fz"][0]["points"]) == 61
+    assert {"kappa", "fz_n", "fx_n"} <= set(front["curves"]["pure"]["longitudinal_by_fz"][0]["points"][0])
+    assert {"alpha_deg", "fz_n", "fy_n"} <= set(front["curves"]["pure"]["lateral_by_fz"][0]["points"][0])
+    assert len(front["curves"]["combined"]["fx_surface"]["rows"]) == 31
+    assert len(front["curves"]["combined"]["fy_surface"]["rows"]) == 31
+    assert len(front["curves"]["combined"]["fx_surface"]["rows"][0]["points"]) == 31
+    assert len(front["curves"]["combined"]["fy_surface"]["rows"][0]["points"]) == 31
+    assert {"alpha_deg", "kappa", "fx_n"} <= set(front["curves"]["combined"]["fx_surface"]["rows"][0]["points"][0])
+    assert {"alpha_deg", "kappa", "fy_n"} <= set(front["curves"]["combined"]["fy_surface"]["rows"][0]["points"][0])
     assert any(abs(point["fx_n"]) > 1 for point in front["curves"]["longitudinal"])
     assert any(abs(point["fy_n"]) > 1 for point in front["curves"]["lateral"])
 

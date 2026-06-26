@@ -1749,30 +1749,112 @@ def _mf52_fy_combined(tire: dict[str, Any], fz: float, alpha: float, kappa: floa
     return fy_pure * _magic_cos_reduction(c, b, e, kappa + shift, shift) + s_v
 
 
+def _tire_load_values(tire: dict[str, Any], fz_eval: float) -> list[float]:
+    fz_min = _num(tire, "FZMIN", fz_eval)
+    fz_max = _num(tire, "FZMAX", fz_eval)
+    if fz_min <= 0.0:
+        fz_min = min(fz_eval, _num(tire, "FNOMIN", fz_eval))
+    if fz_max <= fz_min:
+        fz_max = max(fz_eval, _num(tire, "FNOMIN", fz_eval), fz_min * 1.5)
+    low = min(fz_min, fz_eval)
+    high = max(fz_max, fz_eval)
+    values = [value for value in _linspace(low, high, 5) if value > 0.0]
+    values.append(fz_eval)
+    return sorted({round(float(value), 6) for value in values})
+
+
 def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any]:
     fz_eval = max(fz, _num(tire, "FZMIN", 1.0))
     kappa_values = _linspace(_num(tire, "KPUMIN", -0.15), _num(tire, "KPUMAX", 0.15), 61)
     alpha_values = _linspace(_num(tire, "ALPMIN", -0.2617994), _num(tire, "ALPMAX", 0.2617994), 61)
+    surface_kappa_values = _linspace(_num(tire, "KPUMIN", -0.15), _num(tire, "KPUMAX", 0.15), 31)
+    surface_alpha_values = _linspace(_num(tire, "ALPMIN", -0.2617994), _num(tire, "ALPMAX", 0.2617994), 31)
     alpha_levels = [math.radians(value) for value in (-8.0, 0.0, 8.0)]
     kappa_levels = [-0.1, 0.0, 0.1]
-    load_values = [
-        _num(tire, "FZMIN", fz_eval),
-        _num(tire, "FNOMIN", fz_eval),
-        _num(tire, "FZMAX", fz_eval),
+    load_values = _tire_load_values(tire, fz_eval)
+    fx = [
+        {
+            "kappa": value,
+            "fz_n": fz_eval,
+            "fx_n": _mf52_fx_pure(tire, fz_eval, value, gamma),
+        }
+        for value in kappa_values
     ]
-    fx = [{"kappa": value, "fx_n": _mf52_fx_pure(tire, fz_eval, value, gamma)} for value in kappa_values]
     fy = [
         {
             "alpha_rad": value,
             "alpha_deg": math.degrees(value),
+            "fz_n": fz_eval,
             "fy_n": -_mf52_fy_pure(tire, fz_eval, value, gamma),
         }
         for value in alpha_values
+    ]
+    fx_by_fz = [
+        {
+            "fz_n": load,
+            "points": [
+                {
+                    "kappa": kappa,
+                    "fz_n": load,
+                    "fx_n": _mf52_fx_pure(tire, load, kappa, gamma),
+                }
+                for kappa in kappa_values
+            ],
+        }
+        for load in load_values
+    ]
+    fy_by_fz = [
+        {
+            "fz_n": load,
+            "points": [
+                {
+                    "alpha_rad": alpha,
+                    "alpha_deg": math.degrees(alpha),
+                    "fz_n": load,
+                    "fy_n": -_mf52_fy_pure(tire, load, alpha, gamma),
+                }
+                for alpha in alpha_values
+            ],
+        }
+        for load in load_values
+    ]
+    fx_surface = [
+        {
+            "alpha_rad": alpha,
+            "alpha_deg": math.degrees(alpha),
+            "points": [
+                {
+                    "alpha_rad": alpha,
+                    "alpha_deg": math.degrees(alpha),
+                    "kappa": kappa,
+                    "fx_n": _mf52_fx_combined(tire, fz_eval, kappa, alpha, gamma),
+                }
+                for kappa in surface_kappa_values
+            ],
+        }
+        for alpha in surface_alpha_values
+    ]
+    fy_surface = [
+        {
+            "kappa": kappa,
+            "points": [
+                {
+                    "alpha_rad": alpha,
+                    "alpha_deg": math.degrees(alpha),
+                    "kappa": kappa,
+                    "fy_n": -_mf52_fy_combined(tire, fz_eval, alpha, kappa, gamma),
+                }
+                for alpha in surface_alpha_values
+            ],
+        }
+        for kappa in surface_kappa_values
     ]
     return {
         "pure": {
             "longitudinal": fx,
             "lateral": fy,
+            "longitudinal_by_fz": fx_by_fz,
+            "lateral_by_fz": fy_by_fz,
         },
         "longitudinal": fx,
         "lateral": fy,
@@ -1802,6 +1884,18 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
                 }
                 for kappa in kappa_levels
             ],
+            "fx_surface": {
+                "x_key": "kappa",
+                "y_key": "alpha_deg",
+                "z_key": "fx_n",
+                "rows": fx_surface,
+            },
+            "fy_surface": {
+                "x_key": "alpha_deg",
+                "y_key": "kappa",
+                "z_key": "fy_n",
+                "rows": fy_surface,
+            },
         },
         "load_sensitivity": [
             {

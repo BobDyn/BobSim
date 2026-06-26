@@ -33,6 +33,8 @@ const savedGeometryPlotSelections = (() => {
 })();
 const DEFAULT_VEHICLE_YAW = Math.PI - 0.72;
 const DEFAULT_VEHICLE_PITCH = 0.46;
+const DEFAULT_TIRE_SURFACE_YAW = -0.72;
+const DEFAULT_TIRE_SURFACE_PITCH = 0.68;
 const DEFAULT_SETUP_PANE_WIDTH = 320;
 const MIN_SETUP_PANE_WIDTH = 260;
 const MAX_SETUP_PANE_WIDTH = 620;
@@ -86,6 +88,15 @@ const state = {
   vehiclePreviewZoom: 1,
   vehiclePreviewPanX: 0,
   vehiclePreviewPanY: 0,
+  tireSurfaceYaw: DEFAULT_TIRE_SURFACE_YAW,
+  tireSurfacePitch: DEFAULT_TIRE_SURFACE_PITCH,
+  tireSurfaceZoom: 1,
+  tireSurfacePanX: 0,
+  tireSurfacePanY: 0,
+  tireSurfaceDrag: null,
+  tireSurfaceScene: null,
+  tireSurfaceHover: null,
+  activeTireTab: "setup",
   rotationSensitivity: Number.isFinite(savedRotationSensitivity) && savedRotationSensitivity > 0
     ? savedRotationSensitivity
     : 1,
@@ -144,6 +155,96 @@ const PARAMETER_AREAS = [
   { id: "tires", label: "Tires", visual: "tires", always: true },
   { id: "aero", label: "Aero", visual: "aero", always: true },
   { id: "powertrain", label: "Powertrain", visual: "powertrain", always: true },
+];
+
+const TIRE_TABS = [
+  { id: "setup", label: "Setup" },
+  { id: "load-maps", label: "Load Maps" },
+];
+
+const KNOWN_TIR_PARAMETERS = [
+  ["FNOMIN", "Nominal load", "N"],
+  ["FZMIN", "Minimum load", "N"],
+  ["FZMAX", "Maximum load", "N"],
+  ["IP_NOM", "Nominal pressure", "Pa"],
+  ["UNLOADED_RADIUS", "Unloaded radius", "m"],
+  ["WIDTH", "Section width", "m"],
+  ["LONGVL", "Reference speed", "m/s"],
+  ["LFZO", "Load scale", ""],
+  ["LCX", "Fx shape scale", ""],
+  ["LMUX", "Fx friction scale", ""],
+  ["LEX", "Fx curvature scale", ""],
+  ["LKX", "Fx stiffness scale", ""],
+  ["LHX", "Fx horizontal shift scale", ""],
+  ["LVX", "Fx vertical shift scale", ""],
+  ["LGAX", "Fx camber scale", ""],
+  ["PCX1", "Fx shape factor", ""],
+  ["PDX1", "Fx friction coefficient 1", ""],
+  ["PDX2", "Fx friction coefficient 2", ""],
+  ["PDX3", "Fx camber friction coefficient", ""],
+  ["PEX1", "Fx curvature coefficient 1", ""],
+  ["PEX2", "Fx curvature coefficient 2", ""],
+  ["PEX3", "Fx curvature coefficient 3", ""],
+  ["PEX4", "Fx curvature sign coefficient", ""],
+  ["PKX1", "Fx stiffness coefficient 1", ""],
+  ["PKX2", "Fx stiffness coefficient 2", ""],
+  ["PKX3", "Fx stiffness coefficient 3", ""],
+  ["PHX1", "Fx horizontal shift 1", ""],
+  ["PHX2", "Fx horizontal shift 2", ""],
+  ["PVX1", "Fx vertical shift 1", ""],
+  ["PVX2", "Fx vertical shift 2", ""],
+  ["LCY", "Fy shape scale", ""],
+  ["LMUY", "Fy friction scale", ""],
+  ["LEY", "Fy curvature scale", ""],
+  ["LKY", "Fy stiffness scale", ""],
+  ["LHY", "Fy horizontal shift scale", ""],
+  ["LVY", "Fy vertical shift scale", ""],
+  ["LGAY", "Fy camber scale", ""],
+  ["PCY1", "Fy shape factor", ""],
+  ["PDY1", "Fy friction coefficient 1", ""],
+  ["PDY2", "Fy friction coefficient 2", ""],
+  ["PDY3", "Fy camber friction coefficient", ""],
+  ["PEY1", "Fy curvature coefficient 1", ""],
+  ["PEY2", "Fy curvature coefficient 2", ""],
+  ["PEY3", "Fy curvature coefficient 3", ""],
+  ["PEY4", "Fy camber curvature coefficient", ""],
+  ["PKY1", "Fy stiffness coefficient 1", ""],
+  ["PKY2", "Fy stiffness coefficient 2", ""],
+  ["PKY3", "Fy camber stiffness coefficient", ""],
+  ["PHY1", "Fy horizontal shift 1", ""],
+  ["PHY2", "Fy horizontal shift 2", ""],
+  ["PHY3", "Fy camber horizontal shift", ""],
+  ["PVY1", "Fy vertical shift 1", ""],
+  ["PVY2", "Fy vertical shift 2", ""],
+  ["PVY3", "Fy camber vertical shift 1", ""],
+  ["PVY4", "Fy camber vertical shift 2", ""],
+  ["LXAL", "Fx combined-slip scale", ""],
+  ["RCX1", "Fx combined shape", ""],
+  ["RBX1", "Fx combined stiffness 1", ""],
+  ["RBX2", "Fx combined stiffness 2", ""],
+  ["REX1", "Fx combined curvature 1", ""],
+  ["REX2", "Fx combined curvature 2", ""],
+  ["RHX1", "Fx combined horizontal shift", ""],
+  ["LYKA", "Fy combined-slip scale", ""],
+  ["LVYKA", "Fy combined vertical scale", ""],
+  ["RCY1", "Fy combined shape", ""],
+  ["RBY1", "Fy combined stiffness 1", ""],
+  ["RBY2", "Fy combined stiffness 2", ""],
+  ["RBY3", "Fy combined stiffness offset", ""],
+  ["REY1", "Fy combined curvature 1", ""],
+  ["REY2", "Fy combined curvature 2", ""],
+  ["RHY1", "Fy combined horizontal shift 1", ""],
+  ["RHY2", "Fy combined horizontal shift 2", ""],
+  ["RVY1", "Fy combined vertical shift 1", ""],
+  ["RVY2", "Fy combined vertical shift 2", ""],
+  ["RVY3", "Fy combined camber vertical shift", ""],
+  ["RVY4", "Fy combined vertical alpha scale", ""],
+  ["RVY5", "Fy combined vertical kappa scale", ""],
+  ["RVY6", "Fy combined vertical kappa shape", ""],
+  ["KPUMIN", "Minimum kappa", ""],
+  ["KPUMAX", "Maximum kappa", ""],
+  ["ALPMIN", "Minimum alpha", "rad"],
+  ["ALPMAX", "Maximum alpha", "rad"],
 ];
 
 const STUDY_GROUPS = [
@@ -731,7 +832,10 @@ function renderVehicleEditor() {
   };
   form.onclick = handleArrayEditorClick;
   wireArchitectureTools();
+  wireTireTabs();
+  wireTireAssignments();
   wireTireTools();
+  wireTirParameterFields();
   wireFieldSubsections();
   applyArchitectureVisibility();
   syncArchitectureDependentControls();
@@ -1049,6 +1153,7 @@ function fieldMatchesCompliance(path, group, label) {
 }
 
 function parameterAreaFields(area) {
+  if (area.id === "tires") return tireSectionHtml(area);
   const extra = area.id === "tires"
     ? tireToolsHtml()
     : area.id === "vehicle"
@@ -1063,6 +1168,81 @@ function parameterAreaFields(area) {
     return `${extra}<div class="area-empty">${escapeHtml(emptyAreaCopy(area.id))}</div>`;
   }
   return `${extra}${fieldGroupSections(fields, area.id)}`;
+}
+
+function tireSectionHtml(area) {
+  if (!TIRE_TABS.some((tab) => tab.id === state.activeTireTab)) state.activeTireTab = "setup";
+  const tabs = `
+    <div class="tire-subtabs" role="tablist" aria-label="Tire setup views">
+      ${TIRE_TABS.map((tab) => `
+        <button class="tire-subtab ${state.activeTireTab === tab.id ? "active" : ""}" data-tire-tab="${escapeHtml(tab.id)}" type="button">
+          ${escapeHtml(tab.label)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+  if (state.activeTireTab === "load-maps") {
+    return `${tabs}${tireParameterToolsHtml()}${tirParameterPanelHtml()}`;
+  }
+  return `${tabs}${tireAssignmentHtml()}${tireSetupFieldsHtml(area.fields)}`;
+}
+
+function tireSetupFieldsHtml(fields) {
+  const setupFields = (fields || []).filter((field) => {
+    const path = fieldPathString(field);
+    return path !== "front.tire.template" && path !== "rear.tire.template";
+  });
+  if (!setupFields.length) return "";
+  return fieldGroupSections(setupFields, "tires");
+}
+
+function tireAssignmentHtml() {
+  const templates = state.tireTemplates?.templates || [];
+  const options = (selected) => templates.length
+    ? templates.map((template) => `
+      <option value="${escapeHtml(template.id)}"${template.id === selected ? " selected" : ""}>${escapeHtml(template.label)}</option>
+    `).join("")
+    : `<option value="">No tire templates</option>`;
+  const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
+  return `
+    <div class="tire-assignment-grid">
+      ${["front", "rear"].map((side) => {
+        const selected = data?.[side]?.tire?.template || "";
+        const evalSide = (state.tirePayload?.sides || []).find((item) => item.side === side);
+        return `
+          <section class="tire-assignment-card">
+            <h4>${escapeHtml(humanizeToken(side))}</h4>
+            <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([side, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
+            <select class="config-picker" data-tire-assignment="${escapeHtml(side)}">
+              ${options(selected)}
+            </select>
+            <dl>
+              <div><dt>Active</dt><dd>${escapeHtml(selected || "none")}</dd></div>
+              <div><dt>Fz</dt><dd>${formatNumber(evalSide?.fz_n)} N</dd></div>
+              <div><dt>Camber</dt><dd>${formatNumber(evalSide?.camber_deg)} deg</dd></div>
+            </dl>
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function tireParameterToolsHtml() {
+  return `
+    <div class="tir-tools compact-tir-tools" data-tir-tools>
+      <div class="tir-tools-head">
+        <select id="tir-template-picker" class="config-picker"></select>
+        <button id="save-tir-btn" class="ghost-button" type="button">Save .tir</button>
+      </div>
+      <div class="tir-apply-row">
+        <span id="tir-editor-meta"></span>
+        <button class="ghost-button" type="button" data-apply-tir="front">Use Front</button>
+        <button class="ghost-button" type="button" data-apply-tir="rear">Use Rear</button>
+        <button class="run-button" type="button" data-apply-tir="both">Use Both</button>
+      </div>
+    </div>
+  `;
 }
 
 function fieldGroupSections(fields, areaId = "") {
@@ -1278,6 +1458,59 @@ function tireToolsHtml() {
         <button class="run-button" type="button" data-apply-tir="both">Use Both</button>
       </div>
       <textarea id="tir-editor" class="tir-editor" spellcheck="false"></textarea>
+    </div>
+  `;
+}
+
+function parseTirParameterText(text) {
+  const params = new Map();
+  const lines = String(text || "").split(/\r?\n/);
+  lines.forEach((line, index) => {
+    const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*([^$!#;]+)/);
+    if (!match) return;
+    const key = match[1].toUpperCase();
+    const value = match[2].trim();
+    if (!params.has(key)) params.set(key, { key, value, lineIndex: index });
+  });
+  return { params, lines };
+}
+
+function tirParameterPanelHtml() {
+  const parsed = parseTirParameterText(state.activeTir?.text || "");
+  const knownKeys = new Set(KNOWN_TIR_PARAMETERS.map(([key]) => key));
+  const knownRows = KNOWN_TIR_PARAMETERS.map(([key, label, unit]) => {
+    const param = parsed.params.get(key);
+    const missing = !param;
+    return `
+      <label class="tir-param-row ${missing ? "missing" : ""}">
+        <span class="tir-param-key">${escapeHtml(key)}</span>
+        <span class="tir-param-label">${escapeHtml(label)}</span>
+        <input
+          class="tir-param-input"
+          data-tir-param="${escapeHtml(key)}"
+          value="${escapeHtml(param?.value || "")}"
+          placeholder="not in .tir"
+          ${missing ? "disabled" : ""}
+        >
+        <span class="tir-param-unit">${escapeHtml(unit || "")}</span>
+      </label>
+    `;
+  }).join("");
+  const unknownRows = [...parsed.params.values()]
+    .filter((param) => !knownKeys.has(param.key))
+    .sort((left, right) => left.key.localeCompare(right.key))
+    .map((param) => `
+      <div class="tir-param-row unknown">
+        <span class="tir-param-key">${escapeHtml(param.key)}</span>
+        <span class="tir-param-label">Unknown parameter</span>
+        <input class="tir-param-input" value="${escapeHtml(param.value)}" disabled>
+        <span class="tir-param-unit">!</span>
+      </div>
+    `).join("");
+  return `
+    <div class="tir-param-panel" data-tir-param-panel>
+      <div class="tir-param-grid">${knownRows}</div>
+      ${unknownRows ? `<div class="tir-param-unknown">${unknownRows}</div>` : ""}
     </div>
   `;
 }
@@ -2189,7 +2422,7 @@ async function loadTirTemplate(name) {
 
 async function saveActiveTirTemplate() {
   const name = document.getElementById("tir-template-picker")?.value || state.activeTir?.id || defaultTirTemplateName();
-  const text = document.getElementById("tir-editor")?.value || "";
+  const text = document.getElementById("tir-editor")?.value ?? state.activeTir?.text ?? "";
   state.activeTir = await api("/api/tires/template", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2233,7 +2466,7 @@ function renderTirEditorContent() {
   const picker = document.getElementById("tir-template-picker");
   const editor = document.getElementById("tir-editor");
   const meta = document.getElementById("tir-editor-meta");
-  if (!picker || !editor || !meta) return;
+  if (!picker || !meta) return;
   const templates = state.tireTemplates?.templates || [];
   picker.innerHTML = templates.map((template) => `
     <option value="${escapeHtml(template.id)}"${template.id === state.activeTir?.id ? " selected" : ""}>${escapeHtml(template.label)}</option>
@@ -2241,11 +2474,50 @@ function renderTirEditorContent() {
   if (state.activeTir && !templates.some((template) => template.id === state.activeTir.id)) {
     picker.innerHTML = `<option value="${escapeHtml(state.activeTir.id)}" selected>${escapeHtml(state.activeTir.label)}</option>${picker.innerHTML}`;
   }
-  editor.value = state.activeTir?.text || "";
+  if (editor) editor.value = state.activeTir?.text || "";
   const metadata = state.activeTir?.metadata || {};
   meta.textContent = state.activeTir
     ? `${state.activeTir.path} | FNOMIN ${formatNumber(metadata.fznom_n)} N | R0 ${formatNumber(metadata.unloaded_radius_m)} m`
     : "No .tir template loaded";
+}
+
+function wireTireTabs() {
+  document.querySelectorAll("[data-tire-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeTireTab = button.dataset.tireTab || "setup";
+      renderVehicleEditor();
+      drawVehicleFromForm();
+    });
+  });
+}
+
+function wireTireAssignments() {
+  document.querySelectorAll("[data-tire-assignment]").forEach((select) => {
+    select.addEventListener("change", () => {
+      applyTirTemplateToSide(select.dataset.tireAssignment, select.value);
+    });
+  });
+}
+
+function applyTirTemplateToSide(side, name) {
+  if (!["front", "rear"].includes(side) || !name) return;
+  pushUndoSnapshot(snapshotVehicleState("tire-template"));
+  let updated = false;
+  document.querySelectorAll("#config-form [data-config-path]").forEach((input) => {
+    const path = JSON.parse(input.dataset.configPath);
+    if (path.join(".") === `${side}.tire.template`) {
+      input.value = name;
+      updated = true;
+    }
+  });
+  if (!updated && state.vehiclePayload?.data) {
+    state.vehiclePayload.data[side] ||= {};
+    state.vehiclePayload.data[side].tire ||= {};
+    state.vehiclePayload.data[side].tire.template = name;
+  }
+  loadTirTemplate(name);
+  markVehicleDirty();
+  renderVehicleEditor();
 }
 
 function wireTireTools() {
@@ -2263,6 +2535,29 @@ function wireTireTools() {
   document.querySelectorAll("[data-apply-tir]").forEach((button) => {
     button.addEventListener("click", () => applyTirTemplate(button.dataset.applyTir));
   });
+}
+
+function wireTirParameterFields() {
+  document.querySelectorAll("[data-tir-param]").forEach((input) => {
+    input.addEventListener("input", () => {
+      updateActiveTirParameter(input.dataset.tirParam, input.value);
+    });
+  });
+}
+
+function updateActiveTirParameter(key, value) {
+  if (!state.activeTir || !key) return;
+  const parsed = parseTirParameterText(state.activeTir.text || "");
+  const param = parsed.params.get(String(key).toUpperCase());
+  if (!param) return;
+  const line = parsed.lines[param.lineIndex] || "";
+  parsed.lines[param.lineIndex] = line.replace(
+    /^(\s*[A-Za-z][A-Za-z0-9_]*\s*=\s*)([^$!#;]*)(.*)$/,
+    (_match, prefix, _oldValue, suffix) => `${prefix}${value}${suffix}`,
+  );
+  state.activeTir = { ...state.activeTir, text: parsed.lines.join("\n") };
+  const editor = document.getElementById("tir-editor");
+  if (editor) editor.value = state.activeTir.text;
 }
 
 function renderStandard() {
@@ -3679,6 +3974,10 @@ function isMassPreviewArea(area = activeParameterArea()) {
   return area.visual === "mass";
 }
 
+function isTirePreviewArea(area = activeParameterArea()) {
+  return area.visual === "tires";
+}
+
 function selectedMassPoint() {
   if (!state.massScene) return null;
   return state.massScene.uniquePoints.find((point) => point.id === state.massSelectedPointId) || null;
@@ -3970,7 +4269,105 @@ function finishPreviewDrag(pointerId) {
   return true;
 }
 
+function startTireSurfaceDrag(event) {
+  const canvas = document.getElementById("vehicle-canvas");
+  if (!canvas || event.button !== 0) return;
+  const hit = hitTestTireSurfacePanel(event);
+  if (!hit) return false;
+  canvas.setPointerCapture(event.pointerId);
+  state.tireSurfaceDrag = {
+    pointerId: event.pointerId,
+    mode: event.ctrlKey ? "pan" : "rotate",
+    x: event.clientX,
+    y: event.clientY,
+    yaw: state.tireSurfaceYaw,
+    pitch: state.tireSurfacePitch,
+    panX: state.tireSurfacePanX,
+    panY: state.tireSurfacePanY,
+  };
+  canvas.classList.add("tire-surface-dragging");
+  event.preventDefault();
+  return true;
+}
+
+function updateTireSurfaceDrag(event) {
+  const drag = state.tireSurfaceDrag;
+  if (!drag || drag.pointerId !== event.pointerId || !isTirePreviewArea()) return false;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  if (drag.mode === "pan") {
+    setTireSurfacePan(drag.panX + dx, drag.panY + dy);
+    drawVehicleFromForm();
+    return true;
+  }
+  const sensitivity = 0.01 * state.rotationSensitivity;
+  state.tireSurfaceYaw = drag.yaw - dx * sensitivity;
+  state.tireSurfacePitch = Math.max(-1.1, Math.min(1.1, drag.pitch - dy * sensitivity));
+  drawVehicleFromForm();
+  return true;
+}
+
+function finishTireSurfaceDrag(pointerId) {
+  const drag = state.tireSurfaceDrag;
+  if (!drag || drag.pointerId !== pointerId) return false;
+  state.tireSurfaceDrag = null;
+  document.getElementById("vehicle-canvas")?.classList.remove("tire-surface-dragging");
+  return true;
+}
+
+function resetTireSurfaceView() {
+  state.tireSurfaceYaw = DEFAULT_TIRE_SURFACE_YAW;
+  state.tireSurfacePitch = DEFAULT_TIRE_SURFACE_PITCH;
+  state.tireSurfaceZoom = 1;
+  state.tireSurfacePanX = 0;
+  state.tireSurfacePanY = 0;
+  drawVehicleFromForm();
+}
+
+function tireSurfacePanLimit() {
+  return {
+    x: 120,
+    y: 90,
+  };
+}
+
+function setTireSurfacePan(x, y) {
+  const limit = tireSurfacePanLimit();
+  state.tireSurfacePanX = clamp(Number(x) || 0, -limit.x, limit.x);
+  state.tireSurfacePanY = clamp(Number(y) || 0, -limit.y, limit.y);
+}
+
+function setTireSurfaceZoom(zoom) {
+  state.tireSurfaceZoom = clamp(Number(zoom) || 1, 0.62, 2.2);
+  setTireSurfacePan(state.tireSurfacePanX, state.tireSurfacePanY);
+}
+
+function hitTestTireSurfacePanel(event) {
+  const point = pointerCanvasPoint(event);
+  if (!point || !state.tireSurfaceScene?.panels?.length || state.activeTireTab !== "load-maps") return null;
+  return state.tireSurfaceScene.panels.find((panel) => pointInRect(point, panel.bounds, 0)) || null;
+}
+
+function updateTireSurfaceHover(event) {
+  const canvas = document.getElementById("vehicle-canvas");
+  if (!isTirePreviewArea() || state.activeTireTab !== "load-maps" || state.tireSurfaceDrag) {
+    state.tireSurfaceHover = null;
+    canvas?.classList.remove("tire-surface-hot");
+    return;
+  }
+  const hit = hitTestTireSurfacePanel(event);
+  state.tireSurfaceHover = hit;
+  canvas?.classList.toggle("tire-surface-hot", Boolean(hit));
+}
+
 function handlePreviewWheel(event) {
+  if (isTirePreviewArea() && state.activeTireTab === "load-maps" && hitTestTireSurfacePanel(event)) {
+    event.preventDefault();
+    const factor = Math.exp(-event.deltaY * 0.0012);
+    setTireSurfaceZoom(state.tireSurfaceZoom * factor);
+    drawVehicleFromForm();
+    return;
+  }
   if (!isSpatialPreviewArea()) return;
   event.preventDefault();
   const anchor = pointerCanvasPoint(event);
@@ -4473,6 +4870,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const usesSpatialView = isSpatialPreviewArea(area);
   const usesMassScroll = area.id === "mass";
   const usesGeometryPlots = area.id === "hardpoints";
+  const usesTireSurface = area.visual === "tires" && state.activeTireTab === "load-maps";
   if (controls) {
     controls.hidden = true;
     controls.style.display = "none";
@@ -4497,6 +4895,8 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
     canvas.classList.toggle("mass-scroll-canvas", usesMassScroll);
+    canvas.classList.toggle("tire-surface-canvas", usesTireSurface);
+    if (!usesTireSurface) canvas.classList.remove("tire-surface-hot", "tire-surface-dragging");
     if (usesMassScroll) {
       const stageHeight = Math.max(360, stage?.clientHeight || canvas.clientHeight || 360);
       const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
@@ -5701,6 +6101,7 @@ function drawPowertrainStats(ctx, width, height, entries, top) {
 
 function drawTirePreview(ctx, width, height, data) {
   const palette = canvasPalette();
+  state.tireSurfaceScene = null;
   drawPreviewGrid(ctx, width, height);
   drawCanvasText(ctx, "Tires", 28, 30, { size: 18, weight: 780 });
   drawCanvasText(ctx, state.tirePayload?.model || `${data.front?.tire?.template || "front tire"} / ${data.rear?.tire?.template || "rear tire"}`, 28, 52, {
@@ -5709,97 +6110,443 @@ function drawTirePreview(ctx, width, height, data) {
     color: palette.muted,
   });
 
-  const leftWidth = Math.min(390, Math.max(280, width * 0.36));
-  drawTireStancePanel(ctx, 28, 78, leftWidth, height - 106, data);
+  if (state.activeTireTab !== "load-maps") {
+    drawTireSetupPreview(ctx, width, height, data);
+    return;
+  }
 
-  const chartX = 42 + leftWidth;
+  const chartX = 28;
   const chartW = width - chartX - 28;
   const chartGap = 12;
   const chartH = (height - 78 - 28 - chartGap) / 2;
   const chartW2 = (chartW - chartGap) / 2;
   const sides = state.tirePayload?.sides || [];
-  drawSeriesPanel(
+  const surfacePanels = [];
+  surfacePanels.push(drawTireSurfacePanel(
     ctx,
     chartX,
     78,
     chartW2,
     chartH,
-    "Pure Fx",
-    sides.map((side) => ({
-      label: `${humanizeToken(side.side)} ${formatNumber(side.fz_n)} N`,
-      color: side.side === "front" ? palette.blue : palette.green,
-      points: side.curves?.pure?.longitudinal || side.curves?.longitudinal || [],
-      xKey: "kappa",
-      yKey: "fx_n",
-    })),
+    "Pure Fx Load Map",
+    pureLongitudinalLoadSurfaces(sides, palette),
     "kappa",
+    "Fz N",
     "Fx N",
-  );
-  drawSeriesPanel(
+  ));
+  surfacePanels.push(drawTireSurfacePanel(
     ctx,
     chartX + chartW2 + chartGap,
     78,
     chartW2,
     chartH,
-    "Pure Fy",
-    sides.map((side) => ({
-      label: `${humanizeToken(side.side)} ${formatNumber(side.camber_deg)} deg`,
-      color: side.side === "front" ? palette.blue : palette.green,
-      points: side.curves?.pure?.lateral || side.curves?.lateral || [],
-      xKey: "alpha_deg",
-      yKey: "fy_n",
-    })),
+    "Pure Fy Load Map",
+    pureLateralLoadSurfaces(sides, palette),
     "alpha deg",
+    "Fz N",
     "Fy N",
-  );
-  drawSeriesPanel(
+  ));
+  surfacePanels.push(drawTireSurfacePanel(
     ctx,
     chartX,
     78 + chartH + chartGap,
     chartW2,
     chartH,
-    "Combined Fx",
-    combinedFxSeries(sides, palette),
+    "Combined Fx Surface",
+    combinedFxSurfaces(sides, palette),
     "kappa",
+    "alpha deg",
     "Fx N",
-  );
-  drawSeriesPanel(
+  ));
+  surfacePanels.push(drawTireSurfacePanel(
     ctx,
     chartX + chartW2 + chartGap,
     78 + chartH + chartGap,
     chartW2,
     chartH,
-    "Combined Fy",
-    combinedFySeries(sides, palette),
+    "Combined Fy Surface",
+    combinedFySurfaces(sides, palette),
     "alpha deg",
+    "kappa",
     "Fy N",
-  );
+  ));
+  state.tireSurfaceScene = {
+    panels: surfacePanels.filter(Boolean),
+  };
 }
 
-function combinedFxSeries(sides, palette) {
-  const colors = [palette.blue, palette.green, palette.red, palette.amber, palette.magenta, palette.muted];
-  return sides.flatMap((side, sideIndex) => (
-    (side.curves?.combined?.fx_by_alpha || []).map((curve, curveIndex) => ({
-      label: `${humanizeToken(side.side)} a=${formatNumber(curve.alpha_deg)}`,
-      color: colors[(sideIndex * 3 + curveIndex) % colors.length],
-      points: curve.points || [],
-      xKey: "kappa",
-      yKey: "fx_n",
-    }))
-  ));
+function drawTireSetupPreview(ctx, width, height, data) {
+  drawTireStancePanel(ctx, 28, 78, width - 56, height - 106, data);
 }
 
-function combinedFySeries(sides, palette) {
-  const colors = [palette.blue, palette.green, palette.red, palette.amber, palette.magenta, palette.muted];
-  return sides.flatMap((side, sideIndex) => (
-    (side.curves?.combined?.fy_by_kappa || []).map((curve, curveIndex) => ({
-      label: `${humanizeToken(side.side)} k=${formatNumber(curve.kappa)}`,
-      color: colors[(sideIndex * 3 + curveIndex) % colors.length],
-      points: curve.points || [],
-      xKey: "alpha_deg",
-      yKey: "fy_n",
+function pureLongitudinalLoadSurfaces(sides, palette) {
+  return sides.map((side) => ({
+    label: `${humanizeToken(side.side)} Fx`,
+    color: side.side === "front" ? palette.blue : palette.green,
+    rows: surfaceRowsFromLoadCurves(
+      side.curves?.pure?.longitudinal_by_fz,
+      side.curves?.pure?.longitudinal || side.curves?.longitudinal,
+      "kappa",
+      "fz_n",
+      "fx_n",
+      side.fz_n,
+    ),
+    xKey: "kappa",
+    yKey: "fz_n",
+    zKey: "fx_n",
+  }));
+}
+
+function pureLateralLoadSurfaces(sides, palette) {
+  return sides.map((side) => ({
+    label: `${humanizeToken(side.side)} Fy`,
+    color: side.side === "front" ? palette.blue : palette.green,
+    rows: surfaceRowsFromLoadCurves(
+      side.curves?.pure?.lateral_by_fz,
+      side.curves?.pure?.lateral || side.curves?.lateral,
+      "alpha_deg",
+      "fz_n",
+      "fy_n",
+      side.fz_n,
+    ),
+    xKey: "alpha_deg",
+    yKey: "fz_n",
+    zKey: "fy_n",
+  }));
+}
+
+function combinedFxSurfaces(sides, palette) {
+  return sides.map((side) => ({
+    label: `${humanizeToken(side.side)} Fx`,
+    color: side.side === "front" ? palette.blue : palette.green,
+    rows: surfaceRowsFromCombinedSurface(
+      side.curves?.combined?.fx_surface,
+      side.curves?.combined?.fx_by_alpha,
+      "kappa",
+      "alpha_deg",
+      "fx_n",
+    ),
+    xKey: "kappa",
+    yKey: "alpha_deg",
+    zKey: "fx_n",
+  }));
+}
+
+function combinedFySurfaces(sides, palette) {
+  return sides.map((side) => ({
+    label: `${humanizeToken(side.side)} Fy`,
+    color: side.side === "front" ? palette.blue : palette.green,
+    rows: surfaceRowsFromCombinedSurface(
+      side.curves?.combined?.fy_surface,
+      side.curves?.combined?.fy_by_kappa,
+      "alpha_deg",
+      "kappa",
+      "fy_n",
+    ),
+    xKey: "alpha_deg",
+    yKey: "kappa",
+    zKey: "fy_n",
+  }));
+}
+
+function surfaceRowsFromLoadCurves(rows, fallbackPoints, xKey, yKey, zKey, fallbackLoad) {
+  if (Array.isArray(rows) && rows.length) return rows;
+  const points = Array.isArray(fallbackPoints) ? fallbackPoints : [];
+  const load = Number(fallbackLoad);
+  if (!points.length || !Number.isFinite(load)) return [];
+  return [{
+    [yKey]: load,
+    points: points.map((point) => ({ ...point, [yKey]: load, [zKey]: Number(point[zKey]) })),
+  }];
+}
+
+function surfaceRowsFromCombinedSurface(surface, fallbackRows, xKey, yKey, zKey) {
+  if (Array.isArray(surface?.rows) && surface.rows.length) return surface.rows;
+  if (!Array.isArray(fallbackRows)) return [];
+  return fallbackRows.map((row) => ({
+    ...row,
+    points: (row.points || []).map((point) => ({
+      ...point,
+      [yKey]: Number(point[yKey] ?? row[yKey]),
+      [xKey]: Number(point[xKey]),
+      [zKey]: Number(point[zKey]),
+    })),
+  }));
+}
+
+function drawTireSurfacePanel(ctx, x, y, width, height, title, surfaces, xLabel, yLabel, zLabel) {
+  const palette = canvasPalette();
+  const panel = { title, bounds: { x, y, width, height } };
+  drawPanel(ctx, x, y, width, height, palette.surface);
+  drawCanvasText(ctx, title, x + 12, y + 17, { size: 13, weight: 780 });
+  drawTireSurfaceDragIndicator(ctx, x + width - 24, y + 18);
+  const usableSurfaces = surfaces
+    .map((surface) => ({
+      ...surface,
+      rows: normalizeSurfaceRows(surface.rows, surface.xKey, surface.yKey, surface.zKey),
     }))
-  ));
+    .filter((surface) => surface.rows.length);
+  if (!usableSurfaces.length) {
+    drawCanvasText(ctx, "No tire surface data", x + width / 2, y + height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    return null;
+  }
+
+  const allPoints = usableSurfaces.flatMap((surface) => surface.rows.flatMap((row) => row.points));
+  const xDomain = plotDomain(allPoints.map((point) => point.x), { padFraction: 0.02 });
+  const yDomain = plotDomain(allPoints.map((point) => point.y), { padFraction: 0.02 });
+  const zDomain = plotDomain(allPoints.map((point) => point.z), { includeZero: true, padFraction: 0.08 });
+  const plot = {
+    x: x + 42,
+    y: y + 36,
+    width: Math.max(84, width - 62),
+    height: Math.max(72, height - 68),
+  };
+  const project = tireSurfaceProjector(plot, xDomain, yDomain, zDomain);
+
+  drawTireSurfaceAxes(ctx, project, xDomain, yDomain, zDomain, { x: xLabel, y: yLabel, z: zLabel });
+  usableSurfaces.forEach((surface, surfaceIndex) => {
+    drawTireSurfaceWireframe(ctx, surface, project, surfaceIndex);
+  });
+  usableSurfaces.slice(0, 2).forEach((surface, index) => {
+    const lx = x + width - 78 + index * 38;
+    const ly = y + 18;
+    ctx.strokeStyle = surface.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(lx + 16, ly);
+    ctx.stroke();
+    drawCanvasText(ctx, surface.label.split(" ")[0], lx + 20, ly, { size: 9, weight: 700, color: palette.muted });
+  });
+  drawCanvasText(ctx, `${formatNumber(zDomain[0])} to ${formatNumber(zDomain[1])}`, x + width - 12, y + height - 30, {
+    size: 10,
+    weight: 650,
+    align: "right",
+    color: palette.muted,
+  });
+  return panel;
+}
+
+function normalizeSurfaceRows(rows, xKey, yKey, zKey) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => ({
+      points: (row.points || [])
+        .map((point) => ({
+          x: Number(point[xKey]),
+          y: Number(point[yKey] ?? row[yKey]),
+          z: Number(point[zKey]),
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)),
+    }))
+    .filter((row) => row.points.length);
+}
+
+function tireSurfaceProjector(plot, xDomain, yDomain, zDomain) {
+  const center = {
+    x: plot.x + plot.width * 0.5 + clamp(state.tireSurfacePanX, -plot.width * 0.28, plot.width * 0.28),
+    y: plot.y + plot.height * 0.64 + clamp(state.tireSurfacePanY, -plot.height * 0.24, plot.height * 0.24),
+  };
+  const scale = Math.min(plot.width * 0.58, plot.height * 0.62) * state.tireSurfaceZoom;
+  const yawCos = Math.cos(state.tireSurfaceYaw);
+  const yawSin = Math.sin(state.tireSurfaceYaw);
+  const pitchCos = Math.cos(state.tireSurfacePitch);
+  const pitchSin = Math.sin(state.tireSurfacePitch);
+  const xSpan = Math.max(1e-9, xDomain[1] - xDomain[0]);
+  const ySpan = Math.max(1e-9, yDomain[1] - yDomain[0]);
+  const zSpan = Math.max(1e-9, zDomain[1] - zDomain[0]);
+  return (point) => {
+    const nx = (point.x - xDomain[0]) / xSpan;
+    const ny = (point.y - yDomain[0]) / ySpan;
+    const nz = (point.z - zDomain[0]) / zSpan;
+    const localX = (nx - 0.5) * 1.18;
+    const localY = (ny - 0.5) * 0.96;
+    const localZ = nz * 0.9;
+    const yawX = localX * yawCos - localY * yawSin;
+    const yawY = localX * yawSin + localY * yawCos;
+    const pitchY = yawY * pitchCos - localZ * pitchSin;
+    return {
+      x: center.x + yawX * scale,
+      y: center.y + pitchY * scale,
+    };
+  };
+}
+
+function drawTireSurfaceAxes(ctx, project, xDomain, yDomain, zDomain, labels) {
+  const palette = canvasPalette();
+  const origin = {
+    x: surfaceOriginValue(xDomain),
+    y: surfaceOriginValue(yDomain),
+    z: surfaceOriginValue(zDomain),
+  };
+  const planeCorners = [
+    project({ x: xDomain[0], y: yDomain[0], z: origin.z }),
+    project({ x: xDomain[1], y: yDomain[0], z: origin.z }),
+    project({ x: xDomain[1], y: yDomain[1], z: origin.z }),
+    project({ x: xDomain[0], y: yDomain[1], z: origin.z }),
+  ];
+  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.24 : 0.36);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  planeCorners.forEach((corner, index) => {
+    if (index === 0) ctx.moveTo(corner.x, corner.y);
+    else ctx.lineTo(corner.x, corner.y);
+  });
+  ctx.closePath();
+  ctx.stroke();
+  for (let index = 1; index < 4; index += 1) {
+    const t = index / 4;
+    const xGrid = xDomain[0] + (xDomain[1] - xDomain[0]) * t;
+    const yGrid = yDomain[0] + (yDomain[1] - yDomain[0]) * t;
+    const xa = project({ x: xGrid, y: yDomain[0], z: origin.z });
+    const xb = project({ x: xGrid, y: yDomain[1], z: origin.z });
+    const ya = project({ x: xDomain[0], y: yGrid, z: origin.z });
+    const yb = project({ x: xDomain[1], y: yGrid, z: origin.z });
+    ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.24 : 0.42);
+    ctx.beginPath();
+    ctx.moveTo(xa.x, xa.y);
+    ctx.lineTo(xb.x, xb.y);
+    ctx.moveTo(ya.x, ya.y);
+    ctx.lineTo(yb.x, yb.y);
+    ctx.stroke();
+  }
+  const x0 = project({ x: xDomain[0], y: origin.y, z: origin.z });
+  const x1 = project({ x: xDomain[1], y: origin.y, z: origin.z });
+  const y0 = project({ x: origin.x, y: yDomain[0], z: origin.z });
+  const y1 = project({ x: origin.x, y: yDomain[1], z: origin.z });
+  const z0 = project({ x: origin.x, y: origin.y, z: zDomain[0] });
+  const z1 = project({ x: origin.x, y: origin.y, z: zDomain[1] });
+  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.72 : 0.78);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x0.x, x0.y);
+  ctx.lineTo(x1.x, x1.y);
+  ctx.moveTo(y0.x, y0.y);
+  ctx.lineTo(y1.x, y1.y);
+  ctx.moveTo(z0.x, z0.y);
+  ctx.lineTo(z1.x, z1.y);
+  ctx.stroke();
+
+  drawSurfaceAxisLabel(ctx, labels.x, x1, axisLabelOffset(x0, x1, 13));
+  drawSurfaceAxisLabel(ctx, labels.y, y1, axisLabelOffset(y0, y1, -13));
+  drawSurfaceAxisLabel(ctx, labels.z, z1, { dx: 0, dy: -12 }, "center");
+}
+
+function surfaceOriginValue(domain) {
+  if (domain[0] <= 0 && domain[1] >= 0) return 0;
+  return Math.abs(domain[0]) < Math.abs(domain[1]) ? domain[0] : domain[1];
+}
+
+function axisLabelOffset(start, end, distance) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.max(1e-9, Math.hypot(dx, dy));
+  return {
+    dx: (-dy / length) * distance,
+    dy: (dx / length) * distance,
+  };
+}
+
+function drawSurfaceAxisLabel(ctx, label, point, { dx = 0, dy = 0 } = {}, align = "left") {
+  const palette = canvasPalette();
+  const text = String(label || "");
+  if (!text) return;
+  ctx.save();
+  ctx.font = "760 9px Inter, sans-serif";
+  const textWidth = ctx.measureText(text).width;
+  const padX = 5;
+  const boxW = textWidth + padX * 2;
+  const boxH = 16;
+  const x = align === "center"
+    ? point.x + dx - boxW / 2
+    : align === "right"
+      ? point.x + dx - boxW
+      : point.x + dx;
+  const y = point.y + dy - boxH / 2;
+  ctx.fillStyle = colorWithAlpha(palette.surface, state.dark ? 0.88 : 0.92);
+  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.62 : 0.72);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, 4);
+  else ctx.rect(x, y, boxW, boxH);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  drawCanvasText(ctx, text, x + padX, y + boxH / 2, {
+    size: 9,
+    weight: 760,
+    color: palette.muted,
+  });
+}
+
+function drawTireSurfaceDragIndicator(ctx, x, y) {
+  const palette = canvasPalette();
+  ctx.save();
+  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.72 : 0.82);
+  ctx.fillStyle = colorWithAlpha(palette.muted, state.dark ? 0.72 : 0.82);
+  ctx.lineWidth = 1.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(x, y, 8, -0.25 * Math.PI, 1.25 * Math.PI);
+  ctx.stroke();
+  const arrow = projectArrowHead(x - 5.7, y + 5.7, -0.2);
+  ctx.beginPath();
+  ctx.moveTo(arrow.tip.x, arrow.tip.y);
+  ctx.lineTo(arrow.left.x, arrow.left.y);
+  ctx.moveTo(arrow.tip.x, arrow.tip.y);
+  ctx.lineTo(arrow.right.x, arrow.right.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, 2.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function projectArrowHead(x, y, angle) {
+  const size = 4;
+  return {
+    tip: { x, y },
+    left: { x: x + Math.cos(angle + 2.4) * size, y: y + Math.sin(angle + 2.4) * size },
+    right: { x: x + Math.cos(angle - 2.4) * size, y: y + Math.sin(angle - 2.4) * size },
+  };
+}
+
+function drawTireSurfaceWireframe(ctx, surface, project, surfaceIndex) {
+  const color = surface.color || canvasPalette().blue;
+  const rows = surface.rows;
+  const rowStep = Math.max(1, Math.floor(rows.length / 9));
+  const columnCount = Math.max(...rows.map((row) => row.points.length));
+  const columnStep = Math.max(1, Math.floor(columnCount / 9));
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = surfaceIndex === 0 ? 1.7 : 1.35;
+  ctx.strokeStyle = colorWithAlpha(color, surfaceIndex === 0 ? 0.82 : 0.62);
+  rows.forEach((row, index) => {
+    if (index % rowStep !== 0 && index !== rows.length - 1) return;
+    drawProjectedPolyline(ctx, row.points.map(project));
+  });
+  for (let column = 0; column < columnCount; column += columnStep) {
+    const projected = rows
+      .map((row) => row.points[column])
+      .filter(Boolean)
+      .map(project);
+    drawProjectedPolyline(ctx, projected);
+  }
+  ctx.restore();
+}
+
+function drawProjectedPolyline(ctx, points) {
+  if (points.length < 2) return;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y);
+    else ctx.lineTo(point.x, point.y);
+  });
+  ctx.stroke();
 }
 
 function drawTireStancePanel(ctx, x, y, width, height, data) {
@@ -5814,10 +6561,12 @@ function drawTireStancePanel(ctx, x, y, width, height, data) {
   });
   const front = data.front || {};
   const rear = data.rear || {};
-  const track = Math.min(width * 0.52, 230);
-  const wheelbase = Math.min(height * 0.46, 260);
+  const figureW = Math.max(180, width - 80);
+  const figureH = Math.max(160, height - 112);
+  const track = Math.min(figureH * 0.68, figureW * 0.42);
+  const wheelbase = Math.min(figureW * 0.78, figureH * 1.55);
   const cx = x + width / 2;
-  const cy = y + height / 2 + 10;
+  const cy = y + 58 + figureH / 2;
   const axles = [
     { name: "Front", axle: front, x: cx + wheelbase / 2 },
     { name: "Rear", axle: rear, x: cx - wheelbase / 2 },
@@ -5829,7 +6578,7 @@ function drawTireStancePanel(ctx, x, y, width, height, data) {
   ctx.lineTo(cx + wheelbase / 2, cy);
   ctx.stroke();
   axles.forEach(({ name, axle, x }) => {
-    const radius = Math.max(22, Math.min(54, Number(axle.wheel?.radius_m || 0.2) * 190));
+    const radius = Math.max(28, Math.min(82, Math.min(figureW, figureH) * 0.075, Number(axle.wheel?.radius_m || 0.2) * 260));
     const toe = Number(axle.wheel?.toe_deg || 0) * Math.PI / 180;
     const camber = Number(axle.wheel?.camber_deg || 0);
     [-1, 1].forEach((side) => {
@@ -7656,6 +8405,10 @@ function wireVehicleCanvas() {
       }
       return;
     }
+    if (isTirePreviewArea()) {
+      if (startTireSurfaceDrag(event)) return;
+      return;
+    }
     if (handleSuspensionPlotClick(event)) return;
     if (!isSpatialPreviewArea()) return;
     if (event.ctrlKey) {
@@ -7684,32 +8437,44 @@ function wireVehicleCanvas() {
       updateGeometryDrag(event);
       return;
     }
+    if (updateTireSurfaceDrag(event)) return;
     if (updatePreviewDrag(event)) return;
   });
   canvas.addEventListener("pointerup", (event) => {
     if (finishGeometryDrag(event.pointerId)) return;
+    if (finishTireSurfaceDrag(event.pointerId)) return;
     if (finishPreviewDrag(event.pointerId)) return;
   });
   canvas.addEventListener("pointercancel", (event) => {
     if (finishGeometryDrag(event.pointerId)) return;
+    if (finishTireSurfaceDrag(event.pointerId)) return;
     if (finishPreviewDrag(event.pointerId)) return;
   });
   canvas.addEventListener("wheel", handlePreviewWheel, { passive: false });
   canvas.addEventListener("pointermove", updateGeometryHover);
   canvas.addEventListener("pointermove", updateSuspensionPlotHover);
+  canvas.addEventListener("pointermove", updateTireSurfaceHover);
   canvas.addEventListener("pointerleave", () => {
     state.geometryHoverPointId = null;
     state.architectureHoverId = null;
     state.massHoverPointId = null;
     state.suspensionPlotHover = null;
+    state.tireSurfaceDrag = null;
+    state.tireSurfaceHover = null;
     canvas.classList.remove("geometry-hot");
     canvas.classList.remove("architecture-hot");
     canvas.classList.remove("mass-hot");
     canvas.classList.remove("kinematic-hot");
+    canvas.classList.remove("tire-surface-hot");
     canvas.classList.remove("preview-panning");
+    canvas.classList.remove("tire-surface-dragging");
     drawVehicleFromForm();
   });
   canvas.addEventListener("dblclick", () => {
+    if (isTirePreviewArea()) {
+      resetTireSurfaceView();
+      return;
+    }
     if (isSpatialPreviewArea()) resetVehicleView();
   });
 }

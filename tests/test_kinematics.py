@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import yaml
 
+from _3_StandardSim.FourPostEval import four_post_eval_sim as four_post_eval
 from _5_App.kinematics import KINEMATIC_CURVE_META, CornerKinematics, kinematic_curves_payload
 
 
@@ -73,6 +74,162 @@ def _simulation_toolkit_unit_test_vehicle() -> dict[str, object]:
             "steering": {"rack_pickup_m": [-1.428059, 0.282999, 0.177800]},
         },
     }
+
+
+def _four_post_unit_vehicle() -> dict[str, object]:
+    vehicle = _simulation_toolkit_unit_test_vehicle()
+    vehicle.update(
+        {
+            "sprung_mass": {"mass_kg": 300.0, "cg_m": [-0.75, 0.0, 0.35]},
+            "driver_mass": {"mass_kg": 0.0, "cg_m": [0.0, 0.0, 0.0]},
+        }
+    )
+    for side in (vehicle["front"], vehicle["rear"]):
+        assert isinstance(side, dict)
+        side["actuation"] = {
+            "shock": {
+                "spring_table": {
+                    "table": [
+                        [-0.05, -1000.0],
+                        [0.0, 0.0],
+                        [0.05, 1000.0],
+                    ]
+                },
+                "free_length_m": 0.25,
+            },
+            "stabar": {"rate_n_m_per_rad": 0.0},
+        }
+    return vehicle
+
+
+def _four_post_unit_config(tmp_path: Path) -> dict[str, object]:
+    return {
+        "model_overrides": {
+            "suspension": {
+                "front": {"spring_rate_n_per_m": 20000.0, "stabar_rate_n_m_per_rad": 0.0},
+                "rear": {"spring_rate_n_per_m": 20000.0, "stabar_rate_n_m_per_rad": 0.0},
+            },
+        },
+        "report": {"metrics_csv_path": str(tmp_path / "missing_metrics.csv")},
+    }
+
+
+def _pose_sample_times(start_s: float, count: int) -> list[float]:
+    return [
+        start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 4.0
+        for index in range(count)
+    ]
+
+
+def _jack_times(start_s: float, count: int) -> list[float]:
+    return [
+        start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 1.5
+        for index in range(count)
+    ]
+
+
+def _four_post_result_from_kinematics(
+    vehicle: dict[str, object],
+    heave_sweep_m: np.ndarray,
+    roll_sweep_deg: np.ndarray,
+) -> dict[str, np.ndarray]:
+    heave_times = _pose_sample_times(
+        four_post_eval.FOUR_POST_HEAVE_START_S,
+        four_post_eval.FOUR_POST_HEAVE_POSE_COUNT,
+    )
+    roll_times = _pose_sample_times(
+        four_post_eval.FOUR_POST_ROLL_START_S,
+        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
+    )
+    heave_jack_times = _jack_times(
+        four_post_eval.FOUR_POST_HEAVE_START_S,
+        four_post_eval.FOUR_POST_HEAVE_POSE_COUNT,
+    )
+    roll_jack_times = _jack_times(
+        four_post_eval.FOUR_POST_ROLL_START_S,
+        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
+    )
+    times = sorted(heave_times + roll_times + heave_jack_times + roll_jack_times)
+    index_by_time = {time: index for index, time in enumerate(times)}
+    result: dict[str, np.ndarray] = {"time": np.asarray(times, dtype=float)}
+
+    for prefix in ("frKnC", "rrKnC"):
+        for name in ("heave", "roll", "fx", "fy", "jackingForce", "stabarAngle"):
+            result[f"{prefix}.{name}"] = np.zeros(len(times), dtype=float)
+        for side in ("left", "right"):
+            for name in ("SpringLength", "Fz", "Gamma", "Toe", "Caster", "Kpi", "MechTrail", "MechScrub"):
+                result[f"{prefix}.{side}{name}"] = np.zeros(len(times), dtype=float)
+
+    heave_by_pose = np.asarray(heave_sweep_m[::-1], dtype=float)
+    roll_by_pose_rad = np.radians(np.asarray(roll_sweep_deg[::-1], dtype=float))
+    solvers = {
+        "front": CornerKinematics.from_vehicle(vehicle, "front"),
+        "rear": CornerKinematics.from_vehicle(vehicle, "rear"),
+    }
+    prefixes = {"front": "frKnC", "rear": "rrKnC"}
+    guesses = {axle: np.zeros(3) for axle in solvers}
+    roll_guesses = {axle: np.zeros(3) for axle in solvers}
+
+    def write_axis(prefix: str, time: float, *, heave: float = 0.0, roll: float = 0.0) -> None:
+        index = index_by_time[time]
+        result[f"{prefix}.heave"][index] = -heave
+        result[f"{prefix}.roll"][index] = roll
+
+    def write_corner(
+        prefix: str,
+        time: float,
+        values: dict[str, float | None],
+        *,
+        jounce_m: float,
+        load_delta_n: float = 0.0,
+    ) -> None:
+        index = index_by_time[time]
+        raw_values = {
+            "Gamma": -np.radians(float(values["camber_deg"])),
+            "Toe": np.radians(float(values["toe_deg"])),
+            "Caster": np.radians(float(values["caster_deg"])),
+            "Kpi": np.radians(float(values["kpi_deg"])),
+            "MechTrail": float(values["mech_trail_mm"]) / 1000.0,
+            "MechScrub": float(values["scrub_mm"]) / 1000.0,
+        }
+        for side_name, load_sign in (("left", 1.0), ("right", -1.0)):
+            result[f"{prefix}.{side_name}SpringLength"][index] = 0.25 - 0.5 * jounce_m
+            result[f"{prefix}.{side_name}Fz"][index] = 1000.0 + load_sign * load_delta_n
+            for signal, value in raw_values.items():
+                result[f"{prefix}.{side_name}{signal}"][index] = value
+
+    for time, jounce in zip(heave_times, heave_by_pose, strict=True):
+        for axle, solver in solvers.items():
+            prefix = prefixes[axle]
+            solution, point_set, residual_norm = solver.solve_jounce(jounce, guesses[axle])
+            guesses[axle] = solution
+            values = solver.curve_values(point_set, solution, residual_norm)
+            write_axis(prefix, time, heave=jounce)
+            write_corner(prefix, time, values, jounce_m=jounce)
+
+    for time, roll_rad in zip(roll_times, roll_by_pose_rad, strict=True):
+        roll_deg = float(np.degrees(roll_rad))
+        for axle, solver in solvers.items():
+            prefix = prefixes[axle]
+            right_jounce = solver.roll_jounce_m(roll_deg)
+            solution, point_set, residual_norm = solver.solve_jounce(right_jounce, roll_guesses[axle])
+            roll_guesses[axle] = solution
+            values = solver.curve_values(point_set, solution, residual_norm)
+            write_axis(prefix, time, roll=roll_rad)
+            write_corner(prefix, time, values, jounce_m=right_jounce, load_delta_n=100.0 * roll_rad)
+            result[f"{prefix}.stabarAngle"][index_by_time[time]] = 0.25 * roll_rad
+
+    for time, jounce in zip(heave_jack_times, heave_by_pose, strict=True):
+        for prefix in prefixes.values():
+            write_axis(prefix, time, heave=jounce)
+            result[f"{prefix}.fx"][index_by_time[time]] = 1000.0
+
+    for time, roll_rad in zip(roll_jack_times, roll_by_pose_rad, strict=True):
+        for prefix in prefixes.values():
+            write_axis(prefix, time, roll=roll_rad)
+            result[f"{prefix}.fy"][index_by_time[time]] = 1000.0
+
+    return result
 
 
 @pytest.mark.parametrize(
@@ -299,6 +456,92 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
         "roll_rc_z_mm",
     ):
         assert any(value is not None for value in front_curves[key])
+
+
+def test_four_post_kinematic_curves_match_unit_validated_frontend_calcs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+
+    heave_sweep = np.linspace(
+        -0.03,
+        0.03,
+        four_post_eval.FOUR_POST_HEAVE_POSE_COUNT,
+    )
+    roll_sweep_deg = np.linspace(
+        -1.25,
+        1.25,
+        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
+    )
+    summary, series = four_post_eval.FourPostEvalSim(
+        _four_post_unit_config(tmp_path)
+    ).summarize(
+        _four_post_result_from_kinematics(vehicle, heave_sweep, roll_sweep_deg)
+    )
+
+    payload = kinematic_curves_payload(vehicle, sweep_m=heave_sweep.tolist())
+    assert payload["available"] is True
+    assert payload["warnings"] == []
+    np.testing.assert_allclose(series["heave"], heave_sweep)
+    np.testing.assert_allclose(series["roll"], np.radians(roll_sweep_deg))
+
+    expected_sweeps = {
+        axle: CornerKinematics.from_vehicle(vehicle, axle).solve_sweep(
+            tuple(float(value) for value in heave_sweep),
+            tuple(float(value) for value in roll_sweep_deg),
+        )
+        for axle in ("front", "rear")
+    }
+    curve_specs = (
+        ("camber", "deg", -1.0),
+        ("toe", "deg", 1.0),
+        ("caster", "deg", 1.0),
+        ("kpi", "deg", 1.0),
+        ("mech_trail", "mm", 1.0),
+        ("scrub", "mm", 1.0),
+    )
+
+    for axle, corner_prefix in (("front", "fr_l"), ("rear", "rr_l")):
+        payload_curves = payload["axles"][axle]["curves"]
+        expected_curves = expected_sweeps[axle]["curves"]
+        for curve_name, unit, sign in curve_specs:
+            heave_key = f"bump_{curve_name}_{unit}"
+            roll_key = f"roll_{curve_name}_{unit}"
+            four_post_name = {
+                "mech_trail": "trail",
+                "scrub": "scrub",
+            }.get(curve_name, curve_name)
+            if unit == "deg":
+                expected_heave = sign * np.radians(np.asarray(payload_curves[heave_key], dtype=float))
+                expected_roll = sign * np.radians(np.asarray(expected_curves[roll_key], dtype=float))
+            else:
+                expected_heave = sign * np.asarray(payload_curves[heave_key], dtype=float) / 1000.0
+                expected_roll = sign * np.asarray(expected_curves[roll_key], dtype=float) / 1000.0
+
+            np.testing.assert_allclose(
+                series[f"{corner_prefix}_{four_post_name}_vs_heave"],
+                expected_heave,
+                atol=1e-8,
+            )
+            np.testing.assert_allclose(
+                series[f"{corner_prefix}_{four_post_name}_vs_roll"],
+                expected_roll,
+                atol=1e-8,
+            )
+
+    front_curves = payload["axles"]["front"]["curves"]
+    expected_gains = {
+        "camber_gain_heave_rad_per_m": -_curve_gain_rad_per_m(heave_sweep, front_curves["bump_camber_deg"]),
+        "toe_gain_heave_rad_per_m": _curve_gain_rad_per_m(heave_sweep, front_curves["bump_toe_deg"]),
+        "caster_gain_heave_rad_per_m": _curve_gain_rad_per_m(heave_sweep, front_curves["bump_caster_deg"]),
+        "kpi_gain_heave_rad_per_m": _curve_gain_rad_per_m(heave_sweep, front_curves["bump_kpi_deg"]),
+        "trail_gain_heave_m_per_m": _curve_gain_m_per_m(heave_sweep, front_curves["bump_mech_trail_mm"]),
+        "scrub_gain_heave_m_per_m": _curve_gain_m_per_m(heave_sweep, front_curves["bump_scrub_mm"]),
+    }
+    for metric, expected in expected_gains.items():
+        assert summary[metric] == pytest.approx(expected, abs=1e-8), metric
 
 
 def test_kinematic_heave_gains_match_four_post_eval_metrics() -> None:
