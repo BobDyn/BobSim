@@ -3,7 +3,7 @@ clear();
 
 root := OpenModelica.Scripting.cd();
 boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
-buildDir := root + "/_3_StandardSim/BuildBobLib/VehicleSim";
+buildDir := root + "/_3_StandardSim/Build/VehicleSim";
 
 // Generate C simulation code
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
@@ -17,13 +17,8 @@ OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStat
 // Set matching algorithm
 OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
 
-// Match the VehicleSim class annotation used by BobLib translation tests.
-OpenModelica.Scripting.setCommandLineOptions("-d=initialization,NLSanalyticJacobian");
-OpenModelica.Scripting.setCommandLineOptions("--generateDynamicJacobian=none");
-
 // Load vendored dependencies explicitly.
-loadModel(Modelica, {"4.1.0"});
-loadModel(VehicleInterfaces, {"2.0.2"});
+loadModel(Modelica);
 
 // Load BobLib.
 loadFile(boblibDir + "/package.mo");
@@ -35,7 +30,7 @@ cd(buildDir);
 
 // Build executable directly.
 res := buildModel(
-  BobLib.Experiments.Standards.VehicleSim,
+  BobLib.Standards.VehicleSim,
   startTime = 0,
   stopTime = 10,
   tolerance = 1e-6,

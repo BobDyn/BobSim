@@ -50,29 +50,10 @@ def _find_standard_source(boblib_root: Path, model_name: str) -> Path:
     return matches[0]
 
 
-def _record_binding_present(boblib_root: Path, source_path: Path, record_name: str) -> bool:
+def _record_import_present(source_path: Path, record_name: str) -> bool:
     text = source_path.read_text(encoding="utf-8")
-    record_stem = record_name.removesuffix("Record")
-
-    patterns = (
-        rf"BobLib\.Records\.VehicleDefn\.{re.escape(record_name)}\b",
-        rf"\b{re.escape(record_stem)}\b",
-    )
-    if any(re.search(pattern, text) for pattern in patterns):
-        return True
-
-    # The public standard entrypoint can extend an architecture template that
-    # owns the concrete VehicleRecord redeclare. Search the package sources so
-    # this check still protects against mismatched active architectures without
-    # assuming the binding lives in the front-facing wrapper.
-    for mo_path in boblib_root.rglob("*.mo"):
-        if mo_path == source_path:
-            continue
-        source = mo_path.read_text(encoding="utf-8")
-        if f"BobLib.Records.VehicleDefn.{record_name}" in source:
-            return True
-
-    return False
+    pattern = rf"import\s+BobLib\.Resources\.VehicleDefn\.{re.escape(record_name)}\s*;"
+    return re.search(pattern, text) is not None
 
 
 def build_doe_config(
@@ -97,7 +78,7 @@ def build_doe_config(
         raise TypeError("vehicle_template YAML must contain a paths mapping")
 
     boblib_root = _resolve_path(REPO_ROOT, paths_cfg["boblib"])
-    record_path = boblib_root / "Records" / "VehicleDefn" / f"{record_name}.mo"
+    record_path = boblib_root / "Resources" / "VehicleDefn" / f"{record_name}.mo"
     if not record_path.exists():
         raise FileNotFoundError(
             f"Vehicle definition record not found for {vehicle_name!r}: {record_path}"
@@ -210,7 +191,7 @@ def refresh_doe_config(
     for standard_name, standard_cfg in standards.items():
         model_name = standard_cfg["model"]
         source_path = _find_standard_source(boblib_root, model_name)
-        if not _record_binding_present(boblib_root, source_path, record_name):
+        if not _record_import_present(source_path, record_name):
             raise ValueError(
                 "Selected vehicle architecture does not match the standard model.\n"
                 f"  architecture record: {record_name}\n"

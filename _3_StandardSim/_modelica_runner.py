@@ -14,34 +14,6 @@ import numpy as np
 import pandas as pd
 
 
-MODELICA_OVERRIDE_ALIASES = {
-    # BobLib's VCU target velocity is a calculated parameter derived from the
-    # top-level VehicleSim initialVel. Override the source parameter so chassis,
-    # driveline, and VCU speed target all move together.
-    "targetVel": "initialVel",
-    "targetAy": "vcu.targetAy",
-    "useMode": "vcu.useMode",
-    "steerStart": "vcu.steerStart",
-    "linearitySlopeSamplePeriod": "vcu.linearitySlopeSamplePeriod",
-    "handwheelRampRate": "vcu.handwheelRampRate",
-    "handwheelRampStopDuration": "vcu.handwheelRampStopDuration",
-    "enableNormalLoadSteerLimiter": "vcu.enableNormalLoadSteerLimiter",
-    "tireNormalLoadMin": "vcu.tireNormalLoadMin",
-    "steadyStateAyRampRate": "vcu.steadyStateAyRampRate",
-    "steadyStateMaxHandwheel": "vcu.steadyStateMaxHandwheel",
-    "steadyStateAyGain": "vcu.steadyStateAyGain",
-    "steadyStateAyTi": "vcu.steadyStateAyTi",
-    "steadyStateSteerTimeConstant": "vcu.steadyStateSteerTimeConstant",
-    "frRampSteerHeight": "vcu.frRampSteerHeight",
-    "frRampSteerDuration": "vcu.frRampSteerDuration",
-    "stepDuration": "vcu.stepDuration",
-    "steerAmp": "vcu.steerAmp",
-    "steerFreq": "vcu.steerFreq",
-    "velGain": "vcu.velGain",
-    "velTi": "vcu.velTi",
-}
-
-
 def _first_not_none(*values: Any) -> Any:
     for value in values:
         if value is not None:
@@ -70,11 +42,8 @@ class ModelicaRunner:
         sim_cfg = config.get("simulation", {})
 
         return cls(
-            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/BuildBobLib/VehicleSim"),
-            exec_name=sim_cfg.get(
-                "exec_name",
-                "BobLib.Experiments.Standards.VehicleSim",
-            ),
+            build_dir=sim_cfg.get("build_dir", "_3_StandardSim/Build/VehicleSim"),
+            exec_name=sim_cfg.get("exec_name", "BobLib.Standards.VehicleSim"),
             simulation=sim_cfg,
         )
 
@@ -440,6 +409,7 @@ class ModelicaRunner:
             "##cvode## -",
             "ddassl had repeated error test failures",
             "ddassl had repeated convergence test failures",
+            "tire normal load reached lift threshold",
         )
 
         if any(marker in text for marker in failure_markers):
@@ -495,12 +465,10 @@ class ModelicaRunner:
 
     def _build_environment(self) -> dict[str, str]:
         env = os.environ.copy()
+        runtime_dir = "/usr/lib/omc"
         self._ensure_runtime_compat_symlink()
         current_ld_library_path = env.get("LD_LIBRARY_PATH", "")
-        ld_library_path_parts = [
-            str(self.build_dir),
-            *(str(path) for path in self._openmodelica_runtime_dirs()),
-        ]
+        ld_library_path_parts = [str(self.build_dir), runtime_dir]
         if current_ld_library_path:
             ld_library_path_parts.append(current_ld_library_path)
         env["LD_LIBRARY_PATH"] = ":".join(ld_library_path_parts)
@@ -508,32 +476,15 @@ class ModelicaRunner:
 
     def _ensure_runtime_compat_symlink(self) -> None:
         compat_link = self.build_dir / "libomcgc.so.1"
-        target = next(
-            (
-                runtime_dir / "libomcgc.so"
-                for runtime_dir in self._openmodelica_runtime_dirs()
-                if (runtime_dir / "libomcgc.so").exists()
-            ),
-            None,
-        )
+        target = Path("/usr/lib/omc/libomcgc.so")
 
-        if compat_link.exists() or target is None:
+        if compat_link.exists() or not target.exists():
             return
 
         try:
             compat_link.symlink_to(target)
         except FileExistsError:
             pass
-
-    def _openmodelica_runtime_dirs(self) -> list[Path]:
-        return [
-            path
-            for path in (
-                Path("/usr/lib/x86_64-linux-gnu/omc"),
-                Path("/usr/lib/omc"),
-            )
-            if path.exists()
-        ]
 
     def _remove_stale_profile_files(self) -> None:
         profile_prefix = f"{self.exec_name}_prof."
@@ -576,9 +527,8 @@ class ModelicaRunner:
                 if key in {"startTime", "stopTime"}:
                     continue
 
-                modelica_key = MODELICA_OVERRIDE_ALIASES.get(key, key)
                 value = self._format_override_value(value)
-                f.write(f"{modelica_key}={value}\n")
+                f.write(f"{key}={value}\n")
 
     def _format_override_value(self, value):
         if isinstance(value, bool):

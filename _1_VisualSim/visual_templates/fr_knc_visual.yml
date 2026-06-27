@@ -1,4 +1,4 @@
-# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/fr_knc_visual.yml _3_StandardSim/FourPostEval/results/raw_results/BobLib.Experiments.Standards.FourPostSim_run_0/BobLib.Experiments.Standards.FourPostSim_run_0_visual.npz --mp4 ./_1_VisualSim/results/fr_knc_test.mp4
+# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/fr_knc_visual.yml _3_StandardSim/KnC/results/raw_results/BobLib.Standards.FrKnC_run_0/BobLib.Standards.FrKnC_run_0_visual.npz --mp4 ./_1_VisualSim/results/fr_knc_test.mp4
 
 style:
   joints:

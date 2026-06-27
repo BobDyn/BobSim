@@ -14,7 +14,6 @@ import vtk
 
 
 ArrayF = NDArray[np.float64]
-ArrayFloating = NDArray[np.floating[Any]]
 ArrayU8 = NDArray[np.uint8]
 
 
@@ -22,19 +21,16 @@ ArrayU8 = NDArray[np.uint8]
 # HELPERS
 # ============================================================
 def safe_normalize(
-    v: ArrayFloating,
-    fallback: ArrayFloating | None = None,
+    v: ArrayF,
+    fallback: ArrayF | None = None,
 ) -> ArrayF:
-    v_arr = cast(ArrayF, np.asarray(v, dtype=np.float64))
     if fallback is None:
-        fallback_arr = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-    else:
-        fallback_arr = cast(ArrayF, np.asarray(fallback, dtype=np.float64))
+        fallback = np.array([1.0, 0.0, 0.0], dtype=float)
 
-    n = np.linalg.norm(v_arr)
+    n = np.linalg.norm(v)
     if n < 1e-8:
-        return fallback_arr.copy()
-    return cast(ArrayF, v_arr / n)
+        return fallback.copy()
+    return v / n
 
 
 def set_vtk_matrix(mat: vtk.vtkMatrix4x4, T: ArrayF) -> None:

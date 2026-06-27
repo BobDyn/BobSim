@@ -1,2 +1,0 @@
-"""BobSim browser app."""
-

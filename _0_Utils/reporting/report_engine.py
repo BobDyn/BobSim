@@ -40,19 +40,19 @@ class ReportEngine:
         if standard is None:
             raise KeyError(
                 "Missing standard in config. Add `standard: SteadyStateEval`, "
-                "`standard: RampSteerEval`, `standard: TransientEval`, or "
-                "`standard: FourPostEval` at the top level of the YAML."
+                "`standard: TransientEval`, or `standard: FourPostEval` at the top level "
+                "of the YAML."
             )
 
         with PdfPages(output_path) as pdf:
             add_title_page(pdf, self.config)
 
-            if standard in {"SteadyStateEval", "RampSteerEval"}:
+            if standard == "SteadyStateEval":
                 velocity_summaries = result.get("velocity_summaries", [])
                 if velocity_summaries:
                     for summary in velocity_summaries:
                         velocity = summary.get("velocity_mps")
-                        page_title = f"{standard} Summary"
+                        page_title = "SteadyStateEval Summary"
                         if velocity is not None:
                             page_title = f"{page_title} {velocity:.1f} m/s"
                         print(f"📄 Rendering summary page: {page_title}")
@@ -62,11 +62,11 @@ class ReportEngine:
                             title=page_title,
                         )
                 else:
-                    print(f"📄 Rendering summary page: {standard} Summary")
+                    print("📄 Rendering summary page: SteadyStateEval Summary")
                     add_summary_page(
                         pdf,
                         result["summary"],
-                        title=f"{standard} Summary",
+                        title="SteadyStateEval Summary",
                     )
 
             elif standard == "TransientEval":

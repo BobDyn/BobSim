@@ -43,7 +43,6 @@ class SignalPlot:
 
                 grouped.append({
                     "label": label,
-                    "group": key,
                     "x": self._apply_scale_offset(x_raw[key], x_cfg),
                     "y": self._apply_scale_offset(y_raw[key], y_cfg),
                     "style": default_style,
@@ -53,13 +52,11 @@ class SignalPlot:
                     "color": cfg.get("color"),
                     "linewidth": cfg.get("linewidth"),
                     "linestyle": cfg.get("linestyle"),
-                    "match_color": cfg.get("match_color", False),
                 })
             return grouped
 
         return [{
-            "label": cfg.get("label"),
-            "group": None,
+            "label": None,
             "x": self._apply_scale_offset(x_raw, x_cfg),
             "y": self._apply_scale_offset(y_raw, y_cfg),
             "style": default_style,
@@ -69,7 +66,6 @@ class SignalPlot:
             "color": cfg.get("color"),
             "linewidth": cfg.get("linewidth"),
             "linestyle": cfg.get("linestyle"),
-            "match_color": cfg.get("match_color", False),
         }]
 
     def get_xy(self, result, p_cfg):

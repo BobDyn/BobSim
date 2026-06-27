@@ -442,7 +442,7 @@ def _resolve_tire_path(vehicle_data: dict[str, Any], repo_root: Path) -> Path:
     )
     tire_templates = vehicle_data.get("paths", {}).get(
         "tire_templates",
-        "_0_Utils/tire_templates",
+        "_0_Utils/external/BobLib/Generation/tire_templates",
     )
     tire_path = repo_root / tire_templates / f"{tire_template}.tir"
     if not tire_path.exists():

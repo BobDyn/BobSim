@@ -53,16 +53,14 @@ RUN mkdir -p /root/.openmodelica/libraries \
         -o /root/.openmodelica/libraries/index.json \
         https://libraries.openmodelica.org/index/v1/index.json
 
-# Install the Modelica libraries expected by BobLib.
+# Install the Modelica Standard Library version expected by BobLib.
 # The package index has already been cached above.
 RUN printf '\
-installPackage(Modelica, "4.1.0", exactMatch=true);\n\
-installPackage(VehicleInterfaces, "2.0.2", exactMatch=true);\n\
+installPackage(Complex, "3.2.3+maint.om", exactMatch=true);\n\
+installPackage(ModelicaServices, "3.2.3+maint.om", exactMatch=true);\n\
+installPackage(Modelica, "3.2.3+maint.om", exactMatch=true);\n\
 getErrorString();\n' > /tmp/setup.mos \
     && omc /tmp/setup.mos \
     && rm /tmp/setup.mos
-
-RUN git config --global --add safe.directory /workspace \
-    && git config --global --add safe.directory /workspace/_0_Utils/external/BobLib
 
 CMD ["/bin/bash"]

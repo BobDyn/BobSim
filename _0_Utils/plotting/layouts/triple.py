@@ -18,7 +18,6 @@ class TripleLayout:
             xmins = []
             xmaxs = []
             has_data = False
-            group_colors = {}
 
             # Empty data
             if not series:
@@ -47,21 +46,16 @@ class TripleLayout:
                     plot_kwargs["markersize"] = item["markersize"]
                 if item.get("color") is not None:
                     plot_kwargs["color"] = item["color"]
-                elif item.get("match_color") and item.get("group") in group_colors:
-                    plot_kwargs["color"] = group_colors[item["group"]]
                 if item.get("linestyle") is not None:
                     plot_kwargs["linestyle"] = item["linestyle"]
                 linewidth = item.get("linewidth", 2)
 
                 if item_style == "scatter":
-                    line, = ax.plot(x, y, "o", linewidth=linewidth, label=label, **plot_kwargs)
+                    ax.plot(x, y, "o", label=label, **plot_kwargs)
                 elif item_style == "line":
-                    line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
+                    ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
                 else:
-                    line, = ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
-
-                if item.get("group") is not None and not item.get("match_color"):
-                    group_colors.setdefault(item["group"], line.get_color())
+                    ax.plot(x, y, linewidth=linewidth, label=label, **plot_kwargs)
 
                 fit = plotter.compute_fit(x, y, sub) if item.get("fit", sub.get("fit", False)) else None
                 if fit is not None:
@@ -70,7 +64,6 @@ class TripleLayout:
                         fit,
                         "--",
                         linewidth=2,
-                        color=line.get_color(),
                         alpha=0.85,
                     )
 

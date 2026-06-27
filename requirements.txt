@@ -1,10 +1,10 @@
-PyYAML==6.0.3
-types-PyYAML==6.0.12.20260408
-scipy==1.15.3
-scipy-stubs==1.15.3.0
-pandas==2.3.3
-pandas-stubs==2.3.3.260113
-matplotlib==3.10.9
+PyYAML
+types-PyYAML
+scipy
+scipy-stubs
+pandas
+pandas-stubs
+matplotlib
 
 # pyvista
 # pyqt6
@@ -12,9 +12,9 @@ matplotlib==3.10.9
 # imageio
 # imageio-ffmpeg
 
-ruff==0.15.12
-mypy==1.20.2
-pytest==9.1.0
+ruff
+mypy
+pytest
 
 # FMU interface
 # fmpy

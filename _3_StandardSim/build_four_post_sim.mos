@@ -3,7 +3,7 @@ clear();
 
 root := OpenModelica.Scripting.cd();
 boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
-buildDir := root + "/_3_StandardSim/BuildBobLib/FourPostSim";
+buildDir := root + "/_3_StandardSim/Build/FourPostSim";
 
 // Generate C simulation code
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
@@ -21,8 +21,7 @@ OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
 OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
 
 // Load vendored dependencies explicitly.
-loadModel(Modelica, {"4.1.0"});
-loadModel(VehicleInterfaces, {"2.0.2"});
+loadModel(Modelica);
 
 // Load BobLib.
 loadFile(boblibDir + "/package.mo");
@@ -34,7 +33,7 @@ cd(buildDir);
 
 // Build executable directly.
 res := buildModel(
-  BobLib.Experiments.Standards.FourPostSim,
+  BobLib.Standards.FourPostSim,
   startTime = 0,
   stopTime = 118,
   tolerance = 1e-6,
