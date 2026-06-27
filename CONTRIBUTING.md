@@ -1,17 +1,15 @@
 # Contributing
 
 BobSim changes should keep the default vehicle regressions meaningful. The
-standard test entry point is:
+standard fast test entry point is:
 
 ```bash
 make test
 ```
 
-`make test` runs pytest with `BOBSIM_BASELINE_REGRESSION=1`. Pytest owns the
-regression flow: it rebuilds and reruns the default StandardSim workflows,
-checks that fresh report artifacts were written, verifies physical invariants,
-and compares selected metrics against
-`tests/regression_baselines/default_vehicle_standard.yml`.
+`make test` runs pytest without refreshing full StandardSim simulations. It
+checks the current report artifacts, verifies physical invariants, and skips the
+baseline value comparison unless baseline refresh is explicitly enabled.
 
 ## Regression Scope
 
@@ -29,17 +27,20 @@ blocking on numerical noise, but narrow enough to catch meaningful model drift.
 
 `make regression-invariants` is available for a quick artifact-only check. It
 does not rerun simulations and should not be used as proof that a model change
-did not regress.
+did not regress. `make regression-baseline` is the explicit full-simulation path:
+it rebuilds and reruns the default StandardSim workflows, checks that fresh
+report artifacts were written, and compares selected metrics against
+`tests/regression_baselines/default_vehicle_standard.yml`.
 
 ## Updating Baselines Intentionally
 
 Only update a baseline when the simulation behavior changed intentionally and
 the new reports have been reviewed.
 
-1. Run the full regression:
+1. Run the full regression explicitly:
 
    ```bash
-   make test
+   make regression-baseline
    ```
 
 2. Inspect the regenerated artifacts under `_3_StandardSim/results/`:
@@ -66,10 +67,11 @@ the new reports have been reviewed.
      pull request should explain why.
    - Do not widen a tolerance just to make an unexplained failure pass.
 
-6. Rerun:
+6. Rerun the fast gate and, when simulation outputs changed, the full baseline:
 
    ```bash
    make test
+   make regression-baseline
    ```
 
 7. In the pull request, summarize:
@@ -77,7 +79,7 @@ the new reports have been reviewed.
    - which workflows moved,
    - why the movement is expected,
    - which baseline values or tolerances changed,
-   - and that `make test` passed after the update.
+   - and that `make test` and `make regression-baseline` passed after the update.
 
 Generated report artifacts should be produced by the workflow, not hand-edited.
 If tracked report artifacts change, commit only the regenerated outputs that

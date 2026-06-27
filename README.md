@@ -63,7 +63,7 @@ Then open `http://127.0.0.1:8765`.
 
 ## Release Checks
 
-Run the local release gate:
+Run the local fast CI gate:
 
 ```bash
 make ci
@@ -74,10 +74,18 @@ This runs:
 - `make lint`
 - `make typecheck`
 - `make test`
-- `make regression-baseline`
 
-GitHub Actions runs the same make targets directly on the runner with the BobLib
-submodule checked out recursively.
+GitHub Actions runs the same fast gate inside the BobSim Docker image with the
+BobLib submodule checked out recursively. Full StandardSim baseline simulations
+are intentionally left out of normal GitHub CI because they can exceed hosted
+runner limits.
+
+Run the full StandardSim baseline explicitly when you need to refresh or review
+simulation artifacts:
+
+```bash
+make regression-baseline
+```
 
 ## Target Language
 

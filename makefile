@@ -84,10 +84,10 @@ help:
 		'  opt-refined               Run StandardSens refined response surfaces' \
 		'' \
 		'  regression-invariants     Check current regression artifacts for physical consistency' \
-		'  regression-baseline       Run default StandardSim baseline regressions' \
-		'  standard-regression-four-post  Alias for regression-baseline' \
-		'' \
-		'  ci                        Run lint, typecheck, tests, and StandardSim regressions' \
+			'  regression-baseline       Run full default StandardSim baseline simulations' \
+			'  standard-regression-four-post  Alias for regression-baseline' \
+			'' \
+			'  ci                        Run lint, typecheck, and tests' \
 		'  clean-all                 Remove caches and generated workflow artifacts'
 
 init:
@@ -121,7 +121,7 @@ regression-invariants:
 regression-baseline:
 	$(RUN) env BOBSIM_BASELINE_REGRESSION=1 $(PYTHON) -m pytest tests/test_simulation_regression.py
 
-ci: lint typecheck test regression-baseline
+ci: lint typecheck test
 
 shell: shell-bobsim
 

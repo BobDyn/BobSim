@@ -64,7 +64,7 @@ jobs:
       - name: Build BobSim Docker image
         run: docker compose build bobsim
 
-      - name: Run BobSim release gate
+      - name: Run BobSim fast gate
         run: make ci
 
       - name: Upload StandardSim regression artifacts
