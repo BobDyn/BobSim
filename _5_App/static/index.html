@@ -17,8 +17,24 @@
           </div>
         </div>
         <div class="top-actions">
-          <span id="boblib-status" class="status-pill">BobLib</span>
-          <span id="build-status" class="status-pill">Builds</span>
+          <div id="modelica-stack-panel" class="modelica-stack-panel" aria-label="Modelica stack status">
+            <div id="boblib-initialized-step" class="modelica-stack-step">
+              <span class="status-dot"></span>
+              <span>BobLib</span>
+            </div>
+            <div id="modelica-write-step" class="modelica-stack-step">
+              <span class="status-dot"></span>
+              <span>Vehicle Definition</span>
+            </div>
+            <div id="modelica-vehicle-build-step" class="modelica-stack-step">
+              <span class="status-dot"></span>
+              <span>VehicleSim</span>
+            </div>
+            <div id="modelica-four-post-build-step" class="modelica-stack-step">
+              <span class="status-dot"></span>
+              <span>FourPostSim</span>
+            </div>
+          </div>
           <button id="theme-toggle-btn" class="ghost-button" type="button">Dark</button>
           <button id="refresh-btn" class="ghost-button" type="button">Refresh</button>
         </div>
@@ -28,12 +44,12 @@
         <aside class="rail">
           <div class="rail-stack">
             <button class="rail-item active" data-view="setup" type="button">Setup</button>
-            <button class="rail-item" data-view="standard" type="button">Standard Sim</button>
-            <button class="rail-item" data-view="studies" type="button">Studies</button>
+            <button class="rail-item" data-view="standard" type="button">Simulation</button>
+            <button class="rail-item" data-view="studies" type="button">Results</button>
           </div>
           <div class="rail-actions">
             <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
-            <button id="rail-secondary-btn" class="ghost-button" type="button">Enter Standard</button>
+            <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
           </div>
         </aside>
 
@@ -216,64 +232,14 @@
         <section id="standard-view" class="screen">
           <div class="screen-head">
             <div>
-              <h2>Standard Sim</h2>
+              <h2>Simulation</h2>
               <p id="standard-context"></p>
             </div>
-            <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
           </div>
 
-          <div class="standard-workspace">
-            <section class="workflow-list">
+          <div class="standard-workspace simulation-workspace">
+            <section class="workflow-list simulation-catalog">
               <div id="workflow-grid" class="workflow-grid"></div>
-            </section>
-            <section class="sim-pane">
-              <div class="sim-tabs">
-                <button class="tab active" data-tab="setup" type="button">Setup</button>
-                <button class="tab" data-tab="outputs" type="button">Review</button>
-                <button class="tab" data-tab="jobs" type="button">Run Log</button>
-              </div>
-
-              <div id="setup-panel" class="panel active">
-                <div class="sim-setup-shell">
-                  <section class="sim-guide-panel">
-                    <span class="context-label">Simulation setup</span>
-                    <h3 id="sim-setup-title">Select a Workflow</h3>
-                    <p id="sim-setup-copy"></p>
-                    <div id="sim-step-strip" class="sim-step-strip"></div>
-                  </section>
-
-                  <section class="sim-config-tools">
-                    <div class="sim-config-row">
-                      <select id="sim-config-picker" class="config-picker"></select>
-                      <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
-                      <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
-                    </div>
-                    <div class="sim-config-row">
-                      <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
-                      <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
-                      <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
-                    </div>
-                    <span id="sim-config-status" class="sim-config-status"></span>
-                  </section>
-
-                  <form id="sim-config-form" class="sim-config-form"></form>
-                </div>
-              </div>
-
-              <div id="outputs-panel" class="panel">
-                <h3 id="selected-title">Outputs</h3>
-                <div id="output-list" class="output-list"></div>
-                <div id="preview" class="preview"></div>
-              </div>
-
-              <div id="jobs-panel" class="panel">
-                <div class="panel-heading">
-                  <h3>Jobs</h3>
-                  <button id="clear-log-btn" class="ghost-button" type="button">Clear View</button>
-                </div>
-                <div id="job-list" class="job-list"></div>
-                <pre id="job-log" class="log-view"></pre>
-              </div>
             </section>
           </div>
         </section>
@@ -281,66 +247,105 @@
         <section id="studies-view" class="screen">
           <div class="screen-head">
             <div>
-              <h2>Studies</h2>
+              <h2>Results</h2>
               <p id="studies-context"></p>
             </div>
-            <button id="run-study-btn" class="run-button" type="button">Run Study</button>
+            <div class="results-save-actions">
+              <input id="save-results-name" class="name-input" type="text" placeholder="Save active results as">
+              <button id="run-study-btn" class="run-button" type="button">Save Active Results</button>
+            </div>
           </div>
 
           <div class="standard-workspace studies-workspace">
-            <section class="workflow-list study-catalog">
-              <div id="study-catalog-grid" class="study-catalog-grid"></div>
+            <section class="workflow-list study-catalog results-catalog">
+              <div id="result-source-grid" class="study-catalog-grid"></div>
             </section>
 
-            <section class="sim-pane study-pane">
-              <div id="study-diagnostic" class="study-diagnostic"></div>
+            <section class="sim-pane study-pane results-pane results-app-pane">
+              <div id="result-source-diagnostic" class="study-diagnostic result-source-diagnostic"></div>
 
               <div class="sim-tabs study-tabs">
-                <button class="study-tab active" data-study-tab="setup" type="button">Setup</button>
-                <button class="study-tab" data-study-tab="outputs" type="button">Review</button>
-                <button class="study-tab" data-study-tab="jobs" type="button">Run Log</button>
+                <button class="study-tab active" data-study-tab="explore" type="button">Explore</button>
+                <button class="study-tab" data-study-tab="saved" type="button">Saved</button>
+                <button class="study-tab" data-study-tab="processing" type="button">Processing</button>
               </div>
 
-              <div id="study-setup-panel" class="study-panel active">
-                <div class="sim-setup-shell">
-                  <section class="sim-guide-panel">
-                    <span class="context-label">Study setup</span>
-                    <h3 id="study-setup-title">Select a Study</h3>
-                    <p id="study-setup-copy"></p>
-                    <div id="study-step-strip" class="sim-step-strip"></div>
-                  </section>
-
-                  <section class="sim-config-tools">
-                    <div class="sim-config-row">
-                      <select id="study-config-picker" class="config-picker"></select>
-                      <button id="load-study-config-btn" class="ghost-button" type="button">Load</button>
-                      <button id="delete-study-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+              <div id="study-explore-panel" class="study-panel active">
+                <div class="result-explorer-shell">
+                  <aside class="result-control-panel">
+                    <label class="form-field compact-field">
+                      <span>X axis</span>
+                      <select id="result-x-axis" class="config-picker"></select>
+                    </label>
+                    <label class="form-field compact-field">
+                      <span>Signals</span>
+                      <input id="result-signal-search" class="name-input" type="search" placeholder="Filter signals">
+                    </label>
+                    <div id="result-signal-list" class="result-signal-list"></div>
+                  </aside>
+                  <section class="result-plot-shell">
+                    <div class="result-plot-head">
+                      <div>
+                        <h3 id="result-plot-title">Signal Plot</h3>
+                        <p id="result-plot-subtitle"></p>
+                      </div>
+                      <div id="result-selected-signals" class="signal-row"></div>
                     </div>
-                    <div class="sim-config-row">
-                      <input id="save-study-config-name" class="name-input" type="text" placeholder="Save study config as">
-                      <button id="save-study-config-btn" class="run-button" type="button">Save Config</button>
-                      <button id="apply-study-config-btn" class="ghost-button" type="button">Apply Edits</button>
-                    </div>
-                    <span id="study-config-status" class="sim-config-status"></span>
+                    <canvas id="result-plot-canvas"></canvas>
                   </section>
-
-                  <form id="study-config-form" class="sim-config-form"></form>
                 </div>
               </div>
 
-              <div id="study-outputs-panel" class="study-panel">
-                <h3 id="study-selected-title">Study Outputs</h3>
-                <div id="study-output-list" class="output-list"></div>
-                <div id="study-preview" class="preview"></div>
+              <div id="study-saved-panel" class="study-panel">
+                <div class="saved-results-shell">
+                  <section class="saved-results-list">
+                    <div id="saved-result-list" class="study-catalog-grid"></div>
+                  </section>
+                  <section class="saved-result-detail">
+                    <div id="result-summary-panel" class="result-summary-panel"></div>
+                    <h3 id="study-selected-title">Saved Files</h3>
+                    <div id="study-output-list" class="output-list"></div>
+                    <div id="study-preview" class="preview"></div>
+                  </section>
+                </div>
               </div>
 
-              <div id="study-jobs-panel" class="study-panel">
-                <div class="panel-heading">
-                  <h3>Jobs</h3>
-                  <button id="clear-study-log-btn" class="ghost-button" type="button">Clear View</button>
+              <div id="study-processing-panel" class="study-panel">
+                <div class="processing-shell">
+                  <section class="processing-list">
+                    <div id="processing-workflow-list" class="study-catalog-grid"></div>
+                  </section>
+                  <section class="processing-detail">
+                    <div id="processing-summary-panel" class="result-summary-panel"></div>
+                    <form id="processing-form" class="processing-form">
+                      <label class="form-field compact-field">
+                        <span>Name</span>
+                        <input id="processing-name" class="name-input" type="text" placeholder="Workflow name">
+                      </label>
+                      <label class="form-field compact-field">
+                        <span>Source CSV</span>
+                        <select id="processing-source-picker" class="config-picker"></select>
+                      </label>
+                      <label class="form-field compact-field">
+                        <span>Signals</span>
+                        <input id="processing-signals" class="name-input" type="text" placeholder="signal_a, signal_b">
+                      </label>
+                      <label class="form-field compact-field">
+                        <span>Output</span>
+                        <input id="processing-output-name" class="name-input" type="text" placeholder="processed.csv">
+                      </label>
+                      <label class="form-field compact-field">
+                        <span>Notes</span>
+                        <textarea id="processing-notes" class="name-input" rows="3"></textarea>
+                      </label>
+                      <div class="processing-actions">
+                        <button id="add-processing-btn" class="run-button" type="button">Add Workflow</button>
+                        <button id="remove-processing-btn" class="ghost-button danger-button" type="button">Remove Selected</button>
+                      </div>
+                      <span id="processing-status" class="sim-config-status"></span>
+                    </form>
+                  </section>
                 </div>
-                <div id="study-job-list" class="job-list"></div>
-                <pre id="study-job-log" class="log-view"></pre>
               </div>
             </section>
           </div>
@@ -383,6 +388,62 @@
           <input id="start-import-input" type="file" accept=".yml,.yaml" hidden>
           <button id="start-import-btn" class="ghost-button" type="button">Import YAML</button>
           <button id="start-active-btn" class="ghost-button" type="button">Continue Active File</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="simulation-config-modal" class="simulation-modal" role="dialog" aria-modal="true" aria-labelledby="simulation-modal-title" hidden>
+      <div class="simulation-modal-card">
+        <div class="simulation-modal-head">
+          <div>
+            <span class="context-label">Simulation</span>
+            <h2 id="simulation-modal-title">Configure Simulation</h2>
+            <p id="simulation-modal-subtitle"></p>
+          </div>
+          <div class="simulation-run-actions">
+            <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
+            <button id="simulation-modal-close" class="ghost-button" type="button">Close</button>
+          </div>
+        </div>
+
+        <div class="sim-tabs simulation-modal-tabs">
+          <button class="tab active" data-tab="setup" type="button">Configure</button>
+          <button class="tab" data-tab="jobs" type="button">Run Log</button>
+        </div>
+
+        <div id="setup-panel" class="panel active">
+          <div class="sim-setup-shell">
+            <section class="sim-guide-panel">
+              <span class="context-label">Run setup</span>
+              <h3 id="sim-setup-title">Select a Workflow</h3>
+              <p id="sim-setup-copy"></p>
+            </section>
+
+            <section class="sim-config-tools">
+              <div class="sim-config-row">
+                <select id="sim-config-picker" class="config-picker"></select>
+                <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
+                <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+              </div>
+              <div class="sim-config-row">
+                <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
+                <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
+                <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
+              </div>
+              <span id="sim-config-status" class="sim-config-status"></span>
+            </section>
+
+            <form id="sim-config-form" class="sim-config-form"></form>
+          </div>
+        </div>
+
+        <div id="jobs-panel" class="panel">
+          <div class="panel-heading">
+            <h3>Jobs</h3>
+            <button id="clear-log-btn" class="ghost-button" type="button">Clear View</button>
+          </div>
+          <div id="job-list" class="job-list"></div>
+          <pre id="job-log" class="log-view"></pre>
         </div>
       </div>
     </div>

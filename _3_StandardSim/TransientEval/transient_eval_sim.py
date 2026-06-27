@@ -867,9 +867,9 @@ class TransientEvalSim:
           nCycles
           etc.
 
-        Do NOT include initialVel here either. VehicleSim uses targetVel for
-        the closed-loop speed target, while initial velocity stays with the
-        checked-in Modelica entrypoint defaults.
+        targetVel is BobSim shorthand. ModelicaRunner maps it to VehicleSim's
+        changeable initialVel parameter so chassis, driveline, and VCU target
+        speed are initialized together.
         """
         return {
             "useMode": use_mode,

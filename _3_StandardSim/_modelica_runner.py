@@ -15,7 +15,28 @@ import pandas as pd
 
 
 MODELICA_OVERRIDE_ALIASES = {
-    "targetVel": "vcu.targetVel",
+    # BobLib's VCU target velocity is a calculated parameter derived from the
+    # top-level VehicleSim initialVel. Override the source parameter so chassis,
+    # driveline, and VCU speed target all move together.
+    "targetVel": "initialVel",
+    "targetAy": "vcu.targetAy",
+    "useMode": "vcu.useMode",
+    "steerStart": "vcu.steerStart",
+    "linearitySlopeSamplePeriod": "vcu.linearitySlopeSamplePeriod",
+    "handwheelRampRate": "vcu.handwheelRampRate",
+    "handwheelRampStopDuration": "vcu.handwheelRampStopDuration",
+    "enableNormalLoadSteerLimiter": "vcu.enableNormalLoadSteerLimiter",
+    "tireNormalLoadMin": "vcu.tireNormalLoadMin",
+    "steadyStateAyRampRate": "vcu.steadyStateAyRampRate",
+    "steadyStateMaxHandwheel": "vcu.steadyStateMaxHandwheel",
+    "steadyStateAyGain": "vcu.steadyStateAyGain",
+    "steadyStateAyTi": "vcu.steadyStateAyTi",
+    "steadyStateSteerTimeConstant": "vcu.steadyStateSteerTimeConstant",
+    "frRampSteerHeight": "vcu.frRampSteerHeight",
+    "frRampSteerDuration": "vcu.frRampSteerDuration",
+    "stepDuration": "vcu.stepDuration",
+    "steerAmp": "vcu.steerAmp",
+    "steerFreq": "vcu.steerFreq",
     "velGain": "vcu.velGain",
     "velTi": "vcu.velTi",
 }

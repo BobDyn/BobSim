@@ -90,7 +90,7 @@ report:
   brand: BobSim
   title: Steady-State Vehicle Characterization
   subtitle: Settled measured-$a_y$ operating points from closed-loop target holds
-  output_path: _3_StandardSim/results/steady_state_eval_report.pdf
+  output_path: _3_StandardSim/generated_results/steady_state_eval_report.pdf
 
   # CSV metrics are exported from the velocity nearest this target.
   metric_target_velocity_mps: 15.0

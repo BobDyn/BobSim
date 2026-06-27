@@ -235,6 +235,11 @@ p {
   color: var(--blue);
 }
 
+.rail-item.disabled {
+  cursor: default;
+  opacity: 0.44;
+}
+
 .run-button {
   background: var(--blue);
   border-color: var(--blue);
@@ -468,6 +473,75 @@ p {
   min-width: 0;
 }
 
+.modelica-stack-panel {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modelica-stack-step {
+  min-width: 0;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 0 8px;
+}
+
+.modelica-stack-step span:not(.status-dot) {
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.modelica-stack-step.ok {
+  background: var(--status-ok-bg);
+  border-color: var(--status-ok-line);
+  color: var(--green);
+}
+
+.modelica-stack-step.ok .status-dot {
+  background: var(--green);
+}
+
+.modelica-stack-step.warn {
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn-line);
+  color: var(--amber);
+}
+
+.modelica-stack-step.warn .status-dot {
+  background: var(--amber);
+}
+
+.modelica-stack-step.disabled {
+  opacity: 0.48;
+}
+
+.modelica-stack-step.error {
+  border-color: color-mix(in srgb, var(--red) 36%, var(--line));
+  color: var(--red);
+}
+
+.modelica-stack-step.error .status-dot {
+  background: var(--red);
+}
+
 .menu-primary {
   width: 100%;
   margin-bottom: 10px;
@@ -569,6 +643,67 @@ p {
 
 .connection-modal[hidden] {
   display: none;
+}
+
+.simulation-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 115;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, rgba(0, 0, 0, 0.32));
+  padding: 22px;
+}
+
+.simulation-modal[hidden] {
+  display: none;
+}
+
+.simulation-modal-card {
+  width: min(880px, 100%);
+  height: min(800px, calc(100vh - 44px));
+  min-height: min(620px, calc(100vh - 44px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 30px 80px rgba(17, 30, 43, 0.28);
+  overflow: hidden;
+}
+
+.simulation-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+}
+
+.simulation-modal-head h2 {
+  font-size: 20px;
+  font-weight: 820;
+}
+
+.simulation-modal-head p {
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+
+.simulation-modal-tabs {
+  border-bottom: 1px solid var(--line);
+}
+
+.simulation-run-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .plot-modal {
@@ -806,6 +941,26 @@ p {
   color: var(--muted);
   font-size: 10px;
   font-weight: 820;
+}
+
+.connection-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 390px;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: default;
+  touch-action: none;
+}
+
+.connection-canvas.hot {
+  cursor: grab;
+}
+
+.connection-canvas.dragging {
+  cursor: grabbing;
 }
 
 .connection-assignment-panel {
@@ -1317,7 +1472,7 @@ body.resizing-plot-pane * {
 
 .editor-pane {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   position: relative;
   padding: 10px;
 }
@@ -1754,6 +1909,58 @@ body.resizing-plot-pane * {
   margin-bottom: 10px;
 }
 
+.tire-load-controls {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.tire-load-row {
+  display: grid;
+  gap: 6px;
+}
+
+.tire-load-head,
+.tire-load-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tire-load-head {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.tire-load-head strong {
+  color: var(--ink);
+}
+
+.tire-load-controls input[type="range"] {
+  width: 100%;
+  accent-color: var(--blue);
+}
+
+.tire-load-meta {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tire-load-meta span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tire-assignment-grid {
   display: grid;
   gap: 10px;
@@ -1985,17 +2192,14 @@ body.resizing-plot-pane * {
 }
 
 .workflow-guide {
-  position: absolute;
-  top: 44px;
-  left: 10px;
-  right: 10px;
-  z-index: 10;
+  position: static;
   display: grid;
   gap: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+  margin: 0 0 10px;
   padding: 10px;
   color: var(--muted);
   font-size: 11px;
@@ -2189,6 +2393,16 @@ body.resizing-plot-pane * {
   padding: 5px 7px;
 }
 
+.array-queue-input {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.array-queue-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
 .array-bracket {
   color: var(--muted);
   font-size: 22px;
@@ -2321,7 +2535,8 @@ body.resizing-plot-pane * {
 }
 
 .architecture-match-head,
-.powertrain-tools {
+.powertrain-tools,
+.powertrain-implementation-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2364,6 +2579,122 @@ body.resizing-plot-pane * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.powertrain-config-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.powertrain-implementation-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.powertrain-implementation-card > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.powertrain-implementation-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.powertrain-implementation-card select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.powertrain-subsystem-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.powertrain-subsystem-tab {
+  flex: 0 1 116px;
+  width: auto;
+  min-width: min(100%, 116px);
+  max-width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 760;
+  padding: 0 9px;
+}
+
+.powertrain-subsystem-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.powertrain-subsystem-tab.active {
+  border-color: color-mix(in srgb, var(--blue) 36%, var(--line));
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 3px 10px rgb(15 23 42 / 8%);
+}
+
+.powertrain-subsystem-tab:hover {
+  color: var(--ink);
+}
+
+.powertrain-subsystem-tab small {
+  flex: 0 0 auto;
+  color: inherit;
+  font-size: 10px;
+  opacity: 0.78;
+}
+
+.powertrain-subsystem-panels {
+  min-width: 0;
+}
+
+.powertrain-subsystem-panel {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.powertrain-subsystem-panel[hidden] {
+  display: none;
+}
+
+.powertrain-subsystem-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.powertrain-subsystem-head span {
+  color: var(--ink);
 }
 
 .raw-block {
@@ -2429,6 +2760,10 @@ body.resizing-plot-pane * {
   gap: 12px;
 }
 
+.simulation-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workflow-list {
   overflow: auto;
   padding: 10px;
@@ -2445,9 +2780,171 @@ body.resizing-plot-pane * {
   text-transform: uppercase;
 }
 
+.simulation-catalog::before {
+  content: "Simulation Catalog";
+}
+
 .workflow-grid {
   display: grid;
   gap: 10px;
+}
+
+.simulation-catalog .workflow-grid {
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  align-items: stretch;
+}
+
+.simulation-card {
+  min-width: 0;
+  min-height: 430px;
+  grid-template-rows: 158px minmax(0, 1fr);
+  padding: 0;
+  overflow: hidden;
+}
+
+.simulation-card-figure {
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 76%, #eef5f8), var(--surface)),
+    var(--surface-2);
+}
+
+.simulation-card-figure svg {
+  width: 100%;
+  height: 158px;
+  display: block;
+}
+
+.simulation-card-figure rect {
+  fill: color-mix(in srgb, var(--surface) 80%, #e7f0ef);
+  stroke: var(--line);
+  stroke-width: 1.4;
+}
+
+.simulation-card-figure path,
+.simulation-card-figure line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.simulation-card-figure .axis {
+  stroke: color-mix(in srgb, var(--muted) 58%, transparent);
+  stroke-width: 1.8;
+}
+
+.simulation-card-figure .accent {
+  stroke: var(--green);
+  stroke-width: 3.2;
+}
+
+.simulation-card-figure .target {
+  stroke: var(--blue);
+  stroke-dasharray: 6 5;
+  stroke-width: 2.2;
+}
+
+.simulation-card-figure .fixture {
+  stroke: color-mix(in srgb, var(--ink) 72%, var(--line));
+  stroke-width: 2.8;
+}
+
+.simulation-card-figure .post {
+  stroke: var(--blue);
+  stroke-width: 4.2;
+}
+
+.simulation-card-figure circle {
+  fill: var(--blue);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.simulation-card-figure text {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.simulation-card-body {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 13px;
+}
+
+.simulation-card .card-head {
+  align-items: flex-start;
+}
+
+.simulation-card .card-title {
+  font-size: 16px;
+  font-weight: 840;
+}
+
+.simulation-card .card-meta {
+  margin-top: 3px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.simulation-explanation {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.simulation-detail-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.simulation-detail-block {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 78%, var(--surface));
+  padding: 9px;
+}
+
+.simulation-detail-block h4 {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 840;
+  text-transform: uppercase;
+}
+
+.simulation-detail-block ul {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+  padding-left: 15px;
+}
+
+.simulation-detail-block li {
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.28;
+}
+
+.simulation-card .card-actions {
+  align-items: center;
+}
+
+.simulation-card .card-actions .run-button {
+  margin-left: 0;
+}
+
+.simulation-card .simulation-review-button {
+  margin-left: auto;
 }
 
 .study-catalog {
@@ -2455,7 +2952,241 @@ body.resizing-plot-pane * {
 }
 
 .study-catalog::before {
-  content: "Study";
+  content: "Results";
+}
+
+.results-save-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.results-save-actions .name-input {
+  min-width: 220px;
+}
+
+.results-catalog::before {
+  content: "Saved Results";
+}
+
+.results-pane {
+  grid-template-rows: minmax(170px, 0.32fr) 46px minmax(0, 1fr);
+}
+
+.results-app-pane {
+  min-width: 0;
+}
+
+.result-source-card .card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-source-diagnostic {
+  grid-template-columns: minmax(280px, 0.8fr) minmax(280px, 1.2fr);
+}
+
+.result-explorer-shell,
+.saved-results-shell,
+.processing-shell {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.result-explorer-shell {
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.result-control-panel,
+.result-plot-shell,
+.saved-results-list,
+.saved-result-detail {
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.result-control-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.result-signal-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.result-signal-option {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+  padding: 0 8px;
+}
+
+.result-signal-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-plot-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.result-plot-head {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.result-plot-head h3 {
+  font-size: 14px;
+  font-weight: 820;
+}
+
+.result-plot-head p {
+  overflow: hidden;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#result-plot-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 330px;
+}
+
+.saved-results-shell {
+  grid-template-columns: 310px minmax(0, 1fr);
+}
+
+.processing-shell {
+  grid-template-columns: 310px minmax(0, 1fr);
+}
+
+.saved-results-list,
+.saved-result-detail,
+.processing-list,
+.processing-detail {
+  overflow: auto;
+  padding: 10px;
+}
+
+.processing-list,
+.processing-detail {
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.saved-result-detail {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(240px, 1fr);
+  gap: 10px;
+}
+
+.processing-detail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.processing-form {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+}
+
+.processing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.result-summary-panel {
+  min-height: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.result-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.result-summary-item {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  padding: 11px;
+  text-decoration: none;
+}
+
+.result-summary-item span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.result-summary-item strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-summary-link:hover {
+  border-color: color-mix(in srgb, var(--blue) 42%, var(--line));
+}
+
+.result-figure {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+  overflow: auto;
 }
 
 .study-catalog-grid {
@@ -3087,6 +3818,21 @@ body.resizing-plot-pane * {
     grid-template-columns: 1fr;
   }
 
+  .result-explorer-shell,
+  .saved-results-shell,
+  .processing-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .simulation-catalog .workflow-grid,
+  .simulation-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .result-control-panel {
+    max-height: 360px;
+  }
+
   .parameter-tabs {
     grid-template-columns: repeat(8, minmax(92px, 1fr));
     overflow-x: auto;
@@ -3125,9 +3871,15 @@ body.resizing-plot-pane * {
   }
 
   .top-actions,
-  .vehicle-source {
+  .vehicle-source,
+  .results-save-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .results-save-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .config-picker,

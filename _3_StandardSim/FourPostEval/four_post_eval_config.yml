@@ -43,8 +43,8 @@ report:
   brand: BobSim
   title: FourPostEval Suspension Kinematics and Compliance
   subtitle: Heave and roll sweeps
-  output_path: _3_StandardSim/results/four_post_eval_report.pdf
-  metrics_csv_path: _3_StandardSim/results/four_post_eval_report_metrics.csv
+  output_path: _3_StandardSim/generated_results/four_post_eval_report.pdf
+  metrics_csv_path: _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
   # Optional per-metric unit overrides for the Metrics Summary page.
   summary_units:
     camber_gain_heave_rad_per_m:

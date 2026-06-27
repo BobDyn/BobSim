@@ -1,0 +1,24 @@
+{
+  "target": "vehicle",
+  "label": "VehicleSim",
+  "exec_name": "BobLib.Experiments.Standards.VehicleSim",
+  "build_dir": "_3_StandardSim/BuildBobLib/VehicleSim",
+  "source": "local-build",
+  "signature": "26a3bbe452994344da1bc16cb8f8f5d857c37041e77eeffc5aad3abdbe2b4f42",
+  "signature_inputs": {
+    "version": 1,
+    "target": "vehicle",
+    "label": "VehicleSim",
+    "exec_name": "BobLib.Experiments.Standards.VehicleSim",
+    "generated_signature": "12b95fe3157d034e661453945c4c74e8b0b2b8566d5882c78509dfa3a0b511d2",
+    "script_sha256": "cc43c044bdb1e364f2c053ecd0ba4fb8d6b5942eb35312cb17b19ee550de057f",
+    "host": {
+      "system": "Linux",
+      "machine": "x86_64",
+      "processor": "",
+      "cpu_model": "AMD Ryzen 9 7940HS w/ Radeon 780M Graphics"
+    }
+  },
+  "created_at": 1782538678.041628,
+  "created_label": "2026-06-27 00:37:58"
+}

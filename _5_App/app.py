@@ -4,12 +4,16 @@ from dataclasses import dataclass, field as dataclass_field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import argparse
+import copy
 import csv
+import hashlib
 import json
 import math
 import mimetypes
 import os
+import platform
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -23,12 +27,32 @@ import yaml
 
 from _0_Utils.vehicle_io import parse_tir
 from _5_App.kinematics import kinematic_curves_payload
+from _5_App.modelica_generator import (
+    generate_modelica_stack,
+    modelica_generation_payload,
+    modelica_stack_status_payload,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 SAVED_VEHICLE_ROOT = Path("_5_App/vehicle_configs")
 SAVED_SIM_CONFIG_ROOT = Path("_5_App/sim_configs")
+SAVED_RESULTS_ROOT = Path("_5_App/saved_results")
+VEHICLE_WORKSPACE_ROOT = Path("_5_App/vehicle_workspaces")
+BUILD_ARCHIVE_ROOT = Path("_5_App/build_archive")
+RESULT_EXPLORER_ROOTS = (
+    Path("_3_StandardSim/generated_results"),
+    Path("_3_StandardSim/results"),
+    Path("_3_StandardSim/Build"),
+    Path("_3_StandardSim/BuildBobLib"),
+    Path("_2_EnvelopeSim/results"),
+    Path("_2_EnvelopeSim/Build"),
+    Path("_4_OptSim/results"),
+    Path("_4_OptSim/Build"),
+    SAVED_RESULTS_ROOT,
+    VEHICLE_WORKSPACE_ROOT,
+)
 MAX_LOG_CHARS = 120_000
 
 
@@ -45,6 +69,16 @@ class ActionSpec:
     label: str
     argv: tuple[str, ...]
     env: dict[str, str] = dataclass_field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BuildTargetSpec:
+    id: str
+    label: str
+    action_id: str
+    build_dir: str
+    exec_name: str
+    script: str
 
 
 @dataclass(frozen=True)
@@ -146,6 +180,28 @@ ACTION_SPECS: dict[str, ActionSpec] = {
 }
 
 
+MODELICA_BUILD_TARGETS: dict[str, BuildTargetSpec] = {
+    "vehicle": BuildTargetSpec(
+        id="vehicle",
+        label="VehicleSim",
+        action_id="build-vehicle",
+        build_dir="_3_StandardSim/BuildBobLib/VehicleSim",
+        exec_name="BobLib.Experiments.Standards.VehicleSim",
+        script="_3_StandardSim/build_vehicle_sim.mos",
+    ),
+    "four_post": BuildTargetSpec(
+        id="four_post",
+        label="FourPostSim",
+        action_id="build-four-post",
+        build_dir="_3_StandardSim/BuildBobLib/FourPostSim",
+        exec_name="BobLib.Experiments.Standards.FourPostSim",
+        script="_3_StandardSim/build_four_post_sim.mos",
+    ),
+}
+MODELICA_BUILD_TARGETS_BY_ACTION = {target.action_id: target for target in MODELICA_BUILD_TARGETS.values()}
+BUILD_METADATA_FILENAME = ".bobsim_build.json"
+
+
 WORKFLOWS: tuple[WorkflowSpec, ...] = (
     WorkflowSpec(
         id="ramp-steer",
@@ -154,8 +210,8 @@ WORKFLOWS: tuple[WorkflowSpec, ...] = (
         config="_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
         actions=("build-vehicle", "run-ramp-steer"),
         outputs=(
-            OutputSpec("Report", "_3_StandardSim/results/ramp_steer_eval_report.pdf", "pdf"),
-            OutputSpec("Metrics", "_3_StandardSim/results/ramp_steer_eval_report_metrics.csv", "csv"),
+            OutputSpec("Report", "_3_StandardSim/generated_results/ramp_steer_eval_report.pdf", "pdf"),
+            OutputSpec("Metrics", "_3_StandardSim/generated_results/ramp_steer_eval_report_metrics.csv", "csv"),
         ),
     ),
     WorkflowSpec(
@@ -165,8 +221,8 @@ WORKFLOWS: tuple[WorkflowSpec, ...] = (
         config="_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml",
         actions=("build-vehicle", "run-steady-state"),
         outputs=(
-            OutputSpec("Report", "_3_StandardSim/results/steady_state_eval_report.pdf", "pdf"),
-            OutputSpec("Metrics", "_3_StandardSim/results/steady_state_eval_report_metrics.csv", "csv"),
+            OutputSpec("Report", "_3_StandardSim/generated_results/steady_state_eval_report.pdf", "pdf"),
+            OutputSpec("Metrics", "_3_StandardSim/generated_results/steady_state_eval_report_metrics.csv", "csv"),
         ),
     ),
     WorkflowSpec(
@@ -176,8 +232,8 @@ WORKFLOWS: tuple[WorkflowSpec, ...] = (
         config="_3_StandardSim/TransientEval/transient_eval_config.yml",
         actions=("build-vehicle", "run-transient"),
         outputs=(
-            OutputSpec("Report", "_3_StandardSim/results/transient_eval_report.pdf", "pdf"),
-            OutputSpec("Metrics", "_3_StandardSim/results/transient_eval_report_metrics.csv", "csv"),
+            OutputSpec("Report", "_3_StandardSim/generated_results/transient_eval_report.pdf", "pdf"),
+            OutputSpec("Metrics", "_3_StandardSim/generated_results/transient_eval_report_metrics.csv", "csv"),
         ),
     ),
     WorkflowSpec(
@@ -187,8 +243,8 @@ WORKFLOWS: tuple[WorkflowSpec, ...] = (
         config="_3_StandardSim/FourPostEval/four_post_eval_config.yml",
         actions=("build-four-post", "run-four-post"),
         outputs=(
-            OutputSpec("Report", "_3_StandardSim/results/four_post_eval_report.pdf", "pdf"),
-            OutputSpec("Metrics", "_3_StandardSim/results/four_post_eval_report_metrics.csv", "csv"),
+            OutputSpec("Report", "_3_StandardSim/generated_results/four_post_eval_report.pdf", "pdf"),
+            OutputSpec("Metrics", "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv", "csv"),
         ),
     ),
     WorkflowSpec(
@@ -348,6 +404,183 @@ def _csv_preview(raw_path: str, limit: int = 8) -> dict[str, Any]:
     return {"headers": list(reader.fieldnames or []), "rows": rows}
 
 
+def _result_source_roots(vehicle_key: str | None = None, *, include_global: bool = True) -> tuple[Path, ...]:
+    roots: list[Path] = []
+    if vehicle_key:
+        roots.append(_vehicle_workspace_dir(vehicle_key, create=False) / "results")
+    if include_global or not vehicle_key:
+        roots.extend(_safe_repo_path(root) for root in RESULT_EXPLORER_ROOTS)
+    return tuple(roots)
+
+
+def _is_result_source_path(path: Path, *, roots: tuple[Path, ...] | None = None) -> bool:
+    path = path.resolve()
+    if path.suffix.lower() != ".csv" or not path.is_file():
+        return False
+    for root_path in roots or _result_source_roots():
+        if root_path.exists() and (path == root_path or root_path in path.parents):
+            return True
+    return False
+
+
+def _result_source_group(rel_path: str) -> str:
+    if rel_path.startswith("_5_App/vehicle_workspaces/"):
+        return "Vehicle"
+    if rel_path.startswith("_3_StandardSim/"):
+        return "Simulation"
+    if rel_path.startswith("_2_EnvelopeSim/"):
+        return "Envelope"
+    if rel_path.startswith("_4_OptSim/"):
+        return "Optimization"
+    if rel_path.startswith("_5_App/saved_results/"):
+        return "Saved"
+    return "Results"
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _is_float_like(value: Any) -> bool:
+    if value is None:
+        return False
+    text = str(value).strip()
+    if not text:
+        return False
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _csv_source_summary(path: Path, *, sample_limit: int = 240) -> dict[str, Any]:
+    rel_path = path.relative_to(ROOT).as_posix()
+    with path.open("r", encoding="utf-8", newline="", errors="replace") as handle:
+        reader = csv.DictReader(handle)
+        columns = list(reader.fieldnames or [])
+        numeric_counts = {column: 0 for column in columns}
+        non_empty_counts = {column: 0 for column in columns}
+        row_count = 0
+        for row in reader:
+            row_count += 1
+            if row_count > sample_limit:
+                continue
+            for column in columns:
+                raw = row.get(column)
+                if raw is None or str(raw).strip() == "":
+                    continue
+                non_empty_counts[column] += 1
+                if _is_float_like(raw):
+                    numeric_counts[column] += 1
+
+    numeric_columns = [
+        column
+        for column in columns
+        if non_empty_counts[column] > 0 and numeric_counts[column] / non_empty_counts[column] >= 0.85
+    ]
+    x_candidates = [column for column in ("time", "Time", "t", "speed_mps") if column in numeric_columns]
+    x_candidates.extend(column for column in numeric_columns if column not in x_candidates)
+    return {
+        "id": rel_path,
+        "label": path.stem.replace("_", " ").replace("-", " ").title(),
+        "group": _result_source_group(rel_path),
+        "row_count": row_count,
+        "columns": columns,
+        "numeric_columns": numeric_columns,
+        "x_candidates": x_candidates,
+        **_path_payload(rel_path),
+    }
+
+
+def result_sources_payload(vehicle_key: str | None = None) -> dict[str, Any]:
+    sources_by_path: dict[Path, dict[str, Any]] = {}
+    roots = _result_source_roots(vehicle_key, include_global=not vehicle_key)
+    for root_path in roots:
+        if not root_path.exists():
+            continue
+        for path in root_path.rglob("*.csv"):
+            try:
+                if _is_result_source_path(path, roots=roots):
+                    sources_by_path[path.resolve()] = _csv_source_summary(path)
+            except (OSError, csv.Error, UnicodeDecodeError, ValueError):
+                continue
+    sources = sorted(
+        sources_by_path.values(),
+        key=lambda item: (str(item.get("group") or ""), str(item.get("path") or "")),
+    )
+    return {"vehicle_key": vehicle_key or _active_vehicle_workspace_key(), "sources": sources}
+
+
+def result_source_payload(raw_path: str) -> dict[str, Any]:
+    path = _safe_repo_path(raw_path)
+    if not _is_result_source_path(path):
+        raise ValueError("Result source must be a CSV file under a results directory")
+    return _csv_source_summary(path)
+
+
+def result_series_payload(
+    raw_path: str,
+    *,
+    x_axis: str = "__index__",
+    signals: list[str] | None = None,
+    max_points: int = 1800,
+) -> dict[str, Any]:
+    source = result_source_payload(raw_path)
+    path = _safe_repo_path(raw_path)
+    numeric_columns = set(source["numeric_columns"])
+    if x_axis != "__index__" and x_axis not in numeric_columns:
+        raise ValueError("x_axis must be __index__ or a numeric column")
+    selected_signals = [signal for signal in signals or [] if signal in numeric_columns and signal != x_axis]
+    if not selected_signals:
+        selected_signals = [column for column in source["numeric_columns"] if column != x_axis][:3]
+    if not selected_signals:
+        raise ValueError("Select at least one numeric signal to plot")
+
+    row_count = int(source.get("row_count") or 0)
+    point_limit = max(50, min(10_000, int(max_points or 1800)))
+    stride = max(1, math.ceil(row_count / point_limit)) if row_count else 1
+    x_values: list[float] = []
+    series = {signal: [] for signal in selected_signals}
+
+    with path.open("r", encoding="utf-8", newline="", errors="replace") as handle:
+        reader = csv.DictReader(handle)
+        for index, row in enumerate(reader):
+            if index % stride != 0:
+                continue
+            x_value = float(index) if x_axis == "__index__" else _float_or_none(row.get(x_axis))
+            if x_value is None:
+                continue
+            x_values.append(x_value)
+            for signal in selected_signals:
+                series[signal].append(_float_or_none(row.get(signal)))
+
+    return {
+        "source": source,
+        "x_axis": x_axis,
+        "x": x_values,
+        "stride": stride,
+        "row_count": row_count,
+        "series": [
+            {
+                "signal": signal,
+                "label": signal.replace("_", " "),
+                "values": values,
+            }
+            for signal, values in series.items()
+        ],
+    }
+
+
 def _field(
     path: str,
     label: str,
@@ -382,11 +615,69 @@ STABAR_BELLCRANK_ORDER_CHOICES = ("rod", "shock", "stabar")
 POWERTRAIN_IMPLEMENTATIONS = (
     {
         "id": "EVBatInvMotDiff",
-        "label": "EV battery/inverter/motor/differential",
+        "label": "EV battery/VCU/inverter/motor/differential",
         "status": "implemented",
-        "components": ("Battery", "Inverter", "Motor", "Differential"),
+        "components": ("Battery", "VCU", "Inverter", "Motor", "Differential"),
     },
 )
+POWERTRAIN_DEFAULTS: dict[str, dict[str, Any]] = {
+    "EVBatInvMotDiff": {
+        "implementation": "EVBatInvMotDiff",
+        "pBattery": {
+            "Ns": 140,
+            "Np": 4,
+            "SOC_start": 1.0,
+        },
+        "pVCU": {
+            "tau_max": 220,
+            "regenTorqueLimit": 220,
+            "w_eps": 1.0,
+            "motorSpeedSign": 1,
+        },
+        "pInverter": {
+            "P_max_mot": 124_000,
+            "P_max_reg": 124_000,
+            "V_dc_max": 588,
+        },
+        "pMotor": {
+            "Vdc_max": 630,
+            "rpm_max_peak": 6500,
+            "T_peak": 220,
+            "T_cont": 130,
+            "I_peak_2min": 360,
+            "I_cont": 180,
+            "Kt_Nm_per_A": 0.61,
+            "peakTime": 120,
+            "P_mech_peak": 124_000,
+            "P_cont_low": 75_000,
+            "P_cont_high": 75_000,
+            "eta_mot": 0.96,
+            "eta_reg": 0.95,
+            "w_eps": 1.0,
+            "rotorJ": 0.02521,
+        },
+        "pDriveline": {
+            "finalDriveRatio": 3.31,
+            "diffInputRotorJ": 0.04,
+            "diff_use_lsd": True,
+            "diff_driveSideTorqueSign": 1,
+            "diff_T_preload": 20,
+            "diff_lockFractionAccel": 0.35,
+            "diff_lockFractionDecel": 0.15,
+            "diff_T_capacity_max": 1000,
+            "diff_clutchEffectiveRadius": 1.0,
+            "diff_kineticFrictionRatio": 0.85,
+            "diff_w_transition": 1.0,
+            "diff_c_viscous": 0.05,
+            "halfshaftLeftC": 15_000,
+            "halfshaftLeftJEquivalent": 0.02,
+            "halfshaftLeftD": 34.64101615137755,
+            "halfshaftRightC": 15_000,
+            "halfshaftRightJEquivalent": 0.02,
+            "halfshaftRightD": 34.64101615137755,
+        },
+    },
+}
 
 COMMON_SIM_FIELDS = (
     _field("simulation.start_time", "Start time", kind="number", group="Simulation", unit="s"),
@@ -428,6 +719,138 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         kind="number",
         group="Chassis compliance",
         unit="N m/rad",
+    ),
+    _field(
+        "powertrain.implementation",
+        "Powertrain architecture",
+        kind="select",
+        group="Powertrain implementation",
+        choices=tuple(item["id"] for item in POWERTRAIN_IMPLEMENTATIONS),
+    ),
+    _field("powertrain.pBattery.Ns", "Series cells", kind="integer", group="Battery"),
+    _field("powertrain.pBattery.Np", "Parallel cells", kind="integer", group="Battery"),
+    _field("powertrain.pBattery.SOC_start", "Start SOC", kind="number", group="Battery"),
+    _field("powertrain.pVCU.tau_max", "Max drive torque", kind="number", group="VCU", unit="N m"),
+    _field("powertrain.pVCU.regenTorqueLimit", "Regen torque limit", kind="number", group="VCU", unit="N m"),
+    _field("powertrain.pVCU.w_eps", "Speed epsilon", kind="number", group="VCU", unit="rad/s"),
+    _field("powertrain.pVCU.motorSpeedSign", "Motor speed sign", kind="integer", group="VCU"),
+    _field("powertrain.pInverter.P_max_mot", "Max motoring power", kind="number", group="Inverter", unit="W"),
+    _field("powertrain.pInverter.P_max_reg", "Max regen power", kind="number", group="Inverter", unit="W"),
+    _field("powertrain.pInverter.V_dc_max", "Max DC voltage", kind="number", group="Inverter", unit="V"),
+    _field("powertrain.pMotor.Vdc_max", "Max DC voltage", kind="number", group="Motor", unit="V"),
+    _field("powertrain.pMotor.rpm_max_peak", "Peak max speed", kind="number", group="Motor", unit="rpm"),
+    _field("powertrain.pMotor.T_peak", "Peak torque", kind="number", group="Motor", unit="N m"),
+    _field("powertrain.pMotor.T_cont", "Continuous torque", kind="number", group="Motor", unit="N m"),
+    _field("powertrain.pMotor.I_peak_2min", "Peak current, 2 min", kind="number", group="Motor", unit="A"),
+    _field("powertrain.pMotor.I_cont", "Continuous current", kind="number", group="Motor", unit="A"),
+    _field(
+        "powertrain.pMotor.Kt_Nm_per_A",
+        "Torque constant",
+        kind="number",
+        group="Motor",
+        unit="N m/A",
+    ),
+    _field("powertrain.pMotor.peakTime", "Peak duration", kind="number", group="Motor", unit="s"),
+    _field("powertrain.pMotor.P_mech_peak", "Peak mechanical power", kind="number", group="Motor", unit="W"),
+    _field("powertrain.pMotor.P_cont_low", "Continuous power low", kind="number", group="Motor", unit="W"),
+    _field("powertrain.pMotor.P_cont_high", "Continuous power high", kind="number", group="Motor", unit="W"),
+    _field("powertrain.pMotor.eta_mot", "Motoring efficiency", kind="number", group="Motor"),
+    _field("powertrain.pMotor.eta_reg", "Regen efficiency", kind="number", group="Motor"),
+    _field("powertrain.pMotor.w_eps", "Speed epsilon", kind="number", group="Motor", unit="rad/s"),
+    _field("powertrain.pMotor.rotorJ", "Rotor inertia", kind="number", group="Motor", unit="kg m2"),
+    _field("powertrain.pDriveline.finalDriveRatio", "Final drive ratio", kind="number", group="Driveline"),
+    _field(
+        "powertrain.pDriveline.diffInputRotorJ",
+        "Differential input inertia",
+        kind="number",
+        group="Driveline",
+        unit="kg m2",
+    ),
+    _field("powertrain.pDriveline.diff_use_lsd", "Use LSD", kind="boolean", group="Driveline"),
+    _field(
+        "powertrain.pDriveline.diff_driveSideTorqueSign",
+        "Drive-side torque sign",
+        kind="integer",
+        group="Driveline",
+    ),
+    _field("powertrain.pDriveline.diff_T_preload", "LSD preload torque", kind="number", group="Driveline", unit="N m"),
+    _field("powertrain.pDriveline.diff_lockFractionAccel", "Accel lock fraction", kind="number", group="Driveline"),
+    _field("powertrain.pDriveline.diff_lockFractionDecel", "Decel lock fraction", kind="number", group="Driveline"),
+    _field(
+        "powertrain.pDriveline.diff_T_capacity_max",
+        "Max LSD clutch torque",
+        kind="number",
+        group="Driveline",
+        unit="N m",
+    ),
+    _field(
+        "powertrain.pDriveline.diff_clutchEffectiveRadius",
+        "Clutch effective radius",
+        kind="number",
+        group="Driveline",
+        unit="m",
+    ),
+    _field(
+        "powertrain.pDriveline.diff_kineticFrictionRatio",
+        "Kinetic friction ratio",
+        kind="number",
+        group="Driveline",
+    ),
+    _field(
+        "powertrain.pDriveline.diff_w_transition",
+        "Lock transition speed",
+        kind="number",
+        group="Driveline",
+        unit="rad/s",
+    ),
+    _field(
+        "powertrain.pDriveline.diff_c_viscous",
+        "Viscous damping",
+        kind="number",
+        group="Driveline",
+        unit="N m s/rad",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftLeftC",
+        "Left halfshaft stiffness",
+        kind="number",
+        group="Driveline",
+        unit="N m/rad",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftLeftJEquivalent",
+        "Left halfshaft inertia",
+        kind="number",
+        group="Driveline",
+        unit="kg m2",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftLeftD",
+        "Left halfshaft damping",
+        kind="number",
+        group="Driveline",
+        unit="N m s/rad",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftRightC",
+        "Right halfshaft stiffness",
+        kind="number",
+        group="Driveline",
+        unit="N m/rad",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftRightJEquivalent",
+        "Right halfshaft inertia",
+        kind="number",
+        group="Driveline",
+        unit="kg m2",
+    ),
+    _field(
+        "powertrain.pDriveline.halfshaftRightD",
+        "Right halfshaft damping",
+        kind="number",
+        group="Driveline",
+        unit="N m s/rad",
     ),
     _field("front.wheel.radius_m", "Front tire radius", kind="number", group="Front wheel", unit="m"),
     _field("front.wheel.toe_deg", "Front toe", kind="number", group="Front wheel", unit="deg"),
@@ -1005,6 +1428,32 @@ def _get_nested(data: Any, path: tuple[PathPart, ...]) -> Any:
     return current
 
 
+def _deep_merge_missing(target: dict[str, Any], defaults: dict[str, Any]) -> None:
+    for key, value in defaults.items():
+        if isinstance(value, dict):
+            current = target.get(key)
+            if not isinstance(current, dict):
+                target[key] = copy.deepcopy(value)
+            else:
+                _deep_merge_missing(current, value)
+        else:
+            target.setdefault(key, copy.deepcopy(value))
+
+
+def _vehicle_with_powertrain_defaults(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    powertrain_id = _powertrain_id(data)
+    defaults = POWERTRAIN_DEFAULTS.get(powertrain_id, POWERTRAIN_DEFAULTS["EVBatInvMotDiff"])
+    existing = data.get("powertrain")
+    if not isinstance(existing, dict):
+        data["powertrain"] = copy.deepcopy(defaults)
+    else:
+        _deep_merge_missing(existing, defaults)
+        existing["implementation"] = str(existing.get("implementation") or powertrain_id)
+    return data
+
+
 def _bellcrank_order_choices(data: Any, axle: str) -> tuple[str, ...]:
     if not isinstance(data, dict):
         return BELLCRANK_ORDER_CHOICES
@@ -1030,7 +1479,13 @@ def _set_nested(data: Any, path: tuple[PathPart, ...], value: Any) -> None:
         raise ValueError("Cannot replace config root through patch mode")
     current = data
     for part in path[:-1]:
-        current = current[part]
+        if not isinstance(current, dict):
+            raise TypeError("Cannot patch through a non-mapping value")
+        next_value = current.get(part)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            current[part] = next_value
+        current = next_value
     current[path[-1]] = value
 
 
@@ -1103,6 +1558,8 @@ def config_summary(spec: ConfigSpec) -> dict[str, Any]:
 def config_payload(config_id: str) -> dict[str, Any]:
     spec = _config_spec(config_id)
     path, raw, data = _load_yaml_config(spec)
+    if spec.id == "vehicle":
+        data = _vehicle_with_powertrain_defaults(data)
     return {
         **config_summary(spec),
         "modified": path.stat().st_mtime,
@@ -1115,6 +1572,8 @@ def config_payload(config_id: str) -> dict[str, Any]:
 def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
     spec = _config_spec(config_id)
     path, _, data = _load_yaml_config(spec)
+    if spec.id == "vehicle":
+        data = _vehicle_with_powertrain_defaults(data)
     disabled_paths = {
         field.path
         for field in (VEHICLE_FIELDS if spec.id == "vehicle" else spec.fields)
@@ -1137,6 +1596,15 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
         raise TypeError("Config must contain a YAML mapping or list")
     path.write_text(text if text.endswith("\n") else f"{text}\n", encoding="utf-8")
     return config_payload(config_id)
+
+
+def generate_modelica_payload() -> dict[str, Any]:
+    vehicle_path = _safe_repo_path("vehicle.yml")
+    result = generate_modelica_stack(vehicle_path, root=ROOT)
+    if vehicle_path.is_file():
+        data = _load_vehicle_yaml_file(vehicle_path)
+        _sync_vehicle_workspace_config(_vehicle_workspace_key_from_data(data), vehicle_path, data)
+    return modelica_generation_payload(result, ROOT)
 
 
 def _configurable_workflow_ids() -> set[str]:
@@ -1259,6 +1727,335 @@ def delete_saved_sim_config(source_id: str) -> dict[str, Any]:
         raise FileNotFoundError(source_id)
     path.unlink()
     return sim_config_library_payload(workflow_id)
+
+
+def _workflow_by_id(workflow_id: str) -> WorkflowSpec:
+    workflows = {workflow.id: workflow for workflow in WORKFLOWS}
+    if workflow_id not in workflows:
+        raise KeyError(workflow_id)
+    return workflows[workflow_id]
+
+
+def _result_slug(raw_name: str | None, fallback: str = "results") -> str:
+    base = str(raw_name or "").strip() or fallback
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", base).strip("-_.").lower()
+    return slug or fallback
+
+
+def _vehicle_workspace_key_from_data(data: dict[str, Any] | None = None) -> str:
+    if data is None:
+        vehicle_path = _safe_repo_path("vehicle.yml")
+        data = _load_vehicle_yaml_file(vehicle_path) if vehicle_path.is_file() else {}
+    vehicle = data.get("vehicle", {}) if isinstance(data, dict) else {}
+    name = vehicle.get("name") if isinstance(vehicle, dict) else None
+    return _saved_vehicle_id(str(name or "active-vehicle"))
+
+
+def _normalize_vehicle_workspace_key(vehicle_key: str | None = None) -> str:
+    return _saved_vehicle_id(str(vehicle_key or _vehicle_workspace_key_from_data()))
+
+
+def _active_vehicle_workspace_key() -> str:
+    return _normalize_vehicle_workspace_key(None)
+
+
+def _vehicle_workspace_dir(vehicle_key: str | None = None, *, create: bool = True) -> Path:
+    key = _normalize_vehicle_workspace_key(vehicle_key)
+    root = _safe_repo_path(VEHICLE_WORKSPACE_ROOT / key)
+    if create:
+        for child in ("config", "builds", "results", "processing"):
+            (root / child).mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _sync_vehicle_workspace_config(vehicle_key: str, source_path: Path, data: dict[str, Any]) -> Path:
+    workspace = _vehicle_workspace_dir(vehicle_key)
+    target = workspace / "config" / "vehicle.yml"
+    shutil.copy2(source_path, target)
+    vehicle = data.get("vehicle", {}) if isinstance(data, dict) else {}
+    manifest = {
+        "vehicle_key": vehicle_key,
+        "vehicle_name": vehicle.get("name") if isinstance(vehicle, dict) else None,
+        "source_path": source_path.relative_to(ROOT).as_posix() if source_path.is_relative_to(ROOT) else str(source_path),
+        "updated_at": time.time(),
+        "updated_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+    }
+    (workspace / "config" / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return target
+
+
+def _result_matches_vehicle(result: dict[str, Any], vehicle_key: str | None) -> bool:
+    if not vehicle_key:
+        return True
+    if str(result.get("vehicle_key") or "") == vehicle_key:
+        return True
+    vehicle_name = str(result.get("vehicle_name") or "")
+    return bool(vehicle_name) and _saved_vehicle_id(vehicle_name) == vehicle_key
+
+
+def _processing_workflows_path(vehicle_key: str | None = None, *, create: bool = True) -> Path:
+    workspace = _vehicle_workspace_dir(vehicle_key, create=create)
+    path = workspace / "processing" / "workflows.json"
+    if create and not path.is_file():
+        path.write_text("[]\n", encoding="utf-8")
+    return path
+
+
+def _processing_workflow_payload(item: dict[str, Any], vehicle_key: str) -> dict[str, Any]:
+    created_at = float(item.get("created_at") or time.time())
+    source_path = str(item.get("source_path") or "")
+    signals = item.get("signals", [])
+    if not isinstance(signals, list):
+        signals = []
+    payload = {
+        "id": _result_slug(str(item.get("id") or item.get("label") or "processing"), "processing"),
+        "label": str(item.get("label") or "Processing workflow"),
+        "vehicle_key": vehicle_key,
+        "source_path": source_path,
+        "signals": [str(signal) for signal in signals],
+        "output_name": str(item.get("output_name") or ""),
+        "notes": str(item.get("notes") or ""),
+        "created_at": created_at,
+        "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at)),
+    }
+    payload["source"] = _path_payload(source_path) if source_path else None
+    return payload
+
+
+def _read_processing_workflows(vehicle_key: str | None = None) -> list[dict[str, Any]]:
+    key = _normalize_vehicle_workspace_key(vehicle_key)
+    path = _processing_workflows_path(key, create=False)
+    if not path.is_file():
+        return []
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    workflows = []
+    for item in raw:
+        if isinstance(item, dict):
+            workflows.append(_processing_workflow_payload(item, key))
+    return workflows
+
+
+def _write_processing_workflows(vehicle_key: str, workflows: list[dict[str, Any]]) -> None:
+    path = _processing_workflows_path(vehicle_key)
+    path.write_text(json.dumps(workflows, indent=2) + "\n", encoding="utf-8")
+
+
+def processing_workflows_payload(vehicle_key: str | None = None) -> dict[str, Any]:
+    key = _normalize_vehicle_workspace_key(vehicle_key)
+    return {
+        "vehicle_key": key,
+        "workflows": _read_processing_workflows(key),
+    }
+
+
+def add_processing_workflow(payload: dict[str, Any]) -> dict[str, Any]:
+    key = _normalize_vehicle_workspace_key(str(payload.get("vehicle_key") or ""))
+    label = str(payload.get("label") or "").strip() or "Processing workflow"
+    source_path = str(payload.get("source_path") or "").strip()
+    signals = payload.get("signals", [])
+    if not isinstance(signals, list):
+        signals = []
+    if source_path:
+        source = _safe_repo_path(source_path)
+        if not _is_result_source_path(source):
+            raise ValueError("Processing source must be a CSV result source")
+
+    existing = _read_processing_workflows(key)
+    base_id = _result_slug(str(payload.get("id") or label), "processing")
+    workflow_id = base_id
+    suffix = 2
+    existing_ids = {workflow["id"] for workflow in existing}
+    while workflow_id in existing_ids:
+        workflow_id = f"{base_id}-{suffix}"
+        suffix += 1
+    workflow = {
+        "id": workflow_id,
+        "label": label,
+        "source_path": source_path,
+        "signals": [str(signal) for signal in signals],
+        "output_name": str(payload.get("output_name") or "").strip(),
+        "notes": str(payload.get("notes") or "").strip(),
+        "created_at": time.time(),
+    }
+    _write_processing_workflows(key, [*existing, workflow])
+    return {"saved": _processing_workflow_payload(workflow, key), **processing_workflows_payload(key)}
+
+
+def delete_processing_workflow(workflow_id: str, vehicle_key: str | None = None) -> dict[str, Any]:
+    key = _normalize_vehicle_workspace_key(vehicle_key)
+    workflows = _read_processing_workflows(key)
+    remaining = [workflow for workflow in workflows if workflow["id"] != workflow_id]
+    if len(remaining) == len(workflows):
+        raise FileNotFoundError(workflow_id)
+    _write_processing_workflows(key, remaining)
+    return processing_workflows_payload(key)
+
+
+def _saved_results_dir() -> Path:
+    root = _safe_repo_path(SAVED_RESULTS_ROOT)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _unique_result_dir(slug: str) -> Path:
+    timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    root = _saved_results_dir()
+    base = f"{timestamp}-{slug}"
+    candidate = root / base
+    index = 2
+    while candidate.exists():
+        candidate = root / f"{base}-{index}"
+        index += 1
+    candidate.mkdir(parents=True)
+    return candidate
+
+
+def _result_file_payload(raw_path: str, label: str, kind: str, source_path: str | None = None) -> dict[str, Any]:
+    return {
+        "label": label,
+        "kind": kind,
+        "source_path": source_path,
+        **_path_payload(raw_path),
+    }
+
+
+def _result_manifest_payload(path: Path) -> dict[str, Any]:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    files = []
+    for item in manifest.get("files", []):
+        if not isinstance(item, dict):
+            continue
+        raw_path = str(item.get("path") or "")
+        if not raw_path:
+            continue
+        files.append(
+            _result_file_payload(
+                raw_path,
+                str(item.get("label") or Path(raw_path).name),
+                str(item.get("kind") or "file"),
+                str(item.get("source_path") or ""),
+            )
+        )
+    manifest["files"] = files
+    return manifest
+
+
+def saved_results_payload(vehicle_key: str | None = None) -> dict[str, Any]:
+    key = _normalize_vehicle_workspace_key(vehicle_key) if vehicle_key else None
+    results = []
+    if key:
+        workspace_results = _vehicle_workspace_dir(key, create=False) / "results"
+        if workspace_results.is_dir():
+            for manifest_path in workspace_results.glob("*/manifest.json"):
+                try:
+                    result = _result_manifest_payload(manifest_path)
+                except (OSError, json.JSONDecodeError, ValueError):
+                    continue
+                if not _result_matches_vehicle(result, key):
+                    continue
+                results.append(result)
+    else:
+        root = _saved_results_dir()
+        for manifest_path in root.glob("*/manifest.json"):
+            try:
+                results.append(_result_manifest_payload(manifest_path))
+            except (OSError, json.JSONDecodeError, ValueError):
+                continue
+    results.sort(key=lambda item: float(item.get("created_at") or 0.0), reverse=True)
+    return {"vehicle_key": key or _active_vehicle_workspace_key(), "results": results}
+
+
+def save_active_results(workflow_id: str, name: str | None = None) -> dict[str, Any]:
+    workflow = _workflow_by_id(workflow_id)
+    existing_outputs = []
+    for output in workflow.outputs:
+        source = _safe_repo_path(output.path)
+        if source.is_file():
+            existing_outputs.append((output, source))
+    if not existing_outputs:
+        raise FileNotFoundError(f"No active output files exist for {workflow.label}")
+
+    vehicle_path = _safe_repo_path("vehicle.yml")
+    vehicle_data = _load_vehicle_yaml_file(vehicle_path) if vehicle_path.is_file() else {}
+    vehicle_key = _vehicle_workspace_key_from_data(vehicle_data)
+    label = str(name or "").strip() or f"{workflow.label} results"
+    result_dir = _unique_result_dir(_result_slug(label))
+    workspace_result_dir = _vehicle_workspace_dir(vehicle_key) / "results" / result_dir.name
+    files_dir = result_dir / "files"
+    files_dir.mkdir()
+    created_at = time.time()
+
+    file_entries = []
+    used_names: set[str] = set()
+    for output, source in existing_outputs:
+        stem = _result_slug(output.label, "output")
+        suffix = source.suffix or ".dat"
+        file_name = f"{stem}{suffix}"
+        index = 2
+        while file_name in used_names:
+            file_name = f"{stem}-{index}{suffix}"
+            index += 1
+        used_names.add(file_name)
+        target = files_dir / file_name
+        shutil.copy2(source, target)
+        file_entries.append(
+            {
+                "label": output.label,
+                "kind": output.kind,
+                "source_path": output.path,
+                "path": target.relative_to(ROOT).as_posix(),
+            }
+        )
+
+    vehicle_snapshot = None
+    if vehicle_path.is_file():
+        snapshot = result_dir / "vehicle.yml"
+        shutil.copy2(vehicle_path, snapshot)
+        vehicle_snapshot = snapshot.relative_to(ROOT).as_posix()
+
+    config_snapshot = None
+    if workflow.config:
+        config_path = _safe_repo_path(workflow.config)
+        if config_path.is_file():
+            snapshot = result_dir / "config.yml"
+            shutil.copy2(config_path, snapshot)
+            config_snapshot = snapshot.relative_to(ROOT).as_posix()
+
+    architecture = vehicle_data.get("architecture", {}) if isinstance(vehicle_data, dict) else {}
+    vehicle = vehicle_data.get("vehicle", {}) if isinstance(vehicle_data, dict) else {}
+    manifest = {
+        "id": result_dir.name,
+        "label": label,
+        "vehicle_key": vehicle_key,
+        "workspace_result_path": workspace_result_dir.relative_to(ROOT).as_posix(),
+        "created_at": created_at,
+        "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at)),
+        "workflow": {"id": workflow.id, "label": workflow.label, "group": workflow.group},
+        "vehicle_name": vehicle.get("name") if isinstance(vehicle, dict) else None,
+        "architecture": architecture if isinstance(architecture, dict) else {},
+        "vehicle_snapshot": vehicle_snapshot,
+        "config_snapshot": config_snapshot,
+        "files": file_entries,
+    }
+    (result_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    shutil.copytree(result_dir, workspace_result_dir, dirs_exist_ok=True)
+    workspace_rel = workspace_result_dir.relative_to(ROOT).as_posix()
+    workspace_manifest = copy.deepcopy(manifest)
+    workspace_manifest["files"] = [
+        {
+            **entry,
+            "path": f"{workspace_rel}/files/{Path(str(entry['path'])).name}",
+        }
+        for entry in file_entries
+    ]
+    if vehicle_snapshot:
+        workspace_manifest["vehicle_snapshot"] = f"{workspace_rel}/vehicle.yml"
+    if config_snapshot:
+        workspace_manifest["config_snapshot"] = f"{workspace_rel}/config.yml"
+    (workspace_result_dir / "manifest.json").write_text(json.dumps(workspace_manifest, indent=2), encoding="utf-8")
+    return {"saved": _result_manifest_payload(workspace_result_dir / "manifest.json"), **saved_results_payload(vehicle_key)}
 
 
 def vehicle_template_payloads() -> dict[str, Any]:
@@ -1389,8 +2186,10 @@ def save_active_vehicle(name: str | None = None) -> dict[str, Any]:
     saved_path = _saved_vehicle_path(vehicle_id)
     saved_path.parent.mkdir(parents=True, exist_ok=True)
     saved_path.write_text(active_path.read_text(encoding="utf-8"), encoding="utf-8")
+    _sync_vehicle_workspace_config(vehicle_id, saved_path, data)
     return {
         "saved": _vehicle_summary(f"saved:{vehicle_id}", "saved", saved_path, data),
+        "workspace": vehicle_workspace_payload(vehicle_id),
         **vehicle_library_payload(),
     }
 
@@ -1512,9 +2311,143 @@ def workflow_payload(workflow: WorkflowSpec) -> dict[str, Any]:
     }
 
 
+def modelica_stack_payload() -> dict[str, Any]:
+    vehicle_target = MODELICA_BUILD_TARGETS["vehicle"]
+    four_post_target = MODELICA_BUILD_TARGETS["four_post"]
+    vehicle_exe = _modelica_build_exe_path(vehicle_target)
+    four_post_exe = _modelica_build_exe_path(four_post_target)
+    try:
+        payload = modelica_stack_status_payload(_safe_repo_path("vehicle.yml"), ROOT)
+    except Exception as exc:
+        return {
+            "state": "error",
+            "written_to_boblib": False,
+            "error": str(exc),
+            "builds": {
+                "vehicle": _modelica_build_payload(vehicle_exe, None, vehicle_target),
+                "four_post": _modelica_build_payload(four_post_exe, None, four_post_target),
+            },
+        }
+    payload["builds"] = {
+        "vehicle": _modelica_build_payload(vehicle_exe, payload, vehicle_target),
+        "four_post": _modelica_build_payload(four_post_exe, payload, four_post_target),
+    }
+    return payload
+
+
+def vehicle_workspace_payload(
+    vehicle_key: str | None = None,
+    *,
+    stack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    active_path = _safe_repo_path("vehicle.yml")
+    data = _load_vehicle_yaml_file(active_path) if active_path.is_file() else {}
+    key = _normalize_vehicle_workspace_key(vehicle_key or _vehicle_workspace_key_from_data(data))
+    vehicle = data.get("vehicle", {}) if isinstance(data, dict) else {}
+    workspace = _vehicle_workspace_dir(key, create=False)
+    rel_workspace = (VEHICLE_WORKSPACE_ROOT / key).as_posix()
+    config_path = SAVED_VEHICLE_ROOT / f"{key}.yml"
+    results = saved_results_payload(key).get("results", [])
+    processing = _read_processing_workflows(key)
+    build_payloads = (stack or {}).get("builds", {})
+    build_labels = {"vehicle": "VehicleSim", "four_post": "FourPostSim"}
+    builds = [
+        {
+            "id": build_id,
+            "label": build_labels.get(build_id, build_id.replace("_", " ").title()),
+            **payload,
+        }
+        for build_id, payload in build_payloads.items()
+        if isinstance(payload, dict)
+    ]
+    return {
+        "key": key,
+        "label": vehicle.get("name", key) if isinstance(vehicle, dict) else key,
+        "workspace": {
+            "path": rel_workspace,
+            "exists": workspace.exists(),
+        },
+        "config": _path_payload(config_path.as_posix()),
+        "groups": {
+            "builds": {
+                "path": (VEHICLE_WORKSPACE_ROOT / key / "builds").as_posix(),
+                "count": sum(1 for build in builds if build.get("exists")),
+            },
+            "results": {
+                "path": (VEHICLE_WORKSPACE_ROOT / key / "results").as_posix(),
+                "count": len(results),
+            },
+            "processing": {
+                "path": (VEHICLE_WORKSPACE_ROOT / key / "processing").as_posix(),
+                "count": len(processing),
+            },
+        },
+        "builds": builds,
+        "results": results,
+        "processing": processing,
+    }
+
+
+def _modelica_build_payload(
+    raw_path: str,
+    stack: dict[str, Any] | None,
+    target: BuildTargetSpec | None = None,
+) -> dict[str, Any]:
+    path_payload = _path_payload(raw_path)
+    path = _safe_repo_path(raw_path)
+    exists = path.is_file()
+    written = bool(stack and stack.get("written_to_boblib"))
+    latest_modelica = float(stack.get("latest_modified") or 0.0) if stack else 0.0
+    modified = float(path_payload.get("modified") or 0.0)
+    signature_payload = None
+    archive_payload = None
+    current_signature = None
+    has_build_metadata = False
+    if target and stack:
+        try:
+            signature_payload = _modelica_build_signature_payload(target, stack)
+            archive_payload = _modelica_archive_payload(target, signature_payload)
+            metadata = _read_modelica_build_metadata(_safe_repo_path(target.build_dir))
+            has_build_metadata = metadata is not None
+            current_signature = metadata.get("signature") if metadata else None
+        except Exception:
+            signature_payload = None
+            archive_payload = None
+    if not written:
+        state = "waiting"
+        label = "Write first"
+    elif exists and signature_payload and current_signature == signature_payload["signature"]:
+        state = "built"
+        label = "Built"
+    elif exists and signature_payload and has_build_metadata:
+        state = "stale"
+        label = "Rebuild needed"
+    elif archive_payload and archive_payload.get("ready"):
+        state = "cached"
+        label = "Cache ready"
+    elif not exists:
+        state = "missing"
+        label = "Build pending"
+    elif latest_modelica and modified < latest_modelica:
+        state = "stale"
+        label = "Rebuild needed"
+    else:
+        state = "built"
+        label = "Built"
+    return {
+        **path_payload,
+        "state": state,
+        "label": label,
+        "signature": signature_payload.get("signature") if signature_payload else None,
+        "current_signature": current_signature,
+        "archive": archive_payload,
+    }
+
+
 def status_payload() -> dict[str, Any]:
-    vehicle_exe = "_3_StandardSim/BuildBobLib/VehicleSim/BobLib.Experiments.Standards.VehicleSim"
-    four_post_exe = "_3_StandardSim/BuildBobLib/FourPostSim/BobLib.Experiments.Standards.FourPostSim"
+    vehicle_exe = _modelica_build_exe_path(MODELICA_BUILD_TARGETS["vehicle"])
+    four_post_exe = _modelica_build_exe_path(MODELICA_BUILD_TARGETS["four_post"])
+    modelica = modelica_stack_payload()
     return {
         "repo": {
             "root": str(ROOT),
@@ -1523,6 +2456,8 @@ def status_payload() -> dict[str, Any]:
             "four_post_exe": _path_payload(four_post_exe),
             "vehicle_yml": _path_payload("vehicle.yml"),
         },
+        "modelica": modelica,
+        "vehicle_workspace": vehicle_workspace_payload(stack=modelica),
         "workflows": [workflow_payload(workflow) for workflow in WORKFLOWS],
         "configs": [config_summary(spec) for spec in config_specs().values()],
         "jobs": JOBS.list()[:8],
@@ -1595,13 +2530,19 @@ def _active_mass_records(vehicle: dict[str, Any]) -> list[tuple[float, list[floa
 
 
 def _active_static_tire_loads(vehicle: dict[str, Any]) -> dict[str, float]:
+    summary = _active_static_load_summary(vehicle)
+    loads = summary.get("per_tire_loads_n", {})
+    return dict(loads) if isinstance(loads, dict) else {}
+
+
+def _active_static_load_summary(vehicle: dict[str, Any]) -> dict[str, Any]:
     records = _active_mass_records(vehicle)
     if not records:
         return {}
     total_mass = sum(mass for mass, _ in records)
     if total_mass <= 0.0:
         return {}
-    cg_x = sum(mass * cg[0] for mass, cg in records) / total_mass
+    cg = [sum(mass * point[index] for mass, point in records) / total_mass for index in range(3)]
     front_wc = _point(vehicle.get("front", {}).get("suspension", {}).get("wheel_center_m"))
     rear_wc = _point(vehicle.get("rear", {}).get("suspension", {}).get("wheel_center_m"))
     if front_wc is None or rear_wc is None:
@@ -1609,11 +2550,22 @@ def _active_static_tire_loads(vehicle: dict[str, Any]) -> dict[str, float]:
     wheelbase = front_wc[0] - rear_wc[0]
     if abs(wheelbase) <= 1e-9:
         return {}
-    front_fraction = max(0.0, min(1.0, (cg_x - rear_wc[0]) / wheelbase))
+    front_fraction = max(0.0, min(1.0, (cg[0] - rear_wc[0]) / wheelbase))
+    rear_fraction = 1.0 - front_fraction
     total_weight = total_mass * 9.80665
+    front_load = total_weight * front_fraction / 2.0
+    rear_load = total_weight * rear_fraction / 2.0
     return {
-        "front": total_weight * front_fraction / 2.0,
-        "rear": total_weight * (1.0 - front_fraction) / 2.0,
+        "source": "total mass properties from vehicle.yml",
+        "total_mass_kg": total_mass,
+        "cg_m": cg,
+        "wheelbase_m": abs(wheelbase),
+        "front_static_frac": front_fraction,
+        "rear_static_frac": rear_fraction,
+        "per_tire_loads_n": {
+            "front": front_load,
+            "rear": rear_load,
+        },
     }
 
 
@@ -1752,14 +2704,16 @@ def _mf52_fy_combined(tire: dict[str, Any], fz: float, alpha: float, kappa: floa
 def _tire_load_values(tire: dict[str, Any], fz_eval: float) -> list[float]:
     fz_min = _num(tire, "FZMIN", fz_eval)
     fz_max = _num(tire, "FZMAX", fz_eval)
+    fz_nom = _num(tire, "FNOMIN", fz_eval)
     if fz_min <= 0.0:
-        fz_min = min(fz_eval, _num(tire, "FNOMIN", fz_eval))
+        fz_min = min(fz_eval, fz_nom)
     if fz_max <= fz_min:
-        fz_max = max(fz_eval, _num(tire, "FNOMIN", fz_eval), fz_min * 1.5)
+        fz_max = max(fz_eval, fz_nom, fz_min * 1.5)
     low = min(fz_min, fz_eval)
     high = max(fz_max, fz_eval)
     values = [value for value in _linspace(low, high, 5) if value > 0.0]
     values.append(fz_eval)
+    values.append(fz_nom)
     return sorted({round(float(value), 6) for value in values})
 
 
@@ -1772,6 +2726,10 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
     alpha_levels = [math.radians(value) for value in (-8.0, 0.0, 8.0)]
     kappa_levels = [-0.1, 0.0, 0.1]
     load_values = _tire_load_values(tire, fz_eval)
+    gamma_values = sorted({
+        *(math.radians(value) for value in (-8.0, -6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0)),
+        gamma,
+    })
     fx = [
         {
             "kappa": value,
@@ -1789,65 +2747,147 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
         }
         for value in alpha_values
     ]
-    fx_by_fz = [
+
+    def fx_load_surface_at_gamma(gamma_value: float) -> list[dict[str, Any]]:
+        return [
+            {
+                "fz_n": load,
+                "points": [
+                    {
+                        "kappa": kappa,
+                        "fz_n": load,
+                        "fx_n": _mf52_fx_pure(tire, load, kappa, gamma_value),
+                    }
+                    for kappa in kappa_values
+                ],
+            }
+            for load in load_values
+        ]
+
+    def fy_load_surface_at_gamma(gamma_value: float) -> list[dict[str, Any]]:
+        return [
+            {
+                "fz_n": load,
+                "points": [
+                    {
+                        "alpha_rad": alpha,
+                        "alpha_deg": math.degrees(alpha),
+                        "fz_n": load,
+                        "fy_n": -_mf52_fy_pure(tire, load, alpha, gamma_value),
+                    }
+                    for alpha in alpha_values
+                ],
+            }
+            for load in load_values
+        ]
+
+    fx_by_fz = fx_load_surface_at_gamma(gamma)
+    fy_by_fz = fy_load_surface_at_gamma(gamma)
+    fx_by_gamma = [
         {
-            "fz_n": load,
-            "points": [
+            "gamma_rad": value,
+            "gamma_deg": math.degrees(value),
+            "rows": fx_load_surface_at_gamma(value),
+        }
+        for value in gamma_values
+    ]
+    fy_by_gamma = [
+        {
+            "gamma_rad": value,
+            "gamma_deg": math.degrees(value),
+            "rows": fy_load_surface_at_gamma(value),
+        }
+        for value in gamma_values
+    ]
+
+    def fx_surface_at_load(load: float, gamma_value: float) -> list[dict[str, Any]]:
+        return [
+            {
+                "alpha_rad": alpha,
+                "alpha_deg": math.degrees(alpha),
+                "points": [
+                    {
+                        "alpha_rad": alpha,
+                        "alpha_deg": math.degrees(alpha),
+                        "kappa": kappa,
+                        "fz_n": load,
+                        "fx_n": _mf52_fx_combined(tire, load, kappa, alpha, gamma_value),
+                    }
+                    for kappa in surface_kappa_values
+                ],
+            }
+            for alpha in surface_alpha_values
+        ]
+
+    def fy_surface_at_load(load: float, gamma_value: float) -> list[dict[str, Any]]:
+        return [
+            {
+                "kappa": kappa,
+                "fz_n": load,
+                "points": [
+                    {
+                        "alpha_rad": alpha,
+                        "alpha_deg": math.degrees(alpha),
+                        "kappa": kappa,
+                        "fz_n": load,
+                        "fy_n": -_mf52_fy_combined(tire, load, alpha, kappa, gamma_value),
+                    }
+                    for alpha in surface_alpha_values
+                ],
+            }
+            for kappa in surface_kappa_values
+        ]
+
+    fx_surface = fx_surface_at_load(fz_eval, gamma)
+    fy_surface = fy_surface_at_load(fz_eval, gamma)
+    fx_surfaces_by_fz = [{"fz_n": load, "rows": fx_surface_at_load(load, gamma)} for load in load_values]
+    fy_surfaces_by_fz = [{"fz_n": load, "rows": fy_surface_at_load(load, gamma)} for load in load_values]
+    fz_nom = max(_num(tire, "FNOMIN", fz_eval), 1e-8)
+
+    def force_map_at(load: float, gamma_value: float) -> list[dict[str, Any]]:
+        return [
+            {
+                "alpha_rad": alpha,
+                "alpha_deg": math.degrees(alpha),
+                "fz_n": load,
+                "points": [
+                    {
+                        "alpha_rad": alpha,
+                        "alpha_deg": math.degrees(alpha),
+                        "kappa": kappa,
+                        "fz_n": load,
+                        "fx_n": _mf52_fx_combined(tire, load, kappa, alpha, gamma_value),
+                        "fy_n": -_mf52_fy_combined(tire, load, alpha, kappa, gamma_value),
+                    }
+                    for kappa in surface_kappa_values
+                ],
+            }
+            for alpha in surface_alpha_values
+        ]
+
+    nominal_force_map = force_map_at(fz_nom, gamma)
+    nominal_force_maps_by_gamma = [
+        {
+            "gamma_rad": value,
+            "gamma_deg": math.degrees(value),
+            "fz_n": fz_nom,
+            "rows": force_map_at(fz_nom, value),
+        }
+        for value in gamma_values
+    ]
+    force_maps_by_gamma_fz = [
+        {
+            "gamma_rad": value,
+            "gamma_deg": math.degrees(value),
+            "maps": [
                 {
-                    "kappa": kappa,
                     "fz_n": load,
-                    "fx_n": _mf52_fx_pure(tire, load, kappa, gamma),
+                    "rows": force_map_at(load, value),
                 }
-                for kappa in kappa_values
+                for load in load_values
             ],
         }
-        for load in load_values
-    ]
-    fy_by_fz = [
-        {
-            "fz_n": load,
-            "points": [
-                {
-                    "alpha_rad": alpha,
-                    "alpha_deg": math.degrees(alpha),
-                    "fz_n": load,
-                    "fy_n": -_mf52_fy_pure(tire, load, alpha, gamma),
-                }
-                for alpha in alpha_values
-            ],
-        }
-        for load in load_values
-    ]
-    fx_surface = [
-        {
-            "alpha_rad": alpha,
-            "alpha_deg": math.degrees(alpha),
-            "points": [
-                {
-                    "alpha_rad": alpha,
-                    "alpha_deg": math.degrees(alpha),
-                    "kappa": kappa,
-                    "fx_n": _mf52_fx_combined(tire, fz_eval, kappa, alpha, gamma),
-                }
-                for kappa in surface_kappa_values
-            ],
-        }
-        for alpha in surface_alpha_values
-    ]
-    fy_surface = [
-        {
-            "kappa": kappa,
-            "points": [
-                {
-                    "alpha_rad": alpha,
-                    "alpha_deg": math.degrees(alpha),
-                    "kappa": kappa,
-                    "fy_n": -_mf52_fy_combined(tire, fz_eval, alpha, kappa, gamma),
-                }
-                for alpha in surface_alpha_values
-            ],
-        }
-        for kappa in surface_kappa_values
+        for value in gamma_values
     ]
     return {
         "pure": {
@@ -1855,6 +2895,8 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
             "lateral": fy,
             "longitudinal_by_fz": fx_by_fz,
             "lateral_by_fz": fy_by_fz,
+            "longitudinal_by_gamma": fx_by_gamma,
+            "lateral_by_gamma": fy_by_gamma,
         },
         "longitudinal": fx,
         "lateral": fy,
@@ -1896,6 +2938,18 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
                 "z_key": "fy_n",
                 "rows": fy_surface,
             },
+            "force_map_nominal": {
+                "fz_n": fz_nom,
+                "gamma_rad": gamma,
+                "gamma_deg": math.degrees(gamma),
+                "x_key": "fy_n",
+                "y_key": "fx_n",
+                "rows": nominal_force_map,
+            },
+            "force_maps_by_gamma": nominal_force_maps_by_gamma,
+            "force_maps_by_gamma_fz": force_maps_by_gamma_fz,
+            "fx_surfaces_by_fz": fx_surfaces_by_fz,
+            "fy_surfaces_by_fz": fy_surfaces_by_fz,
         },
         "load_sensitivity": [
             {
@@ -1909,9 +2963,11 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
     }
 
 
-def tire_eval_payload() -> dict[str, Any]:
-    vehicle = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
-    static_loads = _active_static_tire_loads(vehicle)
+def tire_eval_payload(vehicle: dict[str, Any] | None = None) -> dict[str, Any]:
+    if vehicle is None:
+        vehicle = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
+    load_summary = _active_static_load_summary(vehicle)
+    static_loads = dict(load_summary.get("per_tire_loads_n", {}))
     sides = []
     for side_name in ("front", "rear"):
         template = _tire_template_for_side(vehicle, side_name)
@@ -1940,12 +2996,26 @@ def tire_eval_payload() -> dict[str, Any]:
                     "longvl_mps": _num(tire, "LONGVL"),
                     "pdx1": _num(tire, "PDX1"),
                     "pdy1": _num(tire, "PDY1"),
+                    "camber_thrust": {
+                        "enabled": any(
+                            abs(_num(tire, key)) > 1e-12
+                            for key in ("PHY3", "PVY3", "PVY4", "RVY3")
+                        ),
+                        "phy3": _num(tire, "PHY3"),
+                        "pvy3": _num(tire, "PVY3"),
+                        "pvy4": _num(tire, "PVY4"),
+                        "rvy3": _num(tire, "RVY3"),
+                        "pdy3": _num(tire, "PDY3"),
+                        "pky3": _num(tire, "PKY3"),
+                        "lgay": _num(tire, "LGAY", 1.0),
+                    },
                 },
                 "curves": _mf52_curves(tire, fz, math.radians(camber_deg)),
             }
         )
     return {
         "model": "BobLib MF52 pure-slip equations from active .tir coefficients",
+        "load_summary": load_summary,
         "sides": sides,
     }
 
@@ -1965,7 +3035,266 @@ def read_text_payload(raw_path: str) -> dict[str, Any]:
     }
 
 
-def _run_action_process(action: ActionSpec, job_id: str) -> int:
+def _modelica_build_exe_path(target: BuildTargetSpec) -> str:
+    return f"{target.build_dir}/{target.exec_name}"
+
+
+def _modelica_build_init_name(target: BuildTargetSpec) -> str:
+    return f"{target.exec_name}_init.xml"
+
+
+def _host_build_fingerprint() -> dict[str, str]:
+    fingerprint = {
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+    }
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        for line in cpuinfo.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.lower().startswith("model name"):
+                _, _, value = line.partition(":")
+                fingerprint["cpu_model"] = value.strip()
+                break
+    return fingerprint
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _modelica_build_signature_payload(
+    target: BuildTargetSpec,
+    stack: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    stack_payload = stack or modelica_stack_status_payload(_safe_repo_path("vehicle.yml"), ROOT)
+    generated = stack_payload.get("signatures", {}).get(target.id, {}).get("generated")
+    if not generated:
+        raise ValueError(f"Missing generated Modelica signature for {target.label}")
+    script_path = _safe_repo_path(target.script)
+    script_text = script_path.read_text(encoding="utf-8", errors="replace")
+    host = _host_build_fingerprint()
+    inputs = {
+        "version": 1,
+        "target": target.id,
+        "label": target.label,
+        "exec_name": target.exec_name,
+        "generated_signature": generated,
+        "script_sha256": _sha256_text(script_text),
+        "host": host,
+    }
+    signature = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
+    return {
+        "signature": signature,
+        "inputs": inputs,
+        "generated_signature": generated,
+        "script_path": target.script,
+        "script_sha256": inputs["script_sha256"],
+        "host": host,
+    }
+
+
+def _modelica_build_archive_dir(target: BuildTargetSpec, signature: str) -> Path:
+    return _safe_repo_path(BUILD_ARCHIVE_ROOT / "modelica" / target.id / signature)
+
+
+def _modelica_build_dir_ready(target: BuildTargetSpec, build_dir: Path | None = None) -> bool:
+    directory = build_dir or _safe_repo_path(target.build_dir)
+    return (directory / target.exec_name).is_file() and (directory / _modelica_build_init_name(target)).is_file()
+
+
+def _modelica_build_metadata_path(build_dir: Path) -> Path:
+    return build_dir / BUILD_METADATA_FILENAME
+
+
+def _read_modelica_build_metadata(build_dir: Path) -> dict[str, Any] | None:
+    path = _modelica_build_metadata_path(build_dir)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_modelica_build_metadata(
+    target: BuildTargetSpec,
+    signature: dict[str, Any],
+    *,
+    source: str,
+    build_dir: Path | None = None,
+) -> dict[str, Any]:
+    directory = build_dir or _safe_repo_path(target.build_dir)
+    metadata = {
+        "target": target.id,
+        "label": target.label,
+        "exec_name": target.exec_name,
+        "build_dir": target.build_dir,
+        "source": source,
+        "signature": signature["signature"],
+        "signature_inputs": signature.get("inputs", {}),
+        "created_at": time.time(),
+        "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+    }
+    directory.mkdir(parents=True, exist_ok=True)
+    _modelica_build_metadata_path(directory).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    return metadata
+
+
+def _modelica_archive_ignore(_directory: str, names: list[str]) -> set[str]:
+    ignored = {"results", "__pycache__"}
+    for name in names:
+        if name.endswith((".csv", ".mat", ".log")) or "_prof." in name:
+            ignored.add(name)
+    return ignored
+
+
+def _modelica_archive_payload(target: BuildTargetSpec, signature: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not signature:
+        return None
+    archive_dir = _modelica_build_archive_dir(target, str(signature["signature"]))
+    files_dir = archive_dir / "files"
+    rel = archive_dir.relative_to(ROOT).as_posix() if ROOT in archive_dir.parents else archive_dir.as_posix()
+    manifest = archive_dir / "manifest.json"
+    return {
+        "signature": signature["signature"],
+        "path": rel,
+        "exists": archive_dir.is_dir(),
+        "ready": _modelica_build_dir_ready(target, files_dir),
+        "manifest": manifest.relative_to(ROOT).as_posix() if manifest.is_file() else None,
+    }
+
+
+def _store_modelica_build_archive(
+    target: BuildTargetSpec,
+    signature: dict[str, Any],
+    job_id: str | None = None,
+) -> bool:
+    build_dir = _safe_repo_path(target.build_dir)
+    if not _modelica_build_dir_ready(target, build_dir):
+        return False
+
+    _write_modelica_build_metadata(target, signature, source="local-build", build_dir=build_dir)
+    archive_dir = _modelica_build_archive_dir(target, str(signature["signature"]))
+    files_dir = archive_dir / "files"
+    if _modelica_build_dir_ready(target, files_dir):
+        return True
+
+    parent = archive_dir.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = parent / f".{archive_dir.name}.tmp-{uuid.uuid4().hex[:8]}"
+    try:
+        shutil.copytree(build_dir, tmp_dir / "files", symlinks=True, ignore=_modelica_archive_ignore)
+        manifest = {
+            "target": target.id,
+            "label": target.label,
+            "signature": signature["signature"],
+            "signature_inputs": signature.get("inputs", {}),
+            "source_build_dir": target.build_dir,
+            "created_at": time.time(),
+            "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        }
+        (tmp_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        if archive_dir.exists():
+            shutil.rmtree(archive_dir)
+        tmp_dir.rename(archive_dir)
+        if job_id:
+            JOBS.append_log(
+                job_id,
+                f"Archived {target.label} build: {archive_dir.relative_to(ROOT).as_posix()}\n",
+            )
+        return True
+    finally:
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _restore_modelica_build_from_archive(
+    target: BuildTargetSpec,
+    signature: dict[str, Any],
+    job_id: str | None = None,
+) -> bool:
+    archive_dir = _modelica_build_archive_dir(target, str(signature["signature"]))
+    files_dir = archive_dir / "files"
+    if not _modelica_build_dir_ready(target, files_dir):
+        return False
+
+    build_dir = _safe_repo_path(target.build_dir)
+    build_dir.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = build_dir.parent / f".{build_dir.name}.restore-{uuid.uuid4().hex[:8]}"
+    try:
+        shutil.copytree(files_dir, tmp_dir, symlinks=True)
+        _write_modelica_build_metadata(target, signature, source="archive", build_dir=tmp_dir)
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
+        tmp_dir.rename(build_dir)
+        if job_id:
+            JOBS.append_log(
+                job_id,
+                f"Restored {target.label} build from archive: {archive_dir.relative_to(ROOT).as_posix()}\n",
+            )
+        return True
+    finally:
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _modelica_existing_build_matches(
+    target: BuildTargetSpec,
+    signature: dict[str, Any],
+    stack: dict[str, Any],
+) -> bool:
+    build_dir = _safe_repo_path(target.build_dir)
+    if not _modelica_build_dir_ready(target, build_dir):
+        return False
+    metadata = _read_modelica_build_metadata(build_dir)
+    if metadata:
+        return metadata.get("signature") == signature["signature"]
+
+    exe_path = build_dir / target.exec_name
+    script_path = _safe_repo_path(target.script)
+    latest_input_modified = max(
+        float(stack.get("latest_modified") or 0.0),
+        script_path.stat().st_mtime if script_path.is_file() else 0.0,
+    )
+    return bool(stack.get("written_to_boblib")) and exe_path.stat().st_mtime >= latest_input_modified
+
+
+def _run_modelica_build_action(action: ActionSpec, target: BuildTargetSpec, job_id: str) -> int:
+    JOBS.append_log(job_id, f"\n# {target.label} build cache\n")
+    try:
+        stack = modelica_stack_status_payload(_safe_repo_path("vehicle.yml"), ROOT)
+        signature = _modelica_build_signature_payload(target, stack)
+    except Exception as exc:
+        JOBS.append_log(job_id, f"Build cache unavailable: {type(exc).__name__}: {exc}\n")
+        return _run_subprocess_action(action, job_id)
+
+    short_signature = str(signature["signature"])[:12]
+    if not stack.get("written_to_boblib"):
+        JOBS.append_log(job_id, "BobLib vehicle definition is not current; running build directly.\n")
+        return _run_subprocess_action(action, job_id)
+
+    if _restore_modelica_build_from_archive(target, signature, job_id):
+        JOBS.append_log(job_id, f"{target.label} cache hit ({short_signature}); skipped OpenModelica build.\n")
+        return 0
+
+    if _modelica_existing_build_matches(target, signature, stack):
+        JOBS.append_log(job_id, f"{target.label} already matches signature {short_signature}; archiving local build.\n")
+        _store_modelica_build_archive(target, signature, job_id)
+        return 0
+
+    JOBS.append_log(job_id, f"{target.label} cache miss ({short_signature}); running OpenModelica build.\n")
+    returncode = _run_subprocess_action(action, job_id)
+    if returncode == 0:
+        if _store_modelica_build_archive(target, signature, job_id):
+            JOBS.append_log(job_id, f"{target.label} build archived for signature {short_signature}.\n")
+        else:
+            JOBS.append_log(job_id, f"{target.label} build completed, but required executable/init XML were missing.\n")
+    return returncode
+
+
+def _run_subprocess_action(action: ActionSpec, job_id: str) -> int:
     env = os.environ.copy()
     env.update(action.env)
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -1983,6 +3312,13 @@ def _run_action_process(action: ActionSpec, job_id: str) -> int:
         for line in process.stdout:
             JOBS.append_log(job_id, line)
         return process.wait()
+
+
+def _run_action_process(action: ActionSpec, job_id: str) -> int:
+    target = MODELICA_BUILD_TARGETS_BY_ACTION.get(action.id)
+    if target:
+        return _run_modelica_build_action(action, target, job_id)
+    return _run_subprocess_action(action, job_id)
 
 
 def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str) -> None:
@@ -2050,10 +3386,28 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(config_payload(config_id))
             elif parsed.path == "/api/vehicles":
                 self._send_json(vehicle_library_payload())
+            elif parsed.path == "/api/vehicle-workspace":
+                query = parse_qs(parsed.query)
+                vehicle_key = query.get("vehicle_key", [None])[0]
+                self._send_json(vehicle_workspace_payload(vehicle_key))
             elif parsed.path == "/api/vehicle-templates":
                 self._send_json(vehicle_template_payloads())
             elif parsed.path == "/api/sim-configs":
                 self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
+            elif parsed.path == "/api/results":
+                query = parse_qs(parsed.query)
+                vehicle_key = query.get("vehicle_key", [None])[0] or _active_vehicle_workspace_key()
+                self._send_json(saved_results_payload(vehicle_key))
+            elif parsed.path == "/api/results/sources":
+                query = parse_qs(parsed.query)
+                vehicle_key = query.get("vehicle_key", [None])[0] or _active_vehicle_workspace_key()
+                self._send_json(result_sources_payload(vehicle_key))
+            elif parsed.path == "/api/results/source":
+                self._send_json(result_source_payload(_query_one(parsed.query, "path")))
+            elif parsed.path == "/api/processing/workflows":
+                query = parse_qs(parsed.query)
+                vehicle_key = query.get("vehicle_key", [None])[0]
+                self._send_json(processing_workflows_payload(vehicle_key))
             elif parsed.path == "/api/tires/eval":
                 self._send_json(tire_eval_payload())
             elif parsed.path == "/api/kinematics/curves":
@@ -2119,6 +3473,9 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/vehicles/delete":
                 payload = delete_saved_vehicle(str(body.get("source_id", "")))
                 self._send_json(payload)
+            elif parsed.path == "/api/modelica/generate":
+                payload = generate_modelica_payload()
+                self._send_json(payload)
             elif parsed.path == "/api/sim-configs/load":
                 payload = load_sim_config_source(str(body.get("source_id", "")))
                 self._send_json(payload)
@@ -2127,6 +3484,29 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(payload)
             elif parsed.path == "/api/sim-configs/delete":
                 payload = delete_saved_sim_config(str(body.get("source_id", "")))
+                self._send_json(payload)
+            elif parsed.path == "/api/results/save":
+                payload = save_active_results(str(body.get("workflow_id", "")), str(body.get("name", "")))
+                self._send_json(payload)
+            elif parsed.path == "/api/processing/workflows":
+                payload = add_processing_workflow(body)
+                self._send_json(payload, status=HTTPStatus.CREATED)
+            elif parsed.path == "/api/processing/workflows/delete":
+                payload = delete_processing_workflow(
+                    str(body.get("workflow_id", "")),
+                    str(body.get("vehicle_key", "")) or None,
+                )
+                self._send_json(payload)
+            elif parsed.path == "/api/results/series":
+                raw_signals = body.get("signals", [])
+                if not isinstance(raw_signals, list):
+                    raise TypeError("signals must be a list")
+                payload = result_series_payload(
+                    str(body.get("path", "")),
+                    x_axis=str(body.get("x_axis", "__index__")),
+                    signals=[str(signal) for signal in raw_signals],
+                    max_points=int(body.get("max_points", 1800)),
+                )
                 self._send_json(payload)
             elif parsed.path == "/api/kinematics/curves":
                 vehicle = body.get("vehicle")
@@ -2138,6 +3518,13 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 if sweep_m is not None and not isinstance(sweep_m, list):
                     raise TypeError("sweep_m must be a list")
                 self._send_json(kinematic_curves_payload(vehicle, sweep_m=sweep_m))
+            elif parsed.path == "/api/tires/eval":
+                vehicle = body.get("vehicle")
+                if vehicle is None:
+                    vehicle = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
+                if not isinstance(vehicle, dict):
+                    raise TypeError("vehicle must be an object")
+                self._send_json(tire_eval_payload(vehicle))
             elif parsed.path == "/api/tires/template":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)

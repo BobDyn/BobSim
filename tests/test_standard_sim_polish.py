@@ -12,6 +12,7 @@ from _3_StandardSim.FourPostEval.four_post_eval_sim import (
     FOUR_POST_STOP_TIME_S,
     FourPostEvalSim,
 )
+from _3_StandardSim._modelica_runner import ModelicaRunner
 from _3_StandardSim.RampSteerEval.ramp_steer_eval_sim import RampSteerEvalSim
 from _3_StandardSim.SteadyStateEval.steady_state_eval_sim import SteadyStateEvalSim
 from _3_StandardSim.TransientEval.transient_eval_sim import TransientEvalSim
@@ -95,7 +96,7 @@ def test_bobsim_sources_do_not_reference_legacy_boblib_generation_layout() -> No
     assert not offenders
 
 
-def test_report_outputs_stay_under_standard_results() -> None:
+def test_report_outputs_stay_under_standard_generated_results() -> None:
     for rel_path in STANDARD_CONFIGS:
         report = _load_yaml(rel_path).get("report", {})
         assert isinstance(report, dict)
@@ -104,7 +105,7 @@ def test_report_outputs_stay_under_standard_results() -> None:
                 continue
             path = Path(str(report[key]))
             assert not path.is_absolute(), f"{rel_path}: {key} should be repo-relative"
-            assert path.parts[:2] == ("_3_StandardSim", "results"), rel_path
+            assert path.parts[:2] == ("_3_StandardSim", "generated_results"), rel_path
 
 
 def test_application_specific_artifacts_are_not_in_bobsim() -> None:
@@ -251,6 +252,46 @@ def test_ramp_steer_eval_uses_open_loop_ramp_mode() -> None:
     assert cases
     assert {case.get("useMode", 0) for case in cases} == {0}
     assert {case["_mode"] for case in cases} == {"open_loop_ramp_steer"}
+    assert {case["targetVel"] for case in cases} == {
+        float(vel) for vel in config["sweep"]["testVels"]
+    }
+
+
+def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
+    tmp_path: Path,
+) -> None:
+    runner = ModelicaRunner.__new__(ModelicaRunner)
+    override_path = tmp_path / "case.override"
+
+    runner._write_override_file(
+        override_path,
+        {
+            "_testVel": 12.5,
+            "targetVel": 12.5,
+            "targetAy": 18.0,
+            "useMode": 0,
+            "steerStart": 2.0,
+            "handwheelRampRate": 0.06,
+            "velGain": 100.0,
+            "velTi": 2.0,
+            "startTime": 0.0,
+            "stopTime": 45.0,
+        },
+    )
+
+    lines = set(override_path.read_text(encoding="utf-8").splitlines())
+
+    assert "initialVel=12.5" in lines
+    assert "vcu.targetVel=12.5" not in lines
+    assert "vcu.targetAy=18.0" in lines
+    assert "vcu.useMode=0" in lines
+    assert "vcu.steerStart=2.0" in lines
+    assert "vcu.handwheelRampRate=0.06" in lines
+    assert "vcu.velGain=100.0" in lines
+    assert "vcu.velTi=2.0" in lines
+    assert not any(line.startswith("_") for line in lines)
+    assert not any(line.startswith("startTime=") for line in lines)
+    assert not any(line.startswith("stopTime=") for line in lines)
 
 
 def test_steady_state_eval_uses_closed_loop_steady_mode() -> None:
