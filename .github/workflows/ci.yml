@@ -81,3 +81,11 @@ jobs:
             _3_StandardSim/results/steady_state_eval_report_metrics.csv
             _3_StandardSim/results/transient_eval_report.pdf
             _3_StandardSim/results/transient_eval_report_metrics.csv
+            _3_StandardSim/generated_results/four_post_eval_report.pdf
+            _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
+            _3_StandardSim/generated_results/ramp_steer_eval_report.pdf
+            _3_StandardSim/generated_results/ramp_steer_eval_report_metrics.csv
+            _3_StandardSim/generated_results/steady_state_eval_report.pdf
+            _3_StandardSim/generated_results/steady_state_eval_report_metrics.csv
+            _3_StandardSim/generated_results/transient_eval_report.pdf
+            _3_StandardSim/generated_results/transient_eval_report_metrics.csv

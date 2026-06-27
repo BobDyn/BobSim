@@ -79,7 +79,26 @@ def _artifact_path(workflow: Mapping[str, Any], artifact_key: str) -> Path:
     results_dir = os.environ.get("BOBSIM_REGRESSION_RESULTS_DIR")
     if results_dir:
         return _repo_path(results_dir) / Path(raw_path).name
-    return _repo_path(raw_path)
+
+    path = _repo_path(raw_path)
+    generated_path = _standard_generated_artifact_path(path)
+    if generated_path is None:
+        return path
+    if BASELINE_REGRESSION_ENABLED and generated_path.exists():
+        return generated_path
+    if path.exists():
+        return path
+    return generated_path
+
+
+def _standard_generated_artifact_path(path: Path) -> Path | None:
+    try:
+        relative = path.relative_to(ROOT)
+    except ValueError:
+        return None
+    if len(relative.parts) < 3 or relative.parts[:2] != ("_3_StandardSim", "results"):
+        return None
+    return ROOT / "_3_StandardSim" / "generated_results" / Path(*relative.parts[2:])
 
 
 def _min_report_bytes(workflow: Mapping[str, Any]) -> int:
