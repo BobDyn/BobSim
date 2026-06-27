@@ -820,7 +820,7 @@ def _vehicle_template_text(
     front_arch: ArchitectureSpec,
     rear_arch: ArchitectureSpec,
 ) -> str:
-    chassis_assignments = [
+    chassis_assignments: list[tuple[str, Any]] = [
         ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
         ("redeclare model FrAxleModel", ModelicaExpression(front_arch.front_model)),
         ("redeclare model RrAxleModel", ModelicaExpression(rear_arch.rear_model)),

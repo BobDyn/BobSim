@@ -550,7 +550,7 @@ def result_series_payload(
     point_limit = max(50, min(10_000, int(max_points or 1800)))
     stride = max(1, math.ceil(row_count / point_limit)) if row_count else 1
     x_values: list[float] = []
-    series = {signal: [] for signal in selected_signals}
+    series: dict[str, list[float | None]] = {signal: [] for signal in selected_signals}
 
     with path.open("r", encoding="utf-8", newline="", errors="replace") as handle:
         reader = csv.DictReader(handle)
@@ -725,7 +725,7 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         "Powertrain architecture",
         kind="select",
         group="Powertrain implementation",
-        choices=tuple(item["id"] for item in POWERTRAIN_IMPLEMENTATIONS),
+        choices=tuple(str(item["id"]) for item in POWERTRAIN_IMPLEMENTATIONS),
     ),
     _field("powertrain.pBattery.Ns", "Series cells", kind="integer", group="Battery"),
     _field("powertrain.pBattery.Np", "Parallel cells", kind="integer", group="Battery"),
@@ -1773,10 +1773,11 @@ def _sync_vehicle_workspace_config(vehicle_key: str, source_path: Path, data: di
     target = workspace / "config" / "vehicle.yml"
     shutil.copy2(source_path, target)
     vehicle = data.get("vehicle", {}) if isinstance(data, dict) else {}
+    source_label = source_path.relative_to(ROOT).as_posix() if source_path.is_relative_to(ROOT) else str(source_path)
     manifest = {
         "vehicle_key": vehicle_key,
         "vehicle_name": vehicle.get("name") if isinstance(vehicle, dict) else None,
-        "source_path": source_path.relative_to(ROOT).as_posix() if source_path.is_relative_to(ROOT) else str(source_path),
+        "source_path": source_label,
         "updated_at": time.time(),
         "updated_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
     }
@@ -2055,7 +2056,10 @@ def save_active_results(workflow_id: str, name: str | None = None) -> dict[str, 
     if config_snapshot:
         workspace_manifest["config_snapshot"] = f"{workspace_rel}/config.yml"
     (workspace_result_dir / "manifest.json").write_text(json.dumps(workspace_manifest, indent=2), encoding="utf-8")
-    return {"saved": _result_manifest_payload(workspace_result_dir / "manifest.json"), **saved_results_payload(vehicle_key)}
+    return {
+        "saved": _result_manifest_payload(workspace_result_dir / "manifest.json"),
+        **saved_results_payload(vehicle_key),
+    }
 
 
 def vehicle_template_payloads() -> dict[str, Any]:
