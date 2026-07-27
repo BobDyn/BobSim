@@ -580,6 +580,52 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("fit.nonlinearity_fraction", "Nonlinearity fraction", kind="number", group="Fit"),
         ),
     ),
+    "fbrc": ConfigSpec(
+        id="fbrc",
+        group="standard",
+        label="FbrcEval",
+        path="_3_StandardSim/FbrcEval/fbrc_eval_config.yml",
+        workflow_id="fbrc",
+        fields=COMMON_SIM_FIELDS
+        + (
+            _field("sweep.testVels", "Test velocities", kind="list", group="Sweep", unit="m/s"),
+            _field(
+                "sweep.targetAys",
+                "Target lateral accelerations",
+                kind="list",
+                group="Sweep",
+                unit="m/s^2",
+                help_text=(
+                    "Force-based roll center height is a lateral-force-weighted mean, "
+                    "so it is undefined at zero lateral acceleration."
+                ),
+            ),
+            _field(
+                "simulation.vehicle_yaml_path",
+                "Vehicle YAML path",
+                kind="string",
+                group="Geometry",
+                help_text=(
+                    "Source of the control-arm inboard axis directions, which are rigid "
+                    "in the chassis frame. All hardpoint positions come from the model."
+                ),
+            ),
+            _field(
+                "simulation.init_parameters.steadyStateSettleTimeout",
+                "Settle timeout",
+                kind="number",
+                group="Closed loop",
+                unit="s",
+            ),
+            _field(
+                "simulation.init_parameters.steadyStateAyTolerance",
+                "Ay tolerance",
+                kind="number",
+                group="Closed loop",
+                unit="m/s^2",
+            ),
+        ),
+    ),
     "transient": ConfigSpec(
         id="transient",
         group="standard",
@@ -815,6 +861,12 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             argv=_python_module_argv(python, python_module_arg, "_3_StandardSim.FourPostEval.four_post_eval_sim"),
             requires_external_toolchain=True,
         ),
+        "run-fbrc": ActionSpec(
+            id="run-fbrc",
+            label="Run FbrcEval",
+            argv=_python_module_argv(python, python_module_arg, "_3_StandardSim.FbrcEval.fbrc_eval_sim"),
+            requires_external_toolchain=True,
+        ),
         "run-ggv": ActionSpec(
             id="run-ggv",
             label="Run GGV",
@@ -918,6 +970,17 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             outputs=(
                 OutputSpec("Report", "_3_StandardSim/generated_results/four_post_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv", "csv"),
+            ),
+        ),
+        WorkflowSpec(
+            id="fbrc",
+            group="standard",
+            label="FbrcEval",
+            config="_3_StandardSim/FbrcEval/fbrc_eval_config.yml",
+            actions=("build-vehicle", "run-fbrc"),
+            outputs=(
+                OutputSpec("Report", "_3_StandardSim/generated_results/fbrc_eval_report.pdf", "pdf"),
+                OutputSpec("Metrics", "_3_StandardSim/generated_results/fbrc_eval_report_metrics.csv", "csv"),
             ),
         ),
         WorkflowSpec(

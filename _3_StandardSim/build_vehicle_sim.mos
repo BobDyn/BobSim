@@ -34,6 +34,12 @@ mkdir(buildDir);
 // Go to build directory.
 cd(buildDir);
 
+// Pick the host-tuning flag the compiler actually accepts. clang on aarch64
+// rejects -march=native and wants -mcpu=native instead, so probe rather than
+// assume x86. Falling back keeps the build portable without losing tuning.
+marchSupported := OpenModelica.Scripting.system("clang -march=native -x c -c /dev/null -o /dev/null > /dev/null 2>&1") == 0;
+archFlags := if marchSupported then "-march=native -mtune=native" else "-mcpu=native -mtune=native";
+
 // Build executable directly.
 res := buildModel(
   BobLib.Experiments.Standards.VehicleSim,
@@ -41,7 +47,7 @@ res := buildModel(
   stopTime = 10,
   tolerance = 1e-6,
   outputFormat = "csv",
-  cflags = "-O3 -march=native -mtune=native"
+  cflags = "-O3 " + archFlags
 );
 
 // Print build result and errors/warnings.

@@ -1,10 +1,10 @@
 schema: boblib.vehicle.v1
 vehicle:
-  name: EVBatInvMotDiff_DWBCStabar_DWBCStabar
+  name: sample_vehicle
   version: 0.1.0
 architecture:
   front: bellcrank_stabar
-  rear: bellcrank_stabar
+  rear: bellcrank
 paths:
   boblib: _0_Utils/external/BobLib/BobLib
   tire_templates: _0_Utils/tire_templates
@@ -110,7 +110,7 @@ front:
           - 0
         - - 1
           - 26269.02525
-      free_length_m: 0.199700878416
+      free_length_m: 0.2
       damper_table:
         table:
         - - -1
@@ -142,9 +142,9 @@ front:
         - 0.2971411507
         - 0.37219698865
       order:
+      - stabar
       - rod
       - shock
-      - stabar
     stabar:
       arm_end_m:
       - -0.03682914
@@ -288,7 +288,7 @@ rear:
           - 0
         - - 1
           - 43781.70875
-      free_length_m: 0.263423049137
+      free_length_m: 0.265
       damper_table:
         table:
         - - -1
@@ -315,24 +315,9 @@ rear:
         - -1.43801295
         - 0.36137285
         - 0.14160048
-        stabar:
-        - -1.41346984
-        - 0.31057564
-        - 0.12306883
       order:
       - rod
       - shock
-      - stabar
-    stabar:
-      arm_end_m:
-      - -1.43001283
-      - 0.3032125
-      - 0.4054766
-      bar_end_m:
-      - -1.3925183
-      - 0.3032125
-      - 0.41224196
-      rate_n_m_per_rad: 1
   masses:
     unsprung:
       mass_kg: 7.35220072
@@ -399,7 +384,7 @@ rear:
         - 0.0002161
         - 0.00154153
 aero:
-  reference_speed_m_per_s: 15
+  reference_speed_m_per_s: 15.0
   aero_ref_m:
   - 1
   - 0
@@ -560,11 +545,11 @@ powertrain:
   pBattery:
     Ns: 140
     Np: 4
-    SOC_start: 1
+    SOC_start: 1.0
   pVCU:
-    tau_max: 230
+    tau_max: 220
     regenTorqueLimit: 220
-    w_eps: 1
+    w_eps: 1.0
     motorSpeedSign: 1
   pInverter:
     P_max_mot: 124000
@@ -584,7 +569,7 @@ powertrain:
     P_cont_high: 75000
     eta_mot: 0.96
     eta_reg: 0.95
-    w_eps: 1
+    w_eps: 1.0
     rotorJ: 0.02521
   pDriveline:
     finalDriveRatio: 3.31
@@ -595,9 +580,9 @@ powertrain:
     diff_lockFractionAccel: 0.35
     diff_lockFractionDecel: 0.15
     diff_T_capacity_max: 1000
-    diff_clutchEffectiveRadius: 1
+    diff_clutchEffectiveRadius: 1.0
     diff_kineticFrictionRatio: 0.85
-    diff_w_transition: 1
+    diff_w_transition: 1.0
     diff_c_viscous: 0.05
     halfshaftLeftC: 15000
     halfshaftLeftJEquivalent: 0.02
