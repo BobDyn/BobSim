@@ -159,6 +159,7 @@ MODELICA_RUN_TARGETS_BY_ACTION = {
     "run-steady-state": MODELICA_BUILD_TARGETS["vehicle"],
     "run-transient": MODELICA_BUILD_TARGETS["vehicle"],
     "run-four-post": MODELICA_BUILD_TARGETS["four_post"],
+    "run-fbrc": MODELICA_BUILD_TARGETS["vehicle"],
 }
 WORKFLOWS = build_workflows()
 

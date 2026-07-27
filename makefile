@@ -78,7 +78,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
 	sync-vehicle standard-build standard-build-four-post standard-regression-four-post \
-	standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all \
+	standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-fbrc standard-eval-all \
 	envelope-ggv envelope-ymd envelope-all \
 	opt-standard opt-envelope opt-refined opt-search opt-doe-smoke \
 	clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned clean-all
@@ -118,6 +118,7 @@ help:
 		'  standard-eval-steady-state Run SteadyStateEval' \
 		'  standard-eval-transient    Run TransientEval' \
 		'  standard-eval-four-post    Run FourPostEval' \
+		'  standard-eval-fbrc         Run FbrcEval' \
 		'  standard-eval-all          Run all standard evaluations' \
 		'' \
 		'  envelope-ggv              Generate the GGV envelope' \
@@ -247,7 +248,10 @@ standard-eval-transient: standard-build
 standard-eval-four-post: standard-build-four-post
 	$(RUN) $(PYTHON) -m _3_StandardSim.FourPostEval.four_post_eval_sim
 
-standard-eval-all: standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post
+standard-eval-fbrc: standard-build
+	$(RUN) $(PYTHON) -m _3_StandardSim.FbrcEval.fbrc_eval_sim
+
+standard-eval-all: standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-fbrc
 
 standard-regression-four-post: regression-baseline
 

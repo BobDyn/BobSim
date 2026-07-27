@@ -24,6 +24,7 @@ from _3_StandardSim.FourPostEval.four_post_eval_sim import (
     FourPostEvalSim,
     _normalize_four_post_report_config,
 )
+from _3_StandardSim.FbrcEval.fbrc_eval_sim import FbrcEvalSim
 from _3_StandardSim._modelica_runner import ModelicaRunner
 from _3_StandardSim.RampSteerEval.ramp_steer_eval_sim import RampSteerEvalSim
 from _3_StandardSim.SteadyStateEval.steady_state_eval_sim import SteadyStateEvalSim
@@ -38,12 +39,14 @@ STANDARD_CONFIGS = (
     Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"),
     Path("_3_StandardSim/TransientEval/transient_eval_config.yml"),
     Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
+    Path("_3_StandardSim/FbrcEval/fbrc_eval_config.yml"),
 )
 STANDARD_ENTRYPOINTS = {
     Path("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"): VEHICLE_ENTRYPOINT,
     Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"): VEHICLE_ENTRYPOINT,
     Path("_3_StandardSim/TransientEval/transient_eval_config.yml"): VEHICLE_ENTRYPOINT,
     Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"): FOUR_POST_ENTRYPOINT,
+    Path("_3_StandardSim/FbrcEval/fbrc_eval_config.yml"): VEHICLE_ENTRYPOINT,
 }
 
 
@@ -477,3 +480,266 @@ def test_steady_state_eval_uses_closed_loop_steady_mode() -> None:
         assert max(cases_by_velocity[test_vel]) <= cap
     assert len(cases) < len(config["sweep"]["testVels"]) * len(config["sweep"]["targetAys"])
     assert max(config["sweep"]["targetAys"]) >= 18.0
+
+
+def _fbrc_sim() -> FbrcEvalSim:
+    """Construct without touching ModelicaRunner, the convention in this file."""
+    config = _load_yaml(Path("_3_StandardSim/FbrcEval/fbrc_eval_config.yml"))
+    sim = FbrcEvalSim.__new__(FbrcEvalSim)
+    sim.config = config
+    sim.start_time = float(config["simulation"].get("start_time", 0.0))
+    sim.stop_time = float(config["simulation"].get("stop_time", 45.0))
+    return sim
+
+
+def test_fbrc_eval_uses_closed_loop_steady_mode() -> None:
+    sim = _fbrc_sim()
+    cases = sim.build_cases()
+
+    assert cases
+    assert {case["useMode"] for case in cases} == {3}
+    assert {case["_mode"] for case in cases} == {"closed_loop_steady_ay"}
+    for case in cases:
+        assert case["initialVel"] == case["targetVel"]
+        assert case["stopTime"] == sim.stop_time
+
+
+def test_fbrc_eval_sweep_excludes_zero_lateral_acceleration() -> None:
+    """FBRC height is a lateral-force-weighted mean, so zero a_y is undefined."""
+    cases = _fbrc_sim().build_cases()
+
+    assert all(abs(float(case["targetAy"])) > 0.0 for case in cases)
+
+
+def test_fbrc_eval_case_grid_covers_velocity_and_ay() -> None:
+    config = _load_yaml(Path("_3_StandardSim/FbrcEval/fbrc_eval_config.yml"))
+    cases = _fbrc_sim().build_cases()
+
+    expected = len(config["sweep"]["testVels"]) * len(config["sweep"]["targetAys"])
+    assert len(cases) == expected
+
+
+def test_fbrc_eval_variable_filter_requests_suspension_internals() -> None:
+    """VehicleSim's default filter omits suspension frames, so the study must
+    widen it or every geometry read would fail."""
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import (
+        FBRC_EVAL_SIGNALS,
+        FBRC_EVAL_VARIABLE_FILTER,
+    )
+
+    assert "chassis.detailedChassis.frAxleDW.leftCP.r_0[1]" in FBRC_EVAL_SIGNALS
+    assert "chassis.detailedChassis.rrAxleDW.rightTire.Fy" in FBRC_EVAL_SIGNALS
+    # Regex metacharacters in Modelica names must be escaped for -variableFilter.
+    assert r"\." in FBRC_EVAL_VARIABLE_FILTER
+    assert r"\[" in FBRC_EVAL_VARIABLE_FILTER
+    # Never fall back to ".*": that would emit every variable in the model.
+    assert ".*" not in FBRC_EVAL_VARIABLE_FILTER
+
+
+def test_fbrc_eval_variable_filter_covers_every_requested_signal() -> None:
+    """The filter is compacted into grouped patterns rather than 178 literal
+    names, so assert the compaction did not drop or over-match anything."""
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import (
+        FBRC_EVAL_SIGNALS,
+        FBRC_EVAL_VARIABLE_FILTER,
+        matches_variable_filter,
+    )
+
+    unmatched = [s for s in FBRC_EVAL_SIGNALS if not matches_variable_filter(s)]
+    assert unmatched == []
+
+    # Keep the argument small enough to be safe on any platform and readable in logs.
+    assert len(FBRC_EVAL_VARIABLE_FILTER) < 2000
+
+    for near_miss in (
+        "chassis.detailedChassis.frAxleDW.leftCP.r_0[4]",
+        "chassis.detailedChassis.frAxleDW.leftTire.Fq",
+        "chassis.detailedChassis.frAxleDW.leftShockLinkage.frame_a.f[1]",
+        "accYY",
+    ):
+        assert not matches_variable_filter(near_miss), near_miss
+
+
+def test_fbrc_eval_reads_every_corner_of_both_axles() -> None:
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import AXLE_PATHS, FBRC_EVAL_SIGNALS
+
+    for axle_path in AXLE_PATHS.values():
+        for side in ("left", "right"):
+            assert f"{axle_path}.{side}Tire.Fy" in FBRC_EVAL_SIGNALS
+            assert f"{axle_path}.{side}CP.r_0[3]" in FBRC_EVAL_SIGNALS
+            assert (
+                f"{axle_path}.{side}WishboneUprightLoop.upperFrame_o.r_0[1]"
+                in FBRC_EVAL_SIGNALS
+            )
+
+
+def test_fbrc_eval_rejects_non_modelica_backend() -> None:
+    config = _load_yaml(Path("_3_StandardSim/FbrcEval/fbrc_eval_config.yml"))
+    config["simulation"]["backend"] = "fmu"
+
+    with pytest.raises(NotImplementedError, match="modelica"):
+        FbrcEvalSim(config)
+
+
+def _fbrc_synthetic_result(
+    *, origin: tuple[float, float, float], yaw_deg: float
+) -> dict[str, float]:
+    """A synthetic result row with the car placed at an arbitrary world pose.
+
+    Corner hardpoints are defined in the axle frame, then pushed out to world
+    through the given pose. `build_corner_geometry` must undo this exactly, so any
+    quantity it derives has to be identical for every pose.
+    """
+    import numpy as np
+
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import (
+        _CORNER_FORCE_SIGNALS,
+        _CORNER_FRAME_SIGNALS,
+        AXLE_FRAME_PATHS,
+        AXLE_PATHS,
+    )
+
+    yaw = np.deg2rad(yaw_deg)
+    cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+    # World -> local, matching Frames.Orientation.T.
+    rotation = np.array([[cos_y, sin_y, 0.0], [-sin_y, cos_y, 0.0], [0.0, 0.0, 1.0]])
+    origin_vector = np.asarray(origin, dtype=float)
+
+    local = {
+        "upper_i": (0.02, 0.237, 0.015),
+        "lower_i": (0.013, 0.226, -0.120),
+        "upper_o": (-0.009, 0.542, 0.063),
+        "lower_o": (0.000, 0.559, -0.090),
+        "tie_rack": (-0.010, 0.215, -0.085),
+        "tie_o": (-0.050, 0.534, -0.083),
+        "contact_patch": (0.0, 0.605, -0.206),
+    }
+
+    result: dict[str, float] = {}
+    for axle, axle_path in AXLE_PATHS.items():
+        frame_path = AXLE_FRAME_PATHS[axle]
+        for index in (1, 2, 3):
+            result[f"{frame_path}.r_0[{index}]"] = float(origin_vector[index - 1])
+        for row in (1, 2, 3):
+            for column in (1, 2, 3):
+                result[f"{frame_path}.R.T[{row},{column}]"] = float(
+                    rotation[row - 1, column - 1]
+                )
+
+        for side in ("left", "right"):
+            sign = 1.0 if side == "left" else -1.0
+            for name, point in local.items():
+                vector = np.array([point[0], sign * point[1], point[2]])
+                world = origin_vector + rotation.T @ vector
+                base = _CORNER_FRAME_SIGNALS[name].format(axle=axle_path, side=side)
+                for index in (1, 2, 3):
+                    result[f"{base}[{index}]"] = float(world[index - 1])
+            for key, template in _CORNER_FORCE_SIGNALS.items():
+                magnitude = {"f_x": 0.0, "f_y": 600.0, "f_z": -1200.0}[key]
+                result[template.format(axle=axle_path, side=side)] = magnitude
+    return result
+
+
+def test_fbrc_eval_geometry_is_invariant_to_world_pose() -> None:
+    """The force line must not depend on where the car is in the world.
+
+    Positions come from the model as world-frame `r_0` signals. The FBRC is a
+    front-view construction in the vehicle's own y-z plane, so the study must
+    resolve them into the axle frame first. Using world coordinates directly still
+    produces plausible-looking numbers, which is why this is pinned: a car yawed
+    and hundreds of metres downrange must give the same answer as one at the
+    origin.
+    """
+    from _0_Utils.suspension.force_line import solve_corner_force_line
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import (
+        build_corner_geometry,
+        load_vehicle_axis_directions,
+    )
+
+    axis_directions = load_vehicle_axis_directions(ROOT / "vehicle.yml")
+
+    at_origin = _fbrc_synthetic_result(origin=(0.0, 0.0, 0.0), yaw_deg=0.0)
+    displaced = _fbrc_synthetic_result(origin=(240.0, -37.5, 0.19), yaw_deg=63.0)
+
+    for axle in ("front", "rear"):
+        for side in ("left", "right"):
+            reference = solve_corner_force_line(
+                build_corner_geometry(at_origin, axle, side, axis_directions)
+            )
+            moved = solve_corner_force_line(
+                build_corner_geometry(displaced, axle, side, axis_directions)
+            )
+            assert moved.tan_theta == pytest.approx(reference.tan_theta, abs=1e-9)
+            assert moved.centerplane_height == pytest.approx(
+                reference.centerplane_height, abs=1e-9
+            )
+            # A plain sanity bound: a force line inclined by more than 45 degrees,
+            # or a centerplane height beyond a metre, means the frame is wrong.
+            assert abs(moved.angle_deg) < 45.0
+            assert abs(moved.centerplane_height) < 1.0
+
+
+def test_fbrc_eval_does_not_rely_on_a_single_chassis_frame() -> None:
+    """Each axle must be resolved into its own mounting frame.
+
+    BobLib's default chassis is `Body.FrameCompX`, which puts a torsional revolute
+    about x between the front and rear axle mounts. Resolving both axles with one
+    shared `chassis.chassisFrame` would corrupt the rear force lines by the chassis
+    twist angle under load. The compiled model confirms the split: front arm frames
+    alias to `chassis.chassisFrame.R.T`, rear arm frames to
+    `chassis.detailedChassis.rrAxleFrame.R.T`.
+    """
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import (
+        AXLE_FRAME_PATHS,
+        FBRC_EVAL_SIGNALS,
+    )
+
+    assert not any("chassis.chassisFrame" in signal for signal in FBRC_EVAL_SIGNALS)
+
+    assert set(AXLE_FRAME_PATHS) == {"front", "rear"}
+    assert len(set(AXLE_FRAME_PATHS.values())) == 2
+
+    for frame_path in AXLE_FRAME_PATHS.values():
+        for index in (1, 2, 3):
+            assert f"{frame_path}.r_0[{index}]" in FBRC_EVAL_SIGNALS
+        assert f"{frame_path}.R.T[1,1]" in FBRC_EVAL_SIGNALS
+        assert f"{frame_path}.R.T[3,3]" in FBRC_EVAL_SIGNALS
+
+
+def test_fbrc_eval_axle_frames_are_mounts_of_their_axle() -> None:
+    """The frames used must be the ones BobLib connects each axle to.
+
+    Guards against pointing at a frame that merely sounds right: DetailedChassisBase
+    wires `frAxleDW.axleFrame` to `frAxleFrame` and `rrAxleDW.axleFrame` to
+    `rrAxleFrame`, which is what makes them the correct suspension reference.
+    """
+    from _3_StandardSim.FbrcEval.fbrc_eval_sim import AXLE_FRAME_PATHS
+
+    source = (
+        ROOT / "_0_Utils/external/BobLib/BobLib/Chassis/Internal/DetailedChassisBase.mo"
+    ).read_text()
+
+    for axle, frame_path in AXLE_FRAME_PATHS.items():
+        frame_name = frame_path.rsplit(".", 1)[1]
+        assert f"Frame_b {frame_name}" in source, f"{axle} frame {frame_name} not declared"
+
+    assert "connect(frAxleDW.axleFrame, frAxleFrame)" in source
+    assert "connect(rrAxleFrame, rrAxleDW.axleFrame)" in source
+
+
+def test_boblib_default_chassis_still_has_torsional_compliance() -> None:
+    """Guard the assumption behind the test above.
+
+    If BobLib ever drops FrameCompX from the default chassis, the per-arm
+    orientation is still correct but the reason recorded in the spec would be
+    stale. Fail loudly so the note gets revisited rather than silently rotting.
+    """
+    chassis = (ROOT / "_0_Utils/external/BobLib/BobLib/Chassis/Chassis_DW.mo").read_text()
+
+    assert "BobLib.Chassis.Body.FrameCompX spaceFrame" in chassis
+
+    frame_comp = (
+        ROOT / "_0_Utils/external/BobLib/BobLib/Chassis/Body/FrameCompX.mo"
+    ).read_text()
+    assert "Joints.Revolute torsionalRevolute" in frame_comp
+    assert "n = {1, 0, 0}" in frame_comp

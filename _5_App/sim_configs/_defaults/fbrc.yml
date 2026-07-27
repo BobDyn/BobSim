@@ -1,0 +1,260 @@
+standard: FbrcEval
+
+simulation:
+  backend: modelica
+  build_dir: _3_StandardSim/BuildBobLib/VehicleSim
+  exec_name: BobLib.Experiments.Standards.VehicleSim
+
+  start_time: 0.0
+  stop_time: 45.0
+  solver: dassl
+  tolerance: 1e-6
+  output_format: csv
+  case_timeout_s: 420
+
+  log_level: LOG_STATS
+  extra_args:
+    - -jacobian=internalNumerical
+    - -ls=totalpivot
+    # The MultiBody frame variables this study reads (frame origins, orientation
+    # matrices, tire forces) are all declared protected inside their components,
+    # and OpenModelica drops protected variables from the result file regardless
+    # of variableFilter. Without this flag every corner signal is absent.
+    - -emit_protected
+
+  no_grid: true
+  no_event_emit: true
+
+  # Control-arm inboard axis *directions* are rigid in each axle's mounting frame
+  # and are not published as MultiBody frames, so they are read from the vehicle
+  # definition. Corner positions are resolved from world into that mounting frame,
+  # which is a pure translation of the vehicle-definition frame, so the directions
+  # need no rotation. Every position used by the study comes from the model.
+  vehicle_yaml_path: vehicle.yml
+
+  # Explicit Modelica overrides for closed-loop steady-state cornering. Matched
+  # to SteadyStateEval so the settled operating points are directly comparable.
+  init_parameters:
+    useMode: 3
+    steerStart: 2.0
+
+    steadyStateAyRampRate: 10.0
+    steadyStateMaxHandwheel: 3.141592653589793
+    steadyStateAyGain: 0.05
+    steadyStateAyTi: 1.0
+    steadyStateSteerTimeConstant: 0.15
+
+    steadyHoldDuration: 0.5
+    steadyStateAyTolerance: 0.10
+    steadyStateAyRateTolerance: 0.05
+    steadyStateSpeedTolerance: 0.20
+    steadyStateYawRateDerivativeTolerance: 0.01
+    steadyStateSideslipRateTolerance: 0.005
+    steadyStateRollRateTolerance: 0.005
+    steadyStateSettleTimeout: 30.0
+    linearitySlopeSamplePeriod: 0.10
+
+    terminateOnTireLift: true
+    tireLiftTerminateLoad: 75.0
+    enableLinearityTermination: false
+    enableNormalLoadSteerLimiter: false
+
+    velGain: 100.0
+    velTi: 2.0
+
+execution:
+  parallel: true
+  max_workers: 4
+  cleanup: false
+  stream_logs: false
+  fail_fast: false
+
+sweep:
+  # A single speed keeps the sweep a clean roll/force progression. The FBRC is a
+  # suspension property at an attitude, so lateral acceleration is the axis that
+  # matters; extra speeds only add duplicate attitudes.
+  testVels: [15.0]
+
+  # Zero is deliberately excluded: the FBRC height is a lateral-force-weighted
+  # mean, so it is undefined when the axle carries no lateral force.
+  targetAys: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+report:
+  enabled: true
+  raw_plots_only: true
+  brand: BobSim
+  title: Force-Based Roll Center
+  subtitle: Front and rear FBRC from settled closed-loop cornering points
+  output_path: _3_StandardSim/results/fbrc_eval_report.pdf
+  raw_time_series_appendix: false
+
+  notes:
+    - "FBRC is the point through which the resultant of the link-borne (non-elastic) axle forces acts"
+    - "Per-corner force lines are solved from the suspension's instantaneous ride degree of freedom, not from a 2-D instant-center projection"
+    - "Force-line inclination is $\\tan\\theta = -\\partial y_{cp}/\\partial z_{cp}$, exact for any linkage topology"
+    - "Axle height is the lateral-force-weighted mean of the per-corner force-line centerplane heights"
+    - "The kinematic roll center (KRC) is reported for comparison; it is the equal-force, symmetric-geometry special case"
+    - "Heights above the contact-patch plane are the moment arms that set geometric load transfer"
+    - "Jacking force is the sum of link-borne vertical forces and is driven by left/right force asymmetry"
+    - "Only cases whose closed-loop steady-state conditions are met are included"
+
+plots:
+  raw_fbrc_height:
+    layout: dual
+    title: "Force-Based Roll Center Height vs Measured $a_y$"
+
+    subplots:
+      - title: "Front"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        linestyle: ":"
+        linewidth: 1.0
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: fr_fbrc_height_above_cp_mm
+          label: "$h_{FBRC}$ (mm)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: fr_krc_height_above_cp_mm
+          style: line
+          alpha: 0.85
+          linewidth: 1.6
+
+      - title: "Rear"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        linestyle: ":"
+        linewidth: 1.0
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: rr_fbrc_height_above_cp_mm
+          label: "$h_{FBRC}$ (mm)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: rr_krc_height_above_cp_mm
+          style: line
+          alpha: 0.85
+          linewidth: 1.6
+
+  raw_force_lines:
+    layout: dual
+    title: "Per-Corner Force-Line Inclination vs Measured $a_y$"
+
+    subplots:
+      - title: "Front"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: fr_left_force_line_deg
+          label: "$\\theta$ (deg)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: fr_right_force_line_deg
+          style: scatter
+          markersize: 5
+          alpha: 0.9
+
+      - title: "Rear"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: rr_left_force_line_deg
+          label: "$\\theta$ (deg)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: rr_right_force_line_deg
+          style: scatter
+          markersize: 5
+          alpha: 0.9
+
+  raw_geometric_transfer:
+    layout: dual
+    title: "Geometric Load Transfer and Jacking vs Measured $a_y$"
+
+    subplots:
+      - title: "Geometric Load Transfer"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: fr_geometric_load_transfer_N
+          label: "$\\Delta F_z$ (N)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: rr_geometric_load_transfer_N
+          style: scatter
+          markersize: 5
+          alpha: 0.9
+
+      - title: "Axle Jacking Force"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: fr_jacking_force_N
+          label: "$F_{z,jack}$ (N)"
+        overlay:
+          x:
+            key: ay_measured
+          y:
+            key: rr_jacking_force_N
+          style: scatter
+          markersize: 5
+          alpha: 0.9
+
+  raw_fbrc_vs_krc:
+    layout: dual
+    title: "Effect of Lateral-Force Weighting (FBRC $-$ KRC)"
+
+    subplots:
+      - title: "Front"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: fr_fbrc_minus_krc_mm
+          label: "$h_{FBRC} - h_{KRC}$ (mm)"
+
+      - title: "Rear"
+        style: scatter
+        alpha: 0.9
+        markersize: 5
+        x:
+          key: ay_measured
+          label: "Measured $a_y$ $(m/s^2)$"
+        y:
+          key: rr_fbrc_minus_krc_mm
+          label: "$h_{FBRC} - h_{KRC}$ (mm)"

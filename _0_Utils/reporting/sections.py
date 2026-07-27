@@ -882,3 +882,116 @@ def add_title_page(pdf, config):
 
     pdf.savefig(fig)
     plt.close(fig)
+
+
+def add_fbrc_summary_page(
+    pdf,
+    summary,
+    title="FbrcEval Metrics Summary",
+    unit_overrides: Mapping[str, object] | None = None,
+):
+    """Front/rear force-based roll center summary.
+
+    Heights are reported above the contact-patch plane because that is the moment
+    arm which sets geometric load transfer; the world-z height is shown alongside
+    it. The kinematic roll center is included so the effect of lateral-force
+    weighting is visible rather than implied.
+    """
+
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(11, 8.5))
+    plt.axis("off")
+
+    plt.text(0.5, 0.96, title, ha="center", fontsize=18, weight="bold")
+
+    ay_range = summary.get("Ay_range")
+    if ay_range is not None:
+        plt.text(
+            0.5,
+            0.915,
+            rf"Measured $a_y$ range ${ay_range[0]:.2f} \rightarrow {ay_range[1]:.2f}$ "
+            rf"$\mathrm{{m/s^2}}$ over {summary.get('n_points', 0)} settled points",
+            ha="center",
+            fontsize=11,
+        )
+
+    columns = (
+        (0.03, 0.30, 0.40, "front", "Front Axle"),
+        (0.54, 0.81, 0.91, "rear", "Rear Axle"),
+    )
+
+    def add_section(x_label, x_val, x_unit, y, section_title, rows):
+        plt.text(
+            0.5 * (x_label + x_unit),
+            y,
+            section_title,
+            fontsize=13,
+            weight="bold",
+            ha="center",
+        )
+        y -= 0.045
+        for label, key, unit, fmt in rows:
+            unit_resolved, scale = _resolve_unit(unit_overrides, key, unit)
+            value_str = _format_table_value(summary.get(key), fmt, scale)
+            plt.text(x_label, y, label, fontsize=11)
+            plt.text(x_val, y, value_str, fontsize=11, ha="right")
+            plt.text(x_unit, y, unit_resolved, fontsize=11)
+            y -= 0.035
+        return y - 0.04
+
+    for x_label, x_val, x_unit, axle, axle_title in columns:
+        y = 0.85
+        y = add_section(
+            x_label,
+            x_val,
+            x_unit,
+            y,
+            f"{axle_title} — Roll Center",
+            [
+                ("FBRC above patch plane", f"{axle}_fbrc_height_above_cp_mm", "mm", "{:.2f}"),
+                ("FBRC (world z)", f"{axle}_fbrc_height_mm", "mm", "{:.2f}"),
+                ("Kinematic RC", f"{axle}_krc_height_mm", "mm", "{:.2f}"),
+                ("FBRC $-$ KRC", f"{axle}_fbrc_minus_krc_mm", "mm", "{:.3f}"),
+                ("Migration", f"{axle}_fbrc_migration_mm_per_g", "mm/g", "{:.2f}"),
+            ],
+        )
+        y = add_section(
+            x_label,
+            x_val,
+            x_unit,
+            y,
+            f"{axle_title} — Force Lines",
+            [
+                ("Left inclination", f"{axle}_left_force_line_deg", "deg", "{:.3f}"),
+                ("Right inclination", f"{axle}_right_force_line_deg", "deg", "{:.3f}"),
+            ],
+        )
+        add_section(
+            x_label,
+            x_val,
+            x_unit,
+            y,
+            f"{axle_title} — Geometric Loads",
+            [
+                ("Jacking force", f"{axle}_jacking_force_N", "N", "{:.2f}"),
+                ("Load transfer", f"{axle}_geometric_load_transfer_N", "N", "{:.2f}"),
+            ],
+        )
+
+    y_bottom = 0.20
+    plt.text(0.5, y_bottom, "Vehicle", fontsize=13, weight="bold", ha="center")
+    y_bottom -= 0.045
+    for label, key, unit, fmt in (
+        ("Roll axis, front $-$ rear", "roll_axis_front_minus_rear_mm", "mm", "{:.2f}"),
+        ("Geometric LLTD (front)", "geometric_lltd_front_pct", "%", "{:.2f}"),
+    ):
+        unit_resolved, scale = _resolve_unit(unit_overrides, key, unit)
+        plt.text(0.28, y_bottom, label, fontsize=11)
+        plt.text(0.60, y_bottom, _format_table_value(summary.get(key), fmt, scale),
+                 fontsize=11, ha="right")
+        plt.text(0.63, y_bottom, unit_resolved, fontsize=11)
+        y_bottom -= 0.035
+
+    pdf.savefig(fig)
+    plt.close(fig)

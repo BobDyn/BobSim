@@ -125,8 +125,9 @@ class ReportEngine:
         if standard is None:
             raise KeyError(
                 "Missing standard in config. Add `standard: SteadyStateEval`, "
-                "`standard: RampSteerEval`, `standard: TransientEval`, or "
-                "`standard: FourPostEval` at the top level of the YAML."
+                "`standard: RampSteerEval`, `standard: TransientEval`, "
+                "`standard: FourPostEval`, or `standard: FbrcEval` at the top "
+                "level of the YAML."
             )
 
         with PdfPages(output_path) as pdf:
@@ -186,6 +187,17 @@ class ReportEngine:
                     pdf,
                     result["summary"],
                     title=page_title,
+                    unit_overrides=summary_units,
+                )
+
+            elif standard == "FbrcEval":
+                from _0_Utils.reporting.sections import add_fbrc_summary_page
+
+                print("[report] Rendering summary page: FbrcEval Metrics Summary")
+                add_fbrc_summary_page(
+                    pdf,
+                    result["summary"],
+                    title="FbrcEval Metrics Summary",
                     unit_overrides=summary_units,
                 )
 
