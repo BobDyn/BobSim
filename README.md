@@ -21,9 +21,13 @@ is healthy.
   BobLib submodule.
 - `_1_VisualSim/`: experimental/offline visualization tooling; core model
   visualization currently happens in OMEdit.
-- `_2_EnvelopeSim/`: GGV/YMD performance-envelope workflows.
-- `_3_StandardSim/`: standard vehicle studies: RampSteerEval, SteadyStateEval,
-  TransientEval, and FourPostEval.
+- `_2_EnvelopeSim/`: GGV/YMD performance-envelope workflows. Treat these as
+  fast quasi-steady envelope tools, closer to a higher-fidelity OptimumLap-style
+  analysis than a full multibody dynamics run.
+- `_3_StandardSim/`: standard BobLib Modelica vehicle studies. VehicleSim is
+  the general BobSim runner for full-vehicle MBD-style evaluations such as
+  RampSteerEval, SteadyStateEval, and TransientEval; FourPostSim backs
+  FourPostEval.
 - `_4_OptSim/`: sensitivity and response-surface workflows.
 - `_5_App/`: local browser app for configuring setups, launching workflows, and
   inspecting generated reports, metrics, configs, and job logs.
@@ -148,8 +152,11 @@ BobSim's make targets use a small, intentional vocabulary:
 
 - `docker-*`: build or rebuild the development image.
 - `shell-*`: open an interactive shell in a workflow context.
-- `standard-*`: build and run standard vehicle evaluations.
-- `envelope-*`: generate performance-envelope outputs.
+- `standard-*`: build and run BobLib VehicleSim/FourPostSim evaluations. Use
+  these when you need the Modelica vehicle runner and MBD-style standard
+  studies.
+- `envelope-*`: generate GGV/YMD performance-envelope outputs. Use these for
+  fast quasi-steady vehicle-envelope analysis, not for a full VehicleSim run.
 - `opt-*`: run sensitivity and response-surface workflows.
 - `clean-*`: remove generated artifacts.
 
