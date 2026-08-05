@@ -22,8 +22,8 @@ is healthy.
 - `_1_VisualSim/`: experimental/offline visualization tooling; core model
   visualization currently happens in OMEdit.
 - `_2_EnvelopeSim/`: GGV/YMD performance-envelope workflows. Treat these as
-  fast quasi-steady envelope tools, closer to a higher-fidelity OptimumLap-style
-  analysis than a full multibody dynamics run.
+  fast quasi-steady lap-simulation and handling-envelope tools, not as full
+  multibody dynamics runs.
 - `_3_StandardSim/`: standard BobLib Modelica vehicle studies. VehicleSim is
   the general BobSim runner for full-vehicle MBD-style evaluations such as
   RampSteerEval, SteadyStateEval, and TransientEval; FourPostSim backs
