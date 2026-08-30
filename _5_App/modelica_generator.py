@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import hashlib
+import math
 import re
+
+import numpy as np
 
 from _0_Utils.vehicle_io import load_yaml, parse_tir, tire_template_name
 
@@ -629,7 +632,12 @@ def _axle_assignments(side_name: str, side: Mapping[str, Any], arch: Architectur
     if arch.has_bellcrank:
         bellcrank = _mapping(actuation.get("bellcrank"), bellcrank_path)
         pickups = _mapping(bellcrank.get("pickups_m"), pickups_path)
-        pickup_order = _pickup_order(bellcrank.get("order"), f"{bellcrank_path}.order")
+        pickup_order = _pickup_order(
+            pickups,
+            _required_vector(bellcrank, "pivot_m", bellcrank_path),
+            _required_vector(bellcrank, "axis", bellcrank_path),
+            pickups_path,
+        )
         assignments.extend(
             (
                 ("bellcrankPivot", _required_vector(bellcrank, "pivot_m", bellcrank_path)),
@@ -990,7 +998,10 @@ def _format_call(call: ModelicaCall, indent: int) -> str:
     lines = [f"{call.type_name}(" if call.type_name else "("]
     for index, (name, value) in enumerate(assignments):
         suffix = "," if index < len(assignments) - 1 else ""
-        lines.extend(_format_assignment(name, value, indent + 2, suffix))
+        # +4, not +2: this is the indent BobLib's checked-in records already use.
+        # Emitting +2 made every regeneration rewrite files whose values had not
+        # changed, so the library showed hundreds of lines of pure whitespace diff.
+        lines.extend(_format_assignment(name, value, indent + 4, suffix))
     lines.append(f"{' ' * indent})")
     return "\n".join(lines)
 
@@ -1047,15 +1058,54 @@ def _format_number(value: float) -> str:
     return f"{value:.15g}"
 
 
-def _pickup_order(raw_value: Any, path: str) -> dict[str, int]:
-    if not isinstance(raw_value, Sequence) or isinstance(raw_value, str):
-        raise TypeError(f"Expected {path} to be a list")
-    order = [str(item) for item in raw_value]
-    mapping = {item: index + 1 for index, item in enumerate(order)}
+def _pickup_order(
+    pickups: Mapping[str, Any], pivot: Sequence[float], axis: Sequence[float], path: str
+) -> dict[str, int]:
+    """Number the bellcrank pickups the way BobLib defines them.
+
+    BobLib's own annotation is the spec: "1 is the most counter-clockwise pickup
+    about the left bellcrank (generally with the lowest Z coordinate)". So the
+    index is a property of where the points sit on the rocker, not of the order
+    somebody happened to list them in.
+
+    Deriving it from `bellcrank.order` was wrong: that list reads
+    ['rod', 'shock', 'stabar'] on both axles of the baseline, while the true
+    ordering is stabar/rod/shock at the front and rod/shock/stabar at the rear.
+    One list cannot encode two different arrangements, so it never could have
+    been right for both.
+
+    Counter-clockwise is cyclic, so the lowest-Z pickup anchors index 1 - which
+    is what the parenthetical in the annotation is telling us.
+    """
     for item in ("rod", "shock"):
-        if item not in mapping:
+        if item not in pickups:
             raise KeyError(f"Missing {item!r} in {path}")
-    return mapping
+
+    normal = np.asarray(axis, dtype=float)
+    length = float(np.linalg.norm(normal))
+    if length == 0.0:
+        raise ValueError(f"{path}: bellcrank axis has zero length")
+    normal /= length
+
+    # Any reference not parallel to the axis gives a valid in-plane basis; the
+    # resulting angles are only ever compared with each other.
+    reference = np.array([0.0, 0.0, 1.0])
+    if abs(float(np.dot(reference, normal))) > 0.9:
+        reference = np.array([1.0, 0.0, 0.0])
+    e1 = reference - float(np.dot(reference, normal)) * normal
+    e1 /= float(np.linalg.norm(e1))
+    e2 = np.cross(normal, e1)
+
+    angles: dict[str, float] = {}
+    for name, point in pickups.items():
+        offset = np.asarray(point, dtype=float) - np.asarray(pivot, dtype=float)
+        offset = offset - float(np.dot(offset, normal)) * normal
+        angles[name] = math.atan2(float(np.dot(offset, e2)), float(np.dot(offset, e1)))
+
+    anchor = min(pickups, key=lambda name: float(pickups[name][2]))
+    sweep = {name: (angles[name] - angles[anchor]) % (2.0 * math.pi) for name in angles}
+    ordered = sorted(sweep, key=lambda name: sweep[name])
+    return {name: index + 1 for index, name in enumerate(ordered)}
 
 
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:

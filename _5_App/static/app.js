@@ -390,6 +390,16 @@ const DEFAULT_KINEMATIC_CURVES = [
   { id: "roll_scrub_mm", label: "Roll Scrub Radius", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Scrub Radius" },
   { id: "roll_rc_y_mm", label: "Roll RC y-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC y-Position" },
   { id: "roll_rc_z_mm", label: "Roll RC z-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC z-Position" },
+  { id: "bump_front_ic_y_mm", label: "Bump Front-View IC y", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Front-View IC y" },
+  { id: "bump_front_ic_z_mm", label: "Bump Front-View IC z", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Front-View IC z" },
+  { id: "bump_front_swing_arm_mm", label: "Bump Front-View Swing Arm", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Swing Arm Length" },
+  { id: "bump_rc_height_mm", label: "Bump RC Height", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC Height above Contact Patch" },
+  { id: "bump_rc_migration_mm", label: "Bump RC Migration", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC Migration" },
+  { id: "roll_front_ic_y_mm", label: "Roll Front-View IC y", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Front-View IC y" },
+  { id: "roll_front_ic_z_mm", label: "Roll Front-View IC z", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Front-View IC z" },
+  { id: "roll_front_swing_arm_mm", label: "Roll Front-View Swing Arm", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Swing Arm Length" },
+  { id: "roll_rc_height_mm", label: "Roll RC Height", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Height above Contact Patch" },
+  { id: "roll_rc_migration_mm", label: "Roll RC Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Migration" },
 ];
 
 async function api(path, options = {}) {

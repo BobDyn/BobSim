@@ -54,7 +54,14 @@ DEPLOY_SKIP_CONFLICT_CHECK_ARG := $(if $(filter 1 true yes,$(DEPLOY_SKIP_CONFLIC
 DEPLOY_VERSION_ARG := $(if $(DEPLOY_VERSION),--version $(DEPLOY_VERSION),)
 DEPLOY_UPLOAD_RELEASE_ARG := $(if $(filter 1 true yes,$(DEPLOY_UPLOAD_RELEASE)),--upload-release,)
 
+# Same cmd.exe parsing problem as COMPOSE below: this POSIX test prints "-f was
+# unexpected at this time" on Windows. A Windows host is never inside the Linux
+# container, so the answer there is simply empty.
+ifeq ($(OS),Windows_NT)
+IN_CONTAINER :=
+else
 IN_CONTAINER := $(shell if [ -f /.dockerenv ]; then printf 1; fi)
+endif
 
 ifeq ($(IN_CONTAINER),1)
 RUN :=
@@ -65,7 +72,16 @@ SHELL_STANDARD_CMD := cd _3_StandardSim && bash
 SHELL_ENVELOPE_CMD := cd _2_EnvelopeSim && bash
 SHELL_OPT_CMD := cd _4_OptSim && bash
 else
+# The probe below is POSIX shell. On Windows make runs it through cmd.exe, which
+# cannot parse `if ...; then ...; fi`: it prints "compose was unexpected at this
+# time" and yields an empty COMPOSE, so every Docker target degrades to a bare
+# `run --rm -T bobsim ...` and dies in CreateProcess. Docker Desktop has shipped
+# Compose v2 as `docker compose` for years, so skip the probe there entirely.
+ifeq ($(OS),Windows_NT)
+COMPOSE ?= docker compose
+else
 COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then printf "docker-compose"; else printf "docker compose"; fi)
+endif
 RUN := $(COMPOSE) run --rm -T bobsim
 DOCKER_BUILD_CMD := $(COMPOSE) build
 DOCKER_REBUILD_CMD := $(COMPOSE) build --no-cache
@@ -127,6 +143,12 @@ help:
 		'' \
 		'  standard-build            Build BobLib VehicleSim' \
 		'  standard-build-four-post  Build BobLib FourPostSim' \
+		'  shark-overlay             Overlay the imported car against Orion on the kinematic' \
+		'                            curves. [SHARK=file.shk] to import first.' \
+		'                            ARGS=--four-post adds the experimental force sim;' \
+		'                            --actuation imported uses the variant actuation instead' \
+		'                            of holding the baseline constant; --tol-deg/--tol-mm set' \
+		'                            the engineering tolerances used for ranking.' \
 		'' \
 		'  standard-eval-ramp-steer   Run RampSteerEval' \
 		'  standard-eval-steady-state Run SteadyStateEval' \
@@ -252,11 +274,33 @@ shell-opt:
 sync-vehicle:
 	@printf '%s\n' 'Static BobLib models use checked-in Modelica records; vehicle.yml remains a BobSim projection/report input.'
 
-$(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo
+# The generated vehicle records and templates hold every hardpoint, so they must be
+# build dependencies. Without them make reports "up to date" after a geometry change
+# and the sim silently runs the previously compiled geometry.
+GENERATED_RECORDS := $(wildcard $(BOBLIB_PACKAGE_PATH)/Records/VehicleDefn/*.mo)
+GENERATED_TEMPLATES := \
+	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/Vehicle/*.mo) \
+	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/FourPost/*.mo)
+
+$(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
+		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
 	$(RUN) bash -lc 'omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
 
-$(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo
+$(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
+		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
 	$(RUN) bash -lc 'omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
+
+# SHARK is optional: with it the file is imported into the tracked variant vehicle
+# first; without it the already-imported variant is overlaid as it stands.
+#
+# Runs in the container like every other target here. The kinematic solve would work
+# on the host, but ARGS=--four-post would not: the Modelica stack is compiled inside
+# the container, so the simulator it produces only runs there. One route for both
+# keeps this consistent with the rest of the file and removes a whole class of
+# host/container mismatch.
+SHARK_ARG := $(if $(SHARK),--shark $(SHARK),)
+shark-overlay:
+	$(RUN) $(PYTHON) -m _3_StandardSim.FourPostEval.shark_overlay_report $(SHARK_ARG) $(ARGS)
 
 standard-build: $(VEHICLE_SIM_EXE)
 

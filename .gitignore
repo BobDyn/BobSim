@@ -64,6 +64,25 @@ _3_StandardSim/generated_results/**
 _3_StandardSim/results/**
 !_3_StandardSim/results/
 !_3_StandardSim/results/.gitkeep
+
+# Transient copy of vehicle.yml taken while the opt-in four-post run swaps it in
+# place. Normally removed on the way out; a leftover means a run was interrupted
+# and the tool refuses to start until it is resolved. Never a commit candidate.
+*.yml.overlay-backup
+
+# The vehicle a SHARK import produces. Regenerated from whichever .shk is passed
+# in, so it is per-run output rather than state: committing it would dirty a
+# tracked file on every test import and put one car's hardpoints in the repo as
+# though they were the baseline. vehicle.yml stays the tracked comparison target.
+vehicle_2027.yml
+
+# Datum assessment written beside an imported vehicle. Derived from the .shk and
+# the baseline, regenerated on every import, and never hand-edited, so it is
+# local metadata rather than state. Committing it risks the opposite of what it
+# is for: a hand-edit to the vehicle it describes does not regenerate it, leaving
+# a tracked file confidently describing geometry that no longer exists. The
+# overlay treats a missing record as unknown and withholds, so absence is safe.
+*.datum.json
 _4_OptSim/Build/
 _4_OptSim/results/**
 !_4_OptSim/results/

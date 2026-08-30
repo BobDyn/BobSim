@@ -492,8 +492,21 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     assert payload["axles"]["rear"]["ok"] is True
     assert len(payload["sweep_m"]) == 20
     assert len(payload["roll_deg"]) == 20
-    assert len(payload["curve_meta"]) == 16
-    assert [item["source_plot"] for item in payload["curve_meta"]] == [
+    assert len(payload["curve_meta"]) == len(KINEMATIC_CURVE_META)
+    # Pin the absolute count too. Comparing only against KINEMATIC_CURVE_META is
+    # self-referential and passes even if the registry is silently truncated, which
+    # is exactly how a bad merge resolution once dropped the ten curves below.
+    assert len(payload["curve_meta"]) == 26
+    published = {item["id"] for item in payload["curve_meta"]}
+    assert {
+        "bump_front_ic_y_mm", "bump_front_ic_z_mm", "bump_front_swing_arm_mm",
+        "bump_rc_height_mm", "bump_rc_migration_mm",
+        "roll_front_ic_y_mm", "roll_front_ic_z_mm", "roll_front_swing_arm_mm",
+        "roll_rc_height_mm", "roll_rc_migration_mm",
+    } <= published
+    # The original sixteen curves keep their identity and ordering; instant-centre
+    # and roll-centre curves were appended after them.
+    assert [item["source_plot"] for item in payload["curve_meta"]][:16] == [
         "Plot1",
         "Plot2",
         "Plot3",
