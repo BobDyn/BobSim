@@ -56,8 +56,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def _four_post_model_text() -> str:
     return (
-        ROOT
-        / "_0_Utils/external/BobLib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
+        ROOT / "_0_Utils/external/BobLib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
     ).read_text(encoding="utf-8")
 
 
@@ -236,12 +235,10 @@ def test_four_post_model_tables_match_report_sampling_schedule() -> None:
         assert roll_table[float(time_s)] == pytest.approx(0.0)
 
     heave_sample_times = [
-        FOUR_POST_HEAVE_START_S + FOUR_POST_POSE_STEP_S * index + 4.0
-        for index in range(FOUR_POST_HEAVE_POSE_COUNT)
+        FOUR_POST_HEAVE_START_S + FOUR_POST_POSE_STEP_S * index + 4.0 for index in range(FOUR_POST_HEAVE_POSE_COUNT)
     ]
     roll_sample_times = [
-        FOUR_POST_ROLL_START_S + FOUR_POST_POSE_STEP_S * index + 4.0
-        for index in range(FOUR_POST_ROLL_POSE_COUNT)
+        FOUR_POST_ROLL_START_S + FOUR_POST_POSE_STEP_S * index + 4.0 for index in range(FOUR_POST_ROLL_POSE_COUNT)
     ]
     assert [heave_table[time_s] for time_s in heave_sample_times] == pytest.approx(
         [-1.0, -0.8, -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
@@ -251,12 +248,10 @@ def test_four_post_model_tables_match_report_sampling_schedule() -> None:
     )
 
     heave_force_peak_times = [
-        FOUR_POST_HEAVE_START_S + FOUR_POST_POSE_STEP_S * index + 1.0
-        for index in range(FOUR_POST_HEAVE_POSE_COUNT)
+        FOUR_POST_HEAVE_START_S + FOUR_POST_POSE_STEP_S * index + 1.0 for index in range(FOUR_POST_HEAVE_POSE_COUNT)
     ]
     roll_force_peak_times = [
-        FOUR_POST_ROLL_START_S + FOUR_POST_POSE_STEP_S * index + 1.0
-        for index in range(FOUR_POST_ROLL_POSE_COUNT)
+        FOUR_POST_ROLL_START_S + FOUR_POST_POSE_STEP_S * index + 1.0 for index in range(FOUR_POST_ROLL_POSE_COUNT)
     ]
     assert [fx_table[time_s] for time_s in heave_force_peak_times] == pytest.approx([1.0] * 11)
     assert [fy_table[time_s] for time_s in roll_force_peak_times] == pytest.approx([1.0] * 11)
@@ -280,6 +275,22 @@ def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> N
             "fr_anti_vs_roll",
             "rr_anti_vs_roll",
         ]
+        fbrc_roll = config["plots"]["fbrc_roll"]
+        assert [subplot["y"]["key"] for subplot in fbrc_roll["subplots"]] == [
+            "fr_fbrc_height_vs_roll",
+            "rr_fbrc_height_vs_roll",
+        ]
+
+
+def test_four_post_defaults_fail_if_a_roll_pulse_unloads_a_contact_patch() -> None:
+    for rel_path in (
+        Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
+        Path("_5_App/sim_configs/_defaults/four-post.yml"),
+    ):
+        config = _load_yaml(rel_path)
+        assert config["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
+        assert config["validation"]["min_contact_fz_n"] == pytest.approx(1.0)
+        assert config["validation"]["fail_on_contact_loss"] is True
 
 
 def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_config() -> None:
@@ -311,6 +322,7 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
 
     normalized = _normalize_four_post_report_config(config)
     jacking_roll = normalized["plots"]["jacking_roll"]
+    fbrc_roll = normalized["plots"]["fbrc_roll"]
 
     assert normalized["report"]["raw_time_series_appendix"] is False
     assert normalized["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
@@ -323,15 +335,19 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
         "fr_anti_vs_roll",
         "rr_anti_vs_roll",
     ]
+    assert [subplot["y"]["key"] for subplot in fbrc_roll["subplots"]] == [
+        "fr_fbrc_height_vs_roll",
+        "rr_fbrc_height_vs_roll",
+    ]
 
 
-def test_four_post_eval_passes_static_balanced_spring_free_lengths(tmp_path: Path) -> None:
+def test_four_post_eval_passes_static_balanced_spring_free_lengths(
+    tmp_path: Path,
+) -> None:
     config = _load_yaml(Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"))
     metrics_path = tmp_path / "four_post_metrics.csv"
     metrics_path.write_text(
-        "metric,value\n"
-        "static_motion_ratio_front,1.0053063275855492\n"
-        "static_motion_ratio_rear,1.2386785254222528\n",
+        "metric,value\nstatic_motion_ratio_front,1.0053063275855492\nstatic_motion_ratio_rear,1.2386785254222528\n",
         encoding="utf-8",
     )
     config["report"]["metrics_csv_path"] = str(metrics_path)
@@ -355,7 +371,9 @@ def test_signal_plots_filter_implausible_numeric_spikes() -> None:
     np.testing.assert_allclose(item["y"], np.array([1.0, 3.0]))
 
 
-def test_raw_time_series_appendix_filters_implausible_numeric_spikes(tmp_path: Path) -> None:
+def test_raw_time_series_appendix_filters_implausible_numeric_spikes(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "result.csv"
     path.write_text("time,good,bad\n0,1,2\n1,3,1e292\n2,4,5\n", encoding="utf-8")
 
@@ -376,11 +394,7 @@ def test_standard_sens_spring_package_balances_free_length_from_rate() -> None:
 
     assert len(spring_variables) == 2
     for variable in spring_variables:
-        free_length_targets = [
-            target
-            for target in variable["targets"]
-            if target["param"] == "springFreeLength"
-        ]
+        free_length_targets = [target for target in variable["targets"] if target["param"] == "springFreeLength"]
         assert len(free_length_targets) == 1
         target = free_length_targets[0]
         assert target["operation"] == "static_balance_free_length"
@@ -415,9 +429,7 @@ def test_ramp_steer_eval_uses_open_loop_ramp_mode() -> None:
     assert cases
     assert {case.get("useMode", 0) for case in cases} == {0}
     assert {case["_mode"] for case in cases} == {"open_loop_ramp_steer"}
-    assert {case["targetVel"] for case in cases} == {
-        float(vel) for vel in config["sweep"]["testVels"]
-    }
+    assert {case["targetVel"] for case in cases} == {float(vel) for vel in config["sweep"]["testVels"]}
 
 
 def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(

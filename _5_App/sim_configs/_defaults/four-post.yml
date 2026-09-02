@@ -34,9 +34,13 @@ model_overrides:
 procedure:
   steerMagnitude: 0.0
   heaveMagnitude: 0.03
-  # 1.25 deg keeps the roll sweep inside the loaded contact-patch range.
-  rollMagnitude: 0.02181661564992912
+  # 0.75 deg keeps all four contact patches loaded during the 1000 N lateral pulse.
+  rollMagnitude: 0.01308996938995747
   forceMagnitude: 1000
+
+validation:
+  min_contact_fz_n: 1.0
+  fail_on_contact_loss: true
 
 report:
   enabled: true
@@ -78,6 +82,12 @@ report:
     avg_anti_roll_rear_pct:
       unit: "%"
       scale: 1.0
+    avg_fbrc_equivalent_height_front_m:
+      unit: "mm"
+      scale: 1000.0
+    avg_fbrc_equivalent_height_rear_m:
+      unit: "mm"
+      scale: 1000.0
     avg_lltd_front_pct:
       unit: "%"
       scale: 1.0
@@ -310,6 +320,13 @@ plots:
           y: { key: rr_anti_vs_roll, label: "Geometric Anti-Roll (%)" },
           # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/T$)" }
         }
+
+  fbrc_roll:
+    layout: dual
+    title: "FBRC-Equivalent Height vs Roll (Loaded Contact Patches Only)"
+    subplots:
+      - { title: "Front", x: { key: fr_fbrc_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_fbrc_height_vs_roll, scale: 1000.0, label: "FBRC-equivalent height (mm)" } }
+      - { title: "Rear", x: { key: rr_fbrc_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_fbrc_height_vs_roll, scale: 1000.0, label: "FBRC-equivalent height (mm)" } }
 
   # contact_patch_force_roll:
   #   layout: quad

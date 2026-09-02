@@ -58,17 +58,13 @@ def test_precomputed_vehicle_kinematics_matches_in_loop_nonlinear_solution() -> 
 
 def test_vehicle_kinematic_state_mirrors_right_corner_geometry() -> None:
     vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text(encoding="utf-8"))
-    state = create_kinematics(vehicle, sample_count=17).at(
-        np.array([0.02, 0.02, -0.015, -0.015])
-    )
+    state = create_kinematics(vehicle, sample_count=17).at(np.array([0.02, 0.02, -0.015, -0.015]))
 
     np.testing.assert_allclose(
         state.contact_patch_offsets_m[0, [0, 2]],
         state.contact_patch_offsets_m[1, [0, 2]],
     )
-    assert state.contact_patch_offsets_m[0, 1] == pytest.approx(
-        -state.contact_patch_offsets_m[1, 1]
-    )
+    assert state.contact_patch_offsets_m[0, 1] == pytest.approx(-state.contact_patch_offsets_m[1, 1])
     assert state.toe_rad[0] == pytest.approx(-state.toe_rad[1])
     assert state.camber_rad[2] == pytest.approx(-state.camber_rad[3])
 
@@ -173,8 +169,14 @@ def _four_post_unit_config(tmp_path: Path) -> dict[str, object]:
     return {
         "model_overrides": {
             "suspension": {
-                "front": {"spring_rate_n_per_m": 20000.0, "stabar_rate_n_m_per_rad": 0.0},
-                "rear": {"spring_rate_n_per_m": 20000.0, "stabar_rate_n_m_per_rad": 0.0},
+                "front": {
+                    "spring_rate_n_per_m": 20000.0,
+                    "stabar_rate_n_m_per_rad": 0.0,
+                },
+                "rear": {
+                    "spring_rate_n_per_m": 20000.0,
+                    "stabar_rate_n_m_per_rad": 0.0,
+                },
             },
         },
         "report": {"metrics_csv_path": str(tmp_path / "missing_metrics.csv")},
@@ -182,17 +184,11 @@ def _four_post_unit_config(tmp_path: Path) -> dict[str, object]:
 
 
 def _pose_sample_times(start_s: float, count: int) -> list[float]:
-    return [
-        start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 4.0
-        for index in range(count)
-    ]
+    return [start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 4.0 for index in range(count)]
 
 
 def _jack_times(start_s: float, count: int) -> list[float]:
-    return [
-        start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 1.5
-        for index in range(count)
-    ]
+    return [start_s + four_post_eval.FOUR_POST_POSE_STEP_S * index + 1.5 for index in range(count)]
 
 
 def _four_post_result_from_kinematics(
@@ -224,7 +220,16 @@ def _four_post_result_from_kinematics(
         for name in ("heave", "roll", "fx", "fy", "jackingForce", "stabarAngle"):
             result[f"{prefix}.{name}"] = np.zeros(len(times), dtype=float)
         for side in ("left", "right"):
-            for name in ("SpringLength", "Fz", "Gamma", "Toe", "Caster", "Kpi", "MechTrail", "MechScrub"):
+            for name in (
+                "SpringLength",
+                "Fz",
+                "Gamma",
+                "Toe",
+                "Caster",
+                "Kpi",
+                "MechTrail",
+                "MechScrub",
+            ):
                 result[f"{prefix}.{side}{name}"] = np.zeros(len(times), dtype=float)
 
     heave_by_pose = np.asarray(heave_sweep_m[::-1], dtype=float)
@@ -289,7 +294,13 @@ def _four_post_result_from_kinematics(
             roll_guesses[axle] = solution
             values = solver.curve_values(point_set, solution, residual_norm)
             write_axis(prefix, time, roll=roll_rad)
-            write_corner(prefix, time, values, jounce_m=right_jounce, load_delta_n=100.0 * roll_rad)
+            write_corner(
+                prefix,
+                time,
+                values,
+                jounce_m=right_jounce,
+                load_delta_n=100.0 * roll_rad,
+            )
             result[f"{prefix}.stabarAngle"][index_by_time[time]] = 0.25 * roll_rad
 
     for time, jounce in zip(heave_jack_times, heave_by_pose, strict=True):
@@ -301,6 +312,8 @@ def _four_post_result_from_kinematics(
         for prefix in prefixes.values():
             write_axis(prefix, time, roll=roll_rad)
             result[f"{prefix}.fy"][index_by_time[time]] = 1000.0
+            result[f"{prefix}.leftFz"][index_by_time[time]] = 1000.0
+            result[f"{prefix}.rightFz"][index_by_time[time]] = 1000.0
 
     return result
 
@@ -437,28 +450,52 @@ def test_static_outputs_match_simulation_toolkit_unit_vehicle(
         (
             0.5,
             {
-                "front": {"camber_deg": -1.7341, "caster_deg": 2.2496, "kpi_deg": 12.3343},
-                "rear": {"camber_deg": -0.7327, "caster_deg": 6.4164, "kpi_deg": 8.7936},
+                "front": {
+                    "camber_deg": -1.7341,
+                    "caster_deg": 2.2496,
+                    "kpi_deg": 12.3343,
+                },
+                "rear": {
+                    "camber_deg": -0.7327,
+                    "caster_deg": 6.4164,
+                    "kpi_deg": 8.7936,
+                },
             },
         ),
         (
             1.0,
             {
-                "front": {"camber_deg": -2.4826, "caster_deg": 2.2562, "kpi_deg": 13.0828},
-                "rear": {"camber_deg": -1.4827, "caster_deg": 6.4298, "kpi_deg": 9.5436},
+                "front": {
+                    "camber_deg": -2.4826,
+                    "caster_deg": 2.2562,
+                    "kpi_deg": 13.0828,
+                },
+                "rear": {
+                    "camber_deg": -1.4827,
+                    "caster_deg": 6.4298,
+                    "kpi_deg": 9.5436,
+                },
             },
         ),
         (
             -1.0,
             {
-                "front": {"camber_deg": 0.4331, "caster_deg": 2.2328, "kpi_deg": 10.1670},
+                "front": {
+                    "camber_deg": 0.4331,
+                    "caster_deg": 2.2328,
+                    "kpi_deg": 10.1670,
+                },
                 "rear": {"camber_deg": 1.4257, "caster_deg": 6.3840, "kpi_deg": 6.6353},
             },
         ),
         (
             -0.5,
             {
-                "front": {"camber_deg": -0.2782, "caster_deg": 2.2379, "kpi_deg": 10.8784},
+                "front": {
+                    "camber_deg": -0.2782,
+                    "caster_deg": 2.2379,
+                    "kpi_deg": 10.8784,
+                },
                 "rear": {"camber_deg": 0.7185, "caster_deg": 6.3936, "kpi_deg": 7.3425},
             },
         ),
@@ -561,9 +598,7 @@ def test_four_post_kinematic_curves_match_unit_validated_frontend_calcs(
         1.25,
         four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
     )
-    summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(
+    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(
         _four_post_result_from_kinematics(vehicle, heave_sweep, roll_sweep_deg)
     )
 
@@ -660,9 +695,7 @@ def test_four_post_static_setup_uses_computed_contact_load_when_fixture_fz_is_ze
     setup = sim.build_setup(summary, series)
 
     front_left = setup["front"]["left"]
-    expected_static_fz = front_left["sprung_load_N"] + (
-        front_left["unsprung_mass_kg"] * four_post_eval.GRAVITY_MPS2
-    )
+    expected_static_fz = front_left["sprung_load_N"] + (front_left["unsprung_mass_kg"] * four_post_eval.GRAVITY_MPS2)
     assert front_left["static_fixture_fz_N"] == pytest.approx(0.0)
     assert front_left["static_fz_N"] == pytest.approx(expected_static_fz)
     assert front_left["static_fz_error_N"] == pytest.approx(0.0, abs=1e-9)
@@ -693,9 +726,7 @@ def test_four_post_summary_filters_implausible_samples(
     result["frKnC.jackingForce"][heave_jack_index] = 1e292
     result["frKnC.leftFz"][roll_index] = 1e292
 
-    summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(result)
+    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
 
     assert abs(summary["avg_anti_dive_pct"]) <= four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT
     assert not np.any(np.abs(series["fr_anti_vs_heave"]) > four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT)
@@ -724,9 +755,7 @@ def test_four_post_anti_roll_uses_commanded_force_when_measured_fy_is_bad(
     result["frKnC.fy"][roll_jack_index] = 1e-12
     result["frKnC.jackingForce"][roll_jack_index] = -50.0
 
-    summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(result)
+    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
 
     assert np.isfinite(summary["avg_anti_roll_front_pct"])
     assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT
@@ -777,9 +806,7 @@ def test_four_post_anti_roll_samples_offset_force_pulses(
     for key in list(result):
         result[key] = result[key][order]
 
-    _summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(result)
+    _summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
 
     assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT
     assert np.ptp(series["fr_anti_vs_roll"]) > 0.1
@@ -821,12 +848,50 @@ def test_four_post_anti_roll_uses_direct_roll_jacking_signal(
             result[f"{prefix}.jackingForce"][jack_index] = jacking_force
             result[f"{prefix}.jackingForce"][tail_index] = 0.0
 
-    _summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(result)
+    _summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
 
     assert np.ptp(series["fr_anti_vs_roll"]) > 0.1
     assert np.ptp(series["rr_anti_vs_roll"]) > 0.1
+
+
+def test_four_post_fbrc_uses_differential_wheel_load_and_axle_track(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    heave_sweep = np.linspace(-0.03, 0.03, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT)
+    roll_sweep_deg = np.linspace(-1.25, 1.25, four_post_eval.FOUR_POST_ROLL_POSE_COUNT)
+    result = _four_post_result_from_kinematics(vehicle, heave_sweep, roll_sweep_deg)
+
+    jack_times = _jack_times(
+        four_post_eval.FOUR_POST_ROLL_START_S,
+        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
+    )
+    tail_times = _pose_sample_times(
+        four_post_eval.FOUR_POST_ROLL_START_S,
+        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
+    )
+    for jack_time, tail_time in zip(jack_times, tail_times, strict=True):
+        jack_index = int(np.argmin(np.abs(result["time"] - jack_time)))
+        tail_index = int(np.argmin(np.abs(result["time"] - tail_time)))
+        for prefix in ("frKnC", "rrKnC"):
+            result[f"{prefix}.leftFz"][jack_index] = result[f"{prefix}.leftFz"][tail_index] + 10.0
+            result[f"{prefix}.rightFz"][jack_index] = result[f"{prefix}.rightFz"][tail_index] - 20.0
+
+    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+
+    expected_ratio = -30.0 / 1000.0
+    for axle, prefix in (("front", "fr"), ("rear", "rr")):
+        side = vehicle[axle]
+        assert isinstance(side, dict)
+        suspension = side["suspension"]
+        assert isinstance(suspension, dict)
+        expected_height = float(suspension["wheel_center_m"][1]) * expected_ratio
+        np.testing.assert_allclose(series[f"{prefix}_fbrc_jacking_ratio_vs_roll"], expected_ratio)
+        np.testing.assert_allclose(series[f"{prefix}_fbrc_height_vs_roll"], expected_height)
+        assert summary[f"avg_fbrc_differential_jacking_ratio_{axle}"] == pytest.approx(expected_ratio)
+        assert summary[f"avg_fbrc_equivalent_height_{axle}_m"] == pytest.approx(expected_height)
 
 
 def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
@@ -866,9 +931,7 @@ def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
                 tail_fz = float(result[f"{prefix}.{side}Fz"][tail_index])
                 result[f"{prefix}.{side}Fz"][jack_index] = tail_fz + 0.5 * fz_delta
 
-    _summary, series = four_post_eval.FourPostEvalSim(
-        _four_post_unit_config(tmp_path)
-    ).summarize(result)
+    _summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
 
     assert np.ptp(series["fr_anti_vs_roll"]) > 0.1
     assert np.ptp(series["rr_anti_vs_roll"]) > 0.1

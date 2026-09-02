@@ -18,9 +18,7 @@ DEFAULT_BUILD_DIR = "_3_StandardSim/BuildBobLib/FourPostSim"
 DEFAULT_EXEC_NAME = "BobLib.Experiments.Standards.FourPostSim"
 DEFAULT_METRICS_CSV_PATH = "_3_StandardSim/results/four_post_eval_report_metrics.csv"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ACTIVE_VEHICLE_YAML_CANDIDATES = (
-    REPO_ROOT / "vehicle.yml",
-)
+ACTIVE_VEHICLE_YAML_CANDIDATES = (REPO_ROOT / "vehicle.yml",)
 GRAVITY_MPS2 = 9.80665
 FOUR_POST_POSE_STEP_S = 5.0
 FOUR_POST_HEAVE_START_S = 2.0
@@ -36,8 +34,9 @@ FOUR_POST_RATIO_ABS_LIMIT = 1e4
 FOUR_POST_FRACTION_ABS_LIMIT = 10.0
 FOUR_POST_PERCENT_ABS_LIMIT = 1e3
 FOUR_POST_MOTION_RATIO_ABS_LIMIT = 20.0
-FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD = 0.02181661564992912
+FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD = 0.01308996938995747
 FOUR_POST_LEGACY_ROLL_MAGNITUDE_RAD = 0.035
+FOUR_POST_MIN_CONTACT_FZ_N = 1.0
 
 
 FOUR_POST_EVAL_SIGNALS = [
@@ -110,13 +109,56 @@ def _four_post_jacking_roll_plot_config() -> dict[str, Any]:
         "subplots": [
             {
                 "title": "Front",
-                "x": {"key": "fr_jacking_vs_roll_x", "scale": 57.2958, "label": "Roll (deg)"},
+                "x": {
+                    "key": "fr_jacking_vs_roll_x",
+                    "scale": 57.2958,
+                    "label": "Roll (deg)",
+                },
                 "y": {"key": "fr_anti_vs_roll", "label": "Geometric Anti-Roll (%)"},
             },
             {
                 "title": "Rear",
-                "x": {"key": "rr_jacking_vs_roll_x", "scale": 57.2958, "label": "Roll (deg)"},
+                "x": {
+                    "key": "rr_jacking_vs_roll_x",
+                    "scale": 57.2958,
+                    "label": "Roll (deg)",
+                },
                 "y": {"key": "rr_anti_vs_roll", "label": "Geometric Anti-Roll (%)"},
+            },
+        ],
+    }
+
+
+def _four_post_fbrc_roll_plot_config() -> dict[str, Any]:
+    return {
+        "layout": "dual",
+        "title": "FBRC-Equivalent Height vs Roll (Loaded Contact Patches Only)",
+        "subplots": [
+            {
+                "title": "Front",
+                "x": {
+                    "key": "fr_fbrc_vs_roll_x",
+                    "scale": 57.2958,
+                    "label": "Roll (deg)",
+                },
+                "y": {
+                    "key": "fr_fbrc_height_vs_roll",
+                    "scale": 1000.0,
+                    "label": "FBRC-equivalent height (mm)",
+                },
+            },
+            {
+                "title": "Rear",
+                "x": {
+                    "key": "rr_fbrc_vs_roll_x",
+                    "scale": 57.2958,
+                    "label": "Roll (deg)",
+                },
+                "y": {
+                    "key": "rr_fbrc_height_vs_roll",
+                    "scale": 1000.0,
+                    "label": "FBRC-equivalent height (mm)",
+                },
             },
         ],
     }
@@ -138,6 +180,7 @@ def _normalize_four_post_report_config(config: dict[str, Any]) -> dict[str, Any]
     plots_cfg = config.setdefault("plots", {})
     if isinstance(plots_cfg, dict):
         plots_cfg["jacking_roll"] = copy.deepcopy(_four_post_jacking_roll_plot_config())
+        plots_cfg["fbrc_roll"] = copy.deepcopy(_four_post_fbrc_roll_plot_config())
     return config
 
 
@@ -315,9 +358,7 @@ def _safe_divide_series(
 
     numerator_arr = numerator_arr[:size]
     denominator_arr = denominator_arr[:size]
-    mask = np.isfinite(numerator_arr) & np.isfinite(denominator_arr) & (
-        np.abs(denominator_arr) > min_denominator_abs
-    )
+    mask = np.isfinite(numerator_arr) & np.isfinite(denominator_arr) & (np.abs(denominator_arr) > min_denominator_abs)
     out[mask] = numerator_arr[mask] / denominator_arr[mask]
     out[~_finite_abs_mask(out, max_abs)] = np.nan
     return out
@@ -531,10 +572,7 @@ def _static_balance_free_length(
     if not np.isfinite(motion_ratio) or abs(motion_ratio) <= 1e-12:
         return float("nan")
 
-    compressions = [
-        _force_to_deflection(spring_table, load_n * motion_ratio)
-        for load_n in sprung_corner_loads_n
-    ]
+    compressions = [_force_to_deflection(spring_table, load_n * motion_ratio) for load_n in sprung_corner_loads_n]
     compression = float(np.nanmean(np.asarray(compressions, dtype=float)))
     if not np.isfinite(compression):
         return float("nan")
@@ -647,14 +685,10 @@ def _static_balance_summary(setup: dict[str, Any]) -> dict[str, Any]:
         "static_balance_max_abs_fz_error_pct": max(errors_pct) if errors_pct else float("nan"),
         "static_balance_pass": bool(passes and all(passes)),
         "static_motion_ratio_front": (
-            float(np.mean(static_motion_ratios["front"]))
-            if static_motion_ratios["front"]
-            else float("nan")
+            float(np.mean(static_motion_ratios["front"])) if static_motion_ratios["front"] else float("nan")
         ),
         "static_motion_ratio_rear": (
-            float(np.mean(static_motion_ratios["rear"]))
-            if static_motion_ratios["rear"]
-            else float("nan")
+            float(np.mean(static_motion_ratios["rear"])) if static_motion_ratios["rear"] else float("nan")
         ),
     }
 
@@ -691,9 +725,7 @@ def _static_balance_corrected_overrides(
                 length_corrections.append(error_n * motion_ratio / spring_rate)
 
         if length_corrections:
-            corrected[override_key] = float(
-                corrected[override_key] - np.mean(length_corrections)
-            )
+            corrected[override_key] = float(corrected[override_key] - np.mean(length_corrections))
 
     return corrected
 
@@ -701,9 +733,7 @@ def _static_balance_corrected_overrides(
 def _indexed_table_overrides(prefix: str, table: np.ndarray) -> dict[str, float]:
     table = np.asarray(table, dtype=float)
     return {
-        f"{prefix}[{i + 1},{j + 1}]": float(table[i, j])
-        for i in range(table.shape[0])
-        for j in range(table.shape[1])
+        f"{prefix}[{i + 1},{j + 1}]": float(table[i, j]) for i in range(table.shape[0]) for j in range(table.shape[1])
     }
 
 
@@ -796,12 +826,7 @@ def _quarter_car_frequencies(
     wheel_rate_n_per_m: float,
     tire_rate_n_per_m: float,
 ) -> tuple[float, float]:
-    if (
-        sprung_mass_kg <= 0.0
-        or unsprung_mass_kg <= 0.0
-        or wheel_rate_n_per_m <= 0.0
-        or tire_rate_n_per_m <= 0.0
-    ):
+    if sprung_mass_kg <= 0.0 or unsprung_mass_kg <= 0.0 or wheel_rate_n_per_m <= 0.0 or tire_rate_n_per_m <= 0.0:
         return float("nan"), float("nan")
 
     m = np.array([[sprung_mass_kg, 0.0], [0.0, unsprung_mass_kg]], dtype=float)
@@ -924,7 +949,12 @@ class FourPostEvalSim:
         def corner_unsprung_mass(side: dict[str, Any]) -> float:
             masses = _nested_value(side, "masses")
             total = 0.0
-            for key in ("unsprung", "upper_control_arm", "lower_control_arm", "tie_rod"):
+            for key in (
+                "unsprung",
+                "upper_control_arm",
+                "lower_control_arm",
+                "tie_rod",
+            ):
                 total += float(_nested_value(masses, key, "mass_kg"))
             return total
 
@@ -944,9 +974,7 @@ class FourPostEvalSim:
                 if axle_name == "front"
                 else suspension_setup["rear_spring_table"]
             )
-            motion_ratio_key = (
-                "avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear"
-            )
+            motion_ratio_key = "avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear"
             axle_sprung_loads = {
                 "left": sprung_mass_kg * axle_fraction * left_fraction * GRAVITY_MPS2,
                 "right": sprung_mass_kg * axle_fraction * right_fraction * GRAVITY_MPS2,
@@ -969,16 +997,12 @@ class FourPostEvalSim:
                 )
                 spring_force = static_balance_target_load * static_mr
                 spring_wheel_load = (
-                    spring_force / static_mr
-                    if np.isfinite(static_mr) and abs(static_mr) > 1e-12
-                    else float("nan")
+                    spring_force / static_mr if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
                 )
                 spring_compression_m = _force_to_deflection(axle_spring_table, spring_force)
                 spring_rate = _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
                 wheel_rate = (
-                    spring_rate / (static_mr**2)
-                    if np.isfinite(static_mr) and abs(static_mr) > 1e-12
-                    else float("nan")
+                    spring_rate / (static_mr**2) if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
                 )
                 free_length_m = axle_installed_length_m + spring_compression_m
                 fixture_static_fz_n = _series_value_at(
@@ -999,8 +1023,7 @@ class FourPostEvalSim:
                     abs(static_balance_target_load) * static_balance_tol_pct / 100.0,
                 )
                 static_balance_ok = bool(
-                    np.isfinite(static_fz_error_n)
-                    and abs(static_fz_error_n) <= static_balance_limit_n
+                    np.isfinite(static_fz_error_n) and abs(static_fz_error_n) <= static_balance_limit_n
                 )
                 sprung_mode_hz, unsprung_mode_hz = _quarter_car_frequencies(
                     sprung_corner_mass,
@@ -1120,13 +1143,8 @@ class FourPostEvalSim:
             setup = self.build_setup(summary, series)
             summary.update(_static_balance_summary(setup))
             summary["static_balance_iterations"] = iteration_idx + 1
-            max_abs_error_n = float(
-                summary.get("static_balance_max_abs_fz_error_n", float("nan"))
-            )
-            if (
-                np.isfinite(max_abs_error_n)
-                and max_abs_error_n <= static_balance_convergence_n
-            ):
+            max_abs_error_n = float(summary.get("static_balance_max_abs_fz_error_n", float("nan")))
+            if np.isfinite(max_abs_error_n) and max_abs_error_n <= static_balance_convergence_n:
                 break
 
             corrected_overrides = _static_balance_corrected_overrides(
@@ -1224,10 +1242,7 @@ class FourPostEvalSim:
                 fallback_pulse_time = pose_start + 1.5
                 tail_time = pose_start + 4.0
                 pulse_window = (
-                    valid_time
-                    & (time >= pose_start + 0.5)
-                    & (time <= pose_start + 2.25)
-                    & np.isfinite(response)
+                    valid_time & (time >= pose_start + 0.5) & (time <= pose_start + 2.25) & np.isfinite(response)
                 )
                 force_window = pulse_window & np.isfinite(force) & (np.abs(force) > 1e-6)
                 selected_index: int | None = None
@@ -1242,9 +1257,7 @@ class FourPostEvalSim:
                         pose_pulse = float(pose[selected_index])
                         response_pulse = float(response[selected_index])
                         force_pulse = (
-                            float(force[selected_index])
-                            if np.isfinite(force[selected_index])
-                            else float("nan")
+                            float(force[selected_index]) if np.isfinite(force[selected_index]) else float("nan")
                         )
                     else:
                         pose_pulse = sample_at_times(pose_signal, [fallback_pulse_time])[0]
@@ -1375,6 +1388,42 @@ class FourPostEvalSim:
             start_s=FOUR_POST_ROLL_START_S,
             count=FOUR_POST_ROLL_POSE_COUNT,
         )
+        roll_contact_samples = []
+        roll_fz_delta: dict[tuple[str, str], np.ndarray] = {}
+        for prefix in ("frKnC", "rrKnC"):
+            for side in ("left", "right"):
+                _, contact_fz, _ = sample_force_pulses(
+                    roll,
+                    sig(prefix, f"{side}Fz"),
+                    sig(prefix, "fy"),
+                    start_s=FOUR_POST_ROLL_START_S,
+                    count=FOUR_POST_ROLL_POSE_COUNT,
+                    subtract_tail=False,
+                )
+                roll_contact_samples.append(contact_fz)
+                _, delta_fz, _ = sample_force_pulses(
+                    roll,
+                    sig(prefix, f"{side}Fz"),
+                    sig(prefix, "fy"),
+                    start_s=FOUR_POST_ROLL_START_S,
+                    count=FOUR_POST_ROLL_POSE_COUNT,
+                )
+                roll_fz_delta[(prefix, side)] = delta_fz
+        roll_contact_fz = np.vstack(roll_contact_samples)
+        validation_cfg = _as_mapping(self.config.get("validation"), name="validation")
+        min_contact_fz_n = float(validation_cfg.get("min_contact_fz_n", FOUR_POST_MIN_CONTACT_FZ_N))
+        roll_contact_loaded = np.all(
+            np.isfinite(roll_contact_fz) & (roll_contact_fz >= min_contact_fz_n),
+            axis=0,
+        )
+        if validation_cfg.get("fail_on_contact_loss", False) and not np.all(roll_contact_loaded):
+            invalid_roll_deg = np.degrees(fr_roll_jack_x[~roll_contact_loaded])
+            invalid_text = ", ".join(f"{value:+.2f}" for value in invalid_roll_deg)
+            raise ValueError(
+                "FourPost roll-force evaluation lost contact-patch load at "
+                f"roll angles [{invalid_text}] deg (minimum required Fz "
+                f"{min_contact_fz_n:.1f} N). Reduce procedure.rollMagnitude or fix the suspension setup."
+            )
         fr_total_fz = corner_signal("frKnC", "fr_l", "Fz") + corner_signal("frKnC", "fr_r", "Fz")
         rr_total_fz = corner_signal("rrKnC", "rr_l", "Fz") + corner_signal("rrKnC", "rr_r", "Fz")
         _, fr_roll_fz_delta, _ = sample_force_pulses(
@@ -1392,18 +1441,16 @@ class FourPostEvalSim:
             count=FOUR_POST_ROLL_POSE_COUNT,
         )
         procedure_cfg = _as_mapping(self.config.get("procedure"), name="procedure")
-        roll_force_denominator_n = (
-            FOUR_POST_FORCE_SAMPLE_FRACTION * abs(float(procedure_cfg.get("forceMagnitude", 1000.0)))
+        roll_force_denominator_n = FOUR_POST_FORCE_SAMPLE_FRACTION * abs(
+            float(procedure_cfg.get("forceMagnitude", 1000.0))
         )
         min_roll_jacking_variation_n = max(1e-6, 1e-5 * roll_force_denominator_n)
-        if (
-            not _has_variation(fr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n)
-            and _has_variation(fr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n)
+        if not _has_variation(fr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n) and _has_variation(
+            fr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n
         ):
             fr_roll_jack_y = fr_roll_fz_delta
-        if (
-            not _has_variation(rr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n)
-            and _has_variation(rr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n)
+        if not _has_variation(rr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n) and _has_variation(
+            rr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n
         ):
             rr_roll_jack_y = rr_roll_fz_delta
         fr_roll_force_denominator = _force_denominator_series(fr_roll_fy, roll_force_denominator_n)
@@ -1459,6 +1506,25 @@ class FourPostEvalSim:
         fr_anti_roll = _plausible_array(100.0 * fr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
         rr_anti_roll = _plausible_array(100.0 * rr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
 
+        # Force-based roll-center equivalent height from moment equivalence:
+        # h_eq = (track / 2) * (delta_Fz,right - delta_Fz,left) / Fy.
+        # This is deliberately separate from geometric anti-roll, which uses
+        # the total axle jacking reaction rather than the left/right load split.
+        fr_fbrc_ratio = _safe_divide_series(
+            roll_fz_delta[("frKnC", "right")] - roll_fz_delta[("frKnC", "left")],
+            fr_roll_force_denominator,
+            min_denominator_abs=1e-3,
+            max_abs=FOUR_POST_RATIO_ABS_LIMIT,
+        )
+        rr_fbrc_ratio = _safe_divide_series(
+            roll_fz_delta[("rrKnC", "right")] - roll_fz_delta[("rrKnC", "left")],
+            rr_roll_force_denominator,
+            min_denominator_abs=1e-3,
+            max_abs=FOUR_POST_RATIO_ABS_LIMIT,
+        )
+        fr_fbrc_height = _plausible_array(0.5 * track_front * fr_fbrc_ratio)
+        rr_fbrc_height = _plausible_array(0.5 * track_rear * rr_fbrc_ratio)
+
         mask_fr_h = np.isfinite(fr_heave_jack_x) & np.isfinite(fr_anti_heave)
         mask_rr_h = np.isfinite(rr_heave_jack_x) & np.isfinite(rr_anti_heave)
         fr_heave_x = fr_heave_jack_x[mask_fr_h]
@@ -1466,14 +1532,25 @@ class FourPostEvalSim:
         fr_anti_heave = fr_anti_heave[mask_fr_h]
         rr_anti_heave = rr_anti_heave[mask_rr_h]
 
-        mask_fr = np.isfinite(fr_roll_jack_x) & np.isfinite(fr_anti_roll)
-        mask_rr = np.isfinite(rr_roll_jack_x) & np.isfinite(rr_anti_roll)
+        mask_fr = np.isfinite(fr_roll_jack_x) & np.isfinite(fr_anti_roll) & roll_contact_loaded
+        mask_rr = np.isfinite(rr_roll_jack_x) & np.isfinite(rr_anti_roll) & roll_contact_loaded
         fr_roll_x = fr_roll_jack_x[mask_fr]
         rr_roll_x = rr_roll_jack_x[mask_rr]
         fr_anti_roll = fr_anti_roll[mask_fr]
         rr_anti_roll = rr_anti_roll[mask_rr]
         fr_roll_x, fr_anti_roll = _sort_xy(fr_roll_x, fr_anti_roll)
         rr_roll_x, rr_anti_roll = _sort_xy(rr_roll_x, rr_anti_roll)
+
+        mask_fr_fbrc = np.isfinite(fr_roll_jack_x) & np.isfinite(fr_fbrc_height) & roll_contact_loaded
+        mask_rr_fbrc = np.isfinite(rr_roll_jack_x) & np.isfinite(rr_fbrc_height) & roll_contact_loaded
+        fr_fbrc_order = np.argsort(fr_roll_jack_x[mask_fr_fbrc])
+        rr_fbrc_order = np.argsort(rr_roll_jack_x[mask_rr_fbrc])
+        fr_fbrc_x = fr_roll_jack_x[mask_fr_fbrc][fr_fbrc_order]
+        rr_fbrc_x = rr_roll_jack_x[mask_rr_fbrc][rr_fbrc_order]
+        fr_fbrc_ratio = fr_fbrc_ratio[mask_fr_fbrc][fr_fbrc_order]
+        rr_fbrc_ratio = rr_fbrc_ratio[mask_rr_fbrc][rr_fbrc_order]
+        fr_fbrc_height = fr_fbrc_height[mask_fr_fbrc][fr_fbrc_order]
+        rr_fbrc_height = rr_fbrc_height[mask_rr_fbrc][rr_fbrc_order]
 
         def compute_motion_ratio_series(
             spring_signal: np.ndarray,
@@ -1488,7 +1565,11 @@ class FourPostEvalSim:
             wheel = wheel[mask]
 
             if spring.size < 2 or wheel.size < 2 or np.nanstd(wheel) < 1e-12:
-                return np.array([], dtype=float), np.array([], dtype=float), float("nan")
+                return (
+                    np.array([], dtype=float),
+                    np.array([], dtype=float),
+                    float("nan"),
+                )
 
             idx = np.argsort(wheel)
             wheel = wheel[idx]
@@ -1500,7 +1581,11 @@ class FourPostEvalSim:
             mr = 1.0 / np.abs(ds_dw)
             mr = _plausible_array(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT)
             finite = np.isfinite(wheel) & np.isfinite(mr)
-            return wheel[finite], mr[finite], _nanmean_plausible(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT)
+            return (
+                wheel[finite],
+                mr[finite],
+                _nanmean_plausible(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT),
+            )
 
         def compute_stabar_motion_ratio_series(
             stabar_signal: np.ndarray,
@@ -1515,7 +1600,11 @@ class FourPostEvalSim:
             phi = phi[mask]
 
             if stabar.size < 2 or phi.size < 2 or np.nanstd(stabar) < 1e-12 or np.nanstd(phi) < 1e-12:
-                return np.array([], dtype=float), np.array([], dtype=float), float("nan")
+                return (
+                    np.array([], dtype=float),
+                    np.array([], dtype=float),
+                    float("nan"),
+                )
 
             idx = np.argsort(phi)
             phi = phi[idx]
@@ -1527,7 +1616,11 @@ class FourPostEvalSim:
             mr = 1.0 / np.abs(ds_dphi)
             mr = _plausible_array(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT)
             finite = np.isfinite(phi) & np.isfinite(mr)
-            return phi[finite], mr[finite], _nanmean_plausible(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT)
+            return (
+                phi[finite],
+                mr[finite],
+                _nanmean_plausible(mr, FOUR_POST_MOTION_RATIO_ABS_LIMIT),
+            )
 
         def sampled_series(
             x: np.ndarray,
@@ -1577,11 +1670,8 @@ class FourPostEvalSim:
             if abs(float(bar_rate)) <= 1e-12:
                 return np.zeros_like(motion_ratio, dtype=float)
             out = np.full_like(motion_ratio, float("nan"), dtype=float)
-            mask = (
-                _finite_abs_mask(motion_ratio, FOUR_POST_MOTION_RATIO_ABS_LIMIT)
-                & (np.abs(motion_ratio) > 1e-12)
-            )
-            out[mask] = bar_rate / (motion_ratio[mask]**2)
+            mask = _finite_abs_mask(motion_ratio, FOUR_POST_MOTION_RATIO_ABS_LIMIT) & (np.abs(motion_ratio) > 1e-12)
+            out[mask] = bar_rate / (motion_ratio[mask] ** 2)
             out = _plausible_array(out)
             return out
 
@@ -1652,12 +1742,8 @@ class FourPostEvalSim:
         fr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, fr_r_fz_roll)
         rr_l_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_l_fz_roll)
         rr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_r_fz_roll)
-        front_load_transfer_roll = np.abs(
-            (fr_l_fz_roll - fr_l_fz_ref) - (fr_r_fz_roll - fr_r_fz_ref)
-        )
-        rear_load_transfer_roll = np.abs(
-            (rr_l_fz_roll - rr_l_fz_ref) - (rr_r_fz_roll - rr_r_fz_ref)
-        )
+        front_load_transfer_roll = np.abs((fr_l_fz_roll - fr_l_fz_ref) - (fr_r_fz_roll - fr_r_fz_ref))
+        rear_load_transfer_roll = np.abs((rr_l_fz_roll - rr_l_fz_ref) - (rr_r_fz_roll - rr_r_fz_ref))
         front_load_transfer_roll = _plausible_array(front_load_transfer_roll)
         rear_load_transfer_roll = _plausible_array(rear_load_transfer_roll)
         total_load_transfer_roll = front_load_transfer_roll + rear_load_transfer_roll
@@ -1681,42 +1767,18 @@ class FourPostEvalSim:
         kphi_el_r = kphi_spr_r + kphi_arb_r
 
         gains = {
-            "camber_gain_heave_rad_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_camber_vs_heave"]
-            ),
-            "toe_gain_heave_rad_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_toe_vs_heave"]
-            ),
-            "caster_gain_heave_rad_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_caster_vs_heave"]
-            ),
-            "kpi_gain_heave_rad_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_kpi_vs_heave"]
-            ),
-            "trail_gain_heave_m_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_trail_vs_heave"]
-            ),
-            "scrub_gain_heave_m_per_m": compute_gain(
-                heave_vals, heave_series["fr_l_scrub_vs_heave"]
-            ),
-            "camber_gain_roll_rad_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_camber_vs_roll"]
-            ),
-            "toe_gain_roll_rad_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_toe_vs_roll"]
-            ),
-            "caster_gain_roll_rad_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_caster_vs_roll"]
-            ),
-            "kpi_gain_roll_rad_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_kpi_vs_roll"]
-            ),
-            "trail_gain_roll_m_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_trail_vs_roll"]
-            ),
-            "scrub_gain_roll_m_per_rad": compute_gain(
-                roll_vals, roll_series["fr_l_scrub_vs_roll"]
-            ),
+            "camber_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_camber_vs_heave"]),
+            "toe_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_toe_vs_heave"]),
+            "caster_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_caster_vs_heave"]),
+            "kpi_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_kpi_vs_heave"]),
+            "trail_gain_heave_m_per_m": compute_gain(heave_vals, heave_series["fr_l_trail_vs_heave"]),
+            "scrub_gain_heave_m_per_m": compute_gain(heave_vals, heave_series["fr_l_scrub_vs_heave"]),
+            "camber_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_camber_vs_roll"]),
+            "toe_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_toe_vs_roll"]),
+            "caster_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_caster_vs_roll"]),
+            "kpi_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_kpi_vs_roll"]),
+            "trail_gain_roll_m_per_rad": compute_gain(roll_vals, roll_series["fr_l_trail_vs_roll"]),
+            "scrub_gain_roll_m_per_rad": compute_gain(roll_vals, roll_series["fr_l_scrub_vs_roll"]),
         }
 
         summary = {
@@ -1725,10 +1787,11 @@ class FourPostEvalSim:
             "avg_anti_squat_pct": _nanmean_plausible(rr_anti_heave, FOUR_POST_PERCENT_ABS_LIMIT),
             "avg_anti_roll_front_pct": _nanmean_plausible(fr_anti_roll, FOUR_POST_PERCENT_ABS_LIMIT),
             "avg_anti_roll_rear_pct": _nanmean_plausible(rr_anti_roll, FOUR_POST_PERCENT_ABS_LIMIT),
+            "roll_contact_valid_points": int(np.count_nonzero(roll_contact_loaded)),
+            "roll_contact_rejected_points": int(np.count_nonzero(~roll_contact_loaded)),
+            "minimum_roll_pulse_contact_fz_n": float(np.nanmin(roll_contact_fz)),
             "avg_lltd_front_frac": _nanmean_plausible(lltd_roll, FOUR_POST_FRACTION_ABS_LIMIT),
-            "avg_lltd_front_pct": float(
-                100.0 * _nanmean_plausible(lltd_roll, FOUR_POST_FRACTION_ABS_LIMIT)
-            ),
+            "avg_lltd_front_pct": float(100.0 * _nanmean_plausible(lltd_roll, FOUR_POST_FRACTION_ABS_LIMIT)),
             "avg_roll_rate_distribution_front_pct": float(
                 100.0 * _nanmean_plausible(lltd_stiffness_roll, FOUR_POST_FRACTION_ABS_LIMIT)
             ),
@@ -1751,6 +1814,10 @@ class FourPostEvalSim:
                 rr_coeff_roll,
                 FOUR_POST_RATIO_ABS_LIMIT,
             ),
+            "avg_fbrc_equivalent_height_front_m": _nanmean_plausible(fr_fbrc_height),
+            "avg_fbrc_equivalent_height_rear_m": _nanmean_plausible(rr_fbrc_height),
+            "avg_fbrc_differential_jacking_ratio_front": _nanmean_plausible(fr_fbrc_ratio, FOUR_POST_RATIO_ABS_LIMIT),
+            "avg_fbrc_differential_jacking_ratio_rear": _nanmean_plausible(rr_fbrc_ratio, FOUR_POST_RATIO_ABS_LIMIT),
             "avg_motion_ratio_front": float(mr_f),
             "avg_motion_ratio_rear": float(mr_r),
             "avg_stabar_motion_ratio_front": float(smr_f),
@@ -1778,6 +1845,12 @@ class FourPostEvalSim:
             "rr_jacking_vs_roll_x": rr_roll_x,
             "fr_anti_vs_roll": fr_anti_roll,
             "rr_anti_vs_roll": rr_anti_roll,
+            "fr_fbrc_vs_roll_x": fr_fbrc_x,
+            "rr_fbrc_vs_roll_x": rr_fbrc_x,
+            "fr_fbrc_jacking_ratio_vs_roll": fr_fbrc_ratio,
+            "rr_fbrc_jacking_ratio_vs_roll": rr_fbrc_ratio,
+            "fr_fbrc_height_vs_roll": fr_fbrc_height,
+            "rr_fbrc_height_vs_roll": rr_fbrc_height,
             "lltd_vs_roll_x": roll_vals,
             "lltd_vs_roll": lltd_roll,
             "lltd_contact_force_vs_roll": lltd_contact_roll,
