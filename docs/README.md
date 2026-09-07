@@ -16,6 +16,8 @@ Read in this order:
 | [reduced-order-dynamics.md](reduced-order-dynamics.md) | You are working on 3/6/10/14DOF transient models, QSS envelopes, or BobLib correlation. |
 | [lap-time-simulation.md](lap-time-simulation.md) | You are optimizing a QSS racing line/speed profile or running the same lap as a forward transient. |
 | [boblib-submodule.md](boblib-submodule.md) | Modelica models are missing, builds fail with "file not found", or you touched BobLib. |
+| [conventions.md](conventions.md) | You're reading or writing `vehicle.yml` geometry, or importing external suspension data (e.g. SHARK) — axis/sign conventions, hardpoint naming, and the vertical-datum rules. |
+| [../skills/README.md](../skills/README.md) | You're doing a repeated multi-step task by hand: SHARK import + datum verification, or a regression baseline refresh. |
 
 ## Conventions used in these docs
 
