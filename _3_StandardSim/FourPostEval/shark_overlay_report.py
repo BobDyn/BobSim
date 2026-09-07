@@ -42,7 +42,7 @@ from _0_Utils.shark_import import (
     write_datum_sidecar,
     write_vehicle,
 )
-from _0_Utils.kin_py.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
+from _0_Utils.kin_py.kinematics import DEFAULT_ROLL_DEG, DEFAULT_STEER_M, DEFAULT_SWEEP_M
 from _0_Utils.vehicle_io import load_yaml, repo_root, vehicle_yaml_path
 from _5_App.kinematics import KINEMATIC_CURVE_META, kinematic_curves_payload
 from _5_App.modelica_generator import generate_modelica_stack, modelica_stack_status_payload
@@ -141,6 +141,9 @@ def sweep_including_zero(reference: Sequence[float], points: int = 21) -> tuple[
 
 BUMP_SWEEP_M = sweep_including_zero(DEFAULT_SWEEP_M)
 ROLL_SWEEP_DEG = sweep_including_zero(DEFAULT_ROLL_DEG)
+# Front-axle only, already zero-centered on a grid point, so no sweep_including_zero
+# treatment is needed.
+STEER_SWEEP_M = DEFAULT_STEER_M
 
 
 def kinematic_payload(vehicle_path: Path) -> dict[str, Any]:
@@ -151,7 +154,7 @@ def kinematic_payload(vehicle_path: Path) -> dict[str, Any]:
     position on a sample rather than between two.
     """
     vehicle = load_yaml(vehicle_path)
-    return kinematic_curves_payload(vehicle, BUMP_SWEEP_M, ROLL_SWEEP_DEG)
+    return kinematic_curves_payload(vehicle, BUMP_SWEEP_M, ROLL_SWEEP_DEG, STEER_SWEEP_M)
 
 
 def _curve_series(
@@ -517,6 +520,8 @@ def build_report(
             for meta in KINEMATIC_CURVE_META
             if meta["id"] not in withheld
             for axle in ("front", "rear")
+            # Steer sweep is front-axle only; a rear panel would just be empty.
+            if not (axle == "rear" and meta["id"].startswith("steer_"))
         ]
         for start in range(0, len(appendix), 6):
             page = start // 6 + 1
@@ -1293,6 +1298,12 @@ def main(argv: list[str] | None = None) -> int:
         f"Sweep ranges match the app registry defaults; the point count is raised to "
         f"{len(BUMP_SWEEP_M)}/{len(ROLL_SWEEP_DEG)} so the design position is sampled "
         "rather than falling between two points as it does on the app's even grid."
+    )
+    notes.append(
+        f"Steer sweep: {len(STEER_SWEEP_M)} points over "
+        f"{min(STEER_SWEEP_M) * 1000.0:+.0f}..{max(STEER_SWEEP_M) * 1000.0:+.0f} mm rack "
+        "displacement, front axle only; plotted against the solved road-wheel steer "
+        "angle rather than the commanded rack travel."
     )
     notes.append(
         "The anti-roll bar takes no part in the kinematic solve; it is handled outside "
