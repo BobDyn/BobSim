@@ -46,6 +46,8 @@ targets) needs either the container or a local `omc` on `PATH`.
 
 ## Standard studies
 
+See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity and use-case context.
+
 ```bash
 make standard-eval-all      # ramp steer + steady state + transient + four post
 ```
@@ -96,6 +98,8 @@ transients can use the nonlinear backend directly with
 should normally retain the lookup backend.
 
 ## Envelopes and sensitivities
+
+See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity and use-case context.
 
 ```bash
 make envelope-ggv / envelope-ymd / envelope-all

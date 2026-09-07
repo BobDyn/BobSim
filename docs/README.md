@@ -9,6 +9,7 @@ Read in this order:
 | Doc | Read it when |
 | --- | --- |
 | [architecture.md](architecture.md) | You need the `_0_` … `_5_` layer map and how data flows between them. Start here. |
+| [simulation-entrypoints.md](simulation-entrypoints.md) | You need to understand the fidelity levels and use cases of VehicleSim, EnvelopeSim, StandardSim, and FourPostSim — or you're publishing results and need to specify which workflow was used. |
 | [workflows.md](workflows.md) | You want to *run* something: app, standard studies, envelopes, sensitivities, tests. |
 | [doe-reverse-engineering.md](doe-reverse-engineering.md) | You are doing DOE work — sweeping parameters or going backwards from target performance metrics to a car. Start here for `make opt-standard`. |
 
