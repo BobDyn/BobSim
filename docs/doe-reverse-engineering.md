@@ -1,11 +1,6 @@
 # DOE and reverse engineering a vehicle from target metrics
 
-The goal this layer serves: *given desired performance numbers, what car
-produces them?* BobSim answers that by brute force plus interpolation — sweep a
-population of vehicle variants, simulate them all, aggregate their metrics, then
-search that table backwards.
-
-Everything here lives under `_4_OptSim/StandardSens/`.
+**TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `_4_OptSim/StandardSens/`.
 
 ## Quick start: a small sweep
 

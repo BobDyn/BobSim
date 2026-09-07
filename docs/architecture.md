@@ -1,10 +1,16 @@
 # Architecture
 
-BobSim is primarily the **workflow layer**. BobLib (a git submodule) is the
-high-fidelity **physics reference**. BobSim also contains the lower-fidelity
-`_0_Utils/dyn_py` equations used for fast envelopes and lap simulation; those
-models are explicitly correlated against BobLib. The surrounding workflows
-configure models, run them, and turn raw output into metrics and reports.
+**Three fidelity levels:**
+
+| Model | Fidelity | Use | Entry point |
+| --- | --- | --- | --- |
+| **BobLib Modelica** (reference) | High (MBD) | Single maneuver studies | `_3_StandardSim` + VehicleSim/FourPostSim |
+| **`dyn_py` reduced-order** | Low-Medium (QSS/transient) | Envelopes, lap sim, DOE sweeps | `_2_EnvelopeSim` or lap workflows |
+| **Kinematics** (`kin_py`) | Geometry only | Detailed suspension-element workflows | `_0_Utils/kin_py` |
+
+**Philosophy:** BobSim orchestrates workflows and makes fidelity assumptions inspectable. It does not compete with BobLib; it is explicitly correlated against it.
+
+See [simulation-entrypoints.md](simulation-entrypoints.md) for detailed fidelity context.
 
 ```
 vehicle.yml ──► _5_App / _0_Utils ──► BobLib Modelica records ──► omc build
@@ -22,84 +28,59 @@ vehicle.yml ──► _5_App / _0_Utils ──► BobLib Modelica records ──
 ## Layers
 
 ### `_0_Utils/` — shared foundation
-- `vehicle_io.py`: canonical loader/validator for `vehicle.yml` and tire
-  templates. `repo_root()` and `vehicle_yaml_path()` are the path helpers other
-  layers should use instead of hand-rolling `parents[n]` chains.
-- `plotting/`, `reporting/`: the plot engine and report engine that every study
-  renders through. New study output should reuse these, not matplotlib directly.
-- `vehicle_templates/`, `tire_templates/`: checked-in architecture and tire
-  starting points (`.yml`, `.tir`).
-- `deploy/`: PyInstaller packaging for the desktop build.
-- `dyn_py/`: the unified reduced vehicle product: nonlinear double-wishbone
-  kinematics, inspectable 3/6/10/14DOF equations, QSS trims, and transient
-  integration. `dyn_py.Vehicle` composes one vehicle definition across them.
-- `kin_py/`: the original kinematics implementation and compatibility surface.
-  New product consumers import kinematics through `dyn_py`; the standalone
-  package remains supported for detailed suspension-element workflows.
-- `lap_sim/`: track geometry, GGV speed propagation, racing-line optimization,
-  and the transient path follower.
-- `external/BobLib/`: **the submodule**. See [boblib-submodule.md](boblib-submodule.md).
+- **`vehicle_io.py`**: canonical loader/validator for `vehicle.yml`, tire templates, path helpers
+- **`plotting/`, `reporting/`**: plot and report engines (use these, not matplotlib)
+- **`vehicle_templates/`, `tire_templates/`**: checked-in architecture and tire defaults
+- **`deploy/`**: PyInstaller packaging for desktop build
+- **`dyn_py/`**: unified reduced-order vehicle model (kinematics + 3/6/10/14DOF + QSS + transient)
+- **`kin_py/`**: original kinematics; used for detailed suspension-element workflows
+- **`lap_sim/`**: track geometry, GGV/YMD propagation, racing-line optimization, path following
+- **`external/BobLib/`**: Modelica physics reference (git submodule). See [boblib-submodule.md](boblib-submodule.md)
 
 ### `_1_VisualSim/` — visualization
-The rendering engine (`viewer.py`, `run_visual.py`) plus visual templates.
-Core model visualization during development still mostly happens in OMEdit;
-this layer is for offline/replay visuals and is consumed by `_5_App`.
+Rendering engine (`viewer.py`, `run_visual.py`) + visual templates. Offline/replay visuals, consumed by `_5_App`. (Live model visualization during development still happens in OMEdit.)
 
 ### `_2_EnvelopeSim/` — performance envelopes
-`GGV/` (grip-acceleration envelope) and `YMD/` (yaw moment diagram). These are
-quasi-static map generators driven by `*_config.yml` files. `vehicle_loader.py`
-and `vehicle_yaml.py` adapt `vehicle.yml` into envelope inputs.
+GGV (grip-acceleration) and YMD (yaw moment diagram) generators. Quasi-steady maps from `vehicle.yml` via `dyn_py`.
 
 ### `_3_StandardSim/` — standard vehicle studies
-The BobLib studies each have a `*_config.yml` and a `*_sim.py`:
-`RampSteerEval`, `SteadyStateEval`, `TransientEval`, and `FourPostEval`.
-`ReducedOrderEval` correlates `dyn_py` with those references, while
-`LapTimeEval` composes EnvelopeSim GGV data with shared QSS/transient lap tools.
+- **Studies:** `RampSteerEval`, `SteadyStateEval`, `TransientEval`, `FourPostEval` (each has `*_config.yml`, `*_sim.py`)
+- **Runners:** `_modelica_runner.py` (compiled Modelica), `_fmu_runner.py` (FMU export)
+- **Builders:** `.mos` scripts generate executables into `BuildBobLib/`
+- **Special:** `ReducedOrderEval` (correlates `dyn_py` vs. BobLib), `LapTimeEval` (envelope GGV + lap simulation)
 
-Two shared runners sit alongside them:
-- `_modelica_runner.py`: drives a compiled OpenModelica executable.
-- `_fmu_runner.py`: drives an exported FMU.
+Output: `generated_results/` (CSVs, PDFs)
 
-Builds are produced by the `.mos` scripts (`build_vehicle_sim.mos`,
-`build_four_post_sim.mos`) into `_3_StandardSim/BuildBobLib/`. Reports and metric
-CSVs land in `_3_StandardSim/generated_results/`.
+### `_4_OptSim/` — sensitivities and DOE
+- **`StandardSens/`**: sweep StandardSim studies over parameter ranges
+- **`EnvelopeSens/`**: sweep envelope outputs (same ranges)
+- **`_shared/`**: console progress, tornado-plot rendering
 
-### `_4_OptSim/` — sensitivities, response surfaces, DOE
-The parameter-sweep layer. `StandardSens/` sweeps StandardSim studies;
-`EnvelopeSens/` sweeps envelope outputs. `_shared/` holds the console progress
-helpers and the tornado-plot renderer used by both.
+See [doe-reverse-engineering.md](doe-reverse-engineering.md) for reverse-lookup (target metrics → car parameters).
 
-This is the layer that supports going *backwards* from target performance to
-vehicle parameters — see [doe-reverse-engineering.md](doe-reverse-engineering.md).
+### `_5_App/` — browser UI and HTTP server
+Main user entry point: `python -m _5_App.app` (port 8765). Pick/edit vehicle, generate Modelica, launch jobs, view logs and results.
 
-### `_5_App/` — local browser app
-The primary user entry point (`python -m _5_App.app`, port 8765). It is a
-standard-library HTTP shell over everything above: pick/edit a vehicle, write
-generated Modelica into BobLib, launch jobs, watch logs, browse results.
+**Key modules:**
+- **`contracts.py` + `registry.py`**: declare available workflows
+- **`actions.py`**: dispatch workflow execution
+- **`data_services.py`**: data layer
 
-Module responsibilities are documented in [`_5_App/README.md`](../_5_App/README.md).
-The important boundary: `contracts.py` + `registry.py` declare *what* workflows
-exist, `actions.py` dispatches them, `data_services.py` owns the data layer.
-Adding a workflow means registering it, not editing the server.
+**Adding a workflow:** register it in `registry.py`; do not edit the server.
 
-Mutable app state lives under `_5_App/user_data/` (dev) or the user's BobSim
-runtime directory (packaged). It is gitignored.
+**State:** mutable app state in `_5_App/user_data/` (dev) or user's BobSim runtime directory (packaged). Gitignored.
+
+See [`_5_App/README.md`](../_5_App/README.md) for module details.
 
 ## The vehicle definition
 
-`vehicle.yml` at the repo root is the active vehicle. It carries
-`schema: boblib.vehicle.v1` and describes masses, CGs, inertias, suspension
-architecture, and paths to BobLib and the tire templates.
+**`vehicle.yml`** (repo root): canonical vehicle definition. Schema: `boblib.vehicle.v1`. Contains masses, CGs, inertias, suspension geometry, power train, tire paths.
 
-Two consumers, and the distinction matters:
+**Two consumption paths** (and they can drift):
 
-1. **BobSim projection, reporting, and sensitivity workflows** read `vehicle.yml`
-   directly.
-2. **Modelica standard entry points** do *not*. They use checked-in BobLib
-   records (`BobLib/Records/VehicleDefn/*.mo`). `_5_App/modelica_generator.py`
-   is what writes `vehicle.yml` out into those records.
+1. **Python workflows** (`dyn_py`, envelopes, lap sim): read `vehicle.yml` directly
+2. **Modelica studies** (VehicleSim, FourPostSim): read generated records `BobLib/Records/VehicleDefn/*.mo`
 
-So `vehicle.yml` and the BobLib record can drift. Keeping them in sync is a
-deliberate step (the app's save/generate flow, or the `sync-vehicle` target,
-which today just prints the reminder). If a study's numbers disagree with
-`vehicle.yml`, suspect an unregenerated record first.
+**Sync:** `_5_App/modelica_generator.py` writes `vehicle.yml` → Modelica records. After editing `vehicle.yml`, run `_5_App.app` save/generate or `make sync-vehicle` to refresh records.
+
+**Debugging:** if study results disagree with `vehicle.yml`, suspect stale BobLib records first.

@@ -1,33 +1,21 @@
 # Reduced-order vehicle dynamics
 
-BobSim has one reduced-order equation set for transient integration and
-quasi-steady envelopes. It is intentionally lower fidelity than BobLib: the
-point is to make assumptions inspectable, run quickly, and quantify where each
-added degree of freedom improves agreement with the Modelica reference.
+**TL;DR:** `_0_Utils/dyn_py` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
 
-The public product is `_0_Utils/dyn_py/`: it composes the equations, nonlinear
-suspension geometry, runtime lookup maps, QSS trims, and transient integration.
-The original `_0_Utils/kin_py/` implementation remains independently testable
-and backward compatible, while new consumers access it through `dyn_py`.
-EnvelopeSim and StandardSim import that foundation package; it does not import
-from a higher layer.
+BobSim also includes the original `_0_Utils/kin_py/` kinematics — used for detailed suspension-element workflows, independent and backward-compatible.
 
-## Unified vehicle interface
-
-Use one `Vehicle` when a workflow needs both kinematics and dynamics:
+## Using the unified vehicle interface
 
 ```python
 from _0_Utils.dyn_py import Vehicle
 
 vehicle = Vehicle.from_yaml()
-wheel_state = vehicle.kinematics_at([0.01, -0.01, 0.0, 0.0])
-model_14dof = vehicle.model(14)
-trim = vehicle.steady_state(14, speed_mps=12.0)
+wheel_state = vehicle.kinematics_at([0.01, -0.01, 0.0, 0.0])  # all four wheels
+model_14dof = vehicle.model(14)                               # 14DOF transient
+trim = vehicle.steady_state(14, speed_mps=12.0)              # QSS trim at 12 m/s
 ```
 
-The vehicle definition and hardpoint-derived lookup are built once and shared
-by every lazily constructed DOF model. Lower-level `create_kinematics`,
-`create_model`, QSS, and transient functions remain public for focused tools.
+The vehicle definition and kinematics lookup are built once and shared across all DOF models. Lower-level functions (`create_kinematics`, `create_model`, QSS, transient) remain public for specialized use.
 
 ## Fidelity ladder
 
@@ -45,58 +33,34 @@ Each row is nested in the next. The 3DOF planar equations are therefore the
 planar projection of the 6DOF model, and the 10/14DOF models do not carry a
 second copy of the body or tire equations.
 
-## Equations and conventions
+## Dynamics equations
 
-Axes are x forward, y left, z up. Body translational dynamics retain the
-rotating-frame term:
+**Coordinate frame:** x = forward, y = left, z = up.
 
-```text
-v_dot_body = sum(F_body) / m - omega x v_body
+**Body motion:**
+```
+v_dot = sum(F) / m - omega × v          (translational, body frame)
+omega_dot = I^-1 (sum(M) - omega × I·omega)  (rotational)
 ```
 
-Rigid-body angular acceleration uses the projected full inertia tensor:
+**Load transfer:**
+- 3DOF: pitch/roll moments closed algebraically (longitudinal ∝ ride height + wheelbase, lateral ∝ roll-stiffness split)
+- 6DOF: heave/roll/pitch integrated with wheel rates, damping, anti-roll stiffness, preload
+- 10/14DOF: unsprung masses integrated separately; 14DOF adds tire vertical compliance
 
-```text
-omega_dot = I^-1 (sum(M_body) - omega x (I omega))
-```
+**Tire model:**
+- Contact patch position/velocity from kinematics evaluator (includes bump toe, camber, migration effects)
+- Slip evaluated in individual wheel frames
+- Load-sensitive peak and cornering-stiffness from Magic Formula
+- Combined-slip ellipse with saturation
 
-Contact-patch position, attitude, and articulation velocity come from the
-active `dyn_py` kinematics evaluator. Velocity is
-`v_cg + omega x r_contact + (dr_contact/dz) * z_dot`; tire slip is evaluated in
-the resulting individual wheel frames. Bump toe changes wheel heading, contact
-patch migration changes the force moment arm, and camber modifies the
-load-sensitive MF peak and cornering-stiffness projections. A smooth saturation
-and combined-slip ellipse close the reduced tire model.
+**Drive and brake:**
+- Drive torque: `drive_distribution_front` from `vehicle.yml` (0 = RWD)
+- Brake torque: front brake fraction from `vehicle.yml`
+- Capability limited by: motor/VCU peak torque, FSAE motoring-power limit, peak power, rpm ceiling
+- Competition limit (80 kW) ≠ hardware rating (124 kW)
 
-The 6/10DOF normal loads come from sprung heave/roll/pitch, wheel rates,
-damping, anti-roll stiffness, static preload, and geometric force transmission
-through the double-wishbone instantaneous links. The 14DOF model separates
-suspension force from tire vertical force and integrates each unsprung mass.
-The 3DOF model closes pitch and roll moments algebraically at every force
-evaluation: longitudinal transfer follows contact-patch height and wheelbase,
-while lateral transfer follows the front/rear elastic roll-stiffness split.
-Positive wheel torque follows `drive_distribution_front` (zero is RWD); brake
-torque follows the configured front brake fraction.
-
-Drive capability is projected from the active `vehicle.yml`, not a generic
-power constant. The instantaneous GGV and transient controller use the minimum
-of motor/VCU peak torque through the final drive, the VCU's FSAE motoring-power
-limit, motor/inverter peak power, and the motor-rpm vehicle-speed ceiling. The
-80 kW competition limit is therefore distinct from the 124 kW hardware rating.
-The projected continuous torque and
-power limits are retained separately for a future thermal/endurance derating
-model; they do not replace the instantaneous peak GGV boundary.
-
-An event study may lower that capability through `Vehicle.with_power_limit()`.
-The returned vehicle owns a replaced parameter set, so its GGV, QSS lap, and
-forward transient lap all see the same cap without modifying the physical
-80 kW VCU limit in `vehicle.yml`. The default endurance lap currently uses a
-documented 32 kW constant cap as a starting assumption. It is not an energy
-state or thermal derating model, and the output summary labels that limitation.
-
-Brake bias is likewise a physical vehicle input at `brake.front_bias` in
-`vehicle.yml`; it is no longer hidden as a solver constant. A CG-only study
-must hold this value and both anti-roll rates fixed.
+**Power limiting (event studies):** Use `Vehicle.with_power_limit()` to cap capability without modifying `vehicle.yml`. Endurance default is 32 kW constant cap (energy-budget proxy, not thermal model).
 
 The 10/14DOF QSS constraints retain wheel inertia. A prescribed vehicle
 acceleration therefore gives each wheel the corresponding rolling angular
