@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -67,6 +69,53 @@ def _workflow_specs(baseline: Mapping[str, Any]) -> Mapping[str, Mapping[str, An
     workflows = baseline.get("workflows")
     assert isinstance(workflows, dict), "baseline workflows section must be a mapping"
     return cast(Mapping[str, Mapping[str, Any]], workflows)
+
+
+STUDY_CONFIGS = {
+    "four_post": "_3_StandardSim/FourPostEval/four_post_eval_config.yml",
+    "ramp_steer": "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
+    "steady_state": "_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml",
+    "transient": "_3_StandardSim/TransientEval/transient_eval_config.yml",
+}
+
+# Only sections that can move a simulated number. `execution` (worker counts),
+# `report`, and `plots` are deliberately excluded so cosmetic edits and
+# parallelism tuning do not invalidate a baseline that is still valid.
+RESULT_AFFECTING_SECTIONS = ("simulation", "sweep", "fit")
+
+BOBLIB_SUBMODULE = "_0_Utils/external/BobLib"
+
+
+def simulation_inputs_digest() -> str:
+    """Digest of everything that can change a simulated metric."""
+    payload: dict[str, Any] = {}
+    for name, relative in sorted(STUDY_CONFIGS.items()):
+        config = yaml.safe_load((ROOT / relative).read_text(encoding="utf-8")) or {}
+        payload[name] = {
+            section: config[section]
+            for section in RESULT_AFFECTING_SECTIONS
+            if section in config
+        }
+    payload["vehicle"] = yaml.safe_load((ROOT / "vehicle.yml").read_text(encoding="utf-8"))
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def pinned_boblib_commit() -> str | None:
+    """The committed BobLib gitlink, or None outside a git checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", f"HEAD:{BOBLIB_SUBMODULE}"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _artifact_path(workflow: Mapping[str, Any], artifact_key: str) -> Path:
@@ -393,6 +442,44 @@ def test_transient_regression_metrics_remain_physically_consistent(
     )
     assert 0.0 <= _numeric_metric(metrics, "quality.ay_fit_error") <= 0.05
     assert 0.0 <= _numeric_metric(metrics, "quality.yaw_fit_error") <= 0.05
+
+
+def test_baseline_provenance_matches_simulation_inputs() -> None:
+    """Fail fast when the baseline no longer describes the current inputs.
+
+    Runs without OpenModelica so it gates every PR. The baseline previously went
+    stale for 79 commits because nothing tied it to the pin and configs it guards.
+    """
+    baseline = _load_baseline()
+    provenance = baseline.get("provenance")
+    assert isinstance(provenance, dict), (
+        "baseline must carry a provenance section; regenerate it with "
+        "make regression-baseline"
+    )
+
+    expected_digest = simulation_inputs_digest()
+    recorded_digest = provenance.get("simulation_inputs_digest")
+    assert recorded_digest == expected_digest, (
+        "Simulation inputs changed since this baseline was recorded "
+        f"(recorded {recorded_digest}, current {expected_digest}).\n"
+        "A vehicle.yml or study simulation/sweep/fit change can move every metric.\n"
+        "Run `make regression-baseline`, review the regenerated reports, then "
+        "refresh the baseline and its provenance."
+    )
+
+    recorded_commit = provenance.get("boblib_commit")
+    current_commit = pinned_boblib_commit()
+    if current_commit is None:
+        pytest.skip("BobLib pin unavailable outside a git checkout")
+    assert recorded_commit == current_commit, (
+        f"BobLib pin moved since this baseline was recorded "
+        f"(recorded {recorded_commit}, current {current_commit}).\n"
+        "A BobLib bump can change physics -- v0.2.0 altered vehicle mass, CG, and "
+        "inertia and went unnoticed for weeks.\n"
+        "Run `make regression-baseline` and refresh the baseline, or, if you have "
+        "confirmed the bump cannot affect physics, update provenance.boblib_commit "
+        "deliberately in the same commit."
+    )
 
 
 @pytest.mark.skipif(

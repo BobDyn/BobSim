@@ -85,6 +85,12 @@ Do not claim a physics or model change is safe on `make ci` alone.
 BobLib, `vehicle.yml`, study configs, or the runners, and report honestly if you
 could not (it needs OpenModelica and is slow).
 
+`make ci` does catch a *stale* baseline: the baseline records the BobLib pin and
+a digest of the inputs it was generated against, and a non-simulating test fails
+when they drift. See [`CONTRIBUTING.md`](CONTRIBUTING.md) before editing that
+`provenance` block — refreshing it to get a green run is how the baseline rotted
+for 79 commits once already.
+
 `make opt-doe-smoke` checks the DOE pipeline (config generation, record
 sampling, variant writing) without an OpenModelica toolchain, so it runs on any
 machine. Use it after touching `_4_OptSim` or the BobLib records it reads.

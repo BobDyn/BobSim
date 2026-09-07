@@ -32,6 +32,23 @@ it rebuilds and reruns the default StandardSim workflows, checks that fresh
 report artifacts were written, and compares selected metrics against
 `tests/regression_baselines/default_vehicle_standard.yml`.
 
+## Baseline Provenance
+
+The baseline records the BobLib pin and a digest of every result-affecting input
+(`vehicle.yml` plus each study's `simulation`, `sweep`, and `fit` sections) under
+`provenance`. `test_baseline_provenance_matches_simulation_inputs` checks it on
+every PR and needs no OpenModelica, so a stale baseline fails in seconds instead
+of going unnoticed.
+
+`execution`, `report`, and `plots` are excluded from the digest: worker counts and
+plot titles cannot move a simulated number.
+
+When that test fails you have two honest options. Either run
+`make regression-baseline` and refresh, or, if you have confirmed the change
+cannot affect physics (a BobLib bump touching only lint config, say), update
+`provenance` deliberately in the same commit and say why in the pull request.
+Never update it just to get a green run.
+
 ## Updating Baselines Intentionally
 
 Only update a baseline when the simulation behavior changed intentionally and
