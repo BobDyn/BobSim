@@ -1,102 +1,71 @@
 # QSS and transient lap-time simulation
 
-BobSim uses one track geometry, one optimized racing line, and one selected
-`dyn_py` fidelity for two related calculations:
+**TL;DR:** One track, one racing line, one DOF model (3/6/10/14) → two results: QSS (idealized, point-wise envelope-bound) and transient (executable, with dynamics). Delta = controller lag, transient buildup, effects invisible to equilibrium envelopes.
 
-1. QSS minimizes lap time subject to the selected model's speed-dependent GGV
-   envelope.
-2. The transient scenario integrates the same 3/6/10/14DOF equations forward
-   while following the QSS line and speed reference.
+See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity context.
 
-This makes the QSS result the idealized performance bound and the transient
-result the executable check. Their delta includes controller tracking, dynamic
-state buildup, and effects that a pointwise equilibrium envelope cannot show.
-
-## Run it
+## Running lap simulations
 
 ```bash
-make lap-eval-qss
-make lap-eval-transient
-make lap-eval
-make lap-eval-all-dof
-make lap-validation-visuals
+make lap-eval-qss            # QSS only
+make lap-eval-transient      # transient only
+make lap-eval                # both
+make lap-eval-all-dof        # all fidelities (3/6/10/14 DOF)
+make lap-validation-visuals  # quick acceptance matrix across all DOFs
 ```
 
-Use another config with `LAP_CONFIG=path/to/config.yml`. The default is
-`_3_StandardSim/LapTimeEval/lap_time_eval_config.yml`; it chooses a single
-top-level `model_dof` for both GGV generation and transient integration. Change
-that value to 3, 6, 10, or 14 to walk the same fidelity ladder described in
-[reduced-order-dynamics.md](reduced-order-dynamics.md).
+**Config:**
+- Default: `_3_StandardSim/LapTimeEval/lap_time_eval_config.yml`
+- Override: `make lap-eval LAP_CONFIG=path/to/config.yml`
+- Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
-If the configured GGV CSV does not exist, LapTimeEval generates it from the
-selected reduced model. Racing-envelope trims reject high-sideslip and
-countersteer equilibrium roots using the configured `max_abs_beta_rad` and
-`max_abs_steering_rad`; YMD remains the appropriate workflow for deliberately
-prescribed high-beta states. An existing CSV is treated as a supplied
-performance map, so its provenance must match `model_dof` when comparing
-fidelities. GGV paths may contain `{model_dof}`; the default uses separate CSVs
-so a map produced by one fidelity cannot be silently reused by another.
+**GGV behavior:**
+- If GGV CSV exists → uses it as-is (provenance must match `model_dof` when comparing fidelities)
+- If missing → generates from selected model
+- High-slip roots (sideslip > `max_abs_beta_rad`, steer > `max_abs_steering_rad`) are rejected; use EnvelopeSim YMD workflow for deliberate high-beta states
+- Paths can contain `{model_dof}` placeholder to prevent silent reuse across fidelities
+- Sidecar `summary.json` records provenance; cache mismatch regenerates
 
-Generated maps have a sidecar provenance record containing vehicle, physics,
-fidelity, power-limit, resolution, trim-bound, tire-domain, and multistart
-fingerprints. A cache mismatch regenerates the GGV. A map explicitly supplied
-with `generate_if_missing: false` remains usable but is labeled
-`supplied_unverified` in `summary.json`.
+**Power caps:**
+- Default endurance: 32 kW constant (energy-budget proxy, not thermal model)
+- Acceleration/autocross/skidpad: 80 kW VCU limit (from `vehicle.yml`)
 
-The default full endurance config applies a 32 kW constant event cap to both
-the QSS envelope and forward transient controller. The 80 kW VCU/hardware limit
-stays in `vehicle.yml` for acceleration, autocross, skidpad, and uncapped
-vehicle characterization. The 32 kW case is an energy-budget proxy only; it
-does not model state of charge, lap-to-lap energy allocation, or thermal
-derating.
+**Validation visuals:** `make lap-validation-visuals` generates a resumable 3/6/10/14DOF comparison matrix under `temp/lap_time_validation/`:
 
-`make lap-validation-visuals` runs a compact, resumable 3/6/10/14DOF acceptance
-matrix and writes disposable figures and CSVs under
-`temp/lap_time_validation/<dof>dof/`. Each folder contains:
+| Folder | Contains |
+| --- | --- |
+| `<dof>dof/envelopes/` | GGV 2D/3D, capability metrics, YMD views |
+| `<dof>dof/qss/` | track corridor, racing line, speed/accel profiles |
+| `<dof>dof/transient/` | path tracking, velocity/yaw/steer/accel histories, body/wheel states |
+| `<dof>dof/` | raw CSVs and summary |
+| `overlays/` | cross-fidelity GGV, speed, yaw-rate, lap-time comparisons (appears after 2+ DOFs complete) |
 
-- `envelopes/`: 2D/3D GGV, capability metrics, and three YMD views;
-- `qss/`: corridor/racing-line geometry and QSS speed/acceleration profiles;
-- `transient/`: path tracking, QSS/transient velocity comparison, yaw/steer/
-  acceleration histories, plus body attitude, wheel speed, and unsprung motion
-  when those states exist; and
-- raw GGV, YMD, QSS lap, transient lap, and summary data.
+**Start here:** inspect `overlays/` to see whether an added DOF changes system-level results.
 
-Once two or more fidelities have completed, `temp/lap_time_validation/overlays/`
-also contains shared-axis GGV, QSS speed, transient speed, transient yaw-rate,
-and lap-time comparisons. These are the first place to inspect whether an added
-state changes a system-level result.
+**Re-run options:**
+```bash
+make lap-validation-visuals              # resume from cached work
+--force-laps                             # refresh laps only (keep envelopes)
+--force                                  # regenerate everything
+```
 
-The bundle is ignored by Git. Re-running the target resumes completed
-fidelities; use `python -m _3_StandardSim.LapTimeEval.validation_visuals
---force-laps` to refresh laps from cached envelopes, or `--force` to regenerate
-everything.
+(Git ignores the bundle.)
 
-## Track and racing line
+## Track format and racing line
 
-Track input is a closed sequence of paired gates:
-
+**Track input:** closed sequence of paired gates with left/right boundaries (metres):
 ```csv
 left_x_m,left_y_m,right_x_m,right_y_m
 ...
 ```
 
-The legal vehicle-center interval at each gate subtracts half the vehicle width
-and the safety margin from both sides. Periodic cubic splines turn the gate
-offsets into an arc-length-sampled line with heading, curvature, and segment
-length.
+Legal vehicle-center interval = gate midline ± (half vehicle width + safety margin).
 
-The checked-in default is
-`_3_StandardSim/LapTimeEval/tracks/endurance_michigan_2019.csv`: the 2019
-Formula SAE Michigan endurance boundaries retained by Longhorn Racing Electric's
-historical `jomama_lapsim`. BobSim converts the original feet to meters and
-records the exact provenance in `tracks/README.md`.
+Periodic cubic splines → arc-length-sampled line with heading, curvature, segment length.
 
-The all-DOF acceptance matrix continues to drive the deterministic synthetic
-694 m `endurance_reference.csv`, because repeated 10/14DOF GGV and transient
-runs on a full 2 km course are too slow for a routine check. Both track outlines
-are rendered under `temp/lap_time_validation/reference_tracks/`, so the real
-course is always available as a system-level reference rather than being
-mistaken for the compact regression case.
+**Default track:** `_3_StandardSim/LapTimeEval/tracks/endurance_michigan_2019.csv` (2019 FSAE Michigan; metres, provenance in `tracks/README.md`).
+
+**For acceptance tests:** `endurance_reference.csv` (synthetic 694 m course, fast for repeated 10/14DOF runs). Full 2 km course → `temp/lap_time_validation/reference_tracks/`. Both are rendered so real course is always visible as a system-level reference, not confused with test-only synthetic track.
 
 Three line modes are available:
 

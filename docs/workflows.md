@@ -16,21 +16,15 @@ Modelica build fails. See [boblib-submodule.md](boblib-submodule.md).
 
 ## Docker vs. native
 
-The makefile auto-detects context. Inside the container (`/.dockerenv` exists)
-targets run directly; outside, they are wrapped in `docker compose run --rm`.
-That wrapper is the `RUN` variable.
+Makefile auto-detects context: inside container (`/.dockerenv` exists) targets run directly; outside they wrap in `docker compose run --rm` (the `RUN` variable).
 
-Two consequences worth knowing:
+| Target | Runs on | Needs on host | Needs in container |
+| --- | --- | --- | --- |
+| `make app`, `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
+| `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
+| `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
-- `make app` and the `deploy-*` targets deliberately do **not** use `RUN`. They
-  run on the host with `$(PYTHON)`, so your host Python needs `requirements.txt`
-  installed if you want to run the app natively.
-- `make lint`, `make typecheck`, `make test` **do** use `RUN`. To run them
-  natively you need the dev tooling (`ruff`, `mypy`, `pytest`) installed in your
-  host environment; otherwise use Docker or `make shell`.
-
-Anything OpenModelica-dependent (all `standard-*`, `envelope-*`, `opt-*`
-targets) needs either the container or a local `omc` on `PATH`.
+**Shortcut for native testing:** `make shell` opens a container shell for any workflow.
 
 ## Target vocabulary
 
