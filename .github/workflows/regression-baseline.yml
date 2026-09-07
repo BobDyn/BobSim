@@ -1,0 +1,59 @@
+name: Regression Baseline
+
+# Deliberately manual. The full StandardSim baseline rebuilds and reruns every
+# study through OpenModelica, so it stays off the push/pull_request path; the
+# cheap provenance check in `make ci` is what flags a stale baseline on a PR.
+#
+# Results are uploaded for review rather than trusted on green: CONTRIBUTING.md
+# requires a human to read the regenerated reports before a baseline is updated.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner label. Hosted runners are small; use a self-hosted label if cases time out.
+        required: false
+        default: ubuntu-latest
+        type: string
+
+concurrency:
+  group: regression-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: Full StandardSim baseline
+    runs-on: ${{ inputs.runner }}
+    # A 16-core host runs this in 10-13 min. Smaller runners serialise the
+    # sweeps, so allow well beyond that before calling it hung.
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build BobSim image
+        run: docker compose build bobsim
+
+      - name: Verify OpenModelica toolchain
+        run: docker compose run --rm -T bobsim omc --version
+
+      # SteadyStateEval requests 8 workers against a 420 s per-case timeout, so a
+      # small runner can oversubscribe into timeouts that look like physics
+      # failures. Recorded here to make that diagnosable from the log.
+      - name: Report available cores
+        run: nproc
+
+      - name: Run full regression baseline
+        run: make regression-baseline
+
+      - name: Upload regenerated reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: standard-sim-reports
+          path: |
+            _3_StandardSim/generated_results/*_report_metrics.csv
+            _3_StandardSim/generated_results/*_report.pdf
+          if-no-files-found: warn
+          retention-days: 30
