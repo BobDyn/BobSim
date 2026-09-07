@@ -363,6 +363,38 @@ def test_design_position_is_sampled_not_extrapolated() -> None:
     assert sor._working_slope(x, [10.0, 11.0, 12.0, 13.0, 14.0]) == pytest.approx(1.0)
 
 
+def test_steer_sweep_is_zero_centered_and_front_axle_only() -> None:
+    from _0_Utils.kin_py.kinematics import DEFAULT_STEER_M
+
+    assert sor.STEER_SWEEP_M == DEFAULT_STEER_M
+    assert 0.0 in sor.STEER_SWEEP_M
+
+    steer_ids = {m["id"] for m in sor.KINEMATIC_CURVE_META if m["id"].startswith("steer_")}
+    assert steer_ids == {
+        "steer_camber_deg", "steer_scrub_mm", "steer_mech_trail_mm",
+        "steer_rc_y_mm", "steer_rc_z_mm", "steer_kpi_deg", "steer_caster_deg",
+    }
+
+    withheld: frozenset[str] = frozenset()
+    appendix = [
+        (meta, axle)
+        for meta in sor.KINEMATIC_CURVE_META
+        if meta["id"] not in withheld
+        for axle in ("front", "rear")
+        if not (axle == "rear" and meta["id"].startswith("steer_"))
+    ]
+    rear_steer_panels = [
+        (meta, axle) for meta, axle in appendix
+        if axle == "rear" and meta["id"] in steer_ids
+    ]
+    assert rear_steer_panels == []
+    front_steer_panels = [
+        (meta, axle) for meta, axle in appendix
+        if axle == "front" and meta["id"] in steer_ids
+    ]
+    assert len(front_steer_panels) == len(steer_ids)
+
+
 def test_ranking_uses_engineering_tolerance_not_baseline_range() -> None:
     """A flat baseline must not turn a negligible change into the top finding."""
     payloads = {
