@@ -449,17 +449,20 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     assert payload["axles"]["rear"]["ok"] is True
     assert len(payload["sweep_m"]) == 20
     assert len(payload["roll_deg"]) == 20
+    assert len(payload["steer_m"]) == 21
     assert len(payload["curve_meta"]) == len(KINEMATIC_CURVE_META)
     # Pin the absolute count too. Comparing only against KINEMATIC_CURVE_META is
     # self-referential and passes even if the registry is silently truncated, which
     # is exactly how a bad merge resolution once dropped the ten curves below.
-    assert len(payload["curve_meta"]) == 26
+    assert len(payload["curve_meta"]) == 33
     published = {item["id"] for item in payload["curve_meta"]}
     assert {
         "bump_front_ic_y_mm", "bump_front_ic_z_mm", "bump_front_swing_arm_mm",
         "bump_rc_height_mm", "bump_rc_migration_mm",
         "roll_front_ic_y_mm", "roll_front_ic_z_mm", "roll_front_swing_arm_mm",
         "roll_rc_height_mm", "roll_rc_migration_mm",
+        "steer_camber_deg", "steer_scrub_mm", "steer_mech_trail_mm",
+        "steer_rc_y_mm", "steer_rc_z_mm", "steer_kpi_deg", "steer_caster_deg",
     } <= published
     # The original sixteen curves keep their identity and ordering; instant-centre
     # and roll-centre curves were appended after them.
@@ -486,10 +489,23 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     axis_lengths = {
         "jounce_mm": len(payload["x_axes"]["jounce_mm"]),
         "roll_deg": len(payload["x_axes"]["roll_deg"]),
+        "steer_deg": len(payload["x_axes"]["steer_deg"]),
     }
     for item in KINEMATIC_CURVE_META:
         key = item["id"]
         assert len(front_curves[key]) == axis_lengths[item["x_id"]]
+    # Steer sweep is front-axle only.
+    rear_curves = payload["axles"]["rear"]["curves"]
+    for item in KINEMATIC_CURVE_META:
+        if item["id"].startswith("steer_"):
+            assert rear_curves[item["id"]] == []
+    # Steer's x-axis is the *solved* road-wheel angle, not the commanded rack
+    # displacement, so it need not be monotonic in lockstep with the rack sweep,
+    # but it must vary and stay centered near zero at zero rack displacement.
+    steer_x = payload["x_axes"]["steer_deg"]
+    zero_index = payload["steer_m"].index(0.0)
+    assert steer_x[zero_index] == pytest.approx(0.0, abs=0.5)
+    assert steer_x[0] != steer_x[-1]
     for key in (
         "bump_camber_deg",
         "bump_toe_deg",

@@ -14,6 +14,7 @@ except Exception:  # pragma: no cover - exercised only when optional deps are mi
 
 DEFAULT_SWEEP_M = tuple(round(-0.04 + (0.08 / 19.0) * index, 6) for index in range(20))
 DEFAULT_ROLL_DEG = tuple(round(-1.5 + (3.0 / 19.0) * index, 6) for index in range(20))
+DEFAULT_STEER_M = tuple(round(-0.03 + (0.06 / 20.0) * index, 6) for index in range(21))
 
 
 def _curve_meta(
@@ -125,6 +126,32 @@ KINEMATIC_CURVE_META = [
         "roll_rc_migration_mm", "Roll RC Migration", "mm", "roll_deg", "Roll", "deg",
         "RC Migration", "Plot48",
     ),
+    # Through-steer, front axle only: swept via rack_displacement_m, plotted against
+    # the *solved* road-wheel steer angle rather than the commanded rack travel.
+    _curve_meta(
+        "steer_camber_deg", "Steer Camber", "deg", "steer_deg", "Steer", "deg", "Camber", "Plot51",
+    ),
+    _curve_meta(
+        "steer_scrub_mm", "Steer Scrub Radius", "mm", "steer_deg", "Steer", "deg", "Scrub Radius", "Plot52",
+    ),
+    _curve_meta(
+        "steer_mech_trail_mm", "Steer Mechanical Trail", "mm", "steer_deg", "Steer", "deg",
+        "Mechanical Trail", "Plot53",
+    ),
+    _curve_meta(
+        "steer_rc_y_mm", "Steer RC y-Migration", "mm", "steer_deg", "Steer", "deg", "RC y-Position",
+        "Plot54",
+    ),
+    _curve_meta(
+        "steer_rc_z_mm", "Steer RC z-Migration", "mm", "steer_deg", "Steer", "deg", "RC z-Position",
+        "Plot55",
+    ),
+    _curve_meta(
+        "steer_kpi_deg", "Steer KPI", "deg", "steer_deg", "Steer", "deg", "Kingpin inclination", "Plot56",
+    ),
+    _curve_meta(
+        "steer_caster_deg", "Steer Caster", "deg", "steer_deg", "Steer", "deg", "Caster", "Plot57",
+    ),
 ]
 
 BUMP_CURVE_SOURCES = {
@@ -157,6 +184,16 @@ ROLL_CURVE_SOURCES = {
     "roll_front_swing_arm_mm": "front_swing_arm_mm",
     "roll_rc_height_mm": "roll_center_height_mm",
     "roll_rc_migration_mm": "roll_center_migration_mm",
+}
+
+STEER_CURVE_SOURCES = {
+    "steer_camber_deg": "camber_deg",
+    "steer_scrub_mm": "scrub_mm",
+    "steer_mech_trail_mm": "mech_trail_mm",
+    "steer_rc_y_mm": "rc_y_mm",
+    "steer_rc_z_mm": "rc_z_mm",
+    "steer_kpi_deg": "kpi_deg",
+    "steer_caster_deg": "caster_deg",
 }
 
 
@@ -227,10 +264,12 @@ class CornerKinematics:
         self,
         sweep_m: tuple[float, ...],
         roll_deg: tuple[float, ...] = DEFAULT_ROLL_DEG,
+        steer_m: tuple[float, ...] = (),
     ) -> dict[str, Any]:
         curves: dict[str, list[float | None]] = {str(item["id"]): [] for item in KINEMATIC_CURVE_META}
         points: list[dict[str, Any]] = []
         warnings: list[str] = []
+        steer_x_deg: list[float | None] = []
         guess = np.array([0.0, 0.0, 0.0])
         solved_count = 0
         roll_solved_count = 0
@@ -283,12 +322,32 @@ class CornerKinematics:
                     curves[key].append(None)
                 warnings.append(f"{self.axle} roll {roll_angle:+.2f} deg: {exc}")
 
+        steer_guess = np.array([0.0, 0.0, 0.0])
+        steer_solved_count = 0
+        for rack_m in steer_m:
+            try:
+                solution, point_set, residual_norm = self.solve_jounce(0.0, steer_guess, rack_displacement_m=rack_m)
+                steer_guess = solution
+                steer_solved_count += 1
+                curve_values = self.curve_values(point_set, solution, residual_norm)
+                for key, source in STEER_CURVE_SOURCES.items():
+                    curves[key].append(_json_optional_float(curve_values.get(source)))
+                steer_x_deg.append(_json_optional_float(curve_values.get("steer_angle_deg")))
+            except Exception as exc:
+                for key in STEER_CURVE_SOURCES:
+                    curves[key].append(None)
+                steer_x_deg.append(None)
+                warnings.append(f"{self.axle} steer rack {rack_m * 1000.0:+.1f} mm: {exc}")
+
         return {
-            "ok": solved_count == len(sweep_m) and roll_solved_count == len(roll_deg),
+            "ok": solved_count == len(sweep_m) and roll_solved_count == len(roll_deg)
+            and steer_solved_count == len(steer_m),
             "solved_count": solved_count,
             "roll_solved_count": roll_solved_count,
+            "steer_solved_count": steer_solved_count,
             "curves": curves,
             "points": points,
+            "steer_x_deg": steer_x_deg,
             "warnings": warnings[:6],
         }
 
@@ -631,21 +690,25 @@ def kinematic_curves_payload(
     vehicle: dict[str, Any],
     sweep_m: list[float] | tuple[float, ...] | None = None,
     roll_deg: list[float] | tuple[float, ...] | None = None,
+    steer_m: list[float] | tuple[float, ...] | None = None,
 ) -> dict[str, Any]:
     # roll_deg is overridable for the same reason sweep_m is: neither default
     # samples zero, so a caller reporting design-position values has to supply its
     # own grid rather than interpolate one.
     sweep = _clean_sweep(sweep_m)
     roll = tuple(float(value) for value in roll_deg) if roll_deg else DEFAULT_ROLL_DEG
+    steer = tuple(float(value) for value in steer_m) if steer_m else DEFAULT_STEER_M
     payload: dict[str, Any] = {
         "model": "BobSim native double-wishbone kinematics preview",
         "basis": "Active plot deck mirrors simulation_toolkit/src/simulations/kin/kin_inputs/kin.yml",
         "available": np is not None and root is not None,
         "sweep_m": [_json_float(value) for value in sweep],
         "roll_deg": [_json_float(value) for value in roll],
+        "steer_m": [_json_float(value) for value in steer],
         "x_axes": {
             "jounce_mm": [_json_float(value * 1000.0) for value in sweep],
             "roll_deg": [_json_float(value) for value in roll],
+            "steer_deg": [],
         },
         "curve_meta": KINEMATIC_CURVE_META,
         "axles": {},
@@ -655,12 +718,16 @@ def kinematic_curves_payload(
         payload["warnings"].append("Install NumPy and SciPy to enable live kinematics curves.")
         return payload
 
-    for axle in ("front", "rear"):
+    # Steer sweep is front-axle only: no known chassis in the registry rear-steers,
+    # and a rear steer curve would just be a flat line reporting nothing.
+    for axle, axle_steer in (("front", steer), ("rear", ())):
         try:
             solver = CornerKinematics.from_vehicle(vehicle, axle)
-            axle_payload = solver.solve_sweep(sweep, roll)
+            axle_payload = solver.solve_sweep(sweep, roll, axle_steer)
             payload["axles"][axle] = axle_payload
             payload["warnings"].extend(axle_payload.get("warnings", []))
+            if axle == "front":
+                payload["x_axes"]["steer_deg"] = axle_payload.get("steer_x_deg", [])
         except Exception as exc:
             payload["axles"][axle] = {
                 "ok": False,
