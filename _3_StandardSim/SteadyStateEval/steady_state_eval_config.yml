@@ -55,7 +55,10 @@ simulation:
 
 execution:
   parallel: true
-  max_workers: 4
+  # 22 swept cases: 8 workers halves the wave count versus 4, and matches the
+  # worker count TransientEval already runs at. Deliberately below the host core
+  # count so solver processes are not competing against case_timeout_s.
+  max_workers: 8
   cleanup: false
   stream_logs: false
   fail_fast: false

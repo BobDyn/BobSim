@@ -400,21 +400,24 @@ def test_transient_regression_metrics_remain_physically_consistent(
     reason="set BOBSIM_BASELINE_REGRESSION=1 to compare against the default vehicle baseline",
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
+    # Every metric is checked before failing: this test is gated behind a ~12 min
+    # simulation refresh, so aborting on the first mismatch would leak one drifted
+    # metric per run.
+    failures: list[str] = []
+
     for metric, spec in _metric_baselines(workflow_data.spec).items():
         assert "value" in spec, f"{workflow_data.name}.{metric} baseline must define value"
         expected = spec["value"]
         observed = _metric(workflow_data.metrics, metric)
 
         if isinstance(expected, bool):
-            assert observed is expected, (
-                f"{workflow_data.name}.{metric}: expected {expected!r}, observed {observed!r}"
-            )
+            if observed is not expected:
+                failures.append(f"  {metric}: observed {observed!r}, expected {expected!r}")
             continue
 
         if isinstance(expected, str):
-            assert observed == expected, (
-                f"{workflow_data.name}.{metric}: expected {expected!r}, observed {observed!r}"
-            )
+            if observed != expected:
+                failures.append(f"  {metric}: observed {observed!r}, expected {expected!r}")
             continue
 
         assert isinstance(expected, (float, int)), (
@@ -427,7 +430,13 @@ def test_default_vehicle_standard_metrics_match_baseline(workflow_data: Workflow
         tolerance = max(abs_tol, abs(expected_float) * rel_tol)
         error = abs(observed_float - expected_float)
 
-        assert error <= tolerance, (
-            f"{workflow_data.name}.{metric}: observed {observed_float}, "
-            f"expected {expected_float}, error {error} exceeds tolerance {tolerance}"
-        )
+        if error > tolerance:
+            failures.append(
+                f"  {metric}: observed {observed_float:.6g}, expected {expected_float:.6g}, "
+                f"error {error:.4g} exceeds tolerance {tolerance:.4g}"
+            )
+
+    assert not failures, (
+        f"{workflow_data.name}: {len(failures)} metric(s) drifted from baseline:\n"
+        + "\n".join(failures)
+    )
