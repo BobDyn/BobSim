@@ -400,6 +400,13 @@ const DEFAULT_KINEMATIC_CURVES = [
   { id: "roll_front_swing_arm_mm", label: "Roll Front-View Swing Arm", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Swing Arm Length" },
   { id: "roll_rc_height_mm", label: "Roll RC Height", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Height above Contact Patch" },
   { id: "roll_rc_migration_mm", label: "Roll RC Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Migration" },
+  { id: "steer_camber_deg", label: "Steer Camber", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Camber" },
+  { id: "steer_scrub_mm", label: "Steer Scrub Radius", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Scrub Radius" },
+  { id: "steer_mech_trail_mm", label: "Steer Mechanical Trail", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Mechanical Trail" },
+  { id: "steer_rc_y_mm", label: "Steer RC y-Migration", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "RC y-Position" },
+  { id: "steer_rc_z_mm", label: "Steer RC z-Migration", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "RC z-Position" },
+  { id: "steer_kpi_deg", label: "Steer KPI", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Kingpin inclination" },
+  { id: "steer_caster_deg", label: "Steer Caster", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Caster" },
 ];
 
 async function api(path, options = {}) {
