@@ -18,6 +18,8 @@ Don't read the whole folder. Route by task:
 | Touching `_5_App/` | [`_5_App/README.md`](_5_App/README.md) — module-by-module ownership |
 | Touching physics / regression baselines | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | Editing Modelica models | `_0_Utils/external/BobLib/AGENTS.md` (package boundary rules) |
+| Reading/writing `vehicle.yml` geometry, importing SHARK data | [`docs/conventions.md`](docs/conventions.md) |
+| Doing a repeated multi-step task by hand (SHARK import, baseline refresh) | [`skills/README.md`](skills/README.md) |
 
 `docs/` explains *why* and how layers connect. The makefile and `make help` are
 authoritative for *what commands exist* — prefer reading the makefile over
@@ -54,6 +56,22 @@ above. Keep the set small; a stale doc is worse than no doc.
   instead of new `Path(__file__).parents[n]` chains.
 - **BobLib changes are a separate repo.** They need a PR in `BobDyn/BobLib` plus
   a pin bump here — not an edit committed from inside the submodule directory.
+
+## Common agent mistakes
+
+- **`vehicle.yml` vs. the checked-in BobLib Modelica record can silently drift.**
+  Python workflows read `vehicle.yml`; Modelica entry points read the generated
+  `.mo` record. Editing `vehicle.yml` alone and expecting a Modelica-backed
+  study (StandardSim, FourPostSim) to reflect it is the single most common
+  mistake — regenerate via `_5_App/modelica_generator.py` first, or you'll be
+  debugging "wrong" physics that are actually a stale record.
+- **Z-dependent outputs can be silently withheld, not wrong.** After a SHARK
+  import, roll-centre height/migration and four-post jacking metrics may come
+  back empty rather than incorrect if the vertical datum couldn't be verified
+  (`_0_Utils/shark_import.py:datum_gate`). Don't treat missing z-metrics as a
+  bug before checking the datum sidecar — see
+  [`docs/conventions.md`](docs/conventions.md#vertical-datum-z) and
+  [`skills/shark-import/SKILL.md`](skills/shark-import/SKILL.md).
 
 ## Verifying a change
 
