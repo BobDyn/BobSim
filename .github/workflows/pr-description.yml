@@ -1,0 +1,39 @@
+name: PR description
+
+# Keeps every PR description in the shape of .github/pull_request_template.md:
+# a filled-in "What" and "How to check". The template's own comments don't count.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the description follows the template
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 - <<'EOF'
+          import os
+          import re
+          import sys
+
+          text = re.sub(r"<!--.*?-->", "", os.environ.get("BODY") or "", flags=re.S)
+          missing = []
+          for heading in ("What", "How to check"):
+              section = re.search(
+                  rf"^##\s+{re.escape(heading)}\s*$(.*?)(?=^##\s|\Z)", text, flags=re.M | re.S
+              )
+              if section is None or not section.group(1).strip():
+                  missing.append(heading)
+
+          if missing:
+              print("::error::Fill in the PR description's " + " and ".join(missing)
+                    + " section(s). See .github/pull_request_template.md.")
+              sys.exit(1)
+          print("PR description has What and How to check.")
+          EOF
