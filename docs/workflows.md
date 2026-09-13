@@ -138,9 +138,12 @@ columns of KnC numbers and nothing to draw. `make visual-capture` (which
 `visual-rig` and `visual-maneuver` wrap) re-runs one evaluation —
 `VISUAL_EVAL=four_post|transient|ramp_steer|steady_state` — asking for the
 MultiBody frames as well, then writes a matched `.npz` and template into
-`_1_VisualSim/results/`. The
-templates in `_1_VisualSim/visual_templates/` are stale: they name `vis*`
-signals no pinned model emits. See
+`_1_VisualSim/results/`. The capture also keeps each tire's forces and records
+the run's metrics CSV. The window then shows LLTD under each axle, a Tires tab
+of friction circles, and a Metrics tab, and F1 lists the mouse and touchpad
+controls. A scene captured before that has no Tires or Metrics tab until it is
+re-captured. The templates in `_1_VisualSim/visual_templates/` are stale: they
+name `vis*` signals no pinned model emits. See
 [`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
 
 ## Testing
