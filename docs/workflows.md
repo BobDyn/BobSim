@@ -21,6 +21,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 | Target | Runs on | Needs on host | Needs in container |
 | --- | --- | --- | --- |
 | `make app`, `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
+| `make visual-*` | Host (not in `RUN`) | `make visual-deps` | — (the simulation step still uses it) |
 | `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
 | `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
@@ -36,6 +37,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 | `lap-*` | QSS and transient reduced-order lap simulations |
 | `envelope-*` | GGV / YMD performance-envelope maps |
 | `opt-*` | Sensitivity, response-surface, and DOE workflows |
+| `visual-*` | Replay a run in the BobVis viewer, or render it to video |
 | `clean-*` | Remove generated artifacts |
 
 ## Standard studies
@@ -106,6 +108,43 @@ make opt-search METRICS="Metric=value ..."   # reverse lookup, see the DOE doc
 Note the `opt-*` targets set `PYTHONPATH=_4_OptSim:.` and invoke modules as
 `StandardSens.*` / `EnvelopeSens.*`, not `_4_OptSim.StandardSens.*`. If you run
 one by hand, replicate that or the imports of `_shared` will fail.
+
+## Visualizing a run
+
+BobVis replays a run's 3D motion and records video of it. Full reference:
+[`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
+
+```bash
+make visual-deps       # once: prebuilt wheels for the viewer, nothing compiles
+make visual-demo       # synthetic scene, no OpenModelica build needed
+make visual-maneuver   # VehicleSim transient: simulate with geometry captured, watch it drive
+make visual-rig        # four-post rig: simulate with geometry captured, then watch it
+
+make visual-export \
+  VISUAL_CONFIG=_1_VisualSim/results/four_post_visual.yml \
+  VISUAL_DATA=_1_VisualSim/results/four_post_visual.npz \
+  VISUAL_OUTPUT=out.mp4 VISUAL_ARGS="--resolution 720p --speed 8"
+```
+
+The viewer runs on the host, unlike the rest of the stack: a containerised
+window leaves its 3D viewport black under software GL. The simulation inside
+`visual-rig` and `visual-maneuver` still goes through `$(RUN)`. Add `-video` to
+any of these to render an MP4 instead of opening a window.
+
+**A normal evaluation cannot feed the viewer.** Each one sets a
+`variable_filter` naming only the scalars its metrics need, so the result CSV
+carries no hardpoint positions — `make standard-eval-four-post` yields 45
+columns of KnC numbers and nothing to draw. `make visual-capture` (which
+`visual-rig` and `visual-maneuver` wrap) re-runs one evaluation —
+`VISUAL_EVAL=four_post|transient|ramp_steer|steady_state` — asking for the
+MultiBody frames as well, then writes a matched `.npz` and template into
+`_1_VisualSim/results/`. The capture also keeps each tire's forces and records
+the run's metrics CSV. The window then shows LLTD under each axle, a Tires tab
+of friction circles, and a Metrics tab, and F1 lists the mouse and touchpad
+controls. A scene captured before that has no Tires or Metrics tab until it is
+re-captured. The templates in `_1_VisualSim/visual_templates/` are stale: they
+name `vis*` signals no pinned model emits. See
+[`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
 
 ## Testing
 

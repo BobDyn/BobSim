@@ -16,6 +16,7 @@ Don't read the whole folder. Route by task:
 | QSS racing lines, speed profiles, and transient laps | [`docs/lap-time-simulation.md`](docs/lap-time-simulation.md) |
 | Modelica missing, build fails, BobLib edits | [`docs/boblib-submodule.md`](docs/boblib-submodule.md) |
 | Touching `_5_App/` | [`_5_App/README.md`](_5_App/README.md) — module-by-module ownership |
+| Touching `_1_VisualSim/`, or replaying/recording a sim | [`_1_VisualSim/README.md`](_1_VisualSim/README.md) — BobVis viewer, templates, video export |
 | Touching physics / regression baselines | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | Editing Modelica models | `_0_Utils/external/BobLib/AGENTS.md` (package boundary rules) |
 | Reading/writing `vehicle.yml` geometry, importing SHARK data | [`docs/conventions.md`](docs/conventions.md) |
