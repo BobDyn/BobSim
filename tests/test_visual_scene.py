@@ -118,6 +118,52 @@ def test_simdata_reads_csv(tmp_path: Path) -> None:
     assert data.get_signal("x")[-1] == pytest.approx(2.0)
 
 
+def _tire_force_config(corners: dict) -> dict:
+    return {"tire_forces": {"corners": corners, "friction": {"front": {"FNOMIN": 650.0}}}}
+
+
+def test_simdata_requires_the_tire_force_signals_it_names(tmp_path: Path) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(yaml.safe_dump(_tire_force_config({
+        "fl": {"axle": "front", "fx": "force/fl_fx", "fy": "force/fl_fy",
+               "fz": "force/fl_fz", "gamma": "force/fl_gamma"},
+    })), encoding="utf-8")
+    data_path = tmp_path / "data.npz"
+    n = 5
+    signals = {"time": np.linspace(0.0, 1.0, n), "force/fl_fx": np.zeros(n),
+               "force/fl_fy": np.zeros(n), "force/fl_fz": np.full(n, 700.0)}
+    np.savez(data_path, **signals)  # type: ignore[arg-type]
+
+    # Camber is named but missing, so the scene refuses to load and says which.
+    with pytest.raises(VisualConfigError, match="force/fl_gamma"):
+        SimData(config, data_path)
+
+    np.savez(data_path, **signals, **{"force/fl_gamma": np.zeros(n)})  # type: ignore[arg-type]
+    data = SimData(config, data_path)
+    assert set(data.tire_forces_cfg["corners"]) == {"fl"}
+
+
+def test_simdata_resolves_the_metrics_csv_against_the_config_folder(tmp_path: Path) -> None:
+    data_path = tmp_path / "data.npz"
+    np.savez(data_path, time=np.linspace(0.0, 1.0, 3))
+    metrics = tmp_path / "metrics" / "run.csv"
+    metrics.parent.mkdir()
+    metrics.write_text("metric\n", encoding="utf-8")
+
+    scene_dir = tmp_path / "scene"
+    scene_dir.mkdir()
+    config = scene_dir / "config.yml"
+
+    config.write_text(yaml.safe_dump({"metrics": {"path": "../metrics/run.csv"}}), encoding="utf-8")
+    assert SimData(config, data_path).metrics_path == (scene_dir / "../metrics/run.csv")
+
+    config.write_text(yaml.safe_dump({"metrics": {"path": "../metrics/gone.csv"}}), encoding="utf-8")
+    assert SimData(config, data_path).metrics_path is None  # no Metrics tab for a missing file
+
+    config.write_text(yaml.safe_dump({"render": {}}), encoding="utf-8")
+    assert SimData(config, data_path).metrics_path is None
+
+
 def test_frame_times_follow_fps_speed_and_range(demo_scene: tuple[Path, Path]) -> None:
     data = SimData(*demo_scene)
     settings = ExportSettings(

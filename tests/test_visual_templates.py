@@ -106,6 +106,17 @@ def test_demo_scene_signals_cover_its_config() -> None:
     assert np.all(np.diff(signals["time"]) > 0), "demo time must increase strictly"
 
 
+def test_desktop_bundle_excludes_every_bobvis_module() -> None:
+    """BobVis ships separately; a module missing here drags Qt and VTK into the app bundle."""
+    from _0_Utils.deploy.deploy import EXCLUDED_MODULES
+
+    package = TEMPLATE_DIR.parent
+    modules = {f"_1_VisualSim.{path.stem}" for path in package.glob("*.py") if path.stem != "__init__"}
+    # check_deps only probes imports with importlib, so bundling it costs nothing.
+    missing = sorted(modules - set(EXCLUDED_MODULES) - {"_1_VisualSim.check_deps"})
+    assert not missing, f"add to EXCLUDED_MODULES in _0_Utils/deploy/deploy.py: {missing}"
+
+
 def test_demo_write_round_trips(tmp_path: Path) -> None:
     config_path, data_path = demo.write(tmp_path, duration=0.5)
     assert config_path.is_file() and data_path.is_file()
