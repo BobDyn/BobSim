@@ -38,7 +38,7 @@ vehicle.yml ──► _5_App / _0_Utils ──► BobLib Modelica records ──
 - **`external/BobLib/`**: Modelica physics reference (git submodule). See [boblib-submodule.md](boblib-submodule.md)
 
 ### `_1_VisualSim/` — visualization
-Rendering engine (`viewer.py`, `run_visual.py`) + visual templates. Offline/replay visuals, consumed by `_5_App`. (Live model visualization during development still happens in OMEdit.)
+BobVis: a PyQt6 + PyVista desktop viewer (`viewer.py`) and a headless video exporter (`run_visual.py`), both driving the same scene model (`scene.py`), plus the visual templates that map signals to geometry. Replays hardpoint geometry captured from StandardSim runs by `from_results.py`; `_5_App` serves the same templates. Runs on the host rather than in the container — a containerised window leaves its 3D viewport black under software GL — and its Qt/VTK dependencies install separately via `make visual-deps`, so the simulation stack never carries them. See [`../_1_VisualSim/README.md`](../_1_VisualSim/README.md). (Live model visualization during development still happens in OMEdit.)
 
 ### `_2_EnvelopeSim/` — performance envelopes
 GGV (grip-acceleration) and YMD (yaw moment diagram) generators. Quasi-steady maps from `vehicle.yml` via `dyn_py`.

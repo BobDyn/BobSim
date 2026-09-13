@@ -38,6 +38,29 @@ DOE_ENV := \
 
 FOUR_POST_METRICS := _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
 
+# BobVis. Runs on the host: the viewer window and the off-screen renderer share
+# one code path, and that path works on Windows, macOS and Linux. See the
+# comment on visual-deps for why this is not containerised.
+VISUAL_DIR := _1_VisualSim
+VISUAL_REQUIREMENTS := $(VISUAL_DIR)/requirements.txt
+VISUAL_RESULTS := $(VISUAL_DIR)/results
+VISUAL_DEMO_CONFIG := $(VISUAL_RESULTS)/demo_step_steer.yml
+VISUAL_DEMO_DATA := $(VISUAL_RESULTS)/demo_step_steer.npz
+VISUAL_CONFIG ?=
+VISUAL_DATA ?=
+VISUAL_OUTPUT ?= $(VISUAL_RESULTS)/bobvis.mp4
+VISUAL_ARGS ?=
+# The evaluation visual-capture runs: four_post, transient, ramp_steer or
+# steady_state. visual-rig pins four_post; visual-maneuver runs VISUAL_MANEUVER.
+VISUAL_EVAL ?= four_post
+VISUAL_MANEUVER ?= transient
+VISUAL_CAPTURE := $(VISUAL_RESULTS)/$(VISUAL_EVAL)
+VISUAL_EVAL_MODULE_four_post := FourPostEval.four_post_eval_sim
+VISUAL_EVAL_MODULE_transient := TransientEval.transient_eval_sim
+VISUAL_EVAL_MODULE_ramp_steer := RampSteerEval.ramp_steer_eval_sim
+VISUAL_EVAL_MODULE_steady_state := SteadyStateEval.steady_state_eval_sim
+VISUAL_EVAL_BUILD := $(if $(filter four_post,$(VISUAL_EVAL)),standard-build-four-post,standard-build)
+
 DEPLOY_MODE ?= onefile
 DEPLOY_INSTALL_DEPS ?= 1
 DEPLOY_SKIP_CONFLICT_CHECK ?= 0
@@ -98,6 +121,8 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 .DEFAULT_GOAL := help
 
 .PHONY: help init docker-build docker-rebuild \
+	visual visual-deps visual-demo visual-demo-video visual-export \
+	visual-capture visual-rig visual-rig-video visual-maneuver visual-maneuver-video \
 	app deploy deploy-deps deploy-assets deploy-package deploy-release deploy-clean \
 	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
@@ -121,6 +146,30 @@ help:
 		'  docker-build              Build the Docker development image' \
 		'  docker-rebuild            Rebuild the Docker image from scratch' \
 		'  app                       Open the BobSim browser app' \
+		'' \
+		'  BobVis - the 3D viewer. Runs on the host, not in Docker.' \
+		'  visual-deps               Install it. Prebuilt wheels; needed once.' \
+		'' \
+		'  visual-maneuver           Simulate a VehicleSim manoeuvre, then watch it drive' \
+		'  visual-rig                Simulate the four-post rig, then watch it' \
+		'  visual-demo               Synthetic scene, no simulation needed' \
+		'  visual                    Open the viewer on any scene' \
+		'' \
+		'  visual-maneuver-video     Simulate the manoeuvre and render it to MP4' \
+		'  visual-rig-video          Simulate the rig and render it to MP4' \
+		'  visual-demo-video         Synthetic scene to MP4' \
+		'  visual-export             Render any scene to video' \
+		'  visual-capture            Simulate VISUAL_EVAL, write the scene, no render' \
+		'' \
+		'  Visual variables:' \
+		'    VISUAL_MANEUVER=<name>               transient (default), ramp_steer, steady_state' \
+		'    VISUAL_EVAL=<name>                   four_post (default) or a manoeuvre' \
+		'    VISUAL_CONFIG=<file.yml>             Visual template. Blank opens a picker.' \
+		'    VISUAL_DATA=<file.npz|.csv>          Signals to replay' \
+		'    VISUAL_OUTPUT=<file.mp4|.gif>        visual-export target' \
+		'    VISUAL_ARGS=<flags>                  e.g. --resolution 720p --fps 30' \
+		'    example: make visual-deps && make visual-rig' \
+		'' \
 		'  deploy                    Build the BobSim desktop executable/app bundle' \
 		'  deploy-deps               Install deploy packaging dependencies' \
 		'  deploy-assets             Generate BobSim icon assets' \
@@ -214,6 +263,82 @@ docker-rebuild:
 
 app:
 	$(PYTHON) -m _5_App.app
+
+# BobVis runs on the host, not in a container.
+#
+# A container was tried and dropped. Off-screen rendering worked there, but the
+# window did not: Qt drew its chrome and left the 3D viewport black, because
+# QOpenGLWidget and Mesa's llvmpipe do not get on, and no surface-format,
+# multisample or anti-aliasing combination fixed it. Native works on Windows,
+# macOS and Linux for both the window and rendering, so one host path beats two
+# paths where one is broken.
+#
+# The cost is one install of prebuilt wheels; there is nothing to compile.
+visual-deps:
+	$(PYTHON) -m pip install -r $(VISUAL_REQUIREMENTS)
+
+visual:
+	@$(PYTHON) -m _1_VisualSim.check_deps
+	$(PYTHON) -m _1_VisualSim.viewer $(VISUAL_CONFIG) $(VISUAL_DATA) $(VISUAL_ARGS)
+
+# The demo scene is generated, never committed, so build it whenever it is
+# missing. Both outputs come from one run of the generator, which needs only
+# the base image.
+$(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA):
+	$(PYTHON) -m _1_VisualSim.demo --out-dir $(VISUAL_RESULTS)
+
+visual-demo: $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA)
+	$(MAKE) visual VISUAL_CONFIG=$(VISUAL_DEMO_CONFIG) VISUAL_DATA=$(VISUAL_DEMO_DATA)
+
+visual-demo-video: $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA)
+	$(MAKE) visual-export VISUAL_CONFIG=$(VISUAL_DEMO_CONFIG) \
+		VISUAL_DATA=$(VISUAL_DEMO_DATA) \
+		VISUAL_OUTPUT=$(VISUAL_RESULTS)/demo_step_steer.mp4
+
+# The guard is make functions, not shell: on Windows recipes run through cmd.exe,
+# where `if [ -z ... ]` dies with "-z was unexpected at this time".
+visual-export:
+	$(if $(and $(VISUAL_CONFIG),$(VISUAL_DATA)),,$(info usage: make visual-export VISUAL_CONFIG=_1_VisualSim/results/four_post_visual.yml VISUAL_DATA=_1_VisualSim/results/four_post_visual.npz VISUAL_OUTPUT=out.mp4)$(info For a scene: make visual-rig-video (simulated) or make visual-demo-video (synthetic).)$(error VISUAL_CONFIG and VISUAL_DATA are required))
+	$(PYTHON) -m _1_VisualSim.run_visual $(VISUAL_CONFIG) $(VISUAL_DATA) \
+		--output $(VISUAL_OUTPUT) $(VISUAL_ARGS)
+
+# A normal evaluation keeps only the scalar signals its metrics need, so its
+# result CSV has no geometry and cannot feed the viewer. This re-runs one
+# evaluation (VISUAL_EVAL) asking OpenModelica for the suspension frames too,
+# then converts the result into a scene. The simulation goes through $(RUN);
+# the two conversion steps are host side and need only the base requirements.
+visual-capture: $(VISUAL_EVAL_BUILD)
+	$(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
+	$(RUN) $(PYTHON) -m _3_StandardSim.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
+	$(PYTHON) -m _1_VisualSim.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
+		--npz $(VISUAL_CAPTURE)_visual.npz --template $(VISUAL_CAPTURE)_visual.yml
+
+visual-rig:
+	$(MAKE) visual-capture VISUAL_EVAL=four_post
+	$(MAKE) visual VISUAL_CONFIG=$(VISUAL_RESULTS)/four_post_visual.yml \
+		VISUAL_DATA=$(VISUAL_RESULTS)/four_post_visual.npz
+
+# The no-X-server route: the same scene, rendered to a file instead of a
+# window. The rig sweeps poses over 118 s, so default to a brisk playback.
+visual-rig-video:
+	$(MAKE) visual-capture VISUAL_EVAL=four_post
+	$(MAKE) visual-export VISUAL_CONFIG=$(VISUAL_RESULTS)/four_post_visual.yml \
+		VISUAL_DATA=$(VISUAL_RESULTS)/four_post_visual.npz \
+		VISUAL_OUTPUT=$(VISUAL_RESULTS)/four_post_rig.mp4 \
+		VISUAL_ARGS="--speed 6 --resolution 1600x900 --fps 30 $(VISUAL_ARGS)"
+
+# The car driving: a VehicleSim manoeuvre with the same geometry capture, plus
+# tire tracks and load footprints on the ground.
+visual-maneuver:
+	$(MAKE) visual-capture VISUAL_EVAL=$(VISUAL_MANEUVER)
+	$(MAKE) visual VISUAL_CONFIG=$(VISUAL_RESULTS)/$(VISUAL_MANEUVER)_visual.yml \
+		VISUAL_DATA=$(VISUAL_RESULTS)/$(VISUAL_MANEUVER)_visual.npz
+
+visual-maneuver-video:
+	$(MAKE) visual-capture VISUAL_EVAL=$(VISUAL_MANEUVER)
+	$(MAKE) visual-export VISUAL_CONFIG=$(VISUAL_RESULTS)/$(VISUAL_MANEUVER)_visual.yml \
+		VISUAL_DATA=$(VISUAL_RESULTS)/$(VISUAL_MANEUVER)_visual.npz \
+		VISUAL_OUTPUT=$(VISUAL_RESULTS)/$(VISUAL_MANEUVER).mp4
 
 deploy:
 	$(PYTHON) $(DEPLOY_TOOL) --clean
@@ -423,7 +548,7 @@ clean-visual:
 		find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} + 2>/dev/null || true; \
 		done; \
 		rm -f $(CLEAN_WORKSPACE)/_1_VisualSim/*_visual.npz; \
-		echo "VisualSim artifacts cleaned"'
+		echo "VisualSim artifacts cleaned (including any generated demo scene)"'
 
 clean-standard:
 	bash -lc 'for path in \

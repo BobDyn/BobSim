@@ -1,0 +1,207 @@
+"""Drive a geometry capture run and turn it into a BobVis scene.
+
+A normal evaluation keeps only the scalar signals its metrics need, so its
+result CSV has no geometry in it and cannot feed the viewer. This module writes
+a one-off copy of an evaluation's config that additionally asks OpenModelica
+for the suspension frames (see :mod:`_1_VisualSim.from_results`), then converts
+the result the run produces.
+
+The simulation itself has to happen inside the container, so ``make
+visual-capture`` sandwiches it between the two subcommands here:
+
+    python -m _1_VisualSim.capture config  <config.yml> --eval transient  # host
+    <run the evaluation with that config>                                 # container
+    python -m _1_VisualSim.capture convert <config.yml>                   # host
+
+Runs with the base requirements (it imports the evaluation modules for their
+signal lists); BobVis's PyQt6/VTK stack is not involved.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from _1_VisualSim.from_results import (
+    ResultMappingError,
+    convert,
+    print_summary,
+    variable_filter,
+)
+
+RESULTS_DIR = Path("_1_VisualSim/results")
+
+#: VehicleSim nests the rig's axles here; the converter detects it on its own,
+#: but the filter has to name it before the run.
+VEHICLE_PREFIX = "chassis.detailedChassis."
+
+
+@dataclass(frozen=True)
+class Evaluation:
+    """What a capture needs to know about one StandardSim evaluation."""
+
+    config: Path
+    module: str       # the sim module, which also owns the signal list below
+    signals: str      # the signals the evaluation reads back from its own CSV
+    prefix: str       # where the axles sit in the model
+    step_size: float  # output step: fine enough to watch, coarse enough to keep
+
+
+EVALUATIONS: dict[str, Evaluation] = {
+    # The rig's KnC config samples at 0.5 s - four frames a pose, far too
+    # coarse to watch.
+    "four_post": Evaluation(
+        Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
+        "_3_StandardSim.FourPostEval.four_post_eval_sim", "FOUR_POST_EVAL_SIGNALS",
+        prefix="", step_size=0.02,
+    ),
+    # VehicleSim's own output step is 2 ms; 10 ms is plenty for playback and
+    # keeps each case's CSV a few MB.
+    "transient": Evaluation(
+        Path("_3_StandardSim/TransientEval/transient_eval_config.yml"),
+        "_3_StandardSim.TransientEval.transient_eval_sim", "TransientEval_SIGNALS",
+        prefix=VEHICLE_PREFIX, step_size=0.01,
+    ),
+    "ramp_steer": Evaluation(
+        Path("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"),
+        "_3_StandardSim.RampSteerEval.ramp_steer_eval_sim", "RampSteerEval_SIGNALS",
+        prefix=VEHICLE_PREFIX, step_size=0.01,
+    ),
+    "steady_state": Evaluation(
+        Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"),
+        "_3_StandardSim.SteadyStateEval.steady_state_eval_sim", "STEADY_STATE_EVAL_SIGNALS",
+        prefix=VEHICLE_PREFIX, step_size=0.01,
+    ),
+}
+
+
+def eval_signals(evaluation: str) -> list[str]:
+    """The signals an evaluation extracts; its run fails if the filter drops them."""
+    spec = EVALUATIONS[evaluation]
+    return list(getattr(importlib.import_module(spec.module), spec.signals))
+
+
+def write_config(out_path: Path, evaluation: str = "four_post") -> Path:
+    """Write a copy of an evaluation's config that also emits suspension geometry."""
+    spec = EVALUATIONS[evaluation]
+    with open(spec.config, "r", encoding="utf-8") as handle:
+        config: dict[str, Any] = yaml.safe_load(handle)
+
+    simulation = config.setdefault("simulation", {})
+    # Union, not replacement: the evaluation reads its own signals back from
+    # the same CSV and raises if they are missing.
+    simulation["variable_filter"] = variable_filter(
+        extra=eval_signals(evaluation), prefix=spec.prefix
+    )
+    simulation["stepSize"] = spec.step_size
+    # VehicleSim's axles are protected components, and OpenModelica leaves
+    # protected variables out of the result however the filter matches them.
+    extra_args = [str(arg) for arg in simulation.get("extra_args") or []]
+    if "-emit_protected" not in extra_args:
+        extra_args.append("-emit_protected")
+    simulation["extra_args"] = extra_args
+
+    # Keep the capture's own report and metrics out of generated_results/: the
+    # regression checks and the DOE read the evaluation's real ones from there.
+    report = config.setdefault("report", {})
+    report["enabled"] = False
+    report["output_path"] = (RESULTS_DIR / f"{evaluation}_capture_report.pdf").as_posix()
+    report["metrics_csv_path"] = (RESULTS_DIR / f"{evaluation}_capture_metrics.csv").as_posix()
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        f"# Generated by `python -m _1_VisualSim.capture config --eval {evaluation}`.\n"
+        "# The evaluation with the suspension geometry left in the output, for\n"
+        "# BobVis. Regenerate with `make visual-capture`; do not hand-edit.\n"
+    )
+    with open(out_path, "w", encoding="utf-8") as handle:
+        handle.write(header)
+        yaml.safe_dump(config, handle, sort_keys=False, default_flow_style=False)
+    return out_path
+
+
+def result_csv(config_path: Path) -> Path:
+    """The newest result CSV under the config's build directory."""
+    with open(config_path, "r", encoding="utf-8") as handle:
+        config = yaml.safe_load(handle)
+
+    simulation = config.get("simulation") or {}
+    build_dir = Path(simulation.get("build_dir", "."))
+    exec_name = simulation.get("exec_name", "")
+
+    candidates = list(build_dir.glob(f"results/**/{exec_name}_res.csv"))
+    if not candidates:
+        raise ResultMappingError(
+            f"no {exec_name}_res.csv under {build_dir / 'results'}.\n"
+            "Did the simulation run?"
+        )
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def metrics_csv(config_path: Path) -> Path | None:
+    """The metrics CSV the capture run wrote, if it wrote one.
+
+    Evaluations disagree on the name: some honour ``report.metrics_csv_path``,
+    others derive ``<report stem>_metrics.csv``. Take the newest that exists.
+    """
+    with open(config_path, "r", encoding="utf-8") as handle:
+        config = yaml.safe_load(handle) or {}
+
+    report = config.get("report") or {}
+    candidates: list[Path] = []
+    if report.get("metrics_csv_path"):
+        candidates.append(Path(report["metrics_csv_path"]))
+    if report.get("output_path"):
+        output = Path(report["output_path"])
+        candidates.append(output.with_name(f"{output.stem}_metrics.csv"))
+
+    existing = [path for path in candidates if path.is_file()]
+    return max(existing, key=lambda p: p.stat().st_mtime) if existing else None
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m _1_VisualSim.capture",
+        description="Prepare and convert a BobVis geometry capture run.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    config_cmd = sub.add_parser("config", help="write the capture evaluation config")
+    config_cmd.add_argument("output", type=Path)
+    config_cmd.add_argument("--eval", dest="evaluation", choices=sorted(EVALUATIONS),
+                            default="four_post")
+
+    convert_cmd = sub.add_parser("convert", help="convert the run's newest result")
+    convert_cmd.add_argument("config", type=Path)
+    convert_cmd.add_argument("--npz", type=Path, required=True)
+    convert_cmd.add_argument("--template", type=Path, required=True)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.command == "config":
+        path = write_config(args.output, args.evaluation)
+        print(f"[bobvis] capture config {path}")
+        return 0
+
+    try:
+        result = result_csv(args.config)
+        print(f"[bobvis] result   {result}")
+        print_summary(*convert(result, args.npz, args.template,
+                               metrics_csv=metrics_csv(args.config)))
+    except ResultMappingError as exc:
+        print(f"[bobvis] {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
