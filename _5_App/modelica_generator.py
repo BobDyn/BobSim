@@ -1218,3 +1218,67 @@ def _display_path(path: Path, repo_root: Path) -> str:
         return path.resolve().relative_to(repo_root).as_posix()
     except ValueError:
         return str(path)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+#
+# AGENTS.md calls a stale BobLib record the single most common mistake in this
+# repo, and until now the only way to check or refresh one was through the app.
+# Checking is the default because a record can legitimately differ from
+# vehicle.yml: the Modelica entry points read the checked-in records, so
+# rewriting them is a deliberate act, not a sync that should happen by habit.
+# ---------------------------------------------------------------------------
+
+
+def _cli_status_lines(status: Mapping[str, Any]) -> list[str]:
+    lines = [f"vehicle:  {status['vehicle_name']}", f"state:    {status['state']}", ""]
+    for item in status["files"]:
+        if not item["exists"]:
+            mark = "missing"
+        elif item["current"]:
+            mark = "current"
+        else:
+            mark = "stale"
+        lines.append(f"  {mark:<8} {item['path']}")
+    for order in status["package_orders"]:
+        mark = "current" if order["contains_entry"] else "missing"
+        lines.append(f"  {mark:<8} {order['path']} <- {order['entry']}")
+    return lines
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m _5_App.modelica_generator",
+        description="Check or regenerate the BobLib Modelica records generated from a vehicle YAML.",
+    )
+    parser.add_argument("vehicle", nargs="?", default="vehicle.yml", help="Vehicle YAML (default: vehicle.yml)")
+    parser.add_argument("--root", default=".", help="Repository root (default: the current directory)")
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Regenerate the records instead of only reporting what is stale.",
+    )
+    args = parser.parse_args(argv)
+
+    root = Path(args.root).resolve()
+    status = modelica_stack_status_payload(args.vehicle, root)
+
+    if not args.write:
+        print("\n".join(_cli_status_lines(status)))
+        if status["state"] == "written":
+            return 0
+        print(f"\nRecords are {status['state']}. Rerun with --write to regenerate them.")
+        return 1
+
+    result = generate_modelica_stack(args.vehicle, root=root)
+    after = modelica_stack_status_payload(args.vehicle, root)
+    print("\n".join(_cli_status_lines(after)))
+    print(f"\nWrote {len(result.files)} generated files for {result.vehicle_name}.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
