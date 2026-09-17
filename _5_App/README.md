@@ -30,9 +30,19 @@ Mutable app folders are grouped as:
 - `_5_App/user_data/config/app`
 - `_5_App/user_data/config/vehicles`
 - `_5_App/user_data/config/simulations`
+- `_5_App/user_data/config/active`
+- `_5_App/user_data/config/defaults`
 - `_5_App/user_data/results/saved`
 - `_5_App/user_data/workspaces/vehicles`
 - `_5_App/user_data/cache/modelica`
+
+`config/active` is where the app edits a StandardSim study config. The file under
+`_3_StandardSim/` stays as checked in -- it is the seed a clean clone runs and
+what "Default" restores, and `_0_Utils/config_io.resolve` makes the CLI pick up
+the active copy when one exists, so `make standard-eval-*` runs what the app
+runs. `ConfigSpec.relocatable` marks which configs can move: EnvelopeSim and
+OptSim configs resolve `../` paths against their own directory, so they are still
+edited in place and keep their pristine copy in `config/defaults` instead.
 
 `_1_VisualSim` remains the visualization engine. `_5_App` owns the local browser
 shell, setup menus, job launch, output preview, and logs.

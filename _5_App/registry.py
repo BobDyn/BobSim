@@ -480,6 +480,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         label="RampSteerEval",
         path="_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
         workflow_id="ramp-steer",
+        relocatable=True,
         fields=COMMON_SIM_FIELDS
         + (
             _field("sweep.testVels", "Test velocities", kind="list", group="Sweep", unit="m/s"),
@@ -536,6 +537,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         label="SteadyStateEval",
         path="_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml",
         workflow_id="steady-state",
+        relocatable=True,
         fields=COMMON_SIM_FIELDS
         + (
             _field("sweep.testVels", "Test velocities", kind="list", group="Sweep", unit="m/s"),
@@ -586,6 +588,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         label="TransientEval",
         path="_3_StandardSim/TransientEval/transient_eval_config.yml",
         workflow_id="transient",
+        relocatable=True,
         fields=COMMON_SIM_FIELDS
         + (
             _field("test.testVel", "Test velocities", kind="list", group="Test", unit="m/s"),
@@ -604,6 +607,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         label="FourPostEval",
         path="_3_StandardSim/FourPostEval/four_post_eval_config.yml",
         workflow_id="four-post",
+        relocatable=True,
         fields=COMMON_SIM_FIELDS
         + (
             _field(

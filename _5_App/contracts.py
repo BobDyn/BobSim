@@ -63,4 +63,9 @@ class ConfigSpec:
     path: str
     workflow_id: str | None = None
     fields: tuple[FieldSpec, ...] = ()
+    # True when every path inside the config is repo-relative, so the app can
+    # edit a per-user copy under _5_App/user_data/config/active/ instead of the
+    # checked-in seed. EnvelopeSim and OptSim configs resolve their "../" paths
+    # against their own directory and must stay where they are.
+    relocatable: bool = False
 

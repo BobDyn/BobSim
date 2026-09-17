@@ -9,7 +9,10 @@ import numpy as np
 import yaml
 
 from _3_StandardSim._modelica_runner import ModelicaRunner
+from _0_Utils import config_io
 from _0_Utils.reporting.report_engine import ReportEngine
+
+SEED_CONFIG_PATH = Path("_3_StandardSim/TransientEval/transient_eval_config.yml")
 
 
 mpl.rcParams.update({
@@ -1729,7 +1732,7 @@ class TransientEvalSim:
 
 def main(config_path: str | Path | None = None):
     if config_path is None:
-        config_path = Path("_3_StandardSim/TransientEval/transient_eval_config.yml")
+        config_path = config_io.resolve(SEED_CONFIG_PATH)
     else:
         config_path = Path(config_path)
 

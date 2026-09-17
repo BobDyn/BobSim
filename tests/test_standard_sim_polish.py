@@ -258,10 +258,7 @@ def test_four_post_model_tables_match_report_sampling_schedule() -> None:
 
 
 def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> None:
-    for rel_path in (
-        Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
-        Path("_5_App/sim_configs/_defaults/four-post.yml"),
-    ):
+    for rel_path in (Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),):
         config = _load_yaml(rel_path)
         assert config["report"]["raw_time_series_appendix"] is False
 
@@ -283,10 +280,7 @@ def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> N
 
 
 def test_four_post_defaults_fail_if_a_roll_pulse_unloads_a_contact_patch() -> None:
-    for rel_path in (
-        Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
-        Path("_5_App/sim_configs/_defaults/four-post.yml"),
-    ):
+    for rel_path in (Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),):
         config = _load_yaml(rel_path)
         assert config["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
         assert config["validation"]["min_contact_fz_n"] == pytest.approx(1.0)
