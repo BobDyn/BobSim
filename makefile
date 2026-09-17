@@ -403,18 +403,23 @@ clean:
 		find $(CLEAN_WORKSPACE) -maxdepth 2 -name "*.egg-info" -exec rm -rf {} + 2>/dev/null; \
 		echo "Python/tool caches cleaned"'
 
+# Everything the app generates lives under _5_App/user_data/. These are the leaf
+# directories _5_App/storage.py declares and the app recreates on launch, so
+# emptying them resets app state without touching the checked-in run configs in
+# _5_App/sim_configs/_defaults.
+APP_USER_DATA_DIRS := \
+	_5_App/user_data/cache/modelica \
+	_5_App/user_data/config/app \
+	_5_App/user_data/config/simulations \
+	_5_App/user_data/config/vehicles \
+	_5_App/user_data/results/saved \
+	_5_App/user_data/workspaces/vehicles
+
 clean-app:
-	bash -lc 'for path in \
-		$(CLEAN_WORKSPACE)/_5_App/build_archive \
-		$(CLEAN_WORKSPACE)/_5_App/saved_results \
-		$(CLEAN_WORKSPACE)/_5_App/settings \
-		$(CLEAN_WORKSPACE)/_5_App/vehicle_workspaces; do \
+	bash -lc 'for path in $(addprefix $(CLEAN_WORKSPACE)/,$(APP_USER_DATA_DIRS)); do \
 		mkdir -p "$$path"; \
 		find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} + 2>/dev/null || true; \
 		done; \
-		mkdir -p $(CLEAN_WORKSPACE)/_5_App/sim_configs $(CLEAN_WORKSPACE)/_5_App/vehicle_configs; \
-		find $(CLEAN_WORKSPACE)/_5_App/sim_configs -mindepth 1 -maxdepth 1 ! -name "_defaults" -exec rm -rf {} + 2>/dev/null || true; \
-		find $(CLEAN_WORKSPACE)/_5_App/vehicle_configs -mindepth 1 ! -name ".gitkeep" -exec rm -rf {} + 2>/dev/null || true; \
 		echo "App-generated configs/workspaces cleaned"'
 
 clean-visual:
@@ -469,16 +474,10 @@ clean-owned:
 			_4_OptSim/population \
 			_4_OptSim/population_refined \
 			_4_OptSim/results \
-			_5_App/build_archive \
-			_5_App/saved_results \
-			_5_App/settings \
-			_5_App/vehicle_workspaces; do \
+			$(APP_USER_DATA_DIRS); do \
 			mkdir -p "$$path"; \
 			find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} +; \
 			done; \
-			mkdir -p _5_App/sim_configs _5_App/vehicle_configs; \
-			find _5_App/sim_configs -mindepth 1 -maxdepth 1 ! -name "_defaults" -exec rm -rf {} +; \
-			find _5_App/vehicle_configs -mindepth 1 ! -name ".gitkeep" -exec rm -rf {} +; \
 			rm -f _1_VisualSim/*_visual.npz'; then \
 			echo 'Root-owned generated artifacts cleaned'; \
 		else \
