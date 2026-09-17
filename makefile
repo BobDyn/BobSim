@@ -101,7 +101,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	app deploy deploy-deps deploy-assets deploy-package deploy-release deploy-clean \
 	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
-	sync-vehicle standard-build standard-build-four-post standard-regression-four-post \
+	sync-vehicle sync-vehicle-write standard-build standard-build-four-post standard-regression-four-post \
 	standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all reduced-eval reduced-fidelity-suite reduced-suspension-correlation reduced-kinematics-benchmark \
 	lap-eval lap-eval-qss lap-eval-transient lap-eval-all-dof \
 	lap-validation-visuals \
@@ -140,6 +140,9 @@ help:
 		'  shell-standard            Open a StandardSim shell' \
 		'  shell-envelope            Open an EnvelopeSim shell' \
 		'  shell-opt                 Open an OptSim shell' \
+		'' \
+		'  sync-vehicle              Report whether the BobLib records match vehicle.yml' \
+		'  sync-vehicle-write        Regenerate those records from vehicle.yml' \
 		'' \
 		'  standard-build            Build BobLib VehicleSim' \
 		'  standard-build-four-post  Build BobLib FourPostSim' \
@@ -271,8 +274,15 @@ shell-envelope:
 shell-opt:
 	$(SHELL_OPT_CMD)
 
+# Reporting, not writing, is the default. The Modelica entry points read the
+# checked-in BobLib records, so regenerating them is a deliberate act; what was
+# missing was any way to find out whether they still match vehicle.yml.
+# Host-side like app and deploy-*: pure Python, no omc.
 sync-vehicle:
-	@printf '%s\n' 'Static BobLib models use checked-in Modelica records; vehicle.yml remains a BobSim projection/report input.'
+	$(PYTHON) -m _5_App.modelica_generator
+
+sync-vehicle-write:
+	$(PYTHON) -m _5_App.modelica_generator --write
 
 # The generated vehicle records and templates hold every hardpoint, so they must be
 # build dependencies. Without them make reports "up to date" after a geometry change
