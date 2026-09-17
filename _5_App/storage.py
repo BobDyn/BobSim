@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _0_Utils import config_io
+
 
 APP_ROOT = Path("_5_App")
 STATIC_ROOT = APP_ROOT / "static"
@@ -20,7 +22,10 @@ VEHICLE_WORKSPACE_ROOT = USER_WORKSPACE_ROOT / "vehicles"
 BUILD_ARCHIVE_ROOT = USER_CACHE_ROOT
 MODELICA_BUILD_CACHE_ROOT = BUILD_ARCHIVE_ROOT / "modelica"
 
-DEFAULT_SIM_CONFIG_ROOT = APP_ROOT / "sim_configs" / "_defaults"
+ACTIVE_SIM_CONFIG_ROOT = config_io.ACTIVE_CONFIG_ROOT
+# Pristine snapshot for configs that are still edited in place, so "Default"
+# keeps working for them without a second copy in the repo.
+DEFAULT_SNAPSHOT_ROOT = USER_CONFIG_ROOT / "defaults"
 OPENMODELICA_SETTINGS_PATH = SETTINGS_ROOT / "openmodelica.json"
 RUNTIME_SEED_MANIFEST_PATH = SETTINGS_ROOT / "runtime_seed.json"
 
@@ -31,4 +36,6 @@ USER_DATA_DIRS = (
     SAVED_RESULTS_ROOT,
     VEHICLE_WORKSPACE_ROOT,
     MODELICA_BUILD_CACHE_ROOT,
+    ACTIVE_SIM_CONFIG_ROOT,
+    DEFAULT_SNAPSHOT_ROOT,
 )

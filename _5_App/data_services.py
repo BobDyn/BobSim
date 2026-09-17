@@ -13,6 +13,7 @@ import zipfile
 
 import yaml
 
+from _0_Utils import config_io
 from _0_Utils.vehicle_io import parse_tir
 from _5_App import registry as app_registry
 from _5_App import storage as app_storage
@@ -33,9 +34,9 @@ STABAR_BELLCRANK_ORDER_CHOICES = app_registry.STABAR_BELLCRANK_ORDER_CHOICES
 ROOT = Path.cwd()
 SAVED_VEHICLE_ROOT = app_storage.SAVED_VEHICLE_ROOT
 SAVED_SIM_CONFIG_ROOT = app_storage.SAVED_SIM_CONFIG_ROOT
+DEFAULT_SNAPSHOT_ROOT = app_storage.DEFAULT_SNAPSHOT_ROOT
 SAVED_RESULTS_ROOT = app_storage.SAVED_RESULTS_ROOT
 VEHICLE_WORKSPACE_ROOT = app_storage.VEHICLE_WORKSPACE_ROOT
-DEFAULT_SIM_CONFIG_ROOT = app_storage.DEFAULT_SIM_CONFIG_ROOT
 RESULT_EXPLORER_ROOTS: tuple[Path, ...] = (
     Path("_3_StandardSim/generated_results"),
     Path("_3_StandardSim/results"),
@@ -309,8 +310,27 @@ def _config_spec(config_id: str) -> ConfigSpec:
     return specs[config_id]
 
 
+def _config_file_path(spec: ConfigSpec) -> Path:
+    """The file the app reads and writes for this config.
+
+    A relocatable spec resolves to a per-user copy under
+    _5_App/user_data/config/active/, seeded from the checked-in config the first
+    time it is touched, so editing in the app never writes a tracked file. Every
+    other spec is still edited in place.
+    """
+    if not spec.relocatable:
+        return _safe_repo_path(spec.path)
+    _safe_repo_path(spec.path)  # keep the traversal guard on the seed path
+    return config_io.ensure_active(spec.path, root=ROOT)
+
+
+def _config_seed_path(spec: ConfigSpec) -> Path:
+    """The checked-in config a relocatable spec is seeded and reset from."""
+    return _safe_repo_path(spec.path)
+
+
 def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
-    path = _safe_repo_path(spec.path)
+    path = _config_file_path(spec)
     if not path.is_file():
         raise FileNotFoundError(spec.path)
     raw = path.read_text(encoding="utf-8", errors="replace")
@@ -690,7 +710,7 @@ def config_summary(spec: ConfigSpec) -> dict[str, Any]:
         "group": spec.group,
         "label": spec.label,
         "workflow_id": spec.workflow_id,
-        **_path_payload(spec.path),
+        **_path_payload(_config_file_path(spec).relative_to(ROOT).as_posix()),
     }
 
 
@@ -734,7 +754,7 @@ def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
 
 def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     spec = _config_spec(config_id)
-    path = _safe_repo_path(spec.path)
+    path = _config_file_path(spec)
     data = yaml.safe_load(text) or {}
     if not isinstance(data, (dict, list)):
         raise TypeError("Config must contain a YAML mapping or list")
@@ -776,19 +796,25 @@ def _saved_sim_config_dir(workflow_id: str) -> Path:
 
 
 def _default_sim_config_path(workflow_id: str) -> Path:
-    _sim_config_spec(workflow_id)
-    path = _safe_repo_path(DEFAULT_SIM_CONFIG_ROOT / f"{workflow_id}.yml")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    """Where "restore the default" reads from: the checked-in config itself.
 
+    It used to be a snapshot under _5_App/sim_configs/_defaults/. Nothing tied
+    those snapshots to their sources, so six of nine had drifted -- reverting
+    report paths, worker counts and envelope physics whenever someone picked
+    Default. The seed cannot drift from itself.
 
-def _ensure_default_sim_config(workflow_id: str) -> Path:
+    A spec that is edited in place has no pristine seed left once the user saves,
+    so those keep a snapshot -- but under user_data, taken from the checked-in
+    file the first time it is needed, rather than committed alongside it.
+    """
     spec = _sim_config_spec(workflow_id)
-    default_path = _default_sim_config_path(workflow_id)
-    if not default_path.is_file():
-        source = _safe_repo_path(spec.path)
-        default_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    return default_path
+    if spec.relocatable:
+        return _config_seed_path(spec)
+    snapshot = _safe_repo_path(DEFAULT_SNAPSHOT_ROOT / f"{workflow_id}.yml")
+    if not snapshot.is_file():
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(_config_seed_path(spec).read_text(encoding="utf-8"), encoding="utf-8")
+    return snapshot
 
 
 def _sim_config_summary(source_id: str, source_type: str, path: Path, workflow_id: str) -> dict[str, Any]:
@@ -806,7 +832,7 @@ def _sim_config_summary(source_id: str, source_type: str, path: Path, workflow_i
 
 def sim_config_library_payload(workflow_id: str) -> dict[str, Any]:
     spec = _sim_config_spec(workflow_id)
-    default_path = _ensure_default_sim_config(workflow_id)
+    default_path = _default_sim_config_path(workflow_id)
     sources = [_sim_config_summary(f"default:{workflow_id}", "default", default_path, workflow_id)]
     saved_dir = _saved_sim_config_dir(workflow_id)
     for path in sorted(saved_dir.glob("*.yml")):
@@ -835,13 +861,13 @@ def load_sim_config_source(source_id: str) -> dict[str, Any]:
     source_type, workflow_id, slug = _parse_sim_config_source(source_id)
     spec = _sim_config_spec(workflow_id)
     source = (
-        _ensure_default_sim_config(workflow_id)
+        _default_sim_config_path(workflow_id)
         if source_type == "default"
         else _saved_sim_config_dir(workflow_id) / f"{slug}.yml"
     )
     if not source.is_file():
         raise FileNotFoundError(source_id)
-    target = _safe_repo_path(spec.path)
+    target = _config_file_path(spec)
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     return {
         "source": _sim_config_summary(source_id, source_type, source, workflow_id),
@@ -852,7 +878,7 @@ def load_sim_config_source(source_id: str) -> dict[str, Any]:
 
 def save_active_sim_config(workflow_id: str, name: str | None = None) -> dict[str, Any]:
     spec = _sim_config_spec(workflow_id)
-    source = _safe_repo_path(spec.path)
+    source = _config_file_path(spec)
     slug = _sim_config_slug(name or f"{spec.label} Config")
     saved_path = _saved_sim_config_dir(workflow_id) / f"{slug}.yml"
     saved_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
