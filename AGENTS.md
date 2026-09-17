@@ -98,6 +98,20 @@ machine. Use it after touching `_4_OptSim` or the BobLib records it reads.
 Most targets shell out to `docker compose` unless you are already inside the
 container. `make app` and `deploy-*` are the exceptions and run on the host.
 
+`RUN=` empties that Docker prefix and runs a target in your current
+environment. GitHub Actions uses exactly this for the fast gate, so it is a
+supported path, not a hack:
+
+```bash
+make lint RUN= && make typecheck RUN= && make test RUN=
+```
+
+Use it when Docker is unavailable; you need `pip install -r requirements.txt`
+first. The simulation targets take `RUN=` too, but then they need a working
+`omc` on the host. If you cannot run the gate at all, say so rather than
+guessing — `make ci` with no Docker fails in `CreateProcess`, which looks like
+a code error and is not one.
+
 Paths that get written into configs, JSON payloads, or anything consumed on
 another machine must be `as_posix()`, never `str(Path)` — native Windows
 separators have broken the DOE config and the app's file APIs before.
