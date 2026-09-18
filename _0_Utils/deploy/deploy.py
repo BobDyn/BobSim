@@ -63,7 +63,18 @@ MODULE_ROOTS = (
 )
 
 EXCLUDED_MODULES = (
+    # BobVis is a separate desktop app with its own PyQt6/VTK dependency set
+    # (_1_VisualSim/requirements.txt). Bundling it here would drag ~120 MB of
+    # Qt and VTK into the browser app's executable for nothing.
+    "_1_VisualSim.capture",
+    "_1_VisualSim.demo",
+    "_1_VisualSim.exporter",
+    "_1_VisualSim.from_results",
+    "_1_VisualSim.navigation",
     "_1_VisualSim.run_visual",
+    "_1_VisualSim.scene",
+    "_1_VisualSim.theme",
+    "_1_VisualSim.tire_state",
     "_1_VisualSim.viewer",
     "PyQt5",
     "PySide2",
