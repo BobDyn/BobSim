@@ -3,12 +3,19 @@ schema: bobsim.ggv.v1
 vehicle_template: ../../vehicle.yml
 
 generation:
+  # Shared transient/QSS physics backend: 3, 6, 10, or 14 generalized DOF.
+  model_dof: 3
   speeds_mps: [5.0, 10.0, 15.0, 20.0, 25.0]
   ay_max_g: 4.5
   ay_points: 321
   ax_search_min_g: -3.2
   ax_search_max_g: 2.8
   ax_search_points: 801
+  max_abs_beta_rad: 0.25
+  max_abs_steering_rad: 0.5
+  ax_binary_iterations: 14
+  enforce_tire_load_range: true
+  trim_multistart: true
   include_left_right: true
   warn_tire_load_range: true
 
@@ -24,7 +31,7 @@ report:
   raw_output_path: ../Build/GGV/ggv_first_principles.csv
   reference_speed_mps: 15.0
   notes:
-    - GGV is generated from the reduced EnvelopeSim vehicle projection built from vehicle.yml.
+    - GGV uses prescribed ax/ay QSS trims of the selected shared N-DOF transient model.
     - Tire forces use load-sensitive peak friction terms and a simple combined-slip ellipse.
     - Track-profile scores are maneuver/path proxies, not laptime simulation.
     - Track-profile maneuvers approximate a released FSAE endurance layout as a representative yearly reference.

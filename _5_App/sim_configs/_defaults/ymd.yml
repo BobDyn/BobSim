@@ -3,6 +3,8 @@ schema: bobsim.ymd.v1
 vehicle_template: ../../vehicle.yml
 
 generation:
+  # Shared transient/QSS physics backend: 3, 6, 10, or 14 generalized DOF.
+  model_dof: 3
   speed_mps: 15.0
   beta_min_deg: -8.0
   beta_max_deg: 8.0
@@ -15,6 +17,7 @@ generation:
   tol_ay: 1.0e-5
   relaxation: 0.35
   warn_tire_load_range: true
+  enforce_tire_load_range: true
 
 speed_sweep:
   enabled: true
@@ -30,7 +33,7 @@ report:
   trim_output_path: ../Build/YMD/ymd_trim_curve.csv
   raw_output_path: ../Build/YMD/ymd_first_principles.csv
   notes:
-    - YMD is generated from the reduced EnvelopeSim vehicle projection built from vehicle.yml.
+    - YMD uses the selected shared N-DOF transient equations with longitudinal and vertical QSS constraints.
     - Trim metrics come from interpolating the zero-yaw-moment condition across roadwheel-angle slices.
     - Peak lateral acceleration is the largest absolute converged ay point in the generated beta/roadwheel map.
     - This is a quasi-static moment-method map, not a full Modelica trim solve.

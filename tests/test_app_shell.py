@@ -16,6 +16,8 @@ from _3_StandardSim._modelica_runner import ModelicaRunner
 from _5_App import app
 from _5_App import desktop
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def clear_openmodelica_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     app.OPENMODELICA_VERIFY_CACHE.clear()
@@ -1676,3 +1678,44 @@ def test_app_raw_config_save_validates_yaml_root(tmp_path: Path, monkeypatch: py
 
     with pytest.raises(TypeError):
         app.save_raw_config("demo", "scalar-only")
+
+
+def test_app_default_sim_configs_match_their_source_configs() -> None:
+    """Every _5_App/sim_configs/_defaults/<workflow>.yml mirrors its ConfigSpec path.
+
+    The defaults directory is a pristine snapshot of the shipped study configs:
+    picking "Default" in the app copies it back over the study config, so a
+    drifted snapshot silently reverts real settings. Compares committed blobs
+    rather than the working copies, because editing a config in the app
+    legitimately rewrites the study config on disk.
+    """
+    import subprocess
+
+    def committed(rel_path: str) -> str | None:
+        try:
+            return subprocess.run(
+                ["git", "show", f"HEAD:{rel_path}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError):
+            return None
+
+    checked = 0
+    for workflow_id, spec in app.BASE_CONFIG_SPECS.items():
+        default_rel = f"_5_App/sim_configs/_defaults/{workflow_id}.yml"
+        if not (REPO_ROOT / default_rel).is_file():
+            continue
+        default_blob = committed(default_rel)
+        source_blob = committed(spec.path)
+        if default_blob is None or source_blob is None:
+            pytest.skip("git is unavailable or a config is not committed")
+        assert yaml.safe_load(default_blob) == yaml.safe_load(source_blob), (
+            f"{default_rel} has drifted from {spec.path}. The defaults snapshot is a copy of "
+            f"the study config; re-copy it instead of hand-editing."
+        )
+        checked += 1
+
+    assert checked >= 9, f"expected every app default config to be checked, got {checked}"

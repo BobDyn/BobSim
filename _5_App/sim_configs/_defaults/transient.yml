@@ -54,7 +54,7 @@ report:
   brand: BobSim
   title: TransientEval Lateral Transient Response
   subtitle: Step response and sustained-sine FRF
-  output_path: _3_StandardSim/results/transient_eval_report.pdf
+  output_path: _3_StandardSim/generated_results/transient_eval_report.pdf
   metric_target_velocity_mps: 15.0
 
   notes:

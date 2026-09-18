@@ -53,7 +53,7 @@ report:
   brand: BobSim
   title: Ramp-Steer Vehicle Characterization
   subtitle: Measured-$a_y$ ramp-response isolines with robust metric fits
-  output_path: _3_StandardSim/results/ramp_steer_eval_report.pdf
+  output_path: _3_StandardSim/generated_results/ramp_steer_eval_report.pdf
   metric_target_velocity_mps: 15
   notes:
   - Open-loop constant-rate handwheel ramp at the configured test velocities
