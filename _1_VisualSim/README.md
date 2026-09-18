@@ -150,13 +150,14 @@ missing names instead of failing somewhere inside VTK.
 * **Free** — a world-fixed camera that playback never touches. Use it to watch
   the car drive past a fixed point.
 
-**Mouse and touchpad.** `F1` lists these in the window.
+**Mouse and trackpad.** The scheme is the one every CAD package uses. `F1`
+lists it in the window.
 
-| Input | Mouse | Touchpad |
+| Input | Mouse | Trackpad |
 | --- | --- | --- |
-| Orbit | Left-drag | Two-finger drag, or click-drag |
-| Pan | Right-drag, middle-drag, Shift+left-drag | Shift + two-finger drag |
-| Zoom | Scroll | Pinch |
+| Orbit | Left-drag | Click-drag |
+| Pan | Shift+left-drag, right-drag, middle-drag | Shift + click-drag |
+| Zoom | Scroll | Two-finger scroll, or pinch |
 | Orbit around a point | Double-click it | Double-click it |
 
 Orbit is turntable style about the vertical, so the horizon never rolls and
@@ -164,11 +165,13 @@ the view stops short of straight up or down. Zoom heads for whatever is under
 the cursor, in proportion to how far you scrolled, rather than in fixed jumps.
 All of it works while playing, in either camera mode.
 
-A touchpad scroll and a mouse wheel arrive as the same event. Windows says
-nothing about which it was, so a scroll in fractions of a notch is taken to be
-a touchpad. A free-spinning mouse reports fractions too; if yours orbits when
-it should zoom, untick **View ▸ Two-finger scroll orbits** (remembered between
-sessions). The input arithmetic is in `navigation.py`.
+Scroll zooms, whatever sent it. A wheel arrives in whole notches and a trackpad
+in fractions of one, but both mean zoom, so nothing here has to guess which
+device it was — which is what used to leave a trackpad orbiting when you asked
+it to zoom. Double-click takes the orbit centre to whatever is under the
+cursor: a joint, a tire, or the ground, which is a backdrop rather than pickable
+geometry and so needs the cursor ray intersected with it. Aim at the sky and
+the centre stays put. The input arithmetic is in `navigation.py`.
 
 View presets (Iso / Top / Front / Rear / Left / Right) reframe the geometry at
 the current time and ignore the ground plane, so the car always fills the
@@ -248,9 +251,9 @@ the slow part: budget roughly a second per frame at 1080p, so trim with
 | File | Role |
 | --- | --- |
 | `scene.py` | `SimData` (config + signals) and `VisualScene` (actors, interpolation, camera). Qt-free. |
-| `navigation.py` | Camera arithmetic for mouse and touchpad input: orbit, pan, zoom-to-cursor, wheel classification. Numpy only. |
+| `navigation.py` | Camera arithmetic for mouse and trackpad input: orbit, pan, zoom-to-cursor, and where a double-click lands. Numpy only. |
 | `tire_state.py` | Friction-circle and LLTD arithmetic: MF5.2 peak μ from `.tir` terms, grip use, axle load transfer. Numpy only. |
-| `viewer.py` | The desktop app: toolbar, viewport, mouse and touchpad navigation, signal panel, transport, export dialog. |
+| `viewer.py` | The desktop app: toolbar, viewport, mouse and trackpad navigation, signal panel, transport, export dialog. |
 | `exporter.py` | Off-screen rendering and video muxing, plus the signal strip. |
 | `run_visual.py` | Headless CLI over `exporter.py`. |
 | `from_results.py` | Maps BobLib frames to hardpoints; turns a result CSV into a scene. |

@@ -161,9 +161,9 @@ def test_friction_panel_needs_a_friction_model(qapp: QApplication, tmp_path: Pat
 
 # -- help -------------------------------------------------------------------
 
-def test_controls_help_covers_orbit_pan_and_zoom_for_mouse_and_touchpad() -> None:
+def test_controls_help_covers_orbit_pan_and_zoom_for_mouse_and_trackpad() -> None:
     groups = dict(CONTROLS)
-    for device in ("Mouse", "Touchpad"):
+    for device in ("Mouse", "Trackpad"):
         actions = " ".join(action for _, action in groups[device]).lower()
         for verb in ("orbit", "pan", "zoom"):
             assert verb in actions, f"{device} controls never mention {verb}"

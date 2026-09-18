@@ -1,4 +1,4 @@
-"""Camera navigation for BobVis: how mouse and touchpad input moves the view.
+"""Camera navigation for BobVis: how mouse and trackpad input moves the view.
 
 Pure numpy - no Qt, no VTK - so the arithmetic that decides whether a gesture
 feels right is testable everywhere, including CI where the rendering stack is
@@ -15,7 +15,6 @@ Conventions
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Literal
 
 import numpy as np
 
@@ -26,7 +25,7 @@ WHEEL_NOTCH = 120
 
 ZOOM_PER_NOTCH = 1.15
 WHEEL_PX_PER_NOTCH = 40.0
-"""Drag distance, in pixels, that one wheel notch of touchpad scroll stands for."""
+"""Pixels of trackpad scroll that count as one wheel notch of zoom."""
 
 ORBIT_DEG_PER_PX = 0.3
 MIN_POLAR_DEG = 1.0
@@ -35,7 +34,8 @@ MIN_POLAR_DEG = 1.0
 MIN_DISTANCE = 0.05
 """Nearest the camera may zoom to what it is looking at, in metres."""
 
-WheelAction = Literal["zoom", "orbit", "pan", "none"]
+GROUND_REACH = 20.0
+"""Farthest a ground recentre may land, in multiples of the orbit distance."""
 
 
 @dataclass(frozen=True)
@@ -140,6 +140,41 @@ def project_to_ndc(pose: CameraPose, point: np.ndarray, aspect: float) -> tuple[
     return float(rel @ right) / (half_h * float(aspect)), float(rel @ up) / half_h
 
 
+def cursor_ray(
+    pose: CameraPose, ndc_x: float, ndc_y: float, aspect: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """World ray under a screen position, as ``(origin, unit direction)``."""
+    through = focal_plane_point(pose, ndc_x, ndc_y, aspect)
+    if pose.parallel_projection:
+        forward, _, _ = camera_basis(pose)
+        return through, forward
+    return pose.position, _unit(through - pose.position, np.array([0.0, 1.0, 0.0]))
+
+
+def ground_plane_point(
+    pose: CameraPose, ndc_x: float, ndc_y: float, aspect: float, height: float = 0.0
+) -> np.ndarray | None:
+    """Where the cursor ray meets the ground plane ``z = height``, or ``None``.
+
+    ``None`` when the ray points away from the plane, or grazes it so close to
+    the horizon that the hit is a world away: recentring there would leave the
+    car a speck, so the caller falls back to something nearer.
+    """
+    origin, direction = cursor_ray(pose, ndc_x, ndc_y, aspect)
+    if abs(float(direction[2])) < 1e-9:
+        return None
+    along = (float(height) - float(origin[2])) / float(direction[2])
+    # A perspective ray starts at the eye and only goes forwards. A parallel
+    # one starts on the focal plane, and the plane may well be behind it.
+    if along <= 0.0 and not pose.parallel_projection:
+        return None
+    point = origin + along * direction
+    distance = float(np.linalg.norm(pose.focal - pose.position))
+    if float(np.linalg.norm(point - pose.position)) > GROUND_REACH * max(distance, MIN_DISTANCE):
+        return None
+    return point
+
+
 def zoom_at(
     pose: CameraPose, factor: float, ndc_x: float, ndc_y: float, aspect: float
 ) -> CameraPose:
@@ -180,56 +215,16 @@ def recenter(pose: CameraPose, point: np.ndarray) -> CameraPose:
 # ---------------------------------------------------------------------------
 # Wheel input
 #
-# A mouse wheel and a two-finger touchpad scroll arrive as the same Qt event.
-# Only some platforms say which is which (a device type, a scroll phase, a
-# pixel delta); Windows precision touchpads say none of it, but they report in
-# fractions of a notch where a detented wheel reports whole ones. That is the
-# heuristic, and ``detect_touchpad`` turns it off for free-spinning mice that
-# also report fractions.
+# Scroll zooms, on every device. Qt reports a mouse wheel in whole notches and
+# a trackpad in fractions of one; both mean the same thing here, so nothing has
+# to work out which it was. Ctrl + scroll is how Windows and Linux deliver a
+# trackpad pinch, and it zooms too.
 # ---------------------------------------------------------------------------
-
-def classify_wheel(
-    angle_dx: int,
-    angle_dy: int,
-    *,
-    pixel_dx: int = 0,
-    pixel_dy: int = 0,
-    scroll_phase: bool = False,
-    touchpad_device: bool = False,
-    recent_touchpad: bool = False,
-    ctrl: bool = False,
-    shift: bool = False,
-    detect_touchpad: bool = True,
-) -> WheelAction:
-    """Decide what one wheel event should do to the camera.
-
-    Mouse wheel zooms. Touchpad two-finger scroll orbits, or pans with Shift.
-    Ctrl always zooms: Windows and Linux deliver a touchpad pinch as Ctrl +
-    scroll. ``recent_touchpad`` carries a gesture across the odd event that
-    happens to land on a whole notch.
-    """
-    if angle_dx == 0 and angle_dy == 0 and pixel_dx == 0 and pixel_dy == 0:
-        return "none"
-    if ctrl or not detect_touchpad:
-        return "zoom"
-    touchpad = (
-        touchpad_device
-        or scroll_phase
-        or recent_touchpad
-        or pixel_dx != 0
-        or pixel_dy != 0
-        or angle_dx != 0
-        or angle_dy % WHEEL_NOTCH != 0
-    )
-    if not touchpad:
-        return "zoom"
-    return "pan" if shift else "orbit"
-
 
 def wheel_zoom_factor(angle_dx: int, angle_dy: int, pixel_dx: int = 0, pixel_dy: int = 0) -> float:
     """Zoom factor for a wheel event, proportional to how far it scrolled.
 
-    Ten tenth-of-a-notch touchpad events zoom exactly as far as one notch.
+    Ten tenth-of-a-notch trackpad events zoom exactly as far as one notch.
     """
     if angle_dy:
         notches = angle_dy / WHEEL_NOTCH
@@ -238,18 +233,3 @@ def wheel_zoom_factor(angle_dx: int, angle_dy: int, pixel_dx: int = 0, pixel_dy:
     else:
         notches = (pixel_dy or pixel_dx) / WHEEL_PX_PER_NOTCH
     return float(ZOOM_PER_NOTCH ** notches)
-
-
-def wheel_drag_pixels(
-    angle_dx: int, angle_dy: int, pixel_dx: int = 0, pixel_dy: int = 0
-) -> tuple[float, float]:
-    """A touchpad scroll as the equivalent cursor drag (x right, y down).
-
-    Qt's sign convention makes a positive delta move content right and down,
-    after the OS applies the user's scroll-direction setting, so the deltas
-    pass straight through.
-    """
-    if pixel_dx or pixel_dy:
-        return float(pixel_dx), float(pixel_dy)
-    scale = WHEEL_PX_PER_NOTCH / WHEEL_NOTCH
-    return angle_dx * scale, angle_dy * scale

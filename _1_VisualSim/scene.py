@@ -34,7 +34,7 @@ import vtk
 import yaml
 from matplotlib import colormaps
 
-from _1_VisualSim.navigation import CameraPose
+from _1_VisualSim.navigation import CameraPose, zoom_at
 from _1_VisualSim.tire_state import axle_load_transfer
 
 
@@ -417,6 +417,8 @@ class VisualScene:
     """PyVista actors for one :class:`SimData`, movable to any simulation time."""
 
     GROUND_EXTENT = 200.0
+    GROUND_HEIGHT = 0.0
+    """World z of the ground plane, which a double-click recentres onto."""
     GRID_MINOR = 1.0
     GRID_MAJOR = 5.0
     TRACK_MAX_POINTS = 600
@@ -1200,8 +1202,14 @@ class VisualScene:
         self.capture_view()
 
     def zoom(self, factor: float) -> None:
-        self.plotter.camera.zoom(factor)
-        self.capture_view()
+        """Zoom about the centre of the view, exactly as the scroll wheel does.
+
+        ``camera.zoom`` narrows the field of view instead of moving the camera,
+        so the keyboard and the wheel used to be two different operations and
+        holding ``+`` flattened the perspective. At the centre of the screen the
+        aspect ratio cannot matter, so it is not asked for.
+        """
+        self.set_camera_pose(zoom_at(self.camera_pose(), factor, 0.0, 0.0, 1.0))
 
     # -- navigation ---------------------------------------------------------
     def camera_pose(self) -> CameraPose:

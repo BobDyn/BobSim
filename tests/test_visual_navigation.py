@@ -2,8 +2,8 @@
 
 :mod:`_1_VisualSim.navigation` is numpy only, so unlike ``test_visual_scene.py``
 these run everywhere, CI included. They pin the properties that make a gesture
-feel right or wrong: what stays fixed on screen, what never flips, and which
-input a wheel event is taken to be.
+feel right or wrong: what stays fixed on screen, what never flips, and where a
+double-click lands when there is no geometry under it.
 """
 
 from __future__ import annotations
@@ -12,19 +12,20 @@ import numpy as np
 import pytest
 
 from _1_VisualSim.navigation import (
+    GROUND_REACH,
     MIN_DISTANCE,
     MIN_POLAR_DEG,
     WHEEL_NOTCH,
     ZOOM_PER_NOTCH,
     CameraPose,
     camera_basis,
-    classify_wheel,
+    cursor_ray,
     focal_plane_point,
+    ground_plane_point,
     orbit,
     pan,
     project_to_ndc,
     recenter,
-    wheel_drag_pixels,
     wheel_zoom_factor,
     zoom_at,
 )
@@ -170,28 +171,65 @@ def test_recenter_moves_the_orbit_centre_without_turning() -> None:
     np.testing.assert_allclose(camera_basis(after)[0], camera_basis(before)[0])
 
 
+# -- recentring -------------------------------------------------------------
+
+def test_cursor_ray_starts_at_the_eye_and_points_through_the_cursor() -> None:
+    pose = _pose()
+    origin, direction = cursor_ray(pose, 0.4, -0.2, ASPECT)
+    np.testing.assert_allclose(origin, pose.position)
+    assert np.linalg.norm(direction) == pytest.approx(1.0)
+    through = focal_plane_point(pose, 0.4, -0.2, ASPECT)
+    np.testing.assert_allclose(direction, (through - pose.position)
+                               / np.linalg.norm(through - pose.position))
+
+
+def test_parallel_cursor_ray_runs_along_the_view_direction() -> None:
+    pose = _pose(parallel=True)
+    _, direction = cursor_ray(pose, 0.4, -0.2, ASPECT)
+    np.testing.assert_allclose(direction, camera_basis(pose)[0], atol=1e-12)
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_ground_point_lands_on_the_plane_under_the_cursor(parallel: bool) -> None:
+    """A double-click on the floor recentres there: the plane is not pickable."""
+    pose = _pose(position=(-6.0, -4.0, 3.0), focal=(0.0, 0.0, 0.0), parallel=parallel)
+    point = ground_plane_point(pose, 0.3, -0.4, ASPECT)
+    assert point is not None
+    assert point[2] == pytest.approx(0.0)
+    # It is where the cursor points, not merely somewhere on the plane.
+    np.testing.assert_allclose(project_to_ndc(pose, point, ASPECT), (0.3, -0.4), atol=1e-9)
+
+
+def test_ground_point_honours_a_raised_plane() -> None:
+    pose = _pose(position=(-6.0, -4.0, 3.0), focal=(0.0, 0.0, 0.0))
+    point = ground_plane_point(pose, 0.0, -0.2, ASPECT, height=0.25)
+    assert point is not None and point[2] == pytest.approx(0.25)
+
+
+def test_ground_point_gives_up_on_the_sky() -> None:
+    """Pointing away from the plane, and exactly along it, have no answer."""
+    up = _pose(position=(-6.0, -4.0, 3.0), focal=(-4.0, -2.0, 9.0))
+    assert ground_plane_point(up, 0.0, 0.0, ASPECT) is None
+    level = _pose(position=(-6.0, 0.0, 1.0), focal=(0.0, 0.0, 1.0))
+    assert ground_plane_point(level, 0.0, 0.0, ASPECT) is None
+
+
+def test_ground_point_gives_up_near_the_horizon() -> None:
+    """A grazing hit is miles off; recentring there would leave the car a speck."""
+    # Nearly level, so the top of the frame looks past the horizon.
+    pose = _pose(position=(-6.0, -4.0, 1.2), focal=(4.0, 3.0, 1.2))
+    distance = float(np.linalg.norm(pose.focal - pose.position))
+    hits = [ground_plane_point(pose, 0.0, float(y), ASPECT)
+            for y in np.linspace(-0.9, 0.9, 200)]
+    assert hits[0] is not None, "the bottom of the frame is floor, and must recentre"
+    assert hits[-1] is None, "the top of the frame is horizon, and must not"
+    for hit in hits:
+        if hit is not None:
+            assert hit[2] == pytest.approx(0.0)
+            assert np.linalg.norm(hit - pose.position) <= GROUND_REACH * distance + 1e-6
+
+
 # -- wheel ------------------------------------------------------------------
-
-@pytest.mark.parametrize(
-    ("kwargs", "expected"),
-    [
-        ({"angle_dx": 0, "angle_dy": 120}, "zoom"),              # mouse notch
-        ({"angle_dx": 0, "angle_dy": -240}, "zoom"),             # fast mouse spin
-        ({"angle_dx": 0, "angle_dy": 12}, "orbit"),              # Windows precision touchpad
-        ({"angle_dx": -30, "angle_dy": 0}, "orbit"),             # sideways swipe
-        ({"angle_dx": 0, "angle_dy": 12, "shift": True}, "pan"),
-        ({"angle_dx": 0, "angle_dy": 12, "ctrl": True}, "zoom"),  # Windows pinch
-        ({"angle_dx": 0, "angle_dy": 120, "pixel_dy": 40}, "orbit"),       # macOS trackpad
-        ({"angle_dx": 0, "angle_dy": 120, "scroll_phase": True}, "orbit"),
-        ({"angle_dx": 0, "angle_dy": 120, "touchpad_device": True}, "orbit"),
-        ({"angle_dx": 0, "angle_dy": 120, "recent_touchpad": True}, "orbit"),
-        ({"angle_dx": 0, "angle_dy": 12, "detect_touchpad": False}, "zoom"),
-        ({"angle_dx": 0, "angle_dy": 0}, "none"),
-    ],
-)
-def test_classify_wheel(kwargs: dict, expected: str) -> None:
-    assert classify_wheel(**kwargs) == expected
-
 
 def test_wheel_zoom_is_proportional_to_scroll_distance() -> None:
     assert wheel_zoom_factor(0, WHEEL_NOTCH) == pytest.approx(ZOOM_PER_NOTCH)
@@ -200,7 +238,13 @@ def test_wheel_zoom_is_proportional_to_scroll_distance() -> None:
     assert ten_small == pytest.approx(ZOOM_PER_NOTCH)
 
 
-def test_wheel_drag_prefers_pixel_deltas() -> None:
-    assert wheel_drag_pixels(0, 120, pixel_dx=3, pixel_dy=-7) == (3.0, -7.0)
-    dx, dy = wheel_drag_pixels(-120, 60)
-    assert dx < 0.0 < dy
+def test_wheel_zoom_reads_pixel_deltas_when_that_is_all_there_is() -> None:
+    """macOS trackpads report pixels and no angle; they must still zoom."""
+    assert wheel_zoom_factor(0, 0, pixel_dy=40) > 1.0
+    assert wheel_zoom_factor(0, 0, pixel_dy=-40) < 1.0
+    assert wheel_zoom_factor(0, 0) == pytest.approx(1.0)
+
+
+def test_sideways_scroll_zooms_like_a_vertical_one() -> None:
+    """A tilt wheel or a horizontal swipe is still a request to zoom."""
+    assert wheel_zoom_factor(WHEEL_NOTCH, 0) == pytest.approx(ZOOM_PER_NOTCH)

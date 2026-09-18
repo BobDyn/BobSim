@@ -26,7 +26,6 @@ import numpy as np
 from PyQt6.QtCore import QEvent, QObject, QPointF, QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
-    QInputDevice,
     QKeySequence,
     QMouseEvent,
     QNativeGestureEvent,
@@ -84,11 +83,11 @@ from _1_VisualSim.exporter import (
 from _1_VisualSim.navigation import (
     ORBIT_DEG_PER_PX,
     CameraPose,
-    classify_wheel,
+    focal_plane_point,
+    ground_plane_point,
     orbit,
     pan,
     recenter,
-    wheel_drag_pixels,
     wheel_zoom_factor,
     zoom_at,
 )
@@ -710,16 +709,18 @@ class TransportBar(QFrame):
 # Viewport navigation
 #
 # VTK's Qt widget turns scrolling into fixed 10% zoom jumps once a whole wheel
-# notch has piled up, ignores sideways scroll and pinch, and has no pan on a
-# touchpad. So mouse, wheel and gesture input is taken here, before VTK sees
+# notch has piled up, ignores sideways scroll and pinch, and never recentres
+# the orbit. So mouse, wheel and gesture input is taken here, before VTK sees
 # it. The camera arithmetic lives in :mod:`_1_VisualSim.navigation`.
+#
+# The scheme is the one every CAD package uses: drag orbits, Shift-drag pans,
+# scroll zooms toward the cursor, double-click orbits around what you clicked.
+# Nothing here asks whether the input came from a mouse or a trackpad, because
+# under this scheme the answer never changes what happens.
 # ---------------------------------------------------------------------------
 
 class ViewportNavigator(QObject):
-    """Mouse and touchpad camera control, installed as an event filter on the viewport."""
-
-    TOUCHPAD_LATCH_S = 0.4
-    """How long a touchpad gesture stays one between events."""
+    """Mouse and trackpad camera control, installed as an event filter on the viewport."""
 
     def __init__(self, viewport: QWidget, scene: VisualScene,
                  on_change: Callable[[], None], parent: QObject | None = None) -> None:
@@ -727,10 +728,8 @@ class ViewportNavigator(QObject):
         self._viewport = viewport
         self._scene = scene
         self._on_change = on_change
-        self.touchpad_gestures = True
         self._drag: Literal["orbit", "pan"] | None = None
         self._last = QPointF()
-        self._last_touchpad = float("-inf")
 
     def eventFilter(self, obj: QObject | None, event: QEvent | None) -> bool:
         if isinstance(event, QMouseEvent):
@@ -754,8 +753,7 @@ class ViewportNavigator(QObject):
         button = event.button()
         mode: Literal["orbit", "pan"]
         if button == Qt.MouseButton.LeftButton:
-            pan_modifiers = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
-            mode = "pan" if event.modifiers() & pan_modifiers else "orbit"
+            mode = "pan" if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else "orbit"
         elif button in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
             mode = "pan"
         else:
@@ -792,46 +790,45 @@ class ViewportNavigator(QObject):
             return False
         self._drag = None
         self._viewport.unsetCursor()
+        point = self._point_under(event.position())
+        self._apply(lambda pose: recenter(pose, point))
+        return True
+
+    def _point_under(self, pos: QPointF) -> np.ndarray:
+        """What a double-click at ``pos`` should orbit around.
+
+        Geometry first, then the ground plane, which is not pickable - it is a
+        backdrop, not a part - and was the reason clicking the floor used to do
+        nothing. Failing both, the focal plane, so a double-click always lands.
+        """
         # VTK picks in device pixels with the origin at the bottom left.
         ratio = self._viewport.devicePixelRatioF()
-        pos = event.position()
-        point = self._scene.pick_point(
+        picked = self._scene.pick_point(
             pos.x() * ratio, (self._viewport.height() - pos.y() - 1) * ratio
         )
-        if point is not None:
-            self._apply(lambda pose: recenter(pose, point))
-        return True
+        if picked is not None:
+            return picked
+        pose = self._scene.camera_pose()
+        ndc_x, ndc_y, aspect = self._ndc(pos)
+        ground = ground_plane_point(pose, ndc_x, ndc_y, aspect, self._scene.GROUND_HEIGHT)
+        if ground is not None:
+            return ground
+        return focal_plane_point(pose, ndc_x, ndc_y, aspect)
 
     # -- wheel and gestures -------------------------------------------------
     def _wheel(self, event: QWheelEvent) -> bool:
+        """Scroll zooms toward the cursor, wheel or trackpad, Ctrl held or not."""
         angle, pixel = event.angleDelta(), event.pixelDelta()
-        modifiers = event.modifiers()
-        device = event.pointingDevice()
-        now = time.perf_counter()
-        action = classify_wheel(
-            angle.x(), angle.y(),
-            pixel_dx=pixel.x(), pixel_dy=pixel.y(),
-            scroll_phase=event.phase() != Qt.ScrollPhase.NoScrollPhase,
-            touchpad_device=device is not None and device.type() == QInputDevice.DeviceType.TouchPad,
-            recent_touchpad=now - self._last_touchpad < self.TOUCHPAD_LATCH_S,
-            ctrl=bool(modifiers & Qt.KeyboardModifier.ControlModifier),
-            shift=bool(modifiers & Qt.KeyboardModifier.ShiftModifier),
-            detect_touchpad=self.touchpad_gestures,
+        if angle.isNull() and pixel.isNull():
+            return False
+        self._zoom_by(
+            event.position(),
+            wheel_zoom_factor(angle.x(), angle.y(), pixel.x(), pixel.y()),
         )
-        if action == "zoom":
-            factor = wheel_zoom_factor(angle.x(), angle.y(), pixel.x(), pixel.y())
-            self._zoom_by(event.position(), factor)
-        elif action in ("orbit", "pan"):
-            self._last_touchpad = now
-            dx, dy = wheel_drag_pixels(angle.x(), angle.y(), pixel.x(), pixel.y())
-            if action == "orbit":
-                self._orbit_by(dx, dy)
-            else:
-                self._pan_by(dx, dy)
         return True
 
     def _native_gesture(self, event: QNativeGestureEvent) -> bool:
-        """macOS trackpad pinch; Windows and Linux send pinch as Ctrl + scroll instead."""
+        """macOS trackpad pinch; Windows and Linux send pinch as Ctrl + scroll, handled above."""
         if event.gestureType() != Qt.NativeGestureType.ZoomNativeGesture:
             return False
         self._zoom_by(event.position(), 1.0 + float(event.value()))
@@ -850,24 +847,31 @@ class ViewportNavigator(QObject):
         self._apply(lambda pose: pan(pose, dx, dy, height))
 
     def _zoom_by(self, position: QPointF, factor: float) -> None:
+        ndc_x, ndc_y, aspect = self._ndc(position)
+        self._apply(lambda pose: zoom_at(pose, factor, ndc_x, ndc_y, aspect))
+
+    def _ndc(self, position: QPointF) -> tuple[float, float, float]:
+        """A widget position as normalised device coordinates, plus the aspect."""
         width, height = max(self._viewport.width(), 1), max(self._viewport.height(), 1)
-        ndc_x = 2.0 * position.x() / width - 1.0
-        ndc_y = 1.0 - 2.0 * position.y() / height
-        self._apply(lambda pose: zoom_at(pose, factor, ndc_x, ndc_y, width / height))
+        return (
+            2.0 * position.x() / width - 1.0,
+            1.0 - 2.0 * position.y() / height,
+            width / height,
+        )
 
 
 CONTROLS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("Mouse", (
         ("Left-drag", "Orbit"),
-        ("Right-drag, middle-drag, Shift+left-drag", "Pan"),
+        ("Shift+left-drag, right-drag, middle-drag", "Pan"),
         ("Scroll", "Zoom toward the cursor"),
         ("Double-click", "Orbit around the point under the cursor"),
     )),
-    ("Touchpad", (
-        ("Two-finger drag", "Orbit"),
-        ("Shift + two-finger drag", "Pan"),
-        ("Pinch", "Zoom toward the cursor"),
+    ("Trackpad", (
         ("Click-drag", "Orbit"),
+        ("Shift + click-drag", "Pan"),
+        ("Two-finger scroll", "Zoom toward the cursor"),
+        ("Pinch", "Zoom toward the cursor"),
         ("Double-click", "Orbit around the point under the cursor"),
     )),
     ("Keyboard", (
@@ -1338,20 +1342,10 @@ class ViewerWindow(QMainWindow):
                     view_menu, f"{label} {glyph}15°",
                     self._rotator(axis, sign * 15.0),
                 )
-        view_menu.addSeparator()
-        # Off for free-spinning mice, whose fractional scroll looks like a
-        # touchpad's and would orbit instead of zoom.
-        self._touchpad_action = QAction("Two-finger scroll orbits (touchpad)", self)
-        self._touchpad_action.setCheckable(True)
-        self._touchpad_action.setChecked(
-            bool(self._settings.value("touchpad_gestures", True, type=bool))
-        )
-        self._touchpad_action.toggled.connect(self._on_touchpad_toggled)
-        view_menu.addAction(self._touchpad_action)
 
         help_menu = bar.addMenu("&Help")
         assert help_menu is not None
-        self._add_action(help_menu, "Mouse and touchpad controls", self._on_controls,
+        self._add_action(help_menu, "Mouse and trackpad controls", self._on_controls,
                          QKeySequence.StandardKey.HelpContents)
         self._add_action(help_menu, f"About {APP_NAME}", self._on_about)
 
@@ -1401,7 +1395,6 @@ class ViewerWindow(QMainWindow):
         self._scene = scene
         self._observe_interaction()
         self._navigator = ViewportNavigator(self._plotter, scene, self._request_render, self)
-        self._navigator.touchpad_gestures = self._touchpad_action.isChecked()
         self._plotter.installEventFilter(self._navigator)
 
         has_vectors = bool(self.data.geometry_cfg.get("vectors"))
@@ -1423,7 +1416,7 @@ class ViewerWindow(QMainWindow):
             f"{self.data.n_frames} samples  |  "
             f"t = {self.data.time[0]:.3f} to {self.data.time[-1]:.3f} s  |  "
             f"{len(self.data.point_names)} points  |  {self.data.data_path.name}  |  "
-            "F1: mouse and touchpad controls"
+            "F1: mouse and trackpad controls"
         )
 
     def _observe_interaction(self) -> None:
@@ -1461,7 +1454,7 @@ class ViewerWindow(QMainWindow):
             self._scene.capture_view()
 
     def _request_render(self) -> None:
-        """Coalesce a burst of mouse or touchpad events into one render."""
+        """Coalesce a burst of mouse or trackpad events into one render."""
         if self._render_pending:
             return
         self._render_pending = True
@@ -1470,13 +1463,6 @@ class ViewerWindow(QMainWindow):
     def _flush_render(self) -> None:
         self._render_pending = False
         self._plotter.render()
-
-    def _on_touchpad_toggled(self, enabled: bool) -> None:
-        self._settings.setValue("touchpad_gestures", enabled)
-        if self._navigator is not None:
-            self._navigator.touchpad_gestures = enabled
-        effect = "orbits (Shift pans)" if enabled else "zooms"
-        self._status.showMessage(f"Two-finger scroll {effect}", 5000)
 
     def _on_controls(self) -> None:
         QMessageBox.information(self, f"{APP_NAME} - Controls", _controls_html())

@@ -140,7 +140,7 @@ columns of KnC numbers and nothing to draw. `make visual-capture` (which
 MultiBody frames as well, then writes a matched `.npz` and template into
 `_1_VisualSim/results/`. The capture also keeps each tire's forces and records
 the run's metrics CSV. The window then shows LLTD under each axle, a Tires tab
-of friction circles, and a Metrics tab, and F1 lists the mouse and touchpad
+of friction circles, and a Metrics tab, and F1 lists the mouse and trackpad
 controls. A scene captured before that has no Tires or Metrics tab until it is
 re-captured. The templates in `_1_VisualSim/visual_templates/` are stale: they
 name `vis*` signals no pinned model emits. See
