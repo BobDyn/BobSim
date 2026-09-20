@@ -53,6 +53,10 @@ Thumbs.db
 # Project-generated outputs
 /temp/
 /results/
+_1_VisualSim/results/**
+!_1_VisualSim/results/
+!_1_VisualSim/results/.gitkeep
+
 _2_EnvelopeSim/results/**
 !_2_EnvelopeSim/results/
 !_2_EnvelopeSim/results/.gitkeep
