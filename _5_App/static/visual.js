@@ -507,6 +507,11 @@
       this.playing = true;
       this.simTime = 0;
       this.layers = { links: true, joints: true, tires: true, loads: true, tracks: true, arrows: true, grid: true };
+      // The car drives away from wherever the view was framed, so by default
+      // the camera rides with it. Following moves the whole pose by the car's
+      // own delta, which keeps whatever orbit, pan and zoom the user chose.
+      this.follow = true;
+      this._anchor = null;
       this.onTick = null;
       this._scratch = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
       this._lastWall = 0;
@@ -519,10 +524,19 @@
       this.resetView();
     }
 
+    /** The point the camera rides with: the config's attach point, else the centre. */
+    anchorAt(f) {
+      const scene = this.scene;
+      const attach = scene.header.camera && scene.header.camera.attach_to;
+      const index = attach ? scene.header.points.indexOf(attach) : -1;
+      return index >= 0 ? scene.point(index, f, [0, 0, 0]) : scene.centroid(f);
+    }
+
     /** Frame the car from three-quarters front, the way the rig shots read. */
     resetView() {
       const scene = this.scene;
       if (!scene) return;
+      this._anchor = null;
       const focal = scene.centroid(0);
       const reach = scene.extent(0) * 2.6 + 1;
       this.pose = {
@@ -623,15 +637,27 @@
       d[i + 9] = rgb[0]; d[i + 10] = rgb[1]; d[i + 11] = rgb[2]; d[i + 12] = alpha;
     }
 
-    buildGrid(extent) {
+    /**
+     * Ground lines around `center`, snapped to whole metres.
+     *
+     * The patch travels with the car rather than sitting at the world origin,
+     * which a following camera drives straight off. Snapping keeps each line
+     * on its own world coordinate, so the ground reads as fixed and the car
+     * as moving over it -- the opposite of what a patch pinned to the car
+     * would look like.
+     */
+    buildGrid(extent, center) {
       const [rgb, strong] = this.gridInk();
-      const reach = Math.ceil(extent * 2.5);
+      const reach = Math.ceil(extent * 2.5) + 6;
+      const cx = Math.round(center[0]);
+      const cy = Math.round(center[1]);
       for (let i = -reach; i <= reach; i++) {
-        const major = i % 5 === 0;
-        const c = major ? strong : rgb;
-        const w = major ? 0.012 : 0.006;
-        this.segment([i, -reach, 0], [i, reach, 0], c, w);
-        this.segment([-reach, i, 0], [reach, i, 0], c, w);
+        const x = cx + i;
+        const y = cy + i;
+        const majorX = x % 5 === 0;
+        const majorY = y % 5 === 0;
+        this.segment([x, cy - reach, 0], [x, cy + reach, 0], majorX ? strong : rgb, majorX ? 0.012 : 0.006);
+        this.segment([cx - reach, y, 0], [cx + reach, y, 0], majorY ? strong : rgb, majorY ? 0.012 : 0.006);
       }
     }
 
@@ -657,10 +683,21 @@
       const [pa, pb, va, vb] = this._scratch;
       const header = scene.header;
 
+      const anchor = this.anchorAt(f);
+      if (this.follow && this._anchor) {
+        const drift = sub(anchor, this._anchor);
+        this.pose = {
+          ...this.pose,
+          position: add(this.pose.position, drift),
+          focal: add(this.pose.focal, drift),
+        };
+      }
+      this._anchor = anchor;
+
       this.segments.begin();
       this.discs.begin();
 
-      if (this.layers.grid) this.buildGrid(scene.extent(0));
+      if (this.layers.grid) this.buildGrid(scene.extent(0), anchor);
 
       if (this.layers.links) {
         for (const group of header.links) {

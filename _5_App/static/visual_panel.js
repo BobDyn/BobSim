@@ -84,6 +84,22 @@
   // Controls
   // ==========================================================================
 
+  /** Follow rides with the car; the rest are scene layers. */
+  function buildFollowToggle() {
+    const menu = $("replay-layers");
+    const wrap = document.createElement("label");
+    wrap.className = "replay-layer";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = state.viewer.follow;
+    box.addEventListener("change", () => {
+      state.viewer.follow = box.checked;
+    });
+    wrap.appendChild(box);
+    wrap.appendChild(document.createTextNode("Follow the car"));
+    menu.appendChild(wrap);
+  }
+
   const LAYER_LABELS = {
     links: "Links",
     joints: "Joints",
@@ -120,6 +136,7 @@
       wrap.appendChild(document.createTextNode(label));
       menu.appendChild(wrap);
     }
+    buildFollowToggle();
   }
 
   /** Tabs only appear when the run actually carries their data. */
@@ -294,6 +311,9 @@
       return;
     }
     state.viewer.onTick = syncTimeline;
+    // Handy from the console when a scene looks wrong: window.BobVis.viewer
+    // holds the live camera, layers and clock.
+    window.BobVis.viewer = state.viewer;
 
     $("replay-run").addEventListener("change", (event) => loadRun(event.target.value));
     $("replay-play").addEventListener("click", () => {
