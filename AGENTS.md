@@ -63,8 +63,9 @@ above. Keep the set small; a stale doc is worse than no doc.
   Python workflows read `vehicle.yml`; Modelica entry points read the generated
   `.mo` record. Editing `vehicle.yml` alone and expecting a Modelica-backed
   study (StandardSim, FourPostSim) to reflect it is the single most common
-  mistake — regenerate via `_5_App/modelica_generator.py` first, or you'll be
-  debugging "wrong" physics that are actually a stale record.
+  mistake — run `make sync-vehicle` to see whether the records still match, and
+  `make sync-vehicle-write` to regenerate them, or you'll be debugging "wrong"
+  physics that are actually a stale record.
 - **Z-dependent outputs can be silently withheld, not wrong.** After a SHARK
   import, roll-centre height/migration and four-post jacking metrics may come
   back empty rather than incorrect if the vertical datum couldn't be verified

@@ -145,3 +145,26 @@ def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> Non
     assert vehicle["front"]["actuation"]["bellcrank"]["order"] == \
         vehicle["rear"]["actuation"]["bellcrank"]["order"]
     assert expected["front"] != expected["rear"]
+
+
+def test_modelica_generator_cli_reports_then_writes(tmp_path: Path, capsys) -> None:
+    """`python -m _5_App.modelica_generator` checks by default and writes on --write."""
+    from _5_App import modelica_generator
+
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    argv = [str(vehicle_path), "--root", str(tmp_path)]
+
+    assert modelica_generator.main(argv) == 1
+    checked = capsys.readouterr().out
+    assert "state:    missing" in checked
+    assert "Rerun with --write" in checked
+
+    assert modelica_generator.main([*argv, "--write"]) == 0
+    written = capsys.readouterr().out
+    assert "state:    written" in written
+    assert "stale" not in written
+
+    # A check straight after a write is clean, and writing does not report stale.
+    assert modelica_generator.main(argv) == 0
+    assert "state:    written" in capsys.readouterr().out

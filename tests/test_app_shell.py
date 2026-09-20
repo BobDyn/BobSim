@@ -16,7 +16,6 @@ from _3_StandardSim._modelica_runner import ModelicaRunner
 from _5_App import app
 from _5_App import desktop
 
-
 def clear_openmodelica_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     app.OPENMODELICA_VERIFY_CACHE.clear()
     for key in {
