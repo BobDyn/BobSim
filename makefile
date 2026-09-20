@@ -28,13 +28,17 @@ LAP_SCENARIO ?= both
 LAP_DOF ?=
 
 # DOE sweep size overrides. Empty means "use configs/vehicle_architecture.yaml".
+# DOE_SCOPE restricts the sweep to one half of the partition tagged in that
+# file (scope: setup / architecture); empty means the default, all.
 DOE_METHOD ?=
 DOE_SAMPLES ?=
 DOE_INTERVALS ?=
+DOE_SCOPE ?=
 DOE_ENV := \
 	$(if $(DOE_METHOD),BOBSIM_DOE_METHOD=$(DOE_METHOD),) \
 	$(if $(DOE_SAMPLES),BOBSIM_DOE_SAMPLES=$(DOE_SAMPLES),) \
-	$(if $(DOE_INTERVALS),BOBSIM_DOE_INTERVALS=$(DOE_INTERVALS),)
+	$(if $(DOE_INTERVALS),BOBSIM_DOE_INTERVALS=$(DOE_INTERVALS),) \
+	$(if $(DOE_SCOPE),BOBSIM_DOE_SCOPE=$(DOE_SCOPE),)
 
 FOUR_POST_METRICS := _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
 
@@ -130,7 +134,8 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	lap-eval lap-eval-qss lap-eval-transient lap-eval-all-dof \
 	lap-validation-visuals \
 	envelope-ggv envelope-ymd envelope-all \
-	opt-standard opt-envelope opt-refined opt-search opt-doe-smoke \
+	opt-standard opt-standard-setup opt-standard-architecture \
+	opt-envelope opt-refined opt-search opt-doe-smoke \
 	clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned clean-all
 
 ifeq ($(OS),Windows_NT)
@@ -213,6 +218,8 @@ help:
 		'' \
 		'  opt-doe-smoke             Check DOE plumbing without OpenModelica' \
 		'  opt-standard              Run StandardSens pre-screen sensitivities' \
+		'  opt-standard-setup        Pre-screen over setup parameters only' \
+		'  opt-standard-architecture Pre-screen over architecture parameters only' \
 		'  opt-envelope              Run EnvelopeSens sensitivities' \
 		'  opt-refined               Run StandardSens refined response surfaces' \
 		'  opt-search                Reverse lookup: target metrics -> vehicle parameters' \
@@ -225,6 +232,7 @@ help:
 		'    DOE_METHOD=lhs|interval_splice       Sampling method' \
 		'    DOE_SAMPLES=<n>                      LHS samples (plus baseline)' \
 		'    DOE_INTERVALS=<n>                    interval_splice intervals' \
+		'    DOE_SCOPE=all|setup|architecture     Swept parameter scope. Default: all' \
 		'    example: make opt-standard DOE_METHOD=lhs DOE_SAMPLES=3' \
 		'' \
 		'  regression-invariants     Check current regression artifacts for physical consistency' \
@@ -454,6 +462,18 @@ opt-doe-smoke:
 
 opt-standard: $(FOUR_POST_METRICS)
 	$(RUN) env $(DOE_ENV) PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.pre_screen_sensitivities
+
+# Scoped sweeps over the setup/architecture partition tagged in
+# configs/vehicle_architecture.yaml. Changing scope rewrites the generated
+# _doe_config.yaml, so the pipeline-hash guard will ask for 'make clean-opt'
+# before reusing a population compiled at a different scope. That is
+# deliberate: cleaning automatically here would discard the previous sweep's
+# results without asking.
+opt-standard-setup:
+	$(MAKE) opt-standard DOE_SCOPE=setup
+
+opt-standard-architecture:
+	$(MAKE) opt-standard DOE_SCOPE=architecture
 
 opt-envelope:
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m EnvelopeSens.sensitivities
