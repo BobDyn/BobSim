@@ -81,6 +81,15 @@ See [`_5_App/README.md`](../_5_App/README.md) for module details.
 1. **Python workflows** (`dyn_py`, envelopes, lap sim): read `vehicle.yml` directly
 2. **Modelica studies** (VehicleSim, FourPostSim): read generated records `BobLib/Records/VehicleDefn/*.mo`
 
-**Sync:** `_5_App/modelica_generator.py` writes `vehicle.yml` → Modelica records. After editing `vehicle.yml`, run `_5_App.app` save/generate or `make sync-vehicle` to refresh records.
+**Sync:** `_5_App/modelica_generator.py` writes `vehicle.yml` → Modelica records, from the app's
+save/generate or from the command line:
+
+```bash
+make sync-vehicle         # report which records are stale or missing; exits 1 if any are
+make sync-vehicle-write   # regenerate them from vehicle.yml
+```
+
+Checking is the default because the two paths are allowed to differ: the Modelica entry points read the
+checked-in records, so rewriting them is a deliberate act.
 
 **Debugging:** if study results disagree with `vehicle.yml`, suspect stale BobLib records first.
