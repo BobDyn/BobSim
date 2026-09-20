@@ -19,12 +19,32 @@ resolve ``../`` paths against their own directory and stay where they are.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 
 from _0_Utils.vehicle_io import repo_root
 
 ACTIVE_CONFIG_ROOT = Path("_5_App/user_data/config/active")
+
+# Set while the regression baseline is being regenerated, to pin every study to
+# its seed.
+#
+# The baseline is a property of the checked-in repo: it has to mean the same
+# thing on every machine, and `tests/test_simulation_regression.py` proves which
+# inputs produced it by digesting the seed configs. The runs behind it must
+# therefore read those same seeds. Without this, anyone who had ever opened a
+# config in the app would regenerate the baseline from their own active copy
+# while the recorded digest described the untouched seed -- and the provenance
+# gate, whose whole job is to catch exactly that, would pass.
+SEED_ONLY_ENV = "BOBSIM_SEED_CONFIGS"
+
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def seed_only() -> bool:
+    """True when the active copy must be ignored and the seed read directly."""
+    return os.environ.get(SEED_ONLY_ENV, "").strip().lower() in _TRUTHY
 
 
 def active_config_path(seed_path: str | Path, *, root: str | Path | None = None) -> Path:
@@ -34,11 +54,17 @@ def active_config_path(seed_path: str | Path, *, root: str | Path | None = None)
 
 
 def resolve(seed_path: str | Path, *, root: str | Path | None = None) -> Path:
-    """The config to actually read: the active copy when one exists, else the seed."""
+    """The config to actually read: the active copy when one exists, else the seed.
+
+    ``BOBSIM_SEED_CONFIGS`` forces the seed regardless, so a baseline run cannot
+    silently pick up a config that is not in the repo.
+    """
     base = Path(root) if root is not None else repo_root()
     seed = Path(seed_path)
     if not seed.is_absolute():
         seed = base / seed
+    if seed_only():
+        return seed
     active = active_config_path(seed_path, root=base)
     return active if active.is_file() else seed
 
