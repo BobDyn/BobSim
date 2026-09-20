@@ -19,10 +19,7 @@ from StandardSens.pipeline.compiler import (
     DEFAULT_MOS_TEMPLATE,
     DEFAULT_DOE_CONFIG,
     DEFAULT_ARCHITECTURE_CONFIG,
-    DEFAULT_REPORT_WRAPPER,
-    DEFAULT_STEADY_STATE_SIM,
-    DEFAULT_STEADY_STATE_CONFIG,
-    DEFAULT_MODELICA_RUNNER,
+    PIPELINE_TOOLING_INPUTS,
 )
 from StandardSens.pipeline.batch import run_variant, _csv_is_valid
 from StandardSens.pipeline._pipeline_hash import (
@@ -122,12 +119,7 @@ def build_all(
         compiler_config_path,
         boblib_path,
         architecture_config_path,
-        (
-            DEFAULT_REPORT_WRAPPER,
-            DEFAULT_STEADY_STATE_SIM,
-            DEFAULT_STEADY_STATE_CONFIG,
-            DEFAULT_MODELICA_RUNNER,
-        ),
+        PIPELINE_TOOLING_INPUTS,
     )
 
     variant_dirs = sorted(population_dir.glob("variant_????"))
@@ -194,12 +186,7 @@ def build_all(
         compiler_config_path,
         boblib_path,
         architecture_config_path,
-        (
-            DEFAULT_REPORT_WRAPPER,
-            DEFAULT_STEADY_STATE_SIM,
-            DEFAULT_STEADY_STATE_CONFIG,
-            DEFAULT_MODELICA_RUNNER,
-        ),
+        PIPELINE_TOOLING_INPUTS,
     )
 
 

@@ -21,26 +21,26 @@ if str(OPTSIM_DIR) not in sys.path:
 
 pytest.importorskip("scipy", reason="the OptSim pipeline package imports scipy")
 
+from StandardSens import solve_setup  # noqa: E402
 from StandardSens.pipeline import evaluator, overrides  # noqa: E402
 from StandardSens.pipeline.generator import resolve_targets  # noqa: E402
 
-# (name, runtime-changeable, compiled-in start value)
+# (name, runtime-changeable, compiled-in start value or None for "has none")
 INIT_SCALARS = [
     ("pVehicle.pRrStabar.barRate", True, 535.0),
     ("pVehicle.pFrAxleDW.springTable[2,2]", True, 26000.0),
     ("pVehicle.pFrAxleDW.damperTable[1,2]", True, -850.0),
     ("pVehicle.pFrAxleDW.damperTable[3,2]", True, 850.0),
     ("pVehicle.pAero.downforceTable[1,1]", True, 10.0),
-    ("pVehicle.pAero.downforceTable[1,2]", True, 20.0),
-    # A bound copy further down the hierarchy: same leaf name, not a root.
-    ("aeroModel.pAero.downforceTable[1,1]", False, 10.0),
     ("pVehicle.pFrozen.value", False, 1.0),
+    ("pVehicle.pNoStart.value", True, None),
 ]
 INIT_XML = (
     '<?xml version="1.0"?><fmiModelDescription><ModelVariables>'
     + "".join(
         f'<ScalarVariable name="{name}" isValueChangeable="{str(changeable).lower()}">'
-        f'<Real start="{start}"/></ScalarVariable>'
+        + ("<Real/>" if start is None else f'<Real start="{start}"/>')
+        + "</ScalarVariable>"
         for name, changeable, start in INIT_SCALARS
     )
     + "</ModelVariables></fmiModelDescription>"
@@ -64,6 +64,7 @@ VARIABLES = {
         "targets": [{"block": "pAero", "param": "downforceTable", "operation": "scale"}],
     },
     "frozen": {"path": "frozen", "block": "pFrozen", "param": "value"},
+    "no_start": {"path": "no_start", "block": "pNoStart", "param": "value"},
     "typo": {"path": "typo", "block": "pRrStabar", "param": "barRat"},
 }
 
@@ -98,23 +99,22 @@ def test_one_value_fans_out_to_every_target_with_its_scale(init_parameters) -> N
     }
 
 
-def test_scale_operation_multiplies_the_compiled_baseline(init_parameters) -> None:
-    """A scale acts on what is compiled in, and only on the changeable root."""
-    result = overrides.variant_overrides({"aero.load_scale": 1.5}, VARIABLES, {}, init_parameters)
-    assert result == {
-        "pVehicle.pAero.downforceTable[1,1]": 15.0,
-        "pVehicle.pAero.downforceTable[1,2]": 30.0,
-    }
-
-
-def test_a_name_the_model_does_not_have_is_an_error_not_a_silent_no_op(init_parameters) -> None:
-    with pytest.raises(ValueError, match="not in the compiled model"):
-        overrides.variant_overrides({"typo": 1.0}, VARIABLES, {}, init_parameters)
-
-
-def test_a_parameter_fixed_at_compile_time_is_refused(init_parameters) -> None:
-    with pytest.raises(ValueError, match="fixed at compile time"):
-        overrides.variant_overrides({"frozen": 2.0}, VARIABLES, {}, init_parameters)
+@pytest.mark.parametrize(
+    ("path", "reason"),
+    [
+        ("typo", "not in the compiled model"),
+        # The runner keys its lookup on the start value, so it would drop this
+        # one exactly as it drops a name that does not exist.
+        ("no_start", "not in the compiled model"),
+        ("frozen", "fixed at compile time"),
+        ("aero.load_scale", "scaled tables are compiled"),
+    ],
+)
+def test_an_override_that_would_silently_do_nothing_is_an_error(
+    init_parameters, path: str, reason: str
+) -> None:
+    with pytest.raises(ValueError, match=reason):
+        overrides.variant_overrides({path: 1.5}, VARIABLES, {}, init_parameters)
 
 
 def test_writing_a_variant_and_overriding_one_agree_on_the_value() -> None:
@@ -125,11 +125,32 @@ def test_writing_a_variant_and_overriding_one_agree_on_the_value() -> None:
     assert resolve_targets(legacy, -1.5) == [(legacy, 1.5)]
 
 
-def test_runtime_knobs_share_one_executable_and_compile_only_knobs_do_not() -> None:
-    baseline = {"rear.stabar": 535.0, "front.toe": 0.0}
-    runtime = {"rear.stabar"}
-    soft = evaluator.compile_key({"rear.stabar": 400.0, "front.toe": 0.0}, runtime, baseline)
-    stiff = evaluator.compile_key({"rear.stabar": 900.0, "front.toe": 0.0}, runtime, baseline)
-    toed = evaluator.compile_key({"rear.stabar": 900.0, "front.toe": 0.1}, runtime, baseline)
+def test_runtime_safe_knobs_share_one_executable_and_the_rest_do_not() -> None:
+    bar, toe = "rear.stabar.rate_n_m_per_rad", "front.wheel.toe_deg"
+    assert bar in overrides.RUNTIME_SAFE_PATHS
+    assert toe not in overrides.RUNTIME_SAFE_PATHS, "toe is baked into the wheel rotation matrix"
+    baseline = {bar: 535.0, toe: 0.0}
+    soft = evaluator.compile_key({bar: 400.0, toe: 0.0}, baseline)
+    stiff = evaluator.compile_key({bar: 900.0, toe: 0.0}, baseline)
+    toed = evaluator.compile_key({bar: 900.0, toe: 0.1}, baseline)
     assert soft == stiff == (), "bar changes must reuse the baseline executable"
-    assert toed == (("front.toe", 0.1),), "a toe change must get its own executable"
+    assert toed == ((toe, 0.1),), "a toe change must get its own executable"
+
+
+def test_command_line_targets_replace_the_configured_ones() -> None:
+    config = {"targets": {"roll_gradient_deg_per_g": 0.85, "understeer_gradient_deg_per_g": 0.31}}
+    assert solve_setup.select_targets(None, config) == config["targets"]
+    assert solve_setup.select_targets(
+        ["SteadyStateEval_roll_gradient_deg_per_g=0.8"], config
+    ) == {"roll_gradient_deg_per_g": 0.8}, "replaced, not merged, and the table prefix is accepted"
+    with pytest.raises(ValueError, match="No targets"):
+        solve_setup.select_targets(None, {})
+
+
+def test_every_target_needs_a_stated_tolerance() -> None:
+    config = {"tolerances": {"roll_gradient_deg_per_g": 0.02}}
+    assert solve_setup.select_tolerances({"roll_gradient_deg_per_g": 0.8}, config) == {
+        "roll_gradient_deg_per_g": 0.02
+    }
+    with pytest.raises(ValueError, match="No tolerance for \\['sideslip"):
+        solve_setup.select_tolerances({"sideslip_gradient_deg_per_g": 0.5}, config)

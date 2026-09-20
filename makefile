@@ -230,7 +230,7 @@ help:
 		'  Search variables:' \
 		'    METRICS="NAME=VALUE ..."             Required target metrics' \
 		'    SEARCH_TOP=<n>                       Nearest variants to return. Default: 1' \
-		'    TARGETS="NAME=VALUE ..."             opt-solve target metrics' \
+		'    TARGETS="NAME=VALUE ..."             opt-solve targets. Default: configs/solve_config.yaml' \
 		'    KNOBS="path ..."                     opt-solve knobs. Default: configs/solve_config.yaml' \
 		'' \
 		'  DOE sweep variables (default: configs/vehicle_architecture.yaml):' \
@@ -504,15 +504,7 @@ opt-search:
 # ratios for the same reason opt-standard does: a spring-rate knob has to move
 # the free length with it to hold ride height.
 opt-solve: $(FOUR_POST_METRICS)
-	@if [ -z '$(TARGETS)' ]; then \
-		printf '%s\n' \
-			'error: TARGETS is required.' \
-			'' \
-			'  make opt-solve TARGETS="understeer_gradient_deg_per_g=0.6 roll_gradient_deg_per_g=0.85"' \
-			'  make opt-solve TARGETS="..." KNOBS="front.stabar.rate_n_m_per_rad rear.stabar.rate_n_m_per_rad"'; \
-		exit 1; \
-	fi
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup --targets $(TARGETS) $(if $(KNOBS),--knobs $(KNOBS),)
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup $(if $(TARGETS),--targets $(TARGETS),) $(if $(KNOBS),--knobs $(KNOBS),)
 
 clean:
 	bash -lc 'find $(CLEAN_WORKSPACE) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; \
