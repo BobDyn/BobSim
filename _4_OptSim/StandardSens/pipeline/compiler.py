@@ -50,6 +50,16 @@ DEFAULT_STEADY_STATE_CONFIG = (
 )
 DEFAULT_MODELICA_RUNNER = REPO_ROOT / "_3_StandardSim/_modelica_runner.py"
 
+# Tooling whose behaviour is baked into every compiled-and-simulated result. Each
+# pipeline-hash check passes this same tuple; a consumer that hashed a different
+# list would keep caches its neighbour had already declared stale.
+PIPELINE_TOOLING_INPUTS = (
+    DEFAULT_REPORT_WRAPPER,
+    DEFAULT_STEADY_STATE_SIM,
+    DEFAULT_STEADY_STATE_CONFIG,
+    DEFAULT_MODELICA_RUNNER,
+)
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -202,7 +212,7 @@ def compile_variant(
     return True
 
 
-def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
+def find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
     """Return exe path if it exists.
 
     OMC names the executable after the full model path, not just the leaf class.
@@ -212,6 +222,9 @@ def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
         if candidate.exists():
             return candidate
     return None
+
+
+_find_exe = find_exe  # existing importers
 
 
 def _write_error(variant_dir: Path, standard: str, message: str) -> None:
@@ -288,12 +301,7 @@ def compile_all(
         compiler_config_path,
         boblib_path,
         architecture_config_path,
-        (
-            DEFAULT_REPORT_WRAPPER,
-            DEFAULT_STEADY_STATE_SIM,
-            DEFAULT_STEADY_STATE_CONFIG,
-            DEFAULT_MODELICA_RUNNER,
-        ),
+        PIPELINE_TOOLING_INPUTS,
     )
 
     variant_dirs = sorted(population_dir.glob("variant_????"))
@@ -357,12 +365,7 @@ def compile_all(
         compiler_config_path,
         boblib_path,
         architecture_config_path,
-        (
-            DEFAULT_REPORT_WRAPPER,
-            DEFAULT_STEADY_STATE_SIM,
-            DEFAULT_STEADY_STATE_CONFIG,
-            DEFAULT_MODELICA_RUNNER,
-        ),
+        PIPELINE_TOOLING_INPUTS,
     )
 
     return results

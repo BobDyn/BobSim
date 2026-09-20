@@ -86,7 +86,7 @@ def test_solves_two_targets_in_a_linear_number_of_simulations() -> None:
         assert abs(error) <= TOLERANCES[metric]
     # 2n + 1 star runs plus at most three verifications: linear in the knob count.
     assert len(evaluate.calls) <= 2 * len(KNOBS) + 1 + 3
-    assert result.n_simulated == len(evaluate.calls)
+    assert len(result.evaluations) == len(evaluate.calls)
 
 
 def test_even_response_is_not_mistaken_for_no_response() -> None:

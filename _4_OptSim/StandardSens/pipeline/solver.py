@@ -24,8 +24,6 @@ spends them where they buy the most:
 
 The regulariser picks the smallest change from the current car when there are
 fewer targets than knobs, so an under-determined question still has one answer.
-The star does not depend on the targets, so once it is cached a new set of
-targets costs only the verification runs.
 
 Nothing here touches the filesystem or a simulator. The evaluator is injected,
 which is what lets the numerics be tested without OpenModelica.
@@ -45,9 +43,15 @@ Variant = dict[str, float]
 Metrics = dict[str, float]
 Evaluator = Callable[[list[Variant]], list[Metrics]]
 
-# Enumerating every combination of available parts is exact on the surrogate and
-# instant at this size. Beyond it, fall back to snapping each knob independently.
-MAX_DISCRETE_COMBINATIONS = 256
+# Pull toward the current car, as a weight on (change / range)^2: small enough not
+# to fight a reachable target, large enough to pick one answer when there are
+# fewer targets than knobs.
+REGULARIZATION = 0.01
+# Star step as a fraction of each knob's half-range. Wide steps keep the signal
+# well above simulation noise; the quadratic term absorbs the curvature.
+STAR_STEP_FRACTION = 0.5
+MAX_VERIFICATIONS = 4
+# An even response has a mirror-image minimum, so one start can land on either.
 _RANDOM_STARTS = 8
 
 
@@ -110,13 +114,55 @@ class SolveResult:
     def errors(self) -> dict[str, float]:
         return {m: self.achieved[m] - t for m, t in self.targets.items()}
 
-    @property
-    def n_simulated(self) -> int:
-        return len(self.evaluations)
+
+@dataclass(frozen=True)
+class _Problem:
+    """The fixed half of the least-squares problem, as arrays built once."""
+
+    knobs: tuple[Knob, ...]
+    target: np.ndarray
+    tol: np.ndarray
+    regularization: float
+    lower: np.ndarray
+    upper: np.ndarray
+    baseline: np.ndarray
+    span: np.ndarray
+
+    @classmethod
+    def build(
+        cls, knobs: Sequence[Knob], target: np.ndarray, tol: np.ndarray, regularization: float
+    ) -> _Problem:
+        return cls(
+            knobs=tuple(knobs),
+            target=target,
+            tol=tol,
+            regularization=regularization,
+            lower=np.array([k.lower for k in knobs]),
+            upper=np.array([k.upper for k in knobs]),
+            baseline=np.array([k.baseline for k in knobs]),
+            span=np.array([k.span for k in knobs]),
+        )
+
+    def residuals(self, surrogate: Surrogate, x: np.ndarray) -> np.ndarray:
+        fit = (surrogate.predict(x) - self.target) / self.tol
+        pull = math.sqrt(self.regularization) * (x - self.baseline) / self.span
+        return np.concatenate([fit, pull])
+
+    def same_setup(self, a: np.ndarray, b: np.ndarray) -> bool:
+        """Compared as a fraction of each knob's range: a bounded solve reaches a
+        limit only to within float noise, which on a 20 kN/m spring rate dwarfs
+        any absolute tolerance that would suit a toe angle."""
+        return bool(np.all(np.abs(a - b) / self.span < 1e-6))
+
+    def at_bound(self, x: np.ndarray) -> list[str]:
+        on_limit = (np.abs(x - self.lower) < 1e-9 * self.span) | (
+            np.abs(x - self.upper) < 1e-9 * self.span
+        )
+        return [k.path for k, hit in zip(self.knobs, on_limit, strict=True) if hit]
 
 
 def star_design(
-    knobs: Sequence[Knob], step_fraction: float = 0.5
+    knobs: Sequence[Knob], step_fraction: float = STAR_STEP_FRACTION
 ) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     """Return (centre, steps, points): the centre then a -/+ pair per knob.
 
@@ -141,9 +187,7 @@ def star_design(
     return center, steps, points
 
 
-def fit_surrogate(
-    center: np.ndarray, steps: np.ndarray, responses: np.ndarray
-) -> Surrogate:
+def fit_surrogate(center: np.ndarray, steps: np.ndarray, responses: np.ndarray) -> Surrogate:
     """Fit slope and curvature per knob from star responses.
 
     `responses` has one row per star point, in `star_design` order, and one
@@ -168,50 +212,57 @@ def solve(
     tolerances: dict[str, float],
     evaluate: Evaluator,
     *,
-    regularization: float = 0.01,
-    step_fraction: float = 0.5,
-    max_verifications: int = 3,
+    regularization: float = REGULARIZATION,
+    step_fraction: float = STAR_STEP_FRACTION,
+    max_verifications: int = MAX_VERIFICATIONS,
     snap_discrete: bool = True,
-    seed: int = 0,
 ) -> SolveResult:
     """Find the knob settings that put the simulated metrics on target."""
-    knobs = list(knobs)
     if not knobs:
         raise ValueError("at least one knob is required")
     if not targets:
         raise ValueError("at least one target metric is required")
+    if max_verifications < 1:
+        raise ValueError("max_verifications must be at least 1: nothing is returned unsimulated")
     metric_names = list(targets)
-    target = np.array([targets[m] for m in metric_names])
     tol = np.array([tolerances[m] for m in metric_names])
     if np.any(tol <= 0.0):
         raise ValueError("tolerances must be positive")
-
+    problem = _Problem.build(
+        knobs, np.array([targets[m] for m in metric_names]), tol, regularization
+    )
     paths = [k.path for k in knobs]
     evaluations: list[Evaluation] = []
 
-    def run(kind: str, points: list[np.ndarray]) -> np.ndarray:
-        variants = [dict(zip(paths, (float(v) for v in point), strict=True)) for point in points]
-        results = evaluate(variants)
+    def simulate(kind: str, points: list[np.ndarray]) -> np.ndarray:
+        variants = [_labelled(paths, point) for point in points]
         rows = []
-        for variant, metrics in zip(variants, results, strict=True):
+        for variant, metrics in zip(variants, evaluate(variants), strict=True):
             evaluations.append(Evaluation(kind, variant, metrics))
             rows.append(_metric_row(metrics, metric_names, variant))
         return np.array(rows)
 
     center, steps, points = star_design(knobs, step_fraction)
-    surrogate = fit_surrogate(center, steps, run("star", points))
+    surrogate = fit_surrogate(center, steps, simulate("star", points))
 
-    rng = np.random.default_rng(seed)
-    ideal = _solve_on_surrogate(surrogate, knobs, target, tol, regularization, rng, {})
+    rng = np.random.default_rng(0)
+    ideal, _ = _solve_on_surrogate(problem, surrogate, rng, {})
 
-    best: tuple[float, np.ndarray, np.ndarray, np.ndarray] | None = None
+    # (worst miss in tolerances, setup, simulated metrics, what the surrogate expected).
+    # The first pass always simulates and always beats an infinite miss, so the
+    # placeholder never reaches the result.
+    best: tuple[float, np.ndarray, np.ndarray, np.ndarray] = (math.inf, ideal, ideal, ideal)
     seen: list[np.ndarray] = []
-    anchor = (center, surrogate.f0.copy())
-    status, message = "best_effort", ""
+    anchor = (center, surrogate.f0)
+    status = "best_effort"
+    message = (
+        f"Still outside tolerance after {max_verifications} verification run(s); "
+        "this is the closest setup that was simulated."
+    )
 
-    for _ in range(max(1, max_verifications)):
-        x = _propose(surrogate, knobs, target, tol, regularization, rng, snap_discrete)
-        if any(_same_setup(knobs, x, previous) for previous in seen):
+    for _ in range(max_verifications):
+        x = _propose(problem, surrogate, rng, snap_discrete)
+        if any(problem.same_setup(x, previous) for previous in seen):
             message = (
                 "The correction loop proposed a setup it had already simulated, so "
                 "this is the closest the available parts get."
@@ -220,66 +271,60 @@ def solve(
         seen.append(x)
 
         predicted = surrogate.predict(x)
-        actual = run("verify", [x])[0]
-        miss = float(np.max(np.abs((actual - target) / tol)))
-        if best is None or miss < best[0]:
+        actual = simulate("verify", [x])[0]
+        miss = float(np.max(np.abs((actual - problem.target) / problem.tol)))
+        if miss < best[0]:
             best = (miss, x, actual, predicted)
         if miss <= 1.0:
-            status = "converged"
+            status, message = "converged", ""
             break
-        _secant_update(surrogate, knobs, anchor, (x, actual))
+        _secant_update(surrogate, problem.span, anchor, (x, actual))
         anchor = (x, actual)
 
-    assert best is not None
-    miss, x, actual, predicted = best
-    at_bound = [
-        k.path for k, v in zip(knobs, x, strict=True)
-        if math.isclose(v, k.lower, abs_tol=1e-9 * k.span)
-        or math.isclose(v, k.upper, abs_tol=1e-9 * k.span)
-    ]
+    _, x, actual, predicted = best
+    at_bound = problem.at_bound(x)
     if status != "converged" and at_bound:
         status = "unreachable"
         message = (
             "These targets are outside what the knobs can reach within their "
-            f"ranges; limited by: {', '.join(at_bound)}. " + message
-        ).strip()
+            f"ranges; limited by: {', '.join(at_bound)}. {message}"
+        )
 
     return SolveResult(
         status=status,
-        knobs=knobs,
+        knobs=list(knobs),
         targets=dict(targets),
-        tolerances={m: float(t) for m, t in zip(metric_names, tol, strict=True)},
-        solution=dict(zip(paths, (float(v) for v in x), strict=True)),
-        achieved=dict(zip(metric_names, (float(v) for v in actual), strict=True)),
-        predicted=dict(zip(metric_names, (float(v) for v in predicted), strict=True)),
-        ideal=dict(zip(paths, (float(v) for v in ideal), strict=True)),
+        tolerances=_labelled(metric_names, problem.tol),
+        solution=_labelled(paths, x),
+        achieved=_labelled(metric_names, actual),
+        predicted=_labelled(metric_names, predicted),
+        ideal=_labelled(paths, ideal),
         at_bound=at_bound,
         evaluations=evaluations,
         message=message,
     )
 
 
+def _labelled(names: Sequence[str], values: np.ndarray) -> dict[str, float]:
+    return dict(zip(names, (float(v) for v in values), strict=True))
+
+
 def _secant_update(
     surrogate: Surrogate,
-    knobs: list[Knob],
+    span: np.ndarray,
     previous: tuple[np.ndarray, np.ndarray],
     current: tuple[np.ndarray, np.ndarray],
 ) -> None:
     """Fold one verification miss back into the surrogate (Broyden's update).
 
-    Shifting the whole surface by the miss would fix the newest point but leave
-    the slope wrong, so the next proposal overshoots the same way and the error
-    only halves per simulation. Instead the gradient is corrected so the model
-    reproduces the change actually observed between the last two simulated
-    points, and the surface is then pinned to the newest one. That is the
-    smallest change consistent with both.
-
-    Knobs are in different units (N/m against degrees), so "smallest" is
-    measured in range-normalised coordinates.
+    The gradient is corrected so the model reproduces the change observed
+    between the last two simulated points, then the surface is pinned to the
+    newest one. "Smallest correction" is measured in range-normalised
+    coordinates, because the knobs are in different units.
     """
     (x_prev, y_prev), (x_now, y_now) = previous, current
     step = x_now - x_prev
-    weight = 1.0 / np.array([k.span for k in knobs]) ** 2
+    weight = 1.0 / span**2
     scale = float(step @ (weight * step))
     if scale > 0.0:
         modelled = surrogate.predict(x_now) - surrogate.predict(x_prev)
@@ -305,94 +350,37 @@ def _metric_row(metrics: Metrics, names: list[str], variant: Variant) -> list[fl
 
 
 def _propose(
-    surrogate: Surrogate,
-    knobs: list[Knob],
-    target: np.ndarray,
-    tol: np.ndarray,
-    regularization: float,
-    rng: np.random.Generator,
-    snap_discrete: bool,
+    problem: _Problem, surrogate: Surrogate, rng: np.random.Generator, snap_discrete: bool
 ) -> np.ndarray:
-    """Best setup on the surrogate, restricted to parts that exist."""
-    discrete = [j for j, k in enumerate(knobs) if k.values] if snap_discrete else []
-    if not discrete:
-        return _solve_on_surrogate(surrogate, knobs, target, tol, regularization, rng, {})
+    """Best setup on the surrogate, restricted to parts that exist.
 
-    options = [knobs[j].values for j in discrete]
-    if math.prod(len(o) for o in options) > MAX_DISCRETE_COMBINATIONS:
-        free = _solve_on_surrogate(surrogate, knobs, target, tol, regularization, rng, {})
-        options = [(_nearest(o, float(free[j])),) for j, o in zip(discrete, options, strict=True)]
-
-    best_x, best_cost = None, math.inf
-    for combination in product(*options):
-        fixed = dict(zip(discrete, combination, strict=True))
-        x = _solve_on_surrogate(surrogate, knobs, target, tol, regularization, rng, fixed)
-        cost = _cost(surrogate, knobs, target, tol, regularization, x)
-        if cost < best_cost:
-            best_x, best_cost = x, cost
-    assert best_x is not None
-    return best_x
-
-
-def _same_setup(knobs: list[Knob], a: np.ndarray, b: np.ndarray) -> bool:
-    """Whether two proposals are the same setup for any practical purpose.
-
-    Compared as a fraction of each knob's range: a bounded solve lands on a limit
-    only to within float noise, and on a 20 kN/m spring rate that noise is far
-    larger than any absolute tolerance that would suit a toe angle.
+    Every combination of available part sizes is tried with the continuous knobs
+    re-solved around it. That is exact on the surrogate, and cheap: two bars of
+    four sizes each is sixteen millisecond solves.
     """
-    span = np.array([k.span for k in knobs])
-    return bool(np.all(np.abs(a - b) / span < 1e-6))
-
-
-def _nearest(values: tuple[float, ...], target: float) -> float:
-    return min(values, key=lambda value: abs(value - target))
-
-
-def _residuals(
-    surrogate: Surrogate,
-    knobs: list[Knob],
-    target: np.ndarray,
-    tol: np.ndarray,
-    regularization: float,
-    x: np.ndarray,
-) -> np.ndarray:
-    baseline = np.array([k.baseline for k in knobs])
-    span = np.array([k.span for k in knobs])
-    fit = (surrogate.predict(x) - target) / tol
-    pull = math.sqrt(regularization) * (x - baseline) / span
-    return np.concatenate([fit, pull])
-
-
-def _cost(surrogate, knobs, target, tol, regularization, x) -> float:
-    r = _residuals(surrogate, knobs, target, tol, regularization, x)
-    return float(r @ r)
+    discrete = [j for j, k in enumerate(problem.knobs) if k.values] if snap_discrete else []
+    candidates = (
+        _solve_on_surrogate(problem, surrogate, rng, dict(zip(discrete, combination, strict=True)))
+        for combination in product(*(problem.knobs[j].values for j in discrete))
+    )
+    return min(candidates, key=lambda candidate: candidate[1])[0]
 
 
 def _solve_on_surrogate(
+    problem: _Problem,
     surrogate: Surrogate,
-    knobs: list[Knob],
-    target: np.ndarray,
-    tol: np.ndarray,
-    regularization: float,
     rng: np.random.Generator,
     fixed: dict[int, float],
-) -> np.ndarray:
-    """Bounded least squares on the surrogate, with some knobs optionally pinned.
+) -> tuple[np.ndarray, float]:
+    """Bounded least squares on the surrogate with some knobs pinned; (x, cost).
 
-    An even response has a mirror-image minimum, so a single start can land on
-    either. Several starts are free at this cost, and the regulariser makes the
-    one nearer the baseline the cheaper of the two.
+    Several starts are free at this cost, and the regulariser makes the minimum
+    nearer the baseline the cheaper of a mirror-image pair.
     """
-    free = [j for j in range(len(knobs)) if j not in fixed]
-    template = np.array([k.baseline for k in knobs], dtype=float)
+    free = [j for j in range(len(problem.knobs)) if j not in fixed]
+    template = problem.baseline.copy()
     for j, value in fixed.items():
         template[j] = value
-    if not free:
-        return template
-
-    lower = np.array([knobs[j].lower for j in free])
-    upper = np.array([knobs[j].upper for j in free])
 
     def expand(z: np.ndarray) -> np.ndarray:
         x = template.copy()
@@ -400,21 +388,18 @@ def _solve_on_surrogate(
         return x
 
     def objective(z: np.ndarray) -> np.ndarray:
-        return _residuals(surrogate, knobs, target, tol, regularization, expand(z))
+        return problem.residuals(surrogate, expand(z))
 
+    if not free:
+        r = problem.residuals(surrogate, template)
+        return template, 0.5 * float(r @ r)
+
+    lower, upper = problem.lower[free], problem.upper[free]
     starts = [
         np.clip(surrogate.center[free], lower, upper),
         np.clip(template[free], lower, upper),
         *(lower + rng.random(len(free)) * (upper - lower) for _ in range(_RANDOM_STARTS)),
     ]
-    best_x, best_cost = template, math.inf
-    for start in starts:
-        fit = least_squares(
-            objective,
-            start,
-            bounds=(lower, upper),
-            method="trf",
-        )
-        if fit.cost < best_cost:
-            best_x, best_cost = expand(fit.x), float(fit.cost)
-    return best_x
+    fits = [least_squares(objective, start, bounds=(lower, upper), method="trf") for start in starts]
+    best = min(fits, key=lambda fit: fit.cost)
+    return expand(best.x), float(best.cost)

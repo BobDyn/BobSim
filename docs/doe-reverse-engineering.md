@@ -347,6 +347,7 @@ question is "what do I set on this car to hit these numbers", `opt-solve` asks i
 directly instead, as a small bounded least-squares problem:
 
 ```bash
+make opt-solve                                   # targets from configs/solve_config.yaml
 make opt-solve TARGETS="understeer_gradient_deg_per_g=0.30 roll_gradient_deg_per_g=0.80"
 make opt-solve TARGETS="..." KNOBS="front.stabar.rate_n_m_per_rad rear.stabar.rate_n_m_per_rad"
 ```
@@ -354,8 +355,7 @@ make opt-solve TARGETS="..." KNOBS="front.stabar.rate_n_m_per_rad rear.stabar.ra
 It simulates a star design (the centre plus one step each way per knob, `2n + 1`
 runs), fits a slope and a curvature per knob, solves the inverse on that
 surrogate in milliseconds, and then **simulates the setup it proposes**. A miss
-is folded back into the surrogate and the solve repeats, up to
-`max_verifications` times. Every number it reports comes from a simulation of the
+is folded back into the surrogate and the solve repeats, up to four times. Every number it reports comes from a simulation of the
 exact setup it returns, which is the step `opt-search` leaves to you.
 
 | | `opt-search` | `opt-solve` |
@@ -366,9 +366,11 @@ exact setup it returns, which is the step `opt-search` leaves to you.
 | Unreachable target | the closest edge variant, with a warning | `UNREACHABLE`, naming the knobs that ran out of range |
 | Fewer targets than knobs | many equally near variants | the smallest change from the current car |
 
-Settings live in `configs/solve_config.yaml`: the knobs, a tolerance per metric
-(which doubles as the scale that trades one target against another), and the
-solver's own test matrix. Metric names may be given with or without the
+Settings live in `configs/solve_config.yaml`: the targets, the knobs, a tolerance
+per metric (required for every targeted metric, since it doubles as the scale
+that trades one target against another), the solver's own test matrix, and the
+CPU count. `TARGETS=` replaces the configured targets outright rather than
+merging with them. Metric names may be given with or without the
 `SteadyStateEval_` prefix the aggregated table uses. Exit status is 0 only when
 every target is met within tolerance.
 
@@ -392,11 +394,13 @@ compile time and bakes into the executable. The toe parameter still reports
 `isValueChangeable="true"`, the override is accepted without a warning, every
 bound copy of the angle updates — and the matrix the wheel actually uses does
 not move. Every mass and CG value has the same problem through
-`combineMassRecords`. So `runtime_override:` in `solve_config.yaml` is an
+`combineMassRecords`. So `RUNTIME_SAFE_PATHS` in `pipeline/overrides.py` is an
 allow-list, anything absent from it is compiled, and each distinct toe or camber
-value (including each verification) costs its own executable. `opt-solve` prints
-how many compiles a run needs before it starts. To check a new candidate for the
-list, compile two variants that differ only in it and compare their
+value (including each verification) costs its own executable. `opt-solve` names
+any compile-only knobs before it starts. The list is a fact about the model, not
+a setting, which is why it lives in code beside the evidence for it and is tied
+to a BobLib pin. To check a new candidate, compile two variants that differ only
+in it and compare their
 `*_init.xml`: any non-changeable parameter whose `start` differs was evaluated
 at compile time, and will not follow an override.
 

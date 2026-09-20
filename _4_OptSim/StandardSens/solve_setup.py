@@ -1,6 +1,7 @@
 """Solve for the setup that hits target SteadyStateEval metrics.
 
-    make opt-solve TARGETS="understeer_gradient_deg_per_g=0.6 roll_gradient_deg_per_g=0.85"
+    make opt-solve                      # targets from configs/solve_config.yaml
+    make opt-solve TARGETS="understeer_gradient_deg_per_g=0.31 roll_gradient_deg_per_g=0.85"
 
 Where `opt-search` looks up the nearest vehicle in a finished sweep, this solves
 for the setup directly and simulates the answer before returning it. See
@@ -20,44 +21,70 @@ from typing import Any
 import yaml
 
 from _shared.console import elapsed
-from StandardSens.pipeline.evaluator import DEFAULT_SOLVE_DIR, SteadyStateEvaluator
-from StandardSens.pipeline.solver import Knob, SolveResult, solve, star_design
+from StandardSens.pipeline.evaluator import SOLVE_DIR, SteadyStateEvaluator
+from StandardSens.pipeline.orchestration import ARCHITECTURE_CONFIG
+from StandardSens.pipeline.overrides import RUNTIME_SAFE_PATHS
+from StandardSens.pipeline.solver import Knob, SolveResult, solve
+from StandardSens.pipeline.steady_state_eval_report import Isoline
 
-STANDARD_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG = STANDARD_DIR / "configs/solve_config.yaml"
-ARCHITECTURE_CONFIG = STANDARD_DIR / "configs/vehicle_architecture.yaml"
+CONFIG = Path(__file__).resolve().parent / "configs/solve_config.yaml"
+# The aggregated sweep table prefixes its columns; accept names copied from it.
 METRIC_PREFIX = "SteadyStateEval_"
-SETUP_SCOPE = "setup"
 
 
 def parse_targets(pairs: list[str]) -> dict[str, float]:
-    """Parse METRIC=VALUE pairs, accepting the aggregated table's prefixed names."""
     targets: dict[str, float] = {}
     for pair in pairs:
         name, sep, raw = pair.partition("=")
         if not sep:
             raise ValueError(f"Target must be METRIC=VALUE, got {pair!r}")
         try:
-            targets[name.strip().removeprefix(METRIC_PREFIX)] = float(raw)
+            targets[name.strip()] = float(raw)
         except ValueError:
             raise ValueError(f"Target value must be a number, got {raw!r}") from None
-    if not targets:
-        raise ValueError("At least one METRIC=VALUE target is required")
     return targets
 
 
-def setup_scoped_paths(architecture_config_path: Path = ARCHITECTURE_CONFIG) -> set[str]:
-    cfg = yaml.safe_load(architecture_config_path.read_text())
-    variables = (cfg.get("sweep") or {}).get("variables") or []
-    return {v["path"] for v in variables if v.get("scope") == SETUP_SCOPE}
+def select_targets(cli_pairs: list[str] | None, config: dict[str, Any]) -> dict[str, float]:
+    """Targets from the command line if given, otherwise from the config.
+
+    The command line replaces the configured targets rather than merging with
+    them: a leftover configured metric would silently become part of a question
+    the caller thought they had fully stated.
+    """
+    chosen = parse_targets(cli_pairs) if cli_pairs else (config.get("targets") or {})
+    if not chosen:
+        raise ValueError(
+            "No targets. Set `targets:` in solve_config.yaml or pass "
+            '--targets METRIC=VALUE (make opt-solve TARGETS="METRIC=VALUE ...").'
+        )
+    return {str(name).removeprefix(METRIC_PREFIX): float(value) for name, value in chosen.items()}
+
+
+def select_tolerances(targets: dict[str, float], config: dict[str, Any]) -> dict[str, float]:
+    listed = config.get("tolerances") or {}
+    missing = sorted(set(targets) - set(listed))
+    if missing:
+        raise ValueError(
+            f"No tolerance for {missing}. Add one under `tolerances:` in solve_config.yaml: "
+            "it is the acceptable error, and the scale that trades one target against another."
+        )
+    return {metric: float(listed[metric]) for metric in targets}
 
 
 def build_knobs(
     paths: list[str],
     variables: dict[str, dict[str, Any]],
     baseline: dict[str, float],
-    setup_paths: set[str],
 ) -> list[Knob]:
+    # Stricter than the sweep's scope rule on purpose: an untagged variable (the
+    # driver, the aero map) is swept in every scope, but it is a condition of the
+    # question here, never an answer. Misspelled tags never get this far: the
+    # evaluator's config generation validates every one.
+    architecture = yaml.safe_load(ARCHITECTURE_CONFIG.read_text())
+    setup_paths = {
+        v["path"] for v in architecture["sweep"]["variables"] if v.get("scope") == "setup"
+    }
     knobs = []
     for path in paths:
         if path not in variables:
@@ -83,118 +110,68 @@ def build_knobs(
     return knobs
 
 
-def resolve_tolerances(targets: dict[str, float], config: dict[str, Any]) -> dict[str, float]:
-    listed = config.get("tolerances") or {}
-    fraction = float(config.get("default_tolerance_fraction", 0.05))
-    tolerances = {}
-    for metric, target in targets.items():
-        if metric in listed:
-            tolerances[metric] = float(listed[metric])
-        elif target != 0.0:
-            tolerances[metric] = fraction * abs(target)
-        else:
-            raise ValueError(
-                f"No tolerance configured for {metric!r} and its target is 0, so a "
-                "fractional default is meaningless. Add it under `tolerances:`."
-            )
-    return tolerances
-
-
-def format_result(result: SolveResult, labels: dict[str, str]) -> str:
-    lines = [f"\nStatus: {result.status.upper()}  ({result.n_simulated} evaluations)"]
+def format_result(result: SolveResult) -> str:
+    lines = [f"\nStatus: {result.status.upper()}  ({len(result.evaluations)} evaluations)"]
     if result.message:
         lines.append(result.message)
 
     lines.append("\nSetup:")
-    width = max(len(labels.get(k.path, k.path)) for k in result.knobs)
+    width = max(len(k.path) for k in result.knobs)
     for knob in result.knobs:
-        value = result.solution[knob.path]
-        change = value - knob.baseline
-        note = "  <- at range limit" if knob.path in result.at_bound else ""
-        if knob.values and not any(abs(value - v) < 1e-9 for v in knob.values):
-            note += "  (no such part)"
-        ideal = result.ideal[knob.path]
-        ideal_note = f"   ideal {ideal:.6g}" if knob.values and abs(ideal - value) > 1e-9 else ""
+        value, ideal = result.solution[knob.path], result.ideal[knob.path]
+        note = f"   ideal {ideal:.6g}" if knob.values and abs(ideal - value) > 1e-9 else ""
+        if knob.path in result.at_bound:
+            note += "  <- at range limit"
         lines.append(
-            f"  {labels.get(knob.path, knob.path):<{width}}  {knob.baseline:>12.6g} -> "
-            f"{value:>12.6g}  ({change:+.4g}){ideal_note}{note}"
+            f"  {knob.path:<{width}}  {knob.baseline:>12.6g} -> {value:>12.6g}  "
+            f"({value - knob.baseline:+.4g}){note}"
         )
 
     lines.append("\nMetrics (simulated at the setup above):")
     width = max(len(m) for m in result.targets)
-    for metric, target in result.targets.items():
-        achieved = result.achieved[metric]
+    for metric, error in result.errors.items():
         tolerance = result.tolerances[metric]
-        verdict = "ok" if abs(achieved - target) <= tolerance else "MISS"
         lines.append(
-            f"  {metric:<{width}}  target {target:>9.4f}  achieved {achieved:>9.4f}  "
-            f"error {achieved - target:+.4f}  (tol {tolerance:g})  {verdict}"
+            f"  {metric:<{width}}  target {result.targets[metric]:>9.4f}  "
+            f"achieved {result.achieved[metric]:>9.4f}  error {error:+.4f}  "
+            f"(tol {tolerance:g})  {'ok' if abs(error) <= tolerance else 'MISS'}"
         )
     return "\n".join(lines)
 
 
 def run(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--targets", nargs="+", required=True, metavar="METRIC=VALUE")
-    parser.add_argument("--knobs", nargs="+", metavar="PATH", help="override the configured knobs")
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--solve-dir", type=Path, default=DEFAULT_SOLVE_DIR)
-    parser.add_argument("--plan", action="store_true", help="print the cost and exit")
+    parser.add_argument(
+        "--targets", nargs="+", metavar="METRIC=VALUE",
+        help="replace the targets configured in solve_config.yaml",
+    )
+    parser.add_argument("--knobs", nargs="+", metavar="PATH", help="replace the configured knobs")
     args = parser.parse_args(argv)
 
-    config = yaml.safe_load(args.config.read_text())
-    targets = parse_targets(args.targets)
-    tolerances = resolve_tolerances(targets, config)
-    evaluation = config.get("evaluation") or {}
+    config = yaml.safe_load(CONFIG.read_text())
+    targets = select_targets(args.targets, config)
+    tolerances = select_tolerances(targets, config)
+    matrix = config["test_matrix"]
 
     evaluator = SteadyStateEvaluator(
-        runtime_paths=set(config.get("runtime_override") or ()),
-        test_matrix=config["test_matrix"],
-        solve_dir=args.solve_dir,
-        case_workers=int(evaluation.get("case_workers", 4)),
-        parallel_evaluations=int(evaluation.get("parallel_evaluations", 3)),
-        timeout_s=int(evaluation.get("timeout_s", 1800)),
+        isoline=Isoline(matrix["velocity_mps"], tuple(matrix["target_ays"])),
+        cpus=config["cpus"],
     )
-    knobs = build_knobs(
-        list(args.knobs or config["knobs"]),
-        evaluator.variables,
-        evaluator.baseline,
-        setup_scoped_paths(),
-    )
-    labels = {k.path: str(evaluator.variables[k.path].get("label", k.path)) for k in knobs}
-    step_fraction = float(config.get("star_step_fraction", 0.5))
+    knobs = build_knobs(list(args.knobs or config["knobs"]), evaluator.variables, evaluator.baseline)
 
-    _, _, points = star_design(knobs, step_fraction)
-    star = [dict(zip((k.path for k in knobs), map(float, p), strict=True)) for p in points]
-    cost = evaluator.plan(star)
-    slow = [k.path for k in knobs if k.path not in evaluator.runtime_paths]
-    print(
-        f"Star design: {cost['evaluations']} evaluations for {len(knobs)} knob(s) — "
-        f"{cost['cached_evaluations']} cached, {cost['compiles_needed']} compile(s) needed."
-    )
-    if slow:
+    compiled = [k.path for k in knobs if k.path not in RUNTIME_SAFE_PATHS]
+    if compiled:
         print(
-            "  Compile-only knobs (each distinct value is its own executable, and so is "
-            f"each verification): {', '.join(slow)}"
+            "Compile-only knobs — every distinct value, verifications included, is its own "
+            f"~2.5 minute compile: {', '.join(compiled)}"
         )
-    if args.plan:
-        return 0
 
     started = time.time()
-    result = solve(
-        knobs,
-        targets,
-        tolerances,
-        evaluator,
-        regularization=float(config.get("regularization", 0.01)),
-        step_fraction=step_fraction,
-        max_verifications=int(config.get("max_verifications", 4)),
-        snap_discrete=bool(config.get("snap_discrete", True)),
-    )
-    print(format_result(result, labels))
+    result = solve(knobs, targets, tolerances, evaluator)
+    print(format_result(result))
     print(f"\nTotal {elapsed(started)}")
 
-    output = evaluator.solve_dir / "last_result.json"
+    output = SOLVE_DIR / "last_result.json"
     output.write_text(
         json.dumps(
             {

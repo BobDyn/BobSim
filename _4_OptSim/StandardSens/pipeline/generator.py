@@ -40,6 +40,11 @@ def _load_metrics_csv(path: Path | None = None) -> dict[str, float]:
             f"Searched:\n  {searched}"
         )
 
+    return read_metrics_csv(path)
+
+
+def read_metrics_csv(path: Path) -> dict[str, float]:
+    """Read a report's `metric,value` CSV; anything unparsable becomes NaN."""
     metrics: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):

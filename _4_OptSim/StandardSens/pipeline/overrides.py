@@ -1,14 +1,17 @@
-"""overrides.py — Evaluate a vehicle on an already-compiled executable.
+"""overrides.py — Apply a knob to an already-compiled executable, where that is safe.
 
-Compiling a variant costs about twice what simulating it does, and between
-variants the model's equations never change: only parameter values do. Every
-swept parameter lands on a runtime-changeable `pVehicle.*` root in the compiled
-model, so one executable can stand in for any variant by overriding those
-roots. This module owns the mapping from a DOE variable to its override names.
+A compile is most of a variant's wall time and the model's equations never
+change between variants, so re-pointing one executable with `-override` is far
+cheaper than recompiling. It is only correct for some parameters, and the
+incorrect cases fail without a sound. This module owns both halves of that: which
+variables are safe, and what their override names are.
 
-The runner drops any override it cannot find in the init XML without saying so.
-A misspelled name would therefore sweep nothing, silently — the same failure
-the DOE docs warn about for a wrong `path`. Every name is checked here first.
+Two silent failures are guarded here:
+
+- OpenModelica accepts an override of a parameter it has already evaluated into
+  the executable. `RUNTIME_SAFE_PATHS` is the allow-list that keeps those out.
+- The runner drops any override name it cannot find in the init XML. Every name
+  is checked against the same XML before it is handed over.
 """
 
 from __future__ import annotations
@@ -22,6 +25,31 @@ from StandardSens.pipeline.generator import resolve_targets
 
 # The vehicle record instance at the top of the standard experiment models.
 VEHICLE_RECORD = "pVehicle"
+
+# Variables the model reads at initialisation, so an override reaches the physics.
+# Proven against BobLib v0.2.0-4-g2777aa5 by recompiling a variant that differed
+# only in these six and reproducing its metrics by override on the baseline
+# executable (understeer gradient to 2.5e-5 deg/g, roll gradient to 5e-6).
+#
+# Do NOT add a variable because its parameter says `isValueChangeable="true"`.
+# Static toe and camber say so, and overriding them does nothing: they build the
+# wheel's `toHub.R_rel` rotation matrix, which OpenModelica evaluates at compile
+# time. The override is accepted, every bound copy of the angle updates, and the
+# matrix the wheel uses stays put. Every mass and CG value fails the same way
+# through `combineMassRecords`. To vet a candidate, compile two variants that
+# differ only in it and diff their `*_init.xml`: a non-changeable parameter whose
+# `start` differs was evaluated at compile time and will not follow an override.
+# Re-check this list when the BobLib pin moves.
+RUNTIME_SAFE_PATHS = frozenset(
+    {
+        "front.stabar.rate_n_m_per_rad",
+        "rear.stabar.rate_n_m_per_rad",
+        "front.actuation.spring_rate_n_per_m",
+        "rear.actuation.spring_rate_n_per_m",
+        "front.actuation.damper_rate_n_s_per_m",
+        "rear.actuation.damper_rate_n_s_per_m",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -53,9 +81,7 @@ def load_init_parameters(init_xml: Path) -> dict[str, InitParameter]:
 def find_init_xml(build_dir: Path, exec_name: str) -> Path:
     init_xml = build_dir / f"{exec_name}_init.xml"
     if not init_xml.exists():
-        raise FileNotFoundError(
-            f"No init XML at {init_xml}. The baseline executable has not been compiled."
-        )
+        raise FileNotFoundError(f"No init XML at {init_xml}; that executable was never compiled.")
     return init_xml
 
 
@@ -80,17 +106,14 @@ def variant_overrides(
     for path, value in variant.items():
         if path not in variables:
             raise KeyError(f"Path {path!r} is not a DOE variable")
-        spec = variables[path]
-        for target, target_value in resolve_targets(spec, float(value), context):
+        for target, target_value in resolve_targets(variables[path], float(value), context):
             name = override_name(target)
-            if "targets" in spec and target.get("operation") == "scale":
-                scaled = _scaled_elements(name, target_value, init_parameters)
-                if not scaled:
-                    problems.append(f"{name} (from {path}): no changeable elements to scale")
-                overrides.update(scaled)
-                continue
             parameter = init_parameters.get(name)
-            if parameter is None:
+            if target.get("operation") == "scale":
+                problems.append(f"{name} (from {path}): scaled tables are compiled, not overridden")
+            elif parameter is None or parameter.start is None:
+                # The runner looks names up by their start value, so a scalar
+                # without one is dropped there exactly as a missing name is.
                 problems.append(f"{name} (from {path}): not in the compiled model")
             elif not parameter.changeable:
                 problems.append(f"{name} (from {path}): fixed at compile time")
@@ -104,18 +127,3 @@ def variant_overrides(
             + "\n  ".join(problems)
         )
     return overrides
-
-
-def _scaled_elements(
-    name: str,
-    factor: float,
-    init_parameters: dict[str, InitParameter],
-) -> dict[str, float]:
-    """Scale every changeable element of a table from its compiled baseline."""
-    return {
-        element: parameter.start * factor
-        for element, parameter in init_parameters.items()
-        if (element == name or element.startswith(name + "["))
-        and parameter.changeable
-        and parameter.start is not None
-    }
