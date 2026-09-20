@@ -285,9 +285,13 @@ def _grip_payload(data: SimData, scalar_slot: Any) -> dict[str, Any]:
                 "tir": str(coeffs.get("tir", "")),
                 # NaN means "off the ground", which JSON cannot carry and the
                 # renderer must not draw as zero, so it travels as a flag.
-                "slot_x": scalar_slot(np.nan_to_num(longitudinal)),
-                "slot_y": scalar_slot(np.nan_to_num(lateral)),
-                "slot_usage": scalar_slot(np.nan_to_num(usage)),
+                # ``scalar_slot`` zeroes the NaN itself; calling nan_to_num
+                # here first would turn an infinity into 1.8e308, which is
+                # finite enough to slip past that guard and then overflows
+                # back to infinity in float32.
+                "slot_x": scalar_slot(longitudinal),
+                "slot_y": scalar_slot(lateral),
+                "slot_usage": scalar_slot(usage),
                 "slot_airborne": scalar_slot(np.isnan(usage).astype(float)),
             }
         )
@@ -300,7 +304,7 @@ def _grip_payload(data: SimData, scalar_slot: Any) -> dict[str, Any]:
         transfer = {
             "slot_front": scalar_slot(front),
             "slot_rear": scalar_slot(rear),
-            "slot_lltd": scalar_slot(np.nan_to_num(share)),
+            "slot_lltd": scalar_slot(share),
             "slot_lltd_undefined": scalar_slot(np.isnan(share).astype(float)),
         }
     return {"corners": corners, "transfer": transfer}

@@ -176,6 +176,17 @@
     return { ...pose, position: add(pose.position, shift), focal: add(pose.focal, shift) };
   }
 
+  /** Zoom factor for a scroll of `pixels`: up (negative) zooms in. */
+  function zoomFactorForPixels(pixels) {
+    return Math.pow(ZOOM_PER_NOTCH, -pixels / WHEEL_PX_PER_NOTCH);
+  }
+
+  /** A wheel event's scroll in pixels, whatever units it chose to report. */
+  function wheelPixels(event) {
+    const k = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1; // lines, pages
+    return [event.deltaX * k, event.deltaY * k];
+  }
+
   /**
    * Zoom factor for a wheel event, proportional to how far it scrolled.
    *
@@ -184,10 +195,7 @@
    * work out which it was — guessing is what made the trackpad feel broken.
    */
   function wheelZoomFactor(event) {
-    let pixels = event.deltaY;
-    if (event.deltaMode === 1) pixels *= 16; // lines
-    else if (event.deltaMode === 2) pixels *= 400; // pages
-    return Math.pow(ZOOM_PER_NOTCH, -pixels / WHEEL_PX_PER_NOTCH);
+    return zoomFactorForPixels(wheelPixels(event)[1]);
   }
 
   // ==========================================================================
@@ -548,47 +556,22 @@
     }
 
     // -- input --------------------------------------------------------------
+    //
+    // Every rule below keys off something the browser states outright: which
+    // button is down, how many pointers are down, whether a modifier is held,
+    // whether the wheel event carries sideways scroll or `ctrlKey`. None of it
+    // asks what kind of device sent the event, because Windows does not say.
+    // Guessing is exactly what made the trackpad feel broken the first time
+    // (#48, reverted in #50), and it is not coming back.
 
     bindInput() {
       const canvas = this.canvas;
-      let dragging = null;
-      let last = [0, 0];
-
-      canvas.addEventListener("pointerdown", (event) => {
-        if (!this.pose) return;
-        canvas.setPointerCapture(event.pointerId);
-        dragging = event.shiftKey || event.button === 1 ? "pan" : "orbit";
-        last = [event.clientX, event.clientY];
-      });
-
-      canvas.addEventListener("pointermove", (event) => {
-        if (!dragging || !this.pose) return;
-        const dx = event.clientX - last[0];
-        const dy = event.clientY - last[1];
-        last = [event.clientX, event.clientY];
-        if (dragging === "pan") {
-          this.pose = pan(this.pose, dx, dy, canvas.clientHeight);
-        } else {
-          this.pose = orbit(this.pose, -dx * ORBIT_DEG_PER_PX, -dy * ORBIT_DEG_PER_PX);
-        }
-      });
-
-      const endDrag = () => {
-        dragging = null;
-      };
-      canvas.addEventListener("pointerup", endDrag);
-      canvas.addEventListener("pointercancel", endDrag);
-
-      canvas.addEventListener(
-        "wheel",
-        (event) => {
-          if (!this.pose) return;
-          event.preventDefault();
-          const [ndcX, ndcY] = this.ndc(event);
-          this.pose = zoomAt(this.pose, wheelZoomFactor(event), ndcX, ndcY, this.aspect());
-        },
-        { passive: false }
-      );
+      // The page must never scroll, rubber-band or browser-zoom while a gesture
+      // belongs to the canvas; the wheel and gesture handlers below preventDefault
+      // for the same reason.
+      canvas.style.touchAction = "none";
+      this.bindPointers();
+      this.bindWheel();
 
       // Double-click recentres on whatever is under the cursor, including the
       // floor. The VTK version drew the ground unpickable, so clicking it --
@@ -601,13 +584,160 @@
       });
 
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+      // Safari sends these alongside a pinch; unhandled they zoom the page.
+      for (const name of ["gesturestart", "gesturechange", "gestureend"]) {
+        canvas.addEventListener(name, (event) => event.preventDefault());
+      }
+    }
+
+    /**
+     * Drags, from a mouse, a pen or fingers.
+     *
+     * One pointer orbits, or pans when shift or a non-primary button says so.
+     * Two pointers -- which only a touchscreen produces -- pan by how far their
+     * midpoint moved and zoom by how much their separation changed, both at
+     * once, which is what a pinch actually is.
+     */
+    bindPointers() {
+      const canvas = this.canvas;
+      const active = new Map(); // pointerId -> last client position
+      let mode = null; // "orbit" | "pan", while exactly one pointer is down
+      let pinch = null; // {distance, center}, while two are
+
+      const pair = () => Array.from(active.values());
+      const spread = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const middle = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
+
+      canvas.addEventListener("pointerdown", (event) => {
+        if (!this.pose) return;
+        // Touch and pen only: on a mouse this would cost the double-click that
+        // recentres the view.
+        if (event.pointerType !== "mouse") event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        active.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (active.size === 1) {
+          mode = event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "orbit";
+        } else if (active.size === 2) {
+          const [a, b] = pair();
+          pinch = { distance: spread(a, b), center: middle(a, b) };
+          mode = null; // a second finger ends whatever the first was doing
+        }
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        const previous = active.get(event.pointerId);
+        if (!previous || !this.pose) return;
+        const dx = event.clientX - previous.x;
+        const dy = event.clientY - previous.y;
+        previous.x = event.clientX;
+        previous.y = event.clientY;
+
+        if (active.size === 2 && pinch) {
+          const [a, b] = pair();
+          const distance = spread(a, b);
+          const center = middle(a, b);
+          this.pose = pan(
+            this.pose,
+            center[0] - pinch.center[0],
+            center[1] - pinch.center[1],
+            canvas.clientHeight
+          );
+          if (pinch.distance > 1 && distance > 1) {
+            const [ndcX, ndcY] = this.ndcAt(center[0], center[1]);
+            this.pose = zoomAt(this.pose, distance / pinch.distance, ndcX, ndcY, this.aspect());
+          }
+          pinch = { distance, center };
+          return;
+        }
+        if (active.size !== 1 || !mode) return;
+        if (mode === "pan") {
+          this.pose = pan(this.pose, dx, dy, canvas.clientHeight);
+        } else {
+          this.pose = orbit(this.pose, -dx * ORBIT_DEG_PER_PX, -dy * ORBIT_DEG_PER_PX);
+        }
+      });
+
+      const release = (event) => {
+        if (!active.delete(event.pointerId)) return;
+        pinch = null;
+        // A finger left over from a pinch does nothing until it is put down
+        // again; carrying on would snap the view to whichever one lifted.
+        mode = null;
+      };
+      canvas.addEventListener("pointerup", release);
+      canvas.addEventListener("pointercancel", release);
+      canvas.addEventListener("lostpointercapture", release);
+    }
+
+    /**
+     * Scroll, in the three shapes a browser reports it.
+     *
+     * `ctrlKey` is a trackpad pinch -- the browser sets it itself, and it is
+     * the one thing about a wheel event that is reliable -- so that zooms.
+     * Sideways scroll only comes from a two-finger drag or a tilt wheel, and
+     * both mean pan, so a wheel event carrying `deltaX` pans in both axes.
+     * Everything else zooms toward the cursor, as it always has.
+     *
+     * The choice is latched for the length of a gesture: a two-finger drag
+     * that runs momentarily straight up or down reports no `deltaX` for a few
+     * events, and flipping to zoom in the middle of a pan feels like a fault.
+     */
+    bindWheel() {
+      const canvas = this.canvas;
+      const PINCH_GAIN = 3; // a pinch reports far less scroll than it feels like
+      const GESTURE_IDLE_MS = 220; // quiet for this long and the next event is a new gesture
+      const GESTURE_OPEN_MS = 120; // early enough in one to still change its mind
+      let kind = null;
+      let startedAt = 0;
+      let lastAt = 0;
+
+      canvas.addEventListener(
+        "wheel",
+        (event) => {
+          if (!this.pose) return;
+          event.preventDefault(); // never scroll the page, never zoom the browser
+          const now = event.timeStamp || performance.now();
+          if (now - lastAt > GESTURE_IDLE_MS) {
+            kind = null;
+            startedAt = now;
+          }
+          lastAt = now;
+
+          const [dxPx, dyPx] = wheelPixels(event);
+          if (event.ctrlKey) {
+            kind = "zoom";
+            const [ndcX, ndcY] = this.ndc(event);
+            const factor = zoomFactorForPixels(dyPx * PINCH_GAIN);
+            this.pose = zoomAt(this.pose, factor, ndcX, ndcY, this.aspect());
+            return;
+          }
+
+          const sideways = dxPx !== 0 || event.shiftKey;
+          if (kind === null) kind = sideways ? "pan" : "zoom";
+          else if (kind === "zoom" && sideways && now - startedAt < GESTURE_OPEN_MS) kind = "pan";
+
+          if (kind === "pan") {
+            // Scrolling down moves the scene up, which is the same as dragging
+            // it up: a wheel delta is the negative of the equivalent drag.
+            this.pose = pan(this.pose, -dxPx, -dyPx, canvas.clientHeight);
+          } else {
+            const [ndcX, ndcY] = this.ndc(event);
+            this.pose = zoomAt(this.pose, wheelZoomFactor(event), ndcX, ndcY, this.aspect());
+          }
+        },
+        { passive: false }
+      );
     }
 
     ndc(event) {
+      return this.ndcAt(event.clientX, event.clientY);
+    }
+
+    ndcAt(clientX, clientY) {
       const rect = this.canvas.getBoundingClientRect();
       return [
-        ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
-        1 - ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2,
+        ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
+        1 - ((clientY - rect.top) / Math.max(rect.height, 1)) * 2,
       ];
     }
 

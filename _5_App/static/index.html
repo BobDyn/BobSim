@@ -256,6 +256,7 @@
               <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
               <button id="replay-play" class="ghost-button" type="button">Pause</button>
               <button id="replay-reset-view" class="ghost-button" type="button">Reset view</button>
+              <button id="replay-export" class="ghost-button" type="button">Export video</button>
               <button id="replay-help-btn" class="ghost-button" type="button">Controls</button>
             </div>
           </div>
@@ -268,10 +269,17 @@
                 <h4>Controls</h4>
                 <ul>
                   <li><b>Drag</b> orbits around the centre</li>
-                  <li><b>Shift + drag</b> pans</li>
+                  <li><b>Shift + drag</b>, or a middle or right drag, pans</li>
                   <li><b>Scroll</b> zooms toward the cursor</li>
+                  <li><b>Two-finger drag</b> pans as soon as it moves sideways;
+                    straight up and down zooms</li>
+                  <li><b>Shift + scroll</b> always pans</li>
+                  <li><b>Pinch</b> zooms toward the cursor</li>
+                  <li><b>Touchscreen:</b> one finger orbits, two pan and pinch</li>
                   <li><b>Double-click</b> re-centres on the ground under the cursor</li>
                   <li><b>Space</b> plays and pauses, <b>F1</b> toggles this list</li>
+                  <li><b>Export video</b> plays the run from the start, records it
+                    and downloads the file</li>
                 </ul>
               </div>
               <div class="replay-timeline">

@@ -19,6 +19,7 @@
     tab: "tires",
     started: false,
     metricFilter: "",
+    recording: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -295,6 +296,200 @@
     }
     $("replay-clock").textContent = (simTime - scene.time[0]).toFixed(2) + " s";
     renderFrictionCircles(scene.frameAt(simTime));
+    if (state.recording) watchExport(simTime);
+  }
+
+  // ==========================================================================
+  // Video export
+  //
+  // MediaRecorder over the canvas's own capture stream. The old desktop viewer
+  // rendered frames off-screen through VTK and fed them to imageio; this needs
+  // neither, which matters because the app has to work with nothing installed
+  // and nothing downloaded. MP4 where the browser can write it, WebM where it
+  // cannot -- and the file is named for whichever the recorder actually chose,
+  // so nobody is handed an .mp4 that is really WebM.
+  // ==========================================================================
+
+  const EXPORT_TYPES = [
+    "video/mp4;codecs=avc1",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  const EXPORT_FPS = 60; // only used when the browser cannot hand over frames on demand
+  const EXPORT_BITRATE = 12e6;
+  const EXPORT_SLACK_MS = 15000; // wall-clock grace on top of the run's own length
+
+  /** The best container this browser can write, or null if it can write none. */
+  function exportMimeType() {
+    if (typeof window.MediaRecorder !== "function") return null;
+    const supported = window.MediaRecorder.isTypeSupported;
+    if (typeof supported !== "function") return "video/webm"; // the historical default
+    for (const mime of EXPORT_TYPES) {
+      if (supported.call(window.MediaRecorder, mime)) return mime;
+    }
+    return null;
+  }
+
+  function canExport() {
+    return Boolean(exportMimeType()) && typeof HTMLCanvasElement.prototype.captureStream === "function";
+  }
+
+  function exportExtension(mime) {
+    return String(mime || "").includes("mp4") ? "mp4" : "webm";
+  }
+
+  function setExportLabel(text, title) {
+    const button = $("replay-export");
+    button.textContent = text;
+    if (title !== undefined) button.title = title;
+  }
+
+  /**
+   * A stream that carries every frame the viewer draws.
+   *
+   * At a frame rate of 0 the track hands over exactly the frames it is asked
+   * for, and the draw loop asks once per render -- so a slow frame is a slow
+   * frame in the file rather than a dropped one. Browsers without
+   * `requestFrame` get a timed capture instead.
+   */
+  function captureCanvas(canvas) {
+    let stream = canvas.captureStream(0);
+    let track = stream.getVideoTracks()[0];
+    if (track && typeof track.requestFrame === "function") return { stream, track };
+    stream.getTracks().forEach((t) => t.stop());
+    stream = canvas.captureStream(EXPORT_FPS);
+    return { stream, track: null };
+  }
+
+  function startExport() {
+    const scene = state.scene;
+    const viewer = state.viewer;
+    if (!scene || !viewer || state.recording) return;
+    const mime = exportMimeType();
+    if (!mime) return;
+
+    let capture;
+    let recorder;
+    try {
+      capture = captureCanvas(viewer.canvas);
+      recorder = new window.MediaRecorder(capture.stream, {
+        mimeType: mime,
+        videoBitsPerSecond: EXPORT_BITRATE,
+      });
+    } catch (error) {
+      if (capture) capture.stream.getTracks().forEach((t) => t.stop());
+      setStatus("Could not start recording: " + error.message);
+      return;
+    }
+
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event.data && event.data.size) chunks.push(event.data);
+    });
+    recorder.addEventListener("stop", () => finishExport());
+    recorder.addEventListener("error", (event) => {
+      setStatus("Recording stopped: " + ((event.error && event.error.message) || "unknown error"));
+      stopExport();
+    });
+
+    const start = scene.time[0];
+    const speed = scene.header.speed || 1;
+    state.recording = {
+      recorder,
+      chunks,
+      stream: capture.stream,
+      track: capture.track,
+      runId: state.runId,
+      lastTime: start,
+      wasPlaying: viewer.playing,
+      wasTime: viewer.simTime,
+      deadline: Date.now() + (scene.duration / Math.max(speed, 1e-3)) * 1000 + EXPORT_SLACK_MS,
+      stopping: false,
+    };
+
+    // Record the run whole: back to the top, and playing.
+    viewer.simTime = start;
+    viewer.playing = true;
+    $("replay-play").textContent = "Pause";
+    recorder.start();
+    setExportLabel("Recording 0%", "Click to stop and save what has been recorded");
+    setStatus("");
+  }
+
+  /** Called every drawn frame: report progress, and stop at the end of the run. */
+  function watchExport(simTime) {
+    const rec = state.recording;
+    const scene = state.scene;
+    if (!rec || !scene) return;
+    const start = scene.time[0];
+    const end = scene.time[scene.time.length - 1];
+    const span = Math.max(end - start, 1e-6);
+    // The viewer loops back to the top when it runs off the end; that wrap is
+    // how the recording knows the run is done.
+    const wrapped = simTime < rec.lastTime - 1e-9;
+    rec.lastTime = simTime;
+    const done = wrapped || simTime >= end - 1e-9 || Date.now() > rec.deadline;
+    const progress = done ? 1 : Math.min(Math.max((simTime - start) / span, 0), 1);
+    if (!rec.stopping) setExportLabel("Recording " + Math.round(progress * 100) + "%");
+    if (done) stopExport();
+  }
+
+  function stopExport() {
+    const rec = state.recording;
+    if (!rec || rec.stopping) return;
+    rec.stopping = true;
+    setExportLabel("Saving…", "");
+    try {
+      rec.recorder.stop();
+    } catch (error) {
+      finishExport();
+    }
+  }
+
+  function finishExport() {
+    const rec = state.recording;
+    if (!rec) return;
+    state.recording = null;
+    rec.stream.getTracks().forEach((track) => track.stop());
+
+    const mime = rec.recorder.mimeType || "video/webm";
+    if (rec.chunks.length) {
+      const blob = new Blob(rec.chunks, { type: mime });
+      const name = String(rec.runId || "replay").replace(/[^A-Za-z0-9._-]+/g, "-");
+      download(blob, name + "." + exportExtension(mime));
+      setStatus("");
+    } else {
+      setStatus("Recording produced no frames, so nothing was saved.");
+    }
+
+    const viewer = state.viewer;
+    if (viewer) {
+      viewer.simTime = rec.wasTime;
+      viewer.playing = rec.wasPlaying;
+      $("replay-play").textContent = viewer.playing ? "Pause" : "Play";
+    }
+    resetExportButton();
+  }
+
+  function download(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Firefox needs the URL to outlive the click by a moment.
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  function resetExportButton() {
+    const mime = exportMimeType();
+    setExportLabel(
+      "Export video",
+      "Play the run from the start and download it as ." + exportExtension(mime)
+    );
   }
 
   // ==========================================================================
@@ -321,6 +516,19 @@
       $("replay-play").textContent = state.viewer.playing ? "Pause" : "Play";
     });
     $("replay-reset-view").addEventListener("click", () => state.viewer.resetView());
+    const exportButton = $("replay-export");
+    if (canExport()) {
+      resetExportButton();
+      exportButton.addEventListener("click", () => {
+        if (state.recording) stopExport();
+        else startExport();
+      });
+    } else {
+      exportButton.disabled = true;
+      exportButton.title =
+        "This browser cannot record the view: it has no MediaRecorder video codec " +
+        "or no canvas capture. Chrome, Edge and Firefox can.";
+    }
     $("replay-time").addEventListener("input", (event) => {
       const scene = state.scene;
       if (!scene) return;
@@ -355,7 +563,13 @@
     loadRuns();
 
     const frame = (wall) => {
-      if (screenActive()) state.viewer.tick(wall);
+      if (screenActive()) {
+        state.viewer.tick(wall);
+        // Hand the freshly drawn frame to the recorder inside the same task
+        // that drew it, while the drawing buffer still holds it.
+        const rec = state.recording;
+        if (rec && rec.track && !rec.stopping) rec.track.requestFrame();
+      }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);

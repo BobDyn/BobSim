@@ -8,6 +8,14 @@ pitch and steer driven by closed-form functions, with double-wishbone corners
 articulated about their inboard pickups. It is not physics, and nothing here
 feeds a result. It exists so the viewer and the docs have
 something to run against on a machine with no OpenModelica build.
+
+The tire forces are a mock-up too, but a self-consistent one: the manoeuvre is
+grip-limited rather than kinematic, so the lateral acceleration saturates where
+the tires run out, and each corner's Fx/Fy/Fz/camber are derived from that same
+acceleration. The friction circles and the LLTD readout therefore show
+something a reviewer can check by hand, and they exercise the same
+``tire_forces`` config block a real capture writes (see
+:func:`_1_VisualSim.from_results._build_tire_forces`).
 """
 
 from __future__ import annotations
@@ -38,6 +46,34 @@ CORNERS = {
     "rl": (-1, +1),
     "rr": (-1, -1),
 }
+
+# -- what the tires can do --------------------------------------------------
+# Peak-friction terms only: the keys ``tire_state.friction_coefficients()``
+# returns for a parsed ``.tir``, which is all the friction circles need. The
+# numbers are a plausible road-going tire at this corner weight, not a
+# measurement - the rear is given a touch more grip so the car understeers at
+# the limit and the front circles fill first.
+TIRE_FRICTION: dict[str, dict[str, Any]] = {
+    "front": {
+        "tir": "demo_front",
+        "FNOMIN": 4000.0, "LFZO": 1.0, "LMUX": 1.0, "LMUY": 1.0,
+        "PDX1": 1.15, "PDX2": -0.08, "PDX3": 8.0,
+        "PDY1": -1.00, "PDY2": 0.08, "PDY3": 3.0,
+    },
+    "rear": {
+        "tir": "demo_rear",
+        "FNOMIN": 4000.0, "LFZO": 1.0, "LMUX": 1.0, "LMUY": 1.0,
+        "PDX1": 1.15, "PDX2": -0.08, "PDX3": 8.0,
+        "PDY1": -1.04, "PDY2": 0.08, "PDY3": 3.0,
+    },
+}
+
+AY_LIMIT = 9.0          # m/s², the lateral acceleration the tires above support
+CAMBER_STATIC = -1.2    # deg, both sides, top leaning toward the car
+CAMBER_GAIN = -14.0     # deg per metre of bump travel
+ROLL_RESISTANCE = 0.015  # of vertical load
+DRAG_AREA = 0.70        # Cd·A, m²
+AIR_DENSITY = 1.225     # kg/m³
 
 
 def _rot_z(angle: np.ndarray) -> np.ndarray:
@@ -91,9 +127,16 @@ class DemoVehicle:
         self.steer = np.deg2rad(95.0) * (step - release)          # handwheel
         road_steer = self.steer / 14.0                            # steering ratio
 
-        self.yaw_rate = self.speed / WHEELBASE * np.tan(road_steer)
+        # Ackermann says this much yaw rate, but the tires get a veto: past
+        # AY_LIMIT the front axle runs out of grip, the car understeers, and
+        # the lateral acceleration - with it the yaw rate - saturates. Without
+        # that veto 95 deg of handwheel at 22 m/s asks for 2.3 g, which no tire
+        # on this car could deliver and which would draw friction circles at
+        # twice their radius.
+        kinematic_yaw_rate = self.speed / WHEELBASE * np.tan(road_steer)
+        self.accel_y = AY_LIMIT * np.tanh(self.speed * kinematic_yaw_rate / AY_LIMIT)
+        self.yaw_rate = self.accel_y / self.speed
         self.yaw = np.concatenate(([0.0], np.cumsum(self.yaw_rate[1:] / rate)))
-        self.accel_y = self.speed * self.yaw_rate
 
         # Roll and pitch lag the lateral acceleration slightly.
         lag = np.exp(-np.arange(0, 12) / 4.0)
@@ -139,11 +182,38 @@ class DemoVehicle:
         }
 
         # Lateral tire force, biased toward the more heavily loaded outside
-        # tires. Illustrative only.
+        # tires. Illustrative only. Summed over an axle it is that axle's share
+        # of MASS*accel_y, so the four corners really do hold the car up.
         total = MASS * self.accel_y
         self.tire_force_y = {
             name: total * 0.5 * axle_share(fore)
                   * (1.0 - 0.35 * np.sign(side) * np.tanh(self.accel_y / 6.0))
+            for name, (fore, side) in CORNERS.items()
+        }
+
+        # Longitudinal force: the speed is held constant, so each tire drags
+        # its own rolling resistance and the driven rear axle makes that back
+        # plus aerodynamic drag. Small next to the lateral force - which is the
+        # honest answer for a constant-speed step steer - but it tilts the
+        # friction circles off the pure-lateral axis.
+        drag = 0.5 * AIR_DENSITY * DRAG_AREA * self.speed**2
+        rolling = {name: ROLL_RESISTANCE * load for name, load in self.tire_load.items()}
+        traction = drag + rolling["fl"] + rolling["fr"] + rolling["rl"] + rolling["rr"]
+        rear_load = self.tire_load["rl"] + self.tire_load["rr"]
+        self.tire_force_x: dict[str, np.ndarray] = {}
+        for name, (fore, side) in CORNERS.items():
+            force_x = -rolling[name]
+            if fore < 0:  # driven axle
+                force_x = force_x + traction * self.tire_load[name] / rear_load
+            self.tire_force_x[name] = force_x
+
+        # Inclination relative to the road, positive leaning out of the corner:
+        # body roll tilts every wheel outward and the suspension's camber gain
+        # claws it back on the loaded side, which is the point of camber gain.
+        self.camber = {
+            name: (-side * self.roll
+                   + np.deg2rad(CAMBER_STATIC)
+                   + np.deg2rad(CAMBER_GAIN) * self.travel[name])
             for name, (fore, side) in CORNERS.items()
         }
 
@@ -271,6 +341,7 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
     tires_cfg: dict[str, Any] = {}
     vectors_cfg: dict[str, Any] = {"tire_force": {}}
     loads_cfg: dict[str, Any] = {}
+    forces_cfg: dict[str, Any] = {}
 
     def emit_point(name: str, world: np.ndarray) -> None:
         cols = []
@@ -316,7 +387,7 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
         vectors_cfg["tire_force"][corner] = {
             "origin": f"{corner}_ContactPatch",
             "direction": force_cols,
-            "scale": 1.0 / 14000.0,
+            "scale": 1.0 / 6000.0,
             "color": "#f0932b",
             "shaft_radius": 0.018,
             "tip_radius": 0.045,
@@ -324,6 +395,23 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
 
         signals[f"load/{corner}_fz"] = car.tire_load[corner]
         loads_cfg[corner] = {"point": f"{corner}_ContactPatch", "signal": f"load/{corner}_fz"}
+
+        # Tire-frame forces for the friction circles. The names and the block's
+        # shape are the ones `from_results._build_tire_forces` writes, so a
+        # capture and the demo feed `_grip_payload` down one code path.
+        fore, _side = CORNERS[corner]
+        series = {
+            "fx": car.tire_force_x[corner],
+            "fy": car.tire_force_y[corner],
+            "fz": car.tire_load[corner],
+            "gamma": car.camber[corner],
+        }
+        entry: dict[str, str] = {"axle": "front" if fore > 0 else "rear"}
+        for key, values in series.items():
+            name = f"force/{corner}_{key}"
+            signals[name] = values
+            entry[key] = name
+        forces_cfg[corner] = entry
 
     links_cfg["chassis"] = [[a, b] for a, b in CHASSIS_LINKS]
 
@@ -366,6 +454,10 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
                 "legend": "Tracks: last 3 s of each tire, front blue, rear red",
             },
             "loads": {"radius": 0.28, "corners": loads_cfg},
+        },
+        "tire_forces": {
+            "corners": forces_cfg,
+            "friction": {axle: dict(coeffs) for axle, coeffs in TIRE_FRICTION.items()},
         },
         "render": {"show_signals": True, "speed": 1.0},
         "plots": [
