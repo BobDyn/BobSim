@@ -17,6 +17,7 @@ max_workers is configurable in compiler_config.yaml.
 
 from __future__ import annotations
 
+import platform
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -108,6 +109,14 @@ def _build_model_options(standard: str, standard_cfg: dict) -> dict:
 # build.mos generation
 # ---------------------------------------------------------------------------
 
+def _native_cflags() -> str:
+    """clang on AArch64 (e.g. Apple Silicon) rejects -march=native, an
+    x86-ism, and needs -mcpu=native instead."""
+    if platform.machine().lower() in ("aarch64", "arm64"):
+        return "-O3 -mcpu=native -mtune=native"
+    return "-O3 -march=native -mtune=native"
+
+
 def generate_mos(
         variant_mo: Path,
         build_dir: Path,
@@ -129,6 +138,7 @@ def generate_mos(
         intervals=options.get("intervals", 0),
         tolerance=options["tolerance"],
         solver=options["solver"],
+        cflags=_native_cflags(),
     )
 
 

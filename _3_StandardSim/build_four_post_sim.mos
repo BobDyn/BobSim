@@ -33,6 +33,13 @@ mkdir(buildDir);
 // Go to build directory.
 cd(buildDir);
 
+// The makefile sets BOBSIM_NATIVE_CFLAGS per the container's actual
+// architecture (clang on AArch64 -- e.g. Apple Silicon under Docker
+// Desktop -- rejects -march=native, an x86-ism, and needs -mcpu=native
+// instead). Falls back to the old default if run outside `make`.
+nativeCflags := OpenModelica.Scripting.getEnvironmentVar("BOBSIM_NATIVE_CFLAGS");
+nativeCflags := if nativeCflags == "" then "-O3 -march=native -mtune=native" else nativeCflags;
+
 // Build executable directly.
 res := buildModel(
   BobLib.Experiments.Standards.FourPostSim,
@@ -40,7 +47,7 @@ res := buildModel(
   stopTime = 118,
   tolerance = 1e-6,
   outputFormat = "csv",
-  cflags = "-O3 -march=native -mtune=native"
+  cflags = nativeCflags
 );
 
 // Print build result and errors/warnings.
