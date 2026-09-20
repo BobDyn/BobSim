@@ -119,12 +119,12 @@ USER_RESULTS_ROOT = app_storage.USER_RESULTS_ROOT
 USER_WORKSPACE_ROOT = app_storage.USER_WORKSPACE_ROOT
 SAVED_VEHICLE_ROOT = app_storage.SAVED_VEHICLE_ROOT
 SAVED_SIM_CONFIG_ROOT = app_storage.SAVED_SIM_CONFIG_ROOT
+ACTIVE_SIM_CONFIG_ROOT = app_storage.ACTIVE_SIM_CONFIG_ROOT
 SAVED_RESULTS_ROOT = app_storage.SAVED_RESULTS_ROOT
 VEHICLE_WORKSPACE_ROOT = app_storage.VEHICLE_WORKSPACE_ROOT
 BUILD_ARCHIVE_ROOT = app_storage.BUILD_ARCHIVE_ROOT
 MODELICA_BUILD_CACHE_ROOT = app_storage.MODELICA_BUILD_CACHE_ROOT
 SETTINGS_ROOT = app_storage.SETTINGS_ROOT
-DEFAULT_SIM_CONFIG_ROOT = app_storage.DEFAULT_SIM_CONFIG_ROOT
 OPENMODELICA_SETTINGS_PATH = app_storage.OPENMODELICA_SETTINGS_PATH
 RESULT_EXPLORER_ROOTS = (
     Path("_3_StandardSim/generated_results"),
@@ -305,7 +305,6 @@ def _sync_data_services_runtime() -> None:
     app_data_services.SAVED_SIM_CONFIG_ROOT = SAVED_SIM_CONFIG_ROOT
     app_data_services.SAVED_RESULTS_ROOT = SAVED_RESULTS_ROOT
     app_data_services.VEHICLE_WORKSPACE_ROOT = VEHICLE_WORKSPACE_ROOT
-    app_data_services.DEFAULT_SIM_CONFIG_ROOT = DEFAULT_SIM_CONFIG_ROOT
     app_data_services.RESULT_EXPLORER_ROOTS = RESULT_EXPLORER_ROOTS
     app_data_services.WORKFLOWS = tuple(WORKFLOWS)
     app_data_services.MODELICA_RUN_TARGETS_BY_ACTION = MODELICA_RUN_TARGETS_BY_ACTION
@@ -532,10 +531,6 @@ def _saved_sim_config_dir(*args: Any, **kwargs: Any) -> Any:
 
 def _default_sim_config_path(*args: Any, **kwargs: Any) -> Any:
     return _data_service_call("_default_sim_config_path", *args, **kwargs)
-
-
-def _ensure_default_sim_config(*args: Any, **kwargs: Any) -> Any:
-    return _data_service_call("_ensure_default_sim_config", *args, **kwargs)
 
 
 def _sim_config_summary(*args: Any, **kwargs: Any) -> Any:

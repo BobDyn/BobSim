@@ -39,7 +39,6 @@ APP_SEED_RUNTIME_PATHS = (
     "_3_StandardSim/TransientEval/transient_eval_config.yml",
     "_4_OptSim/EnvelopeSens/config.yml",
     "_4_OptSim/StandardSens/configs",
-    "_5_App/sim_configs/_defaults",
 )
 
 
@@ -80,7 +79,6 @@ APP_REFRESH_RUNTIME_PATHS = {
     "_3_StandardSim/TransientEval/transient_eval_config.yml",
     "_3_StandardSim/build_vehicle_sim.mos",
     "_3_StandardSim/build_four_post_sim.mos",
-    "_5_App/sim_configs/_defaults",
 }
 
 APP_MERGE_RUNTIME_DIRS = {

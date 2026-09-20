@@ -43,6 +43,13 @@ of going unnoticed.
 `execution`, `report`, and `plots` are excluded from the digest: worker counts and
 plot titles cannot move a simulated number.
 
+The digest names the *checked-in* study configs, so the refresh pins the runs to
+them: it sets `BOBSIM_SEED_CONFIGS=1`, which makes `_0_Utils/config_io.resolve`
+ignore a config you have edited in the app (`_5_App/user_data/config/active/`).
+A baseline has to mean the same thing on every machine, and one built from a
+config that is not in the repo would be compared against a digest of one that
+is. If you rerun the studies by hand to refresh a baseline, set it yourself.
+
 When that test fails you have two honest options. Either run
 `make regression-baseline` and refresh, or, if you have confirmed the change
 cannot affect physics (a BobLib bump touching only lint config, say), update

@@ -415,11 +415,14 @@ clean:
 
 # Everything the app generates lives under _5_App/user_data/. These are the leaf
 # directories _5_App/storage.py declares and the app recreates on launch, so
-# emptying them resets app state without touching the checked-in run configs in
-# _5_App/sim_configs/_defaults.
+# emptying them resets app state without touching the checked-in study configs.
+# Emptying config/active is what "reset every study config to the shipped one"
+# means now.
 APP_USER_DATA_DIRS := \
 	_5_App/user_data/cache/modelica \
+	_5_App/user_data/config/active \
 	_5_App/user_data/config/app \
+	_5_App/user_data/config/defaults \
 	_5_App/user_data/config/simulations \
 	_5_App/user_data/config/vehicles \
 	_5_App/user_data/results/saved \
