@@ -9,6 +9,7 @@ import matplotlib as mpl
 import numpy as np
 import yaml
 
+from _0_Utils import config_io
 from _0_Utils.reporting.report_engine import ReportEngine
 from _3_StandardSim._modelica_runner import ModelicaRunner
 from _3_StandardSim.RampSteerEval.ramp_steer_eval_sim import (
@@ -37,7 +38,8 @@ mpl.rcParams.update({
 })
 
 
-DEFAULT_CONFIG_PATH = Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml")
+SEED_CONFIG_PATH = Path("_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml")
+DEFAULT_CONFIG_PATH = config_io.resolve(SEED_CONFIG_PATH)
 
 DEG_PER_RAD = 180.0 / np.pi
 STANDARD_GRAVITY = 9.81

@@ -10,6 +10,7 @@ import numpy as np
 import yaml
 
 from _3_StandardSim._modelica_runner import ModelicaRunner
+from _0_Utils import config_io
 from _0_Utils.reporting.report_engine import ReportEngine
 
 try:
@@ -36,7 +37,8 @@ mpl.rcParams.update({
 })
 
 
-DEFAULT_CONFIG_PATH = Path("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml")
+SEED_CONFIG_PATH = Path("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml")
+DEFAULT_CONFIG_PATH = config_io.resolve(SEED_CONFIG_PATH)
 
 
 RampSteerEval_SIGNALS = [

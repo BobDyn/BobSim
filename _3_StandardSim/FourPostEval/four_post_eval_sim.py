@@ -9,11 +9,13 @@ from typing import Any, Sequence, cast
 import numpy as np
 import yaml
 
+from _0_Utils import config_io
 from _0_Utils.reporting.report_engine import ReportEngine
 from _3_StandardSim._modelica_runner import ModelicaRunner
 
 
-DEFAULT_CONFIG_PATH = Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml")
+SEED_CONFIG_PATH = Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml")
+DEFAULT_CONFIG_PATH = config_io.resolve(SEED_CONFIG_PATH)
 DEFAULT_BUILD_DIR = "_3_StandardSim/BuildBobLib/FourPostSim"
 DEFAULT_EXEC_NAME = "BobLib.Experiments.Standards.FourPostSim"
 DEFAULT_METRICS_CSV_PATH = "_3_StandardSim/results/four_post_eval_report_metrics.csv"

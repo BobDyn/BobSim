@@ -15,6 +15,8 @@ from typing import Any, Mapping, cast
 import pytest
 import yaml
 
+from _0_Utils import config_io
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE_PATH = "tests/regression_baselines/default_vehicle_standard.yml"
@@ -87,7 +89,15 @@ BOBLIB_SUBMODULE = "_0_Utils/external/BobLib"
 
 
 def simulation_inputs_digest() -> str:
-    """Digest of everything that can change a simulated metric."""
+    """Digest of everything that can change a simulated metric.
+
+    Deliberately the seed configs, never ``config_io.resolve``. This digest is
+    the claim "the baseline was produced by these inputs", and it is only worth
+    anything if it names inputs every machine can see. The other half of that
+    bargain is `_refresh_standard_artifacts`, which pins the runs to the same
+    seeds -- change one of these and you must change the other, or the gate goes
+    green while the baseline was built from a config that is not in the repo.
+    """
     payload: dict[str, Any] = {}
     for name, relative in sorted(STUDY_CONFIGS.items()):
         config = yaml.safe_load((ROOT / relative).read_text(encoding="utf-8")) or {}
@@ -224,6 +234,10 @@ def _refresh_standard_artifacts(baseline: Mapping[str, Any]) -> float:
     started_at = time.time()
     env = os.environ.copy()
     env.setdefault("PYTHON", sys.executable)
+    # The studies read the app's active config when one exists. A baseline built
+    # from a config that is not checked in would be compared against a digest of
+    # one that is, so pin every study to its seed for the refresh.
+    env[config_io.SEED_ONLY_ENV] = "1"
     command = ["make", "-B", *make_targets]
     completed = subprocess.run(
         command,
@@ -480,6 +494,57 @@ def test_baseline_provenance_matches_simulation_inputs() -> None:
         "confirmed the bump cannot affect physics, update provenance.boblib_commit "
         "deliberately in the same commit."
     )
+
+
+def test_baseline_refresh_pins_the_studies_to_the_checked_in_configs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refresh must run the seed configs, the ones the digest above names.
+
+    Studies read the app's active copy when the user has one, so without this the
+    baseline could be generated from a config that is not in the repo while
+    `test_baseline_provenance_matches_simulation_inputs` compared it against a
+    digest of the seed -- and passed.
+    """
+    captured: dict[str, Any] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> Any:
+        captured["command"] = command
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, stdout="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _refresh_standard_artifacts({"refresh": {"make_targets": ["standard-eval-ramp-steer"]}})
+
+    assert captured["command"] == ["make", "-B", "standard-eval-ramp-steer"]
+    assert captured["env"][config_io.SEED_ONLY_ENV] == "1"
+
+    # And that variable has to actually pin a study, not just be set.
+    monkeypatch.setenv(config_io.SEED_ONLY_ENV, captured["env"][config_io.SEED_ONLY_ENV])
+    for relative in STUDY_CONFIGS.values():
+        assert config_io.resolve(relative, root=ROOT) == ROOT / relative
+
+
+def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pin is the only thing that overrides an active copy."""
+    relative = "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    seed = tmp_path / relative
+    seed.parent.mkdir(parents=True)
+    seed.write_text("simulation: {solver: dassl}", encoding="utf-8")
+
+    active = config_io.ensure_active(relative, root=tmp_path)
+    active.write_text("simulation: {solver: ida}", encoding="utf-8")
+
+    monkeypatch.delenv(config_io.SEED_ONLY_ENV, raising=False)
+    assert config_io.resolve(relative, root=tmp_path) == active
+
+    monkeypatch.setenv(config_io.SEED_ONLY_ENV, "1")
+    assert config_io.resolve(relative, root=tmp_path) == seed
+    # The user's copy is pinned past, not destroyed.
+    assert active.read_text(encoding="utf-8") == "simulation: {solver: ida}"
 
 
 @pytest.mark.skipif(

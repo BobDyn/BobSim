@@ -16,9 +16,6 @@ from _3_StandardSim._modelica_runner import ModelicaRunner
 from _5_App import app
 from _5_App import desktop
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
 def clear_openmodelica_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     app.OPENMODELICA_VERIFY_CACHE.clear()
     for key in {
@@ -467,12 +464,11 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     runtime_root = tmp_path / "runtime"
     package_script = package_root / "_3_StandardSim/build_vehicle_sim.mos"
     package_vehicle = package_root / "vehicle.yml"
-    package_default = package_root / "_5_App/sim_configs/_defaults/four-post.yml"
     package_workflow = package_root / "_3_StandardSim/FourPostEval/four_post_eval_config.yml"
     package_tire = package_root / "_0_Utils/tire_templates/stock.tir"
     runtime_script = runtime_root / "_3_StandardSim/build_vehicle_sim.mos"
     runtime_vehicle = runtime_root / "vehicle.yml"
-    runtime_default = runtime_root / "_5_App/sim_configs/_defaults/four-post.yml"
+    runtime_active = runtime_root / app.ACTIVE_SIM_CONFIG_ROOT / "four_post_eval_config.yml"
     runtime_workflow = runtime_root / "_3_StandardSim/FourPostEval/four_post_eval_config.yml"
     runtime_tire = runtime_root / "_0_Utils/tire_templates/stock.tir"
     runtime_custom_tire = runtime_root / "_0_Utils/tire_templates/custom.tir"
@@ -483,8 +479,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
 
     package_script.parent.mkdir(parents=True)
     runtime_script.parent.mkdir(parents=True)
-    package_default.parent.mkdir(parents=True)
-    runtime_default.parent.mkdir(parents=True)
+    runtime_active.parent.mkdir(parents=True)
     package_workflow.parent.mkdir(parents=True)
     runtime_workflow.parent.mkdir(parents=True)
     package_tire.parent.mkdir(parents=True)
@@ -497,8 +492,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     runtime_script.write_text("// stale build script\n", encoding="utf-8")
     package_vehicle.write_text("vehicle:\n  name: Packaged\n", encoding="utf-8")
     runtime_vehicle.write_text("vehicle:\n  name: UserCar\n", encoding="utf-8")
-    package_default.write_text("report:\n  raw_time_series_appendix: false\n", encoding="utf-8")
-    runtime_default.write_text("report:\n  raw_time_series_appendix: true\n", encoding="utf-8")
+    runtime_active.write_text("procedure:\n  rollMagnitude: 0.05\n", encoding="utf-8")
     package_workflow.write_text("procedure:\n  rollMagnitude: 0.02181661564992912\n", encoding="utf-8")
     runtime_workflow.write_text("procedure:\n  rollMagnitude: 0.035\n", encoding="utf-8")
     package_tire.write_text("[MDI_HEADER]\nFILE = stock\n", encoding="utf-8")
@@ -514,7 +508,9 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
 
     assert runtime_script.read_text(encoding="utf-8") == "// new build script\n"
     assert runtime_vehicle.read_text(encoding="utf-8") == "vehicle:\n  name: UserCar\n"
-    assert runtime_default.read_text(encoding="utf-8") == "report:\n  raw_time_series_appendix: false\n"
+    # A config the user edited in the app is their state, not ours: an upgrade
+    # refreshes the shipped study config beside it and leaves this alone.
+    assert runtime_active.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.05\n"
     assert runtime_workflow.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.02181661564992912\n"
     assert runtime_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = stock\n"
     assert runtime_custom_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = custom\n"
@@ -1387,6 +1383,7 @@ def test_app_can_save_load_and_delete_sim_configs(tmp_path: Path, monkeypatch: p
                 label="Ramp",
                 path="ramp.yml",
                 workflow_id="ramp-steer",
+                relocatable=True,
                 fields=(app.FieldSpec(("simulation", "solver"), "Solver", kind="select", choices=("dassl", "ida")),),
             )
         },
@@ -1405,6 +1402,10 @@ def test_app_can_save_load_and_delete_sim_configs(tmp_path: Path, monkeypatch: p
     assert loaded["config"]["data"]["simulation"]["solver"] == "ida"
 
     app.load_sim_config_source("default:ramp-steer")
+    # ramp-steer is relocatable, so the edits went to the active copy and
+    # "Default" restores it from the untouched checked-in config.
+    active = tmp_path / app.ACTIVE_SIM_CONFIG_ROOT / "ramp.yml"
+    assert yaml.safe_load(active.read_text(encoding="utf-8"))["simulation"]["solver"] == "dassl"
     assert yaml.safe_load(config_path.read_text(encoding="utf-8"))["simulation"]["solver"] == "dassl"
 
     library = app.delete_saved_sim_config(source_id)
@@ -1680,42 +1681,88 @@ def test_app_raw_config_save_validates_yaml_root(tmp_path: Path, monkeypatch: py
         app.save_raw_config("demo", "scalar-only")
 
 
-def test_app_default_sim_configs_match_their_source_configs() -> None:
-    """Every _5_App/sim_configs/_defaults/<workflow>.yml mirrors its ConfigSpec path.
+def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Editing a relocatable study config writes user_data, never the tracked file."""
+    from _0_Utils import config_io
 
-    The defaults directory is a pristine snapshot of the shipped study configs:
-    picking "Default" in the app copies it back over the study config, so a
-    drifted snapshot silently reverts real settings. Compares committed blobs
-    rather than the working copies, because editing a config in the app
-    legitimately rewrites the study config on disk.
-    """
-    import subprocess
+    seed = tmp_path / "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    seed.parent.mkdir(parents=True)
+    seed_text = "simulation:\n  solver: dassl\nexecution:\n  max_workers: 8\n"
+    seed.write_text(seed_text, encoding="utf-8")
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        app,
+        "BASE_CONFIG_SPECS",
+        {
+            "ramp-steer": app.ConfigSpec(
+                id="ramp-steer",
+                group="standard",
+                label="Ramp",
+                path="_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
+                workflow_id="ramp-steer",
+                relocatable=True,
+                fields=(app.FieldSpec(("simulation", "solver"), "Solver", kind="select", choices=("dassl", "ida")),),
+            )
+        },
+    )
 
-    def committed(rel_path: str) -> str | None:
-        try:
-            return subprocess.run(
-                ["git", "show", f"HEAD:{rel_path}"],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except (OSError, subprocess.CalledProcessError):
-            return None
+    active = config_io.active_config_path(
+        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+    )
+    assert not active.exists()
 
-    checked = 0
-    for workflow_id, spec in app.BASE_CONFIG_SPECS.items():
-        default_rel = f"_5_App/sim_configs/_defaults/{workflow_id}.yml"
-        if not (REPO_ROOT / default_rel).is_file():
-            continue
-        default_blob = committed(default_rel)
-        source_blob = committed(spec.path)
-        if default_blob is None or source_blob is None:
-            pytest.skip("git is unavailable or a config is not committed")
-        assert yaml.safe_load(default_blob) == yaml.safe_load(source_blob), (
-            f"{default_rel} has drifted from {spec.path}. The defaults snapshot is a copy of "
-            f"the study config; re-copy it instead of hand-editing."
-        )
-        checked += 1
+    app.patch_config("ramp-steer", {'["simulation","solver"]': "ida"})
 
-    assert checked >= 9, f"expected every app default config to be checked, got {checked}"
+    assert seed.read_text(encoding="utf-8") == seed_text, "the tracked config must not be written"
+    assert yaml.safe_load(active.read_text(encoding="utf-8"))["simulation"]["solver"] == "ida"
+    assert app.config_payload("ramp-steer")["data"]["simulation"]["solver"] == "ida"
+
+    # The CLI reads the same file the app is running.
+    assert config_io.resolve(
+        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+    ) == active
+
+    # "Default" is the checked-in config itself, so restoring cannot drift.
+    library = app.sim_config_library_payload("ramp-steer")
+    assert library["sources"][0]["path"] == "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    app.load_sim_config_source("default:ramp-steer")
+    assert active.read_text(encoding="utf-8") == seed_text
+
+    # With no active copy the CLI falls back to the checked-in config.
+    active.unlink()
+    assert config_io.resolve(
+        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+    ) == seed
+
+
+def test_non_relocatable_configs_are_still_edited_in_place(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GGV/YMD/OptSim configs resolve "../" against their own directory, so they stay put."""
+    config = tmp_path / "_2_EnvelopeSim/GGV/ggv_config.yml"
+    config.parent.mkdir(parents=True)
+    config.write_text("vehicle_template: ../../vehicle.yml\nreport:\n  enabled: true\n", encoding="utf-8")
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        app,
+        "BASE_CONFIG_SPECS",
+        {
+            "ggv": app.ConfigSpec(
+                id="ggv",
+                group="envelope",
+                label="GGV",
+                path="_2_EnvelopeSim/GGV/ggv_config.yml",
+                workflow_id="ggv",
+                fields=(app.FieldSpec(("report", "enabled"), "Enabled", kind="boolean"),),
+            )
+        },
+    )
+
+    app.patch_config("ggv", {'["report","enabled"]': False})
+
+    assert yaml.safe_load(config.read_text(encoding="utf-8"))["report"]["enabled"] is False
+    assert not (tmp_path / app.ACTIVE_SIM_CONFIG_ROOT / "ggv_config.yml").exists()

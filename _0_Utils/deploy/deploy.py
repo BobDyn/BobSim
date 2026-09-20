@@ -51,7 +51,6 @@ DATA_PATHS = (
     "_4_OptSim/EnvelopeSens/config.yml",
     "_4_OptSim/StandardSens/configs",
     "_5_App/static",
-    "_5_App/sim_configs/_defaults",
 )
 
 MODULE_ROOTS = (
@@ -343,7 +342,6 @@ def clean_generated_artifacts(include_deploy: bool = True) -> None:
     ):
         _clean_directory_contents(ROOT / path)
 
-    _clean_directory_contents(ROOT / "_5_App" / "sim_configs", keep={".gitkeep", "_defaults"})
 
     for visual_artifact in (ROOT / "_1_VisualSim").glob("*_visual.npz"):
         _remove_path(visual_artifact)

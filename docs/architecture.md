@@ -47,6 +47,8 @@ GGV (grip-acceleration) and YMD (yaw moment diagram) generators. Quasi-steady ma
 
 ### `_3_StandardSim/` — standard vehicle studies
 - **Studies:** `RampSteerEval`, `SteadyStateEval`, `TransientEval`, `FourPostEval` (each has `*_config.yml`, `*_sim.py`)
+  - `*_config.yml` is the checked-in seed. The app edits a copy under `_5_App/user_data/config/active/`;
+    `_0_Utils/config_io.resolve` returns that copy when it exists, so the CLI and the app run the same config.
 - **Runners:** `_modelica_runner.py` (compiled Modelica), `_fmu_runner.py` (FMU export)
 - **Builders:** `.mos` scripts generate executables into `BuildBobLib/`
 - **Special:** `ReducedOrderEval` (correlates `dyn_py` vs. BobLib), `LapTimeEval` (envelope GGV + lap simulation)
