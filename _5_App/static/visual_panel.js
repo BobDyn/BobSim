@@ -34,8 +34,20 @@
   // ==========================================================================
 
   async function loadRuns() {
-    const response = await fetch("/api/visual/runs");
-    const body = await response.json();
+    let body;
+    try {
+      const response = await fetch("/api/visual/runs");
+      body = await response.json();
+    } catch (error) {
+      // Without this the rejection is unhandled and the tab just sits there
+      // blank, which looks identical to a run that is still loading.
+      setStatus("Could not reach the app to list captured runs: " + error.message);
+      return;
+    }
+    if (body && body.error) {
+      setStatus("Could not list captured runs: " + body.error);
+      return;
+    }
     state.runs = body.runs || [];
     const picker = $("replay-run");
     picker.innerHTML = "";
@@ -296,18 +308,26 @@
     }
     $("replay-clock").textContent = (simTime - scene.time[0]).toFixed(2) + " s";
     renderFrictionCircles(scene.frameAt(simTime));
-    if (state.recording) watchExport(simTime);
   }
 
   // ==========================================================================
   // Video export
   //
-  // MediaRecorder over the canvas's own capture stream. The old desktop viewer
-  // rendered frames off-screen through VTK and fed them to imageio; this needs
-  // neither, which matters because the app has to work with nothing installed
-  // and nothing downloaded. MP4 where the browser can write it, WebM where it
-  // cannot -- and the file is named for whichever the recorder actually chose,
-  // so nobody is handed an .mp4 that is really WebM.
+  // MediaRecorder writes the file; everything below feeds it frames. The old
+  // desktop viewer rendered the run off-screen through VTK and handed the
+  // frames to imageio, and that is the shape kept here: the export draws the
+  // run itself, frame by frame, rather than filming what is on screen.
+  //
+  // So none of it hangs off the draw loop or the clock. A hidden tab gets no
+  // requestAnimationFrame at all and has its timers clamped to about a second,
+  // which stalls anything paced by either the moment someone switches tab.
+  // Frames are stepped by a counter, pumped through a MessageChannel -- which
+  // the browser does not throttle -- and stamped with their own timestamps, so
+  // a sixty-second run takes seconds to export and still plays for sixty.
+  //
+  // MP4 where the browser can write it, WebM where it cannot, and the file is
+  // named for whichever the recorder actually chose: nobody is handed an .mp4
+  // that is really WebM.
   // ==========================================================================
 
   const EXPORT_TYPES = [
@@ -316,9 +336,10 @@
     "video/webm;codecs=vp8",
     "video/webm",
   ];
-  const EXPORT_FPS = 60; // only used when the browser cannot hand over frames on demand
+  const EXPORT_FPS = 30;
+  /** How long to wait for a stopped recorder's final chunk before giving up. */
+  const FLUSH_GRACE_MS = 5000;
   const EXPORT_BITRATE = 12e6;
-  const EXPORT_SLACK_MS = 15000; // wall-clock grace on top of the run's own length
 
   /** The best container this browser can write, or null if it can write none. */
   function exportMimeType() {
@@ -331,8 +352,17 @@
     return null;
   }
 
+  function canGenerateFrames() {
+    return (
+      typeof window.VideoFrame === "function" &&
+      (typeof window.MediaStreamTrackGenerator === "function" ||
+        typeof window.VideoTrackGenerator === "function")
+    );
+  }
+
   function canExport() {
-    return Boolean(exportMimeType()) && typeof HTMLCanvasElement.prototype.captureStream === "function";
+    if (!exportMimeType()) return false;
+    return canGenerateFrames() || typeof HTMLCanvasElement.prototype.captureStream === "function";
   }
 
   function exportExtension(mime) {
@@ -346,20 +376,105 @@
   }
 
   /**
-   * A stream that carries every frame the viewer draws.
+   * Hand control back to the browser and take it straight back again.
    *
-   * At a frame rate of 0 the track hands over exactly the frames it is asked
-   * for, and the draw loop asks once per render -- so a slow frame is a slow
-   * frame in the file rather than a dropped one. Browsers without
-   * `requestFrame` get a timed capture instead.
+   * A hidden tab clamps `setTimeout` to roughly a second and stops
+   * `requestAnimationFrame` outright. A MessageChannel message is delivered at
+   * full speed either way, which is the whole reason an export keeps running
+   * with the tab in the background.
    */
-  function captureCanvas(canvas) {
+  function nextTurn() {
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => {
+        channel.port1.close();
+        resolve();
+      };
+      channel.port2.postMessage(0);
+    });
+  }
+
+  /** Idle until `deadline`, for the sink that can only be filmed in real time. */
+  async function waitUntil(deadline) {
+    while (performance.now() < deadline) await nextTurn();
+  }
+
+  /** A track that VideoFrames can be written into, or null on older browsers. */
+  function openGenerator() {
+    if (typeof window.VideoFrame !== "function") return null;
+    if (typeof window.MediaStreamTrackGenerator === "function") {
+      const generator = new window.MediaStreamTrackGenerator({ kind: "video" });
+      return { track: generator, writable: generator.writable };
+    }
+    if (typeof window.VideoTrackGenerator === "function") {
+      const generator = new window.VideoTrackGenerator();
+      return { track: generator.track, writable: generator.writable };
+    }
+    return null;
+  }
+
+  /**
+   * Somewhere to put a drawn frame, and the stream MediaRecorder listens to.
+   *
+   * The WebCodecs sink stamps each frame with the time it belongs at, so
+   * frames can go in as fast as the encoder will take them and the file still
+   * comes out the right length. The capture-stream fallback has no such say:
+   * the recorder times those frames by when they arrive, so that one has to be
+   * played out in real time.
+   *
+   * Both expose the same two calls. `ready` waits for the encoder to want
+   * another frame and is awaited *before* anything is drawn -- grabbing the
+   * canvas has to happen in the same task as the draw, because a WebGL
+   * drawing buffer does not survive the end of it.
+   */
+  function openFrameSink(canvas) {
+    const generator = openGenerator();
+    if (generator) {
+      const writer = generator.writable.getWriter();
+      return {
+        stream: new MediaStream([generator.track]),
+        realTime: false,
+        ready: () => writer.ready,
+        write(microseconds) {
+          const frame = new window.VideoFrame(canvas, { timestamp: microseconds });
+          return writer.write(frame).finally(() => {
+            try {
+              frame.close();
+            } catch (error) {
+              /* the writer already took it */
+            }
+          });
+        },
+        async close() {
+          try {
+            await writer.close();
+          } catch (error) {
+            /* already ended */
+          }
+        },
+      };
+    }
+
     let stream = canvas.captureStream(0);
     let track = stream.getVideoTracks()[0];
-    if (track && typeof track.requestFrame === "function") return { stream, track };
-    stream.getTracks().forEach((t) => t.stop());
-    stream = canvas.captureStream(EXPORT_FPS);
-    return { stream, track: null };
+    if (!track || typeof track.requestFrame !== "function") {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = canvas.captureStream(EXPORT_FPS); // the browser samples it itself
+      track = null;
+    }
+    return {
+      stream,
+      realTime: true,
+      ready: () => Promise.resolve(),
+      write() {
+        if (track) track.requestFrame();
+        return Promise.resolve();
+      },
+      close() {
+        stream.getTracks().forEach((t) => t.stop());
+        return Promise.resolve();
+      },
+    };
   }
 
   function startExport() {
@@ -369,16 +484,16 @@
     const mime = exportMimeType();
     if (!mime) return;
 
-    let capture;
+    let sink;
     let recorder;
     try {
-      capture = captureCanvas(viewer.canvas);
-      recorder = new window.MediaRecorder(capture.stream, {
+      sink = openFrameSink(viewer.canvas);
+      recorder = new window.MediaRecorder(sink.stream, {
         mimeType: mime,
         videoBitsPerSecond: EXPORT_BITRATE,
       });
     } catch (error) {
-      if (capture) capture.stream.getTracks().forEach((t) => t.stop());
+      if (sink) sink.close();
       setStatus("Could not start recording: " + error.message);
       return;
     }
@@ -387,71 +502,111 @@
     recorder.addEventListener("dataavailable", (event) => {
       if (event.data && event.data.size) chunks.push(event.data);
     });
-    recorder.addEventListener("stop", () => finishExport());
+    // Resolves once the recorder has emitted its final dataavailable.
+    let flushed;
+    const flushedReady = new Promise((resolve) => {
+      flushed = resolve;
+    });
+    recorder.addEventListener("stop", () => {
+      flushed();
+      finishExport();
+    });
     recorder.addEventListener("error", (event) => {
       setStatus("Recording stopped: " + ((event.error && event.error.message) || "unknown error"));
       stopExport();
     });
 
-    const start = scene.time[0];
-    const speed = scene.header.speed || 1;
-    state.recording = {
+    const rec = {
       recorder,
       chunks,
-      stream: capture.stream,
-      track: capture.track,
+      flushedReady,
+      sink,
       runId: state.runId,
-      lastTime: start,
       wasPlaying: viewer.playing,
       wasTime: viewer.simTime,
-      deadline: Date.now() + (scene.duration / Math.max(speed, 1e-3)) * 1000 + EXPORT_SLACK_MS,
+      cancelled: false,
       stopping: false,
     };
+    state.recording = rec;
 
-    // Record the run whole: back to the top, and playing.
-    viewer.simTime = start;
-    viewer.playing = true;
-    $("replay-play").textContent = "Pause";
+    // The export owns the clock and the canvas until it is done; the live loop
+    // would otherwise be advancing time underneath it.
+    viewer.playing = false;
+    $("replay-play").textContent = "Play";
     recorder.start();
     setExportLabel("Recording 0%", "Click to stop and save what has been recorded");
     setStatus("");
+    recordRun(rec).catch((error) => {
+      setStatus("Recording stopped: " + error.message);
+      stopExport();
+    });
   }
 
-  /** Called every drawn frame: report progress, and stop at the end of the run. */
-  function watchExport(simTime) {
-    const rec = state.recording;
+  /** Draw the run from its first frame to its last, one exported frame apiece. */
+  async function recordRun(rec) {
+    const viewer = state.viewer;
     const scene = state.scene;
-    if (!rec || !scene) return;
     const start = scene.time[0];
     const end = scene.time[scene.time.length - 1];
-    const span = Math.max(end - start, 1e-6);
-    // The viewer loops back to the top when it runs off the end; that wrap is
-    // how the recording knows the run is done.
-    const wrapped = simTime < rec.lastTime - 1e-9;
-    rec.lastTime = simTime;
-    const done = wrapped || simTime >= end - 1e-9 || Date.now() > rec.deadline;
-    const progress = done ? 1 : Math.min(Math.max((simTime - start) / span, 0), 1);
-    if (!rec.stopping) setExportLabel("Recording " + Math.round(progress * 100) + "%");
-    if (done) stopExport();
+    // A second of video covers `speed` seconds of the run, which is what the
+    // viewer shows when it plays it.
+    const step = Math.max(scene.header.speed || 1, 1e-3) / EXPORT_FPS;
+    const total = Math.max(Math.ceil((end - start) / step) + 1, 1);
+    const began = performance.now();
+
+    for (let i = 0; i < total; i++) {
+      await rec.sink.ready(); // backpressure: never queue the whole run at once
+      if (rec.cancelled) break;
+      viewer.simTime = Math.min(start + i * step, end);
+      viewer.render();
+      if (viewer.onTick) viewer.onTick(viewer.simTime);
+      await rec.sink.write(Math.round((i * 1e6) / EXPORT_FPS));
+      if (rec.cancelled) break;
+      setExportLabel("Recording " + Math.round(((i + 1) / total) * 100) + "%");
+      if (rec.sink.realTime) await waitUntil(began + ((i + 1) * 1000) / EXPORT_FPS);
+      else await nextTurn();
+    }
+    stopExport();
   }
 
   function stopExport() {
     const rec = state.recording;
     if (!rec || rec.stopping) return;
     rec.stopping = true;
+    rec.cancelled = true; // ends the frame loop, if it is still running
     setExportLabel("Saving…", "");
-    try {
-      rec.recorder.stop();
-    } catch (error) {
-      finishExport();
-    }
+    // Close the sink first so the last frames reach the encoder. Ending the
+    // track can stop the recorder by itself, which is why the stop below is
+    // guarded rather than assumed.
+    Promise.resolve(rec.sink.close())
+      .then(nextTurn)
+      .then(() => {
+        try {
+          if (rec.recorder.state !== "inactive") {
+            rec.recorder.stop(); // the stop listener finishes the export
+            return;
+          }
+        } catch (error) {
+          finishExport();
+          return;
+        }
+        // Ending the track stopped the recorder by itself, but its last
+        // dataavailable has not landed yet: at this point the chunk list is
+        // still empty, and finishing here threw away the whole recording and
+        // reported it as "no frames". Wait for the stop event instead, and
+        // give up only if it never comes.
+        Promise.race([
+          rec.flushedReady,
+          new Promise((resolve) => window.setTimeout(resolve, FLUSH_GRACE_MS)),
+        ]).then(finishExport);
+      });
   }
 
   function finishExport() {
     const rec = state.recording;
     if (!rec) return;
     state.recording = null;
-    rec.stream.getTracks().forEach((track) => track.stop());
+    rec.sink.stream.getTracks().forEach((track) => track.stop());
 
     const mime = rec.recorder.mimeType || "video/webm";
     if (rec.chunks.length) {
@@ -467,6 +622,7 @@
     if (viewer) {
       viewer.simTime = rec.wasTime;
       viewer.playing = rec.wasPlaying;
+      viewer.render(); // put the frame the export borrowed the view from back
       $("replay-play").textContent = viewer.playing ? "Pause" : "Play";
     }
     resetExportButton();
@@ -488,7 +644,7 @@
     const mime = exportMimeType();
     setExportLabel(
       "Export video",
-      "Play the run from the start and download it as ." + exportExtension(mime)
+      "Render the whole run and download it as ." + exportExtension(mime)
     );
   }
 
@@ -560,16 +716,12 @@
       }
     });
 
-    loadRuns();
+    loadRuns().catch((error) => setStatus("Could not open the viewer: " + error.message));
 
     const frame = (wall) => {
-      if (screenActive()) {
-        state.viewer.tick(wall);
-        // Hand the freshly drawn frame to the recorder inside the same task
-        // that drew it, while the drawing buffer still holds it.
-        const rec = state.recording;
-        if (rec && rec.track && !rec.stopping) rec.track.requestFrame();
-      }
+      // An export drives the clock and the canvas itself, at its own pace and
+      // without waiting for a frame callback, so the live loop stands aside.
+      if (screenActive() && !state.recording) state.viewer.tick(wall);
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -579,13 +731,26 @@
     if (screenActive()) start();
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function bootstrap() {
     // The rail is wired by app.js; this only needs to know when its own screen
     // becomes visible, so the WebGL context is not created for people who
     // never open the tab.
+    //
+    // app.js switches screens inside its own click handler, so this one has to
+    // look afterwards rather than during: a microtask is enough and, unlike a
+    // timer, is not clamped when the tab is in the background.
     document.querySelectorAll(".rail-item").forEach((button) => {
-      button.addEventListener("click", () => window.setTimeout(watch, 0));
+      button.addEventListener("click", () => Promise.resolve().then(watch));
     });
     watch();
-  });
+  }
+
+  // Not gated on DOMContentLoaded: this script is loaded at the end of the
+  // body, so that event may already have fired, and then the rail would never
+  // be wired and the Replay tab would open to nothing at all.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
+  } else {
+    bootstrap();
+  }
 })();

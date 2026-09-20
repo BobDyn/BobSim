@@ -742,7 +742,12 @@
     }
 
     aspect() {
-      return Math.max(this.canvas.clientWidth, 1) / Math.max(this.canvas.clientHeight, 1);
+      // Falls back to the drawing buffer for the same reason render() keeps the
+      // last size: a hidden screen measures zero, and an export in progress
+      // must not have the picture squashed underneath it.
+      const width = this.canvas.clientWidth || this.canvas.width;
+      const height = this.canvas.clientHeight || this.canvas.height;
+      return Math.max(width, 1) / Math.max(height, 1);
     }
 
     // -- drawing ------------------------------------------------------------
@@ -797,11 +802,14 @@
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const width = Math.round(canvas.clientWidth * dpr);
       const height = Math.round(canvas.clientHeight * dpr);
-      if (canvas.width !== width || canvas.height !== height) {
+      // A hidden screen measures zero. Keeping the last real size means a
+      // video export survives someone switching to another screen mid-record:
+      // the drawing buffer stays the size the recording started at.
+      if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
         canvas.width = width;
         canvas.height = height;
       }
-      gl.viewport(0, 0, width, height);
+      gl.viewport(0, 0, canvas.width, canvas.height);
       const [br, bg2, bb] = this.backdrop();
       gl.clearColor(br, bg2, bb, 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
