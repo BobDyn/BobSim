@@ -1,0 +1,32 @@
+# BobVis: the viewer window and the video exporter.
+#
+# Kept out of the root requirements.txt on purpose: VTK and Qt are ~120 MB of
+# wheels that nothing in _0_Utils.._5_App imports, so the simulation stack
+# installs and runs without them, as do CI and the Docker image.
+#
+#   make visual-deps
+#
+# All prebuilt wheels - Windows, macOS (Intel and Apple Silicon) and Linux.
+# Nothing compiles. A bare Linux host may still need system GL:
+#   apt install libgl1 libglx-mesa0 libxkbcommon-x11-0
+#
+# This is host-side by design. A container was tried: off-screen rendering
+# worked, but the window left its 3D viewport black because QOpenGLWidget and
+# Mesa's llvmpipe do not get on. See the visual-deps comment in the makefile.
+
+pyvista==0.49.0
+pyvistaqt==0.13.1
+vtk==9.7.0
+
+# Not pinned exactly, unlike the rest: PyQt6 6.11 publishes no aarch64 wheel,
+# so an exact pin fails on Apple Silicon and arm64 Linux. 6.7.1 is the newest
+# with one, and the viewer uses nothing newer.
+PyQt6>=6.7,<7
+
+# Video muxing. imageio-ffmpeg bundles the ffmpeg binary, so MP4 export needs
+# nothing on PATH.
+imageio==2.37.4
+imageio-ffmpeg==0.6.0
+
+# Also required, and already pinned in the root requirements.txt:
+#   matplotlib, PyYAML, numpy, pillow

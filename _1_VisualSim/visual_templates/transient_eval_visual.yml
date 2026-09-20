@@ -1,4 +1,17 @@
-# python3 _1_VisualSim/run_visual.py _1_VisualSim/visual_templates/transient_eval_visual.yml ./_3_StandardSim/TransientEval/results/raw_results/BobLib.Experiments.Standards.VehicleSim_run_0/BobLib.Experiments.Standards.VehicleSim_run_0_visual.npz --mp4 ./_1_VisualSim/results/transient_eval_test.mp4
+# STALE - kept for reference, not currently loadable.
+#
+# This template names signals (signals/vis...) that no model in the
+# pinned BobLib emits, and nothing in the repo writes the *_visual.npz
+# its old header pointed at. Opening it against a run produced today
+# fails with a list of missing signals.
+#
+# For a scene you can actually open, run:
+#   make visual-rig        (four-post rig, real geometry)
+#   make visual-demo       (synthetic, no simulation needed)
+#
+# Reviving this one means giving the VehicleSim maneuvers the treatment
+# _1_VisualSim/from_results.py gives the rig: a FRAME_MAP of MultiBody
+# frames plus a widened variable_filter. See _1_VisualSim/README.md.
 
 style:
   joints:
