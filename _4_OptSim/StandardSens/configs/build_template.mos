@@ -18,7 +18,7 @@ buildModel(
   numberOfIntervals={intervals},
   tolerance={tolerance},
   method="{solver}",
-  cflags="-O3 -march=native -mtune=native"
+  cflags="{cflags}"
 );
 
 print(getErrorString());
