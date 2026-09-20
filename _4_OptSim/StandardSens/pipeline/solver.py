@@ -399,6 +399,9 @@ def _solve_on_surrogate(
         x[free] = z
         return x
 
+    def objective(z: np.ndarray) -> np.ndarray:
+        return _residuals(surrogate, knobs, target, tol, regularization, expand(z))
+
     starts = [
         np.clip(surrogate.center[free], lower, upper),
         np.clip(template[free], lower, upper),
@@ -407,7 +410,7 @@ def _solve_on_surrogate(
     best_x, best_cost = template, math.inf
     for start in starts:
         fit = least_squares(
-            lambda z: _residuals(surrogate, knobs, target, tol, regularization, expand(z)),
+            objective,
             start,
             bounds=(lower, upper),
             method="trf",
