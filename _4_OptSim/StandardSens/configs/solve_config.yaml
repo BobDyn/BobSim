@@ -1,0 +1,82 @@
+# Target-metric setup solver. See docs/doe-reverse-engineering.md.
+#
+#   make opt-solve TARGETS="understeer_gradient_deg_per_g=0.6 roll_gradient_deg_per_g=0.85"
+
+# Decision variables. Bounds, available part sizes and baselines come from the
+# matching entry in vehicle_architecture.yaml; only `scope: setup` variables are
+# accepted, because only those can be turned on a built car. Cost is 2n + 1
+# simulations for n knobs, so every knob listed here is paid for.
+#
+# The default set is the four that move steady-state balance and roll AND can be
+# applied without a compile. Dampers are absent on purpose: damper force is
+# proportional to suspension velocity, which is zero at a settled steady state,
+# so they cannot move any SteadyStateEval metric.
+knobs:
+  - front.stabar.rate_n_m_per_rad
+  - rear.stabar.rate_n_m_per_rad
+  - front.actuation.spring_rate_n_per_m
+  - rear.actuation.spring_rate_n_per_m
+
+# Knobs whose Modelica parameters are read at initialisation, so an existing
+# executable can be re-pointed at new values with -override instead of being
+# recompiled. Anything not listed here is compiled, which is always correct.
+#
+# Do NOT add a knob here on the strength of its parameter being
+# `isValueChangeable` in the init XML. Static toe and camber are changeable, and
+# overriding them is silently ignored: they feed the wheel's `toHub.R_rel`
+# rotation matrix, which OpenModelica evaluates at compile time. The same is true
+# of every mass and CG value, via `combineMassRecords`. A knob belongs here only
+# once an override run has been shown to reproduce a recompiled run.
+runtime_override:
+  - front.stabar.rate_n_m_per_rad
+  - rear.stabar.rate_n_m_per_rad
+  - front.actuation.spring_rate_n_per_m
+  - rear.actuation.spring_rate_n_per_m
+  - front.actuation.damper_rate_n_s_per_m
+  - rear.actuation.damper_rate_n_s_per_m
+
+# Acceptable error per metric. This is also the residual scale, so it sets how
+# the solver trades one target against another when it cannot hit both.
+tolerances:
+  understeer_gradient_deg_per_g: 0.02
+  sideslip_gradient_deg_per_g: 0.02
+  roll_gradient_deg_per_g: 0.02
+  handwheel_angle_gradient_deg_per_g: 0.25
+  peak_handwheel_torque_Nm: 0.5
+# Used for any targeted metric not listed above, as a fraction of |target|.
+default_tolerance_fraction: 0.05
+
+# Pull toward the current car, as a weight on (change / range)^2. Small enough
+# not to fight a reachable target, large enough to pick one answer when there
+# are fewer targets than knobs.
+regularization: 0.01
+
+# Star step as a fraction of each knob's half-range. Wide steps keep the signal
+# well above simulation noise; the separable quadratic absorbs the curvature.
+star_step_fraction: 0.5
+
+# Simulations spent correcting the surrogate before settling for the best
+# verified setup.
+max_verifications: 4
+
+# Return available part sizes (`values:` in vehicle_architecture.yaml) rather
+# than an ideal rate nobody can buy.
+snap_discrete: true
+
+# The solver's own test matrix, written into a per-evaluation config. The shared
+# SteadyStateEval standard and its regression baselines are not touched.
+#
+# The standard runs four isolines (22 cases), but every exported metric except
+# the velocity slopes comes from one. It also leaves only three points inside
+# the 1-4 m/s^2 linear band the gradients are fitted over. One isoline with six
+# points in that band is both faster and better conditioned.
+test_matrix:
+  velocity_mps: 15.0
+  target_ays: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 7.0, 10.0]
+
+# Eight cases per evaluation, so three evaluations at four workers each fills a
+# 12-CPU container without starving a case into its timeout.
+evaluation:
+  case_workers: 4
+  parallel_evaluations: 3
+  timeout_s: 1800

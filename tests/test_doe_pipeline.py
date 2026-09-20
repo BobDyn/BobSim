@@ -624,6 +624,7 @@ def test_optsim_entrypoints_import() -> None:
         "StandardSens.refined_response_surfaces",
         "StandardSens.pipeline.aggregator",
         "StandardSens.pipeline.search",
+        "StandardSens.solve_setup",
     ):
         importlib.import_module(module)
 

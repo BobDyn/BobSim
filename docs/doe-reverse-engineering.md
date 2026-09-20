@@ -339,6 +339,88 @@ The sampler, aggregator, and reverse lookup all key off `variables[].path`, so
 nothing else needs updating. Rerun `make opt-standard` to rebuild the table;
 the old one is stale and `opt-search` will say so.
 
+## Solving for a setup directly
+
+`opt-search` can only return a vehicle that happened to be sampled, and sampling
+a space well costs exponentially more with every parameter added. When the
+question is "what do I set on this car to hit these numbers", `opt-solve` asks it
+directly instead, as a small bounded least-squares problem:
+
+```bash
+make opt-solve TARGETS="understeer_gradient_deg_per_g=0.30 roll_gradient_deg_per_g=0.80"
+make opt-solve TARGETS="..." KNOBS="front.stabar.rate_n_m_per_rad rear.stabar.rate_n_m_per_rad"
+```
+
+It simulates a star design (the centre plus one step each way per knob, `2n + 1`
+runs), fits a slope and a curvature per knob, solves the inverse on that
+surrogate in milliseconds, and then **simulates the setup it proposes**. A miss
+is folded back into the surrogate and the solve repeats, up to
+`max_verifications` times. Every number it reports comes from a simulation of the
+exact setup it returns, which is the step `opt-search` leaves to you.
+
+| | `opt-search` | `opt-solve` |
+| --- | --- | --- |
+| Cost in the number of parameters | exponential, to sample the space | linear, `2n + 1` |
+| Answer | nearest sampled variant | a continuous setup, snapped to parts that exist |
+| Answer simulated? | no | yes, always |
+| Unreachable target | the closest edge variant, with a warning | `UNREACHABLE`, naming the knobs that ran out of range |
+| Fewer targets than knobs | many equally near variants | the smallest change from the current car |
+
+Settings live in `configs/solve_config.yaml`: the knobs, a tolerance per metric
+(which doubles as the scale that trades one target against another), and the
+solver's own test matrix. Metric names may be given with or without the
+`SteadyStateEval_` prefix the aggregated table uses. Exit status is 0 only when
+every target is met within tolerance.
+
+Three things are worth knowing before trusting it.
+
+**Knobs are setup parameters, and conditions are compiled.** Only `scope: setup`
+variables are accepted as knobs. The driver, the masses and the aero map are
+conditions of the question, not answers to it: set them in `vehicle.yml`, where
+they are compiled into the baseline the solver starts from.
+
+**Most evaluations need no compile, and that is not true of every knob.** A
+compile is roughly 70 % of a variant's wall time, and the model's equations
+never change between variants. Springs, anti-roll bars and dampers are read at
+initialisation, so the solver applies them to one cached executable with
+`-override`. An override run of those six reproduces a recompiled run to
+2.5e-5 deg/g on understeer gradient and 5e-6 deg/g on roll gradient.
+
+Static toe and camber do not work that way, and the failure is silent. They
+build the wheel's `toHub.R_rel` rotation matrix, which OpenModelica evaluates at
+compile time and bakes into the executable. The toe parameter still reports
+`isValueChangeable="true"`, the override is accepted without a warning, every
+bound copy of the angle updates — and the matrix the wheel actually uses does
+not move. Every mass and CG value has the same problem through
+`combineMassRecords`. So `runtime_override:` in `solve_config.yaml` is an
+allow-list, anything absent from it is compiled, and each distinct toe or camber
+value (including each verification) costs its own executable. `opt-solve` prints
+how many compiles a run needs before it starts. To check a new candidate for the
+list, compile two variants that differ only in it and compare their
+`*_init.xml`: any non-changeable parameter whose `start` differs was evaluated
+at compile time, and will not follow an override.
+
+**It uses its own test matrix, not the standard's.** The standard runs four
+isolines (22 cases), but every exported metric except the velocity slopes comes
+from the one at `metric_target_velocity_mps`, and only three of its points fall
+inside the 1–4 m/s² band the gradients are fitted over. The solver writes a
+per-evaluation config with one isoline and six points in that band. That is
+faster and better conditioned, and it leaves the standard and its regression
+baselines untouched — but it means a gradient from `opt-solve` and the same
+gradient from `make standard-eval-steady-state` are fitted through different
+points and will differ slightly. Compare like with like.
+
+Executables and evaluations are cached under `_4_OptSim/Build/StandardSens/solve/`,
+and the cache is discarded whenever BobLib, the vehicle or the SteadyStateEval
+tooling changes. The star does not depend on the targets, so once it is cached a
+new set of targets costs only the verification runs.
+
+As a guide to cost, on a 12-CPU container with the default four knobs: the first
+solve took about 8 minutes (one compile, nine star evaluations, one
+verification), and each later solve against different targets took about 70
+seconds. A four-variant sweep of the same car took 26 minutes and cannot
+interpolate between its samples.
+
 ## Envelope sensitivities
 
 `_4_OptSim/EnvelopeSens/` is the same idea against GGV/YMD envelope outputs

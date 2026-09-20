@@ -39,8 +39,15 @@ def build_report_config(
     build_dir: Path,
     exec_name: str,
     base_config_path: Path = BASE_CONFIG,
+    init_parameters: dict[str, float] | None = None,
+    config_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[Path, Path]:
     """Write a temporary SteadyStateEval config for one DOE variant.
+
+    `init_parameters` are Modelica parameter overrides applied to every case, so
+    one compiled executable can stand in for a vehicle it was not compiled as.
+    `config_overrides` replaces keys inside top-level blocks (`sweep`,
+    `execution`, ...) without touching the shared standard's own config.
 
     Returns:
         (config_path, canonical_metrics_csv_path)
@@ -61,6 +68,17 @@ def build_report_config(
 
     simulation["build_dir"] = str(build_dir)
     simulation["exec_name"] = exec_name
+
+    if init_parameters:
+        merged = dict(simulation.get("init_parameters") or {})
+        merged.update({name: float(value) for name, value in init_parameters.items()})
+        simulation["init_parameters"] = merged
+
+    for block_name, block_values in (config_overrides or {}).items():
+        block = config.setdefault(block_name, {})
+        if not isinstance(block, dict):
+            raise TypeError(f"SteadyStateEval config {block_name} block must be a mapping")
+        block.update(block_values)
 
     # Leave execution settings exactly as defined in the standard-sim config.
     # That config controls whether velocity cases run serially or in parallel.
@@ -87,6 +105,8 @@ def run_report(
     exec_name: str,
     timeout: int | None = None,
     base_config_path: Path = BASE_CONFIG,
+    init_parameters: dict[str, float] | None = None,
+    config_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     """Run the SteadyStateEval report wrapper and return the metrics CSV path."""
     config_path, metrics_csv = build_report_config(
@@ -94,6 +114,8 @@ def run_report(
         build_dir=build_dir,
         exec_name=exec_name,
         base_config_path=base_config_path,
+        init_parameters=init_parameters,
+        config_overrides=config_overrides,
     )
 
     cmd = [

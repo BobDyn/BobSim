@@ -18,6 +18,8 @@ BUILD_VEHICLE_MOS := _3_StandardSim/build_vehicle_sim.mos
 BUILD_FOUR_POST_MOS := _3_StandardSim/build_four_post_sim.mos
 
 SEARCH_TOP ?= 1
+TARGETS ?=
+KNOBS ?=
 REDUCED_DOF ?= 6
 REDUCED_KINEMATICS ?= lookup
 REDUCED_BOBLIB_CSV ?=
@@ -135,7 +137,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	lap-validation-visuals \
 	envelope-ggv envelope-ymd envelope-all \
 	opt-standard opt-standard-setup opt-standard-architecture \
-	opt-envelope opt-refined opt-search opt-doe-smoke \
+	opt-envelope opt-refined opt-search opt-solve opt-doe-smoke \
 	clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned clean-all
 
 ifeq ($(OS),Windows_NT)
@@ -223,10 +225,13 @@ help:
 		'  opt-envelope              Run EnvelopeSens sensitivities' \
 		'  opt-refined               Run StandardSens refined response surfaces' \
 		'  opt-search                Reverse lookup: target metrics -> vehicle parameters' \
+		'  opt-solve                 Solve for the setup that hits target metrics, then simulate it' \
 		'' \
 		'  Search variables:' \
 		'    METRICS="NAME=VALUE ..."             Required target metrics' \
 		'    SEARCH_TOP=<n>                       Nearest variants to return. Default: 1' \
+		'    TARGETS="NAME=VALUE ..."             opt-solve target metrics' \
+		'    KNOBS="path ..."                     opt-solve knobs. Default: configs/solve_config.yaml' \
 		'' \
 		'  DOE sweep variables (default: configs/vehicle_architecture.yaml):' \
 		'    DOE_METHOD=lhs|interval_splice       Sampling method' \
@@ -493,6 +498,21 @@ opt-search:
 		exit 1; \
 	fi
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.pipeline.search --metrics $(METRICS) --top $(SEARCH_TOP)
+
+# Solves for the setup directly instead of looking one up in a finished sweep,
+# and simulates the answer before returning it. Needs the FourPostEval motion
+# ratios for the same reason opt-standard does: a spring-rate knob has to move
+# the free length with it to hold ride height.
+opt-solve: $(FOUR_POST_METRICS)
+	@if [ -z '$(TARGETS)' ]; then \
+		printf '%s\n' \
+			'error: TARGETS is required.' \
+			'' \
+			'  make opt-solve TARGETS="understeer_gradient_deg_per_g=0.6 roll_gradient_deg_per_g=0.85"' \
+			'  make opt-solve TARGETS="..." KNOBS="front.stabar.rate_n_m_per_rad rear.stabar.rate_n_m_per_rad"'; \
+		exit 1; \
+	fi
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup --targets $(TARGETS) $(if $(KNOBS),--knobs $(KNOBS),)
 
 clean:
 	bash -lc 'find $(CLEAN_WORKSPACE) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; \
