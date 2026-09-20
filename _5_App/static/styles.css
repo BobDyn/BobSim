@@ -54,7 +54,8 @@
   --green: #18794e;
   --amber: #915930;
   --red: #b8272c;
-  --shadow: 0 10px 24px rgba(20, 24, 33, 0.07);
+  --shadow: none;
+  --shadow-overlay: 0 16px 48px rgba(20, 24, 33, 0.18);
   --status-ok-bg: color-mix(in srgb, var(--green) 13%, var(--surface));
   --status-ok-line: color-mix(in srgb, var(--green) 36%, var(--line));
   --status-warn-bg: color-mix(in srgb, var(--amber) 14%, var(--surface));
@@ -77,7 +78,8 @@ body.dark {
   --green: #3dd68c;
   --amber: #f9b44e;
   --red: #f66f81;
-  --shadow: 0 10px 24px rgba(0, 0, 0, 0.36);
+  --shadow: none;
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.5);
   --status-ok-bg: color-mix(in srgb, var(--green) 15%, var(--surface));
   --status-ok-line: color-mix(in srgb, var(--green) 28%, var(--line));
   --status-warn-bg: color-mix(in srgb, var(--amber) 16%, var(--surface));
@@ -93,7 +95,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   overflow: hidden;
 }
 
@@ -122,6 +124,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  white-space: nowrap;
   padding: 8px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
@@ -160,7 +163,8 @@ p {
 
 .brand h1 {
   font-size: 18px;
-  font-weight: 760;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .brand p,
@@ -191,7 +195,7 @@ p {
   background: var(--surface-2);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .status-pill.ok {
@@ -276,7 +280,8 @@ a.file-button {
 .rail-item {
   width: 100%;
   text-align: left;
-  font-weight: 720;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .rail-item.active,
@@ -297,7 +302,7 @@ a.file-button {
   background: var(--blue);
   border-color: var(--blue);
   color: var(--on-blue);
-  font-weight: 760;
+  font-weight: 700;
 }
 
 button.is-loading {
@@ -373,8 +378,8 @@ button.is-loading {
 }
 
 .screen-head h2 {
-  font-size: 17px;
-  font-weight: 780;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .setup-head {
@@ -391,9 +396,8 @@ button.is-loading {
   display: block;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .setup-focus {
@@ -429,7 +433,7 @@ button.is-loading {
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   overflow: hidden;
   padding: 0 11px;
   text-overflow: ellipsis;
@@ -462,7 +466,7 @@ button.is-loading {
   color: var(--ink);
   padding: 0 12px;
   cursor: pointer;
-  font-weight: 760;
+  font-weight: 700;
   list-style: none;
 }
 
@@ -550,6 +554,8 @@ button.is-loading {
 }
 
 .modelica-stack-panel {
+  overflow-x: auto;
+  scrollbar-width: none;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -559,6 +565,7 @@ button.is-loading {
 .modelica-stack-step {
   min-width: 0;
   min-height: 28px;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -572,7 +579,7 @@ button.is-loading {
 
 .modelica-stack-step span:not(.status-dot) {
   font-size: 10px;
-  font-weight: 780;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -646,7 +653,7 @@ button.is-loading {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 28px 72px rgba(17, 30, 43, 0.24);
+  box-shadow: var(--shadow-overlay);
   padding: 18px;
   overflow: hidden;
 }
@@ -660,7 +667,7 @@ button.is-loading {
 
 .vehicle-start-head h2 {
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .vehicle-start-head p {
@@ -688,8 +695,8 @@ button.is-loading {
 }
 
 .vehicle-start-panel h3 {
-  font-size: 16px;
-  font-weight: 780;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .vehicle-start-panel .config-picker,
@@ -744,7 +751,7 @@ button.is-loading {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 30px 80px rgba(17, 30, 43, 0.28);
+  box-shadow: var(--shadow-overlay);
   overflow: hidden;
 }
 
@@ -758,8 +765,8 @@ button.is-loading {
 }
 
 .simulation-modal-head h2 {
-  font-size: 20px;
-  font-weight: 820;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .simulation-modal-head p {
@@ -815,7 +822,7 @@ button.is-loading {
   display: block;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .toolchain-status-grid strong {
@@ -823,7 +830,7 @@ button.is-loading {
   overflow-wrap: anywhere;
   margin-top: 3px;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .toolchain-field {
@@ -874,7 +881,7 @@ button.is-loading {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 30px 80px rgba(17, 30, 43, 0.28);
+  box-shadow: var(--shadow-overlay);
   padding: 16px;
   overflow: hidden;
 }
@@ -887,8 +894,8 @@ button.is-loading {
 }
 
 .plot-modal-head h2 {
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .plot-modal-head p {
@@ -923,7 +930,7 @@ button.is-loading {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
-  box-shadow: 0 30px 80px rgba(17, 30, 43, 0.28);
+  box-shadow: var(--shadow-overlay);
   padding: 16px;
   overflow: hidden;
 }
@@ -936,8 +943,8 @@ button.is-loading {
 }
 
 .connection-head h2 {
-  font-size: 21px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .connection-head p {
@@ -963,8 +970,7 @@ button.is-loading {
 .connection-role-picker > span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .connection-architecture-field select {
@@ -1062,13 +1068,13 @@ button.is-loading {
   background: var(--role-color);
   color: #fff;
   font-size: 10px;
-  font-weight: 860;
+  font-weight: 700;
 }
 
 .connection-pickup-node strong {
   overflow: hidden;
   font-size: 11px;
-  font-weight: 790;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1084,7 +1090,7 @@ button.is-loading {
   bottom: 10px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .connection-canvas {
@@ -1145,13 +1151,13 @@ button.is-loading {
   background: color-mix(in srgb, var(--role-color) 18%, var(--surface));
   color: var(--role-color);
   font-size: 11px;
-  font-weight: 860;
+  font-weight: 700;
 }
 
 .connection-assignment-row strong {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1332,8 +1338,8 @@ body.resizing-plot-pane * {
 }
 
 .preview-toolbar h3 {
-  font-size: 16px;
-  font-weight: 780;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .view-buttons {
@@ -1376,7 +1382,7 @@ body.resizing-plot-pane * {
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   padding: 0 11px;
 }
 
@@ -1405,7 +1411,7 @@ body.resizing-plot-pane * {
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .range-control input {
@@ -1531,7 +1537,7 @@ body.resizing-plot-pane * {
 .geometry-plot-head strong {
   display: block;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -1554,7 +1560,7 @@ body.resizing-plot-pane * {
 .geometry-axis-select span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .geometry-axis-select .config-picker {
@@ -1580,7 +1586,7 @@ body.resizing-plot-pane * {
   background: var(--surface-2);
   color: var(--ink);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
   padding: 0 8px 0 10px;
 }
 
@@ -1646,7 +1652,7 @@ body.resizing-plot-pane * {
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .reference-button.active {
@@ -1693,7 +1699,6 @@ body.resizing-plot-pane * {
   border: 1px solid color-mix(in srgb, var(--ink) 24%, var(--line));
   border-radius: var(--radius-md);
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--section-accent, var(--blue)) 10%, transparent), transparent 46%),
     color-mix(in srgb, var(--surface-2) 92%, var(--surface));
   box-shadow:
     inset 4px 0 0 color-mix(in srgb, var(--section-accent, var(--blue)) 54%, transparent),
@@ -1710,7 +1715,7 @@ body.resizing-plot-pane * {
   background: color-mix(in srgb, var(--surface) 64%, var(--surface-2));
   color: var(--ink);
   font-size: 12px;
-  font-weight: 860;
+  font-weight: 700;
   padding: 9px 11px 9px 13px;
 }
 
@@ -1725,7 +1730,7 @@ body.resizing-plot-pane * {
   background: var(--surface);
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .axle-field-groups {
@@ -1780,7 +1785,7 @@ body.resizing-plot-pane * {
   background: color-mix(in srgb, var(--surface) 70%, var(--surface-2));
   color: var(--ink);
   font-size: 11px;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
   padding: 8px 10px;
 }
@@ -1803,7 +1808,7 @@ body.resizing-plot-pane * {
   background: var(--surface);
   color: var(--muted);
   font-size: 10px;
-  font-weight: 780;
+  font-weight: 700;
 }
 
 .field-subsection.expanded .field-grid {
@@ -1853,7 +1858,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--ink);
   font-size: 13px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1872,7 +1877,7 @@ body.resizing-plot-pane * {
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .axis-button.active {
@@ -1892,8 +1897,7 @@ body.resizing-plot-pane * {
   gap: 3px;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .geometry-coordinate-grid input {
@@ -1951,7 +1955,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--ink);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1968,15 +1972,14 @@ body.resizing-plot-pane * {
   gap: 8px;
   border: 1px solid color-mix(in srgb, var(--ink) 10%, var(--line));
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--surface-2) 72%, var(--surface));
+  background: var(--surface);
   padding: 6px 8px;
 }
 
 .mass-property-row span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .mass-property-row strong {
@@ -1984,7 +1987,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--ink);
   font-size: 11px;
-  font-weight: 720;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1997,7 +2000,7 @@ body.resizing-plot-pane * {
   color: var(--ink);
   cursor: pointer;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 700;
 }
 
 .bellcrank-role-button.active {
@@ -2013,7 +2016,7 @@ body.resizing-plot-pane * {
   color: var(--muted);
   padding: 14px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .tir-tools {
@@ -2039,7 +2042,7 @@ body.resizing-plot-pane * {
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--muted);
-  font-weight: 760;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -2079,7 +2082,7 @@ body.resizing-plot-pane * {
 .tire-load-head {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .tire-load-head strong {
@@ -2094,7 +2097,7 @@ body.resizing-plot-pane * {
 .tire-load-meta {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .tire-load-meta span:nth-child(2) {
@@ -2122,7 +2125,7 @@ body.resizing-plot-pane * {
 .tire-assignment-card h4 {
   margin: 0;
   font-size: 12px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .tire-assignment-card dl {
@@ -2140,12 +2143,12 @@ body.resizing-plot-pane * {
 
 .tire-assignment-card dt {
   color: var(--muted);
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .tire-assignment-card dd {
   margin: 0;
-  font-weight: 760;
+  font-weight: 700;
   text-align: right;
 }
 
@@ -2179,7 +2182,7 @@ body.resizing-plot-pane * {
   gap: 6px;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -2212,7 +2215,7 @@ body.resizing-plot-pane * {
   color: var(--ink);
   padding: 0 11px;
   cursor: pointer;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .file-import input {
@@ -2272,14 +2275,14 @@ body.resizing-plot-pane * {
 .tir-param-key {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .tir-param-label,
 .tir-param-unit {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .tir-param-row.unknown .tir-param-label,
@@ -2305,20 +2308,21 @@ body.resizing-plot-pane * {
 
 .parameter-tabs {
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(8, minmax(80px, 1fr));
+  display: flex;
   gap: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-2) 72%, var(--surface));
+  background: var(--surface);
   box-shadow: var(--shadow);
   padding: 7px;
 }
 
 .parameter-tab {
-  width: 100%;
-  min-width: 0;
+  flex: 1 0 auto;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2343,7 +2347,7 @@ body.resizing-plot-pane * {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .step-number {
@@ -2356,7 +2360,7 @@ body.resizing-plot-pane * {
   border-radius: var(--radius-pill);
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -2396,8 +2400,7 @@ body.resizing-plot-pane * {
 .guide-row span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .guide-row strong {
@@ -2405,7 +2408,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--ink);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2436,7 +2439,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 820;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2448,7 +2451,7 @@ body.resizing-plot-pane * {
   align-items: center;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .form-field label > :first-child,
@@ -2468,7 +2471,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 740;
+  font-weight: 600;
 }
 
 .field-status-pill {
@@ -2479,16 +2482,15 @@ body.resizing-plot-pane * {
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface) 70%, var(--surface-2));
   color: var(--muted);
-  font-size: 9px;
-  font-weight: 840;
+  font-size: 10px;
+  font-weight: 700;
   padding: 0 6px;
-  text-transform: uppercase;
 }
 
 .field-placeholder-note {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -2548,13 +2550,13 @@ body.resizing-plot-pane * {
 .table-purpose strong {
   color: var(--ink);
   font-size: 12px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .table-purpose span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .array-literal {
@@ -2581,7 +2583,7 @@ body.resizing-plot-pane * {
 .array-bracket {
   color: var(--muted);
   font-size: 22px;
-  font-weight: 520;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -2608,8 +2610,7 @@ body.resizing-plot-pane * {
 .tool-label {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .array-action,
@@ -2621,7 +2622,7 @@ body.resizing-plot-pane * {
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .array-action {
@@ -2721,7 +2722,7 @@ body.resizing-plot-pane * {
 .architecture-match-head {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .architecture-template-list {
@@ -2816,7 +2817,7 @@ body.resizing-plot-pane * {
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   padding: 0 9px;
 }
 
@@ -2831,7 +2832,6 @@ body.resizing-plot-pane * {
   border-color: color-mix(in srgb, var(--blue) 36%, var(--line));
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 3px 10px rgb(15 23 42 / 8%);
 }
 
 .powertrain-subsystem-tab:hover {
@@ -2865,7 +2865,7 @@ body.resizing-plot-pane * {
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .powertrain-subsystem-head span {
@@ -2886,7 +2886,7 @@ body.resizing-plot-pane * {
   cursor: pointer;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   list-style: none;
 }
 
@@ -2949,10 +2949,9 @@ body.resizing-plot-pane * {
   display: block;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 840;
+  font-weight: 700;
   letter-spacing: 0;
   margin: 2px 0 8px;
-  text-transform: uppercase;
 }
 
 .simulation-catalog::before {
@@ -2981,7 +2980,6 @@ body.resizing-plot-pane * {
   min-height: 0;
   border-bottom: 1px solid var(--line);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 76%, var(--blue-soft)), var(--surface)),
     var(--surface-2);
 }
 
@@ -2992,7 +2990,7 @@ body.resizing-plot-pane * {
 }
 
 .simulation-card-figure rect {
-  fill: color-mix(in srgb, var(--surface) 80%, var(--surface-2));
+  fill: var(--surface-2);
   stroke: var(--line);
   stroke-width: 1.4;
 }
@@ -3041,7 +3039,7 @@ body.resizing-plot-pane * {
 .simulation-card-figure text {
   fill: var(--muted);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .simulation-card-body {
@@ -3057,8 +3055,8 @@ body.resizing-plot-pane * {
 }
 
 .simulation-card .card-title {
-  font-size: 16px;
-  font-weight: 840;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .simulation-card .card-meta {
@@ -3093,8 +3091,7 @@ body.resizing-plot-pane * {
 .simulation-detail-block h4 {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 840;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .simulation-detail-block ul {
@@ -3160,7 +3157,7 @@ body.resizing-plot-pane * {
   min-height: 26px;
   padding: 0 8px;
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .result-summary-actions {
@@ -3242,7 +3239,7 @@ body.resizing-plot-pane * {
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   padding: 0 8px;
 }
 
@@ -3270,8 +3267,8 @@ body.resizing-plot-pane * {
 }
 
 .result-plot-head h3 {
-  font-size: 14px;
-  font-weight: 820;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .result-plot-head p {
@@ -3279,7 +3276,7 @@ body.resizing-plot-pane * {
   max-width: 62ch;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3368,14 +3365,13 @@ body.resizing-plot-pane * {
 .result-summary-item span {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .result-summary-item strong {
   overflow: hidden;
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3414,8 +3410,7 @@ body.resizing-plot-pane * {
   background: color-mix(in srgb, var(--surface) 72%, var(--surface-2));
   padding: 8px 10px;
   font-size: 11px;
-  font-weight: 840;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .study-group-title small {
@@ -3464,7 +3459,7 @@ body.resizing-plot-pane * {
 }
 
 .card-title {
-  font-weight: 780;
+  font-weight: 700;
 }
 
 .signal-row,
@@ -3483,7 +3478,7 @@ body.resizing-plot-pane * {
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .mini-pill.ok {
@@ -3530,8 +3525,8 @@ body.resizing-plot-pane * {
 }
 
 .study-diagnostic-summary h3 {
-  font-size: 17px;
-  font-weight: 820;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .study-diagnostic-summary p {
@@ -3560,8 +3555,7 @@ body.resizing-plot-pane * {
   display: block;
   color: var(--muted);
   font-size: 10px;
-  font-weight: 820;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .study-metric strong {
@@ -3569,7 +3563,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   margin-top: 3px;
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3580,7 +3574,6 @@ body.resizing-plot-pane * {
   border: 1px solid color-mix(in srgb, var(--ink) 13%, var(--line));
   border-radius: var(--radius-md);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--blue) 7%, transparent), transparent 52%),
     color-mix(in srgb, var(--surface-2) 86%, var(--surface));
   overflow: hidden;
 }
@@ -3598,7 +3591,7 @@ body.resizing-plot-pane * {
   place-items: center;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .ggv-figure {
@@ -3639,7 +3632,7 @@ body.resizing-plot-pane * {
   position: absolute;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .ggv-label.top {
@@ -3741,7 +3734,7 @@ body.resizing-plot-pane * {
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3751,7 +3744,7 @@ body.resizing-plot-pane * {
   min-width: 0;
   overflow: hidden;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3827,8 +3820,8 @@ body.resizing-plot-pane * {
 }
 
 .sim-guide-panel h3 {
-  font-size: 17px;
-  font-weight: 820;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .sim-guide-panel p {
@@ -3867,14 +3860,14 @@ body.resizing-plot-pane * {
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
   font-size: 10px;
-  font-weight: 820;
+  font-weight: 700;
 }
 
 .sim-step strong {
   min-width: 0;
   overflow: hidden;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3909,7 +3902,7 @@ body.resizing-plot-pane * {
   min-height: 18px;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .sim-config-form {
@@ -3959,7 +3952,7 @@ body.resizing-plot-pane * {
 
 .job-status {
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .job-status.running {
@@ -3975,7 +3968,7 @@ body.resizing-plot-pane * {
 }
 
 .output-name {
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .preview {
@@ -4029,7 +4022,7 @@ body.resizing-plot-pane * {
 
 .preview th {
   background: var(--surface-2);
-  font-weight: 760;
+  font-weight: 700;
 }
 
 .empty-state {
