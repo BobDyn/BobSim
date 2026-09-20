@@ -13,8 +13,9 @@ visual-capture`` sandwiches it between the two subcommands here:
     <run the evaluation with that config>                                 # container
     python -m _1_VisualSim.capture convert <config.yml>                   # host
 
-Runs with the base requirements (it imports the evaluation modules for their
-signal lists); BobVis's PyQt6/VTK stack is not involved.
+Runs with the base requirements: it imports the evaluation modules for their
+signal lists, and nothing here renders anything. The app's Replay tab draws
+whatever this writes into _1_VisualSim/results/.
 """
 
 from __future__ import annotations

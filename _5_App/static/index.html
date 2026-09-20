@@ -46,6 +46,7 @@
           <div class="rail-stack">
             <button class="rail-item active" data-view="setup" type="button">Setup</button>
             <button class="rail-item" data-view="standard" type="button">Simulation</button>
+            <button class="rail-item" data-view="replay" type="button">Replay</button>
             <button class="rail-item" data-view="studies" type="button">Archive</button>
           </div>
           <div class="rail-actions">
@@ -245,6 +246,75 @@
           </div>
         </section>
 
+        <section id="replay-view" class="screen">
+          <div class="screen-head">
+            <div>
+              <h2>Replay</h2>
+              <p>Suspension geometry, tire loads and grip, played back from a captured run.</p>
+            </div>
+            <div class="replay-controls">
+              <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
+              <button id="replay-play" class="ghost-button" type="button">Pause</button>
+              <button id="replay-reset-view" class="ghost-button" type="button">Reset view</button>
+              <button id="replay-help-btn" class="ghost-button" type="button">Controls</button>
+            </div>
+          </div>
+
+          <div class="replay-workspace">
+            <section class="replay-stage">
+              <canvas id="replay-canvas"></canvas>
+              <p id="replay-status" class="replay-status" hidden></p>
+              <div id="replay-help" class="replay-help" hidden>
+                <h4>Controls</h4>
+                <ul>
+                  <li><b>Drag</b> orbits around the centre</li>
+                  <li><b>Shift + drag</b> pans</li>
+                  <li><b>Scroll</b> zooms toward the cursor</li>
+                  <li><b>Double-click</b> re-centres on the ground under the cursor</li>
+                  <li><b>Space</b> plays and pauses, <b>F1</b> toggles this list</li>
+                </ul>
+              </div>
+              <div class="replay-timeline">
+                <input id="replay-time" type="range" min="0" max="1000" value="0" aria-label="Time" />
+                <span id="replay-clock" class="replay-clock">0.00 s</span>
+              </div>
+            </section>
+
+            <aside class="replay-side">
+              <div class="replay-group">
+                <h4>Layers</h4>
+                <div id="replay-layers" class="replay-layers"></div>
+              </div>
+
+              <div id="replay-tabs" class="replay-tabs" hidden>
+                <button id="replay-tab-tires" class="tab active" type="button">Tires</button>
+                <button id="replay-tab-metrics" class="tab" type="button">Metrics</button>
+              </div>
+
+              <div id="replay-panel-tires" class="replay-panel" hidden>
+                <canvas id="replay-tires-canvas" class="replay-tires"></canvas>
+                <p id="replay-lltd" class="replay-lltd"></p>
+                <p class="replay-note">
+                  Each dot is a tire's force against its MF5.2 peak grip. The outer ring is
+                  the limit &mdash; read it as "at the limit", not as a hard wall.
+                </p>
+              </div>
+
+              <div id="replay-panel-metrics" class="replay-panel" hidden>
+                <div class="replay-metric-head">
+                  <input id="replay-metric-filter" type="search" placeholder="Filter metrics" />
+                  <span id="replay-metrics-count" class="replay-note"></span>
+                </div>
+                <div class="replay-metric-scroll">
+                  <table class="replay-metrics">
+                    <thead id="replay-metrics-head"></thead>
+                    <tbody id="replay-metrics-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
         <section id="studies-view" class="screen">
           <div class="screen-head">
             <div>
@@ -440,5 +510,7 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="/static/visual.js"></script>
+    <script src="/static/visual_panel.js"></script>
   </body>
 </html>

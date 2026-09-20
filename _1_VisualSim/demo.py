@@ -1,12 +1,12 @@
-"""Synthetic BobVis scene, for trying the viewer without running a simulation.
+"""Synthetic BobVis scene, for trying the Replay tab without running a simulation.
 
     python -m _1_VisualSim.demo            # writes config + signals, prints paths
-    make visual-demo                       # generate, then open the viewer
+    make visual-demo                       # write one into _1_VisualSim/results/
 
 The motion here is a kinematic mock-up of a step-steer manoeuvre - roll, heave,
 pitch and steer driven by closed-form functions, with double-wishbone corners
 articulated about their inboard pickups. It is not physics, and nothing here
-feeds a result. It exists so the viewer, the exporter and the docs have
+feeds a result. It exists so the viewer and the docs have
 something to run against on a machine with no OpenModelica build.
 """
 
@@ -409,7 +409,7 @@ def write(out_dir: Path = OUT_DIR, duration: float = 8.0) -> tuple[Path, Path]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m _1_VisualSim.demo",
-        description="Generate a synthetic BobVis scene for trying the viewer.",
+        description="Generate a synthetic BobVis scene for the app's Replay tab.",
     )
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     parser.add_argument("--duration", type=float, default=8.0, help="seconds")
@@ -420,8 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.quiet:
         print(f"[bobvis] config {config_path}")
         print(f"[bobvis] data   {data_path}")
-        print(f"[bobvis] open with: python -m _1_VisualSim.viewer "
-              f"{config_path} {data_path}")
+        print("[bobvis] open it from the app: make app, then the Replay tab")
     return 0
 
 

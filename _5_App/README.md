@@ -34,7 +34,8 @@ Mutable app folders are grouped as:
 - `_5_App/user_data/workspaces/vehicles`
 - `_5_App/user_data/cache/modelica`
 
-`_1_VisualSim` remains the visualization engine. `_5_App` owns the local browser
+`_1_VisualSim` turns runs into scenes; `_5_App/visual.py` and
+`static/visual.js` draw them in the Replay tab. `_5_App` owns the local browser
 shell, setup menus, job launch, output preview, and logs.
 
 ## Module Layout

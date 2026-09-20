@@ -9,12 +9,31 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from _5_App.http_utils import parse_byte_range as _parse_byte_range
+from _5_App import visual as app_visual
 from _0_Utils.dyn_py import kinematic_curves_payload
 
 
 ROOT = Path.cwd()
 STATIC_ROOT = Path("_5_App/static")
 JOBS: Any = None
+
+# The browser asks for a scene's header and its buffer separately, and building
+# a payload reads the whole run. Hold the last one so the pair costs one build,
+# keyed on the data file's mtime so a re-simulated run is never served stale.
+_VISUAL_CACHE: dict[str, Any] = {"key": None, "payload": None}
+
+
+def _visual_payload(run_id: str) -> Any:
+    runs = {run["id"]: run for run in app_visual.available_runs(ROOT)}
+    run = runs.get(run_id)
+    if run is None:
+        raise FileNotFoundError(f"No visual run named {run_id!r}")
+    data_path = ROOT / run["data"]
+    key = f"{run_id}:{data_path.stat().st_mtime_ns}"
+    if _VISUAL_CACHE["key"] != key:
+        _VISUAL_CACHE["payload"] = app_visual.scene_payload(ROOT / run["config"], data_path)
+        _VISUAL_CACHE["key"] = key
+    return _VISUAL_CACHE["payload"]
 
 
 def sync_runtime() -> None:
@@ -113,6 +132,14 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 query = parse_qs(parsed.query)
                 vehicle_key = query.get("vehicle_key", [None])[0]
                 self._send_json(processing_workflows_payload(vehicle_key))
+            elif parsed.path == "/api/visual/runs":
+                self._send_json({"runs": app_visual.available_runs(ROOT)})
+            elif parsed.path == "/api/visual/scene":
+                run_id = (parse_qs(parsed.query).get("run") or [""])[0]
+                self._send_json(_visual_payload(run_id).header)
+            elif parsed.path == "/api/visual/data":
+                run_id = (parse_qs(parsed.query).get("run") or [""])[0]
+                self._send_binary(_visual_payload(run_id).buffer)
             elif parsed.path == "/api/tires/eval":
                 self._send_json(tire_eval_payload())
             elif parsed.path == "/api/kinematics/curves":
@@ -275,6 +302,15 @@ class BobSimHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def _send_binary(self, payload: bytes) -> None:
+        """Send a float32 scene buffer. Immutable for its key, so it caches hard."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _send_error(self, status: HTTPStatus, message: str) -> None:
         self._send_json({"error": message}, status=status)

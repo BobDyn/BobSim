@@ -21,7 +21,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 | Target | Runs on | Needs on host | Needs in container |
 | --- | --- | --- | --- |
 | `make app`, `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
-| `make visual-*` | Host (not in `RUN`) | `make visual-deps` | — (the simulation step still uses it) |
+| `make visual-*` | Host, except the simulation step | — | Only for the capture step |
 | `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
 | `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
@@ -37,7 +37,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 | `lap-*` | QSS and transient reduced-order lap simulations |
 | `envelope-*` | GGV / YMD performance-envelope maps |
 | `opt-*` | Sensitivity, response-surface, and DOE workflows |
-| `visual-*` | Replay a run in the BobVis viewer, or render it to video |
+| `visual-*` | Capture a run as a 3D scene for the app's Replay tab |
 | `clean-*` | Remove generated artifacts |
 
 ## Standard studies
@@ -111,29 +111,22 @@ one by hand, replicate that or the imports of `_shared` will fail.
 
 ## Visualizing a run
 
-BobVis replays a run's 3D motion and records video of it. Full reference:
-[`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
+BobVis captures a run as a 3D scene; the app's Replay tab draws it. Full
+reference: [`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
 
 ```bash
-make visual-deps       # once: prebuilt wheels for the viewer, nothing compiles
 make visual-demo       # synthetic scene, no OpenModelica build needed
-make visual-maneuver   # VehicleSim transient: simulate with geometry captured, watch it drive
-make visual-rig        # four-post rig: simulate with geometry captured, then watch it
-
-make visual-export \
-  VISUAL_CONFIG=_1_VisualSim/results/four_post_visual.yml \
-  VISUAL_DATA=_1_VisualSim/results/four_post_visual.npz \
-  VISUAL_OUTPUT=out.mp4 VISUAL_ARGS="--resolution 720p --speed 8"
+make visual-maneuver   # VehicleSim transient, simulated with geometry captured
+make visual-rig        # four-post rig, same
+make app               # then open the Replay tab
 ```
 
-The viewer runs on the host, unlike the rest of the stack: a containerised
-window leaves its 3D viewport black under software GL. The simulation inside
-`visual-rig` and `visual-maneuver` still goes through `$(RUN)`. Add `-video` to
-any of these to render an MP4 instead of opening a window.
+Each writes a `<name>_visual.yml` and `.npz` pair into `_1_VisualSim/results/`,
+and the Replay tab lists whatever it finds there. The conversion steps run on
+the host; the simulation inside `visual-rig` and `visual-maneuver` still goes
+through `$(RUN)` like every other BobSim workflow.
 
-**A normal evaluation cannot feed the viewer.** Each one sets a
-`variable_filter` naming only the scalars its metrics need, so the result CSV
-carries no hardpoint positions — `make standard-eval-four-post` yields 45
+A normal evaluation keeps only the scalar signals its metrics need, so it has
 columns of KnC numbers and nothing to draw. `make visual-capture` (which
 `visual-rig` and `visual-maneuver` wrap) re-runs one evaluation —
 `VISUAL_EVAL=four_post|transient|ramp_steer|steady_state` — asking for the
