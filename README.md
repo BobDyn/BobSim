@@ -24,8 +24,8 @@ should start from [`AGENTS.md`](AGENTS.md).
 
 - `_0_Utils/`: shared Python utilities, plotting/reporting helpers, and the
   BobLib submodule.
-- `_1_VisualSim/`: BobVis — the desktop viewer and video exporter that replay
-  a run's 3D motion (`make visual-demo` to try it, no simulation needed).
+- `_1_VisualSim/`: BobVis — turns a run into a 3D scene the app's Replay tab
+  draws (`make visual-demo` to try it, no simulation needed).
   See [`_1_VisualSim/README.md`](_1_VisualSim/README.md). Live model
   visualization during development still happens in OMEdit.
 - `_2_EnvelopeSim/`: GGV/YMD performance-envelope workflows. Treat these as

@@ -1,15 +1,16 @@
 """Camera navigation for BobVis: how mouse and trackpad input moves the view.
 
-Pure numpy - no Qt, no VTK - so the arithmetic that decides whether a gesture
-feels right is testable everywhere, including CI where the rendering stack is
-absent. :class:`_1_VisualSim.viewer.ViewportNavigator` reads the input events
-and :class:`_1_VisualSim.scene.VisualScene` applies the resulting pose.
+Pure numpy, so the arithmetic that decides whether a gesture feels right is
+testable in CI. The viewer itself is now ``_5_App/static/visual.js``, which
+ports this module constant for constant;
+``tests/test_visual_camera_parity.py`` holds the two to the same answers, and
+this side stays the reference because it is the one with tests.
 
 Conventions
-    Screen deltas are Qt widget pixels: x right, y down. Normalised device
-    coordinates (NDC) run -1..1 with y up. Drags follow "grab" semantics, as
-    VTK's trackball does: the scene moves with the cursor, the camera the other
-    way. Orbit is turntable style about world +Z, so the horizon never rolls.
+    Screen deltas are pixels: x right, y down. Normalised device coordinates
+    (NDC) run -1..1 with y up. Drags follow "grab" semantics: the scene moves
+    with the cursor, the camera the other way. Orbit is turntable style about
+    world +Z, so the horizon never rolls.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import numpy as np
 WORLD_UP = np.array([0.0, 0.0, 1.0])
 
 WHEEL_NOTCH = 120
-"""Qt ``angleDelta`` units in one detent of a standard mouse wheel."""
+"""Units in one detent of a standard mouse wheel, as Qt counted them."""
 
 ZOOM_PER_NOTCH = 1.15
 WHEEL_PX_PER_NOTCH = 40.0

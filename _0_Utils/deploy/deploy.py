@@ -62,20 +62,15 @@ MODULE_ROOTS = (
 )
 
 EXCLUDED_MODULES = (
-    # BobVis is a separate desktop app with its own PyQt6/VTK dependency set
-    # (_1_VisualSim/requirements.txt). Bundling it here would drag ~120 MB of
-    # Qt and VTK into the browser app's executable for nothing.
-    "_1_VisualSim.capture",
-    "_1_VisualSim.demo",
-    "_1_VisualSim.exporter",
-    "_1_VisualSim.from_results",
-    "_1_VisualSim.navigation",
-    "_1_VisualSim.run_visual",
-    "_1_VisualSim.scene",
-    "_1_VisualSim.theme",
-    "_1_VisualSim.tire_state",
-    "_1_VisualSim.viewer",
+    # BobVis used to be a second desktop app, and every _1_VisualSim module was
+    # excluded to keep ~120 MB of Qt and VTK out of this executable. It is now
+    # the app's own Replay tab: what is left of _1_VisualSim is numpy and YAML,
+    # _5_App/visual.py imports it, and it ships.
+    #
+    # These stay excluded. Nothing imports them any more, and that is exactly
+    # when an accidental dependency would slip back in unnoticed.
     "PyQt5",
+    "PyQt6",
     "PySide2",
     "PySide6",
     "pyvista",
