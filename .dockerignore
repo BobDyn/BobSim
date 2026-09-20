@@ -1,0 +1,69 @@
+# Build context for `docker compose build` is the whole repo (`context: .` in
+# docker-compose.yml) with no other filtering, so anything not excluded here
+# gets uploaded to the Docker daemon on every build. The Dockerfile only COPYs
+# requirements.txt explicitly; nothing else needs to be in the context at all.
+
+# VCS
+.git/
+.github/
+
+# Python bytecode/cache
+__pycache__/
+*.pyc
+*.py[cod]
+
+# Host virtual environment (the image builds its own at /opt/venv)
+.venv/
+venv/
+env/
+
+# Test, lint, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE/editor files
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# OpenModelica/Python build and generated-result artifacts
+Build/
+build/
+dist/
+*.egg-info/
+_3_StandardSim/Build/
+_3_StandardSim/BuildBobLib/
+_3_StandardSim/generated_results/
+_3_StandardSim/results/
+_4_OptSim/Build/
+_4_OptSim/results/
+_4_OptSim/population/
+_4_OptSim/population_refined/
+_4_OptSim/StandardSens/results/
+_4_OptSim/EnvelopeSens/results/
+_2_EnvelopeSim/results/
+_1_VisualSim/results/
+_5_App/user_data/
+_0_Utils/deploy/assets/
+_0_Utils/deploy/build/
+_0_Utils/deploy/dist/
+/temp/
+/results/
+
+# Deploy/release outputs
+*.exe
+*.app
+*.zip
+*.tar.gz
+
+# Animations
+*.gif
+*.mp4
