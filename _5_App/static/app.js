@@ -184,7 +184,7 @@ const state = {
   referenceOpen: false,
   busyAction: null,
   modelicaWriting: false,
-  dark: localStorage.getItem("bobsim-theme") === "dark",
+  dark: localStorage.getItem("bobsim-theme") !== "light",
 };
 
 document.body.classList.toggle("dark", state.dark);
@@ -7542,17 +7542,17 @@ function activeParameterArea() {
 
 function canvasPalette() {
   return {
-    bg: state.dark ? "#2a343d" : "#f0f4f7",
-    surface: state.dark ? "#222a32" : "#fbfcfd",
-    ink: state.dark ? "#e3e9ee" : "#18232e",
-    muted: state.dark ? "#aab5bf" : "#687887",
-    line: state.dark ? "#3f4a54" : "#cfdae2",
-    blue: state.dark ? "#91b4d7" : "#4f7fa8",
-    green: state.dark ? "#9bc8b4" : "#5f967f",
-    amber: state.dark ? "#d4b47d" : "#b68a57",
-    red: state.dark ? "#d19494" : "#b96a6a",
-    magenta: state.dark ? "#d8a8c0" : "#a86c86",
-    tireFront: state.dark ? "#8ec7ff" : "#286fb7",
+    bg: state.dark ? "#181e2a" : "#f1f3f6",
+    surface: state.dark ? "#131720" : "#ffffff",
+    ink: state.dark ? "#dfdfd6" : "#26262c",
+    muted: state.dark ? "#98989f" : "#67676c",
+    line: state.dark ? "#2e3340" : "#e2e2e3",
+    blue: state.dark ? "#4ea1ff" : "#2563eb",
+    green: state.dark ? "#3dd68c" : "#18794e",
+    amber: state.dark ? "#f9b44e" : "#915930",
+    red: state.dark ? "#f66f81" : "#b8272c",
+    magenta: state.dark ? "#e879a8" : "#a8386e",
+    tireFront: state.dark ? "#8ec7ff" : "#1d4ed8",
     tireRear: state.dark ? "#eba0c3" : "#b44f89",
   };
 }
@@ -7816,7 +7816,7 @@ function drawArchitectureReferencePlane(ctx, points, viewport) {
   const palette = canvasPalette();
   const rect = expandedRect(bounds, 22);
   ctx.save();
-  ctx.fillStyle = state.dark ? "rgba(106,167,232,0.035)" : "rgba(37,103,179,0.035)";
+  ctx.fillStyle = state.dark ? "rgba(78,161,255,0.045)" : "rgba(37,103,179,0.035)";
   ctx.strokeStyle = colorWithAlpha(palette.line, 0.72);
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -8102,7 +8102,7 @@ function drawArchitecturePowertrain(ctx, cx, cy, profile, hotspots, hoverId, sel
   const rect = { x: cx - 86, y: cy - 44, width: 172, height: 88 };
   hotspots.push({ id, type: "powertrain", rect });
   drawArchitectureHotspotFrame(ctx, rect, id, hoverId, selectedId);
-  drawPanel(ctx, rect.x + 12, rect.y + 16, rect.width - 24, rect.height - 32, state.dark ? "#1d2630" : "#f7f9fb");
+  drawPanel(ctx, rect.x + 12, rect.y + 16, rect.width - 24, rect.height - 32, state.dark ? "#161b25" : "#f7f9fb");
   drawCanvasText(ctx, "Powertrain", cx, cy - 8, { align: "center", size: 12, weight: 820 });
   drawCanvasText(ctx, profile.id, cx, cy + 12, { align: "center", size: 11, weight: 680, color: palette.muted });
 }
@@ -8283,7 +8283,7 @@ function drawSimpleAssemblyFigure(ctx, x, y, width, height, profile) {
   nodes.forEach(([label, color], index) => {
     const cx = x + index * step;
     if (index > 0) {
-      ctx.strokeStyle = state.dark ? "#3c4a56" : "#cfd8e0";
+      ctx.strokeStyle = state.dark ? "#2e3340" : "#cfd8e0";
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(x + (index - 1) * step + 20, centerY);
@@ -8359,7 +8359,7 @@ function drawAssemblyPipeline(ctx, x, y, width, profile) {
       ctx.lineTo(cx - 34, y);
       ctx.stroke();
     }
-    ctx.fillStyle = state.dark ? "#1d2630" : "#f7f9fb";
+    ctx.fillStyle = state.dark ? "#161b25" : "#f7f9fb";
     ctx.strokeStyle = palette.line;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -8601,7 +8601,7 @@ function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {
 
 function drawHeatmapPanel(ctx, x, y, width, height, title, table, xGrid, yGrid, unit) {
   const palette = canvasPalette();
-  drawPanel(ctx, x, y, width, height, state.dark ? "rgba(23,30,37,0.92)" : "rgba(255,255,255,0.94)");
+  drawPanel(ctx, x, y, width, height, state.dark ? "rgba(19,23,32,0.92)" : "rgba(255,255,255,0.94)");
   drawCanvasText(ctx, title, x + 12, y + 17, { size: 13, weight: 780 });
   if (!Array.isArray(table) || !table.length) {
     drawCanvasText(ctx, "No map", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
@@ -8710,7 +8710,7 @@ function powertrainSubsystemLabel(id) {
 
 function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsystem) {
   const palette = canvasPalette();
-  const fill = state.dark ? "rgba(20, 27, 35, 0.92)" : "rgba(255, 255, 255, 0.96)";
+  const fill = state.dark ? "rgba(19, 23, 32, 0.92)" : "rgba(255, 255, 255, 0.96)";
   drawPanel(ctx, x, y, width, height, fill);
   drawCanvasText(ctx, "Architecture", x + 14, y + 18, { size: 13, weight: 800 });
   drawCanvasText(ctx, "VCU", x + width - 14, y + 18, {
@@ -8873,7 +8873,7 @@ function drawPowertrainNode(ctx, node, active) {
   ctx.save();
   ctx.fillStyle = active
     ? colorWithAlpha(node.color, state.dark ? 0.18 : 0.12)
-    : (state.dark ? "#141d26" : "#f8fafc");
+    : (state.dark ? "#121722" : "#f8fafc");
   ctx.strokeStyle = active ? node.color : colorWithAlpha(palette.line, state.dark ? 0.82 : 0.9);
   ctx.lineWidth = active ? 2 : 1;
   ctx.beginPath();
@@ -8933,7 +8933,7 @@ function drawPowertrainBatteryIcon(ctx, cx, cy, size, color) {
 function drawPowertrainInverterIcon(ctx, cx, cy, size, color) {
   const palette = canvasPalette();
   ctx.save();
-  ctx.fillStyle = state.dark ? "#172331" : "#f0f3f8";
+  ctx.fillStyle = state.dark ? "#132031" : "#f0f3f8";
   ctx.strokeStyle = palette.ink;
   ctx.lineWidth = 1.4;
   ctx.fillRect(cx - size * 0.58, cy - size * 0.58, size * 1.16, size * 1.16);
@@ -8984,7 +8984,7 @@ function drawPowertrainDifferentialIcon(ctx, cx, cy, size, color) {
   ctx.ellipse(cx, cy, size * 0.58, size * 0.44, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = state.dark ? "#2e3338" : "#d2d7dc";
+  ctx.fillStyle = state.dark ? "#242a35" : "#d2d7dc";
   ctx.beginPath();
   ctx.arc(cx, cy, size * 0.2, 0, Math.PI * 2);
   ctx.fill();
@@ -10604,7 +10604,7 @@ function drawTireToeFootprint(ctx, corner, cx, cy, maxRadius) {
   ctx.lineTo(cx, cy - halfLong - 7);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = state.dark ? "#101820" : "#f6f8fa";
+  ctx.fillStyle = state.dark ? "#0b0e14" : "#f6f8fa";
   ctx.strokeStyle = accent;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -10720,7 +10720,7 @@ function drawSeriesPanel(ctx, x, y, width, height, title, series, xLabel, yLabel
   ctx.strokeRect(chartX, chartY, chartW, chartH);
   if (minY < 0 && maxY > 0) {
     const zeroY = chartY + chartH - ((0 - minY) / (maxY - minY)) * chartH;
-    ctx.strokeStyle = state.dark ? "#44515e" : "#c7d0d8";
+    ctx.strokeStyle = state.dark ? "#39404f" : "#c7d0d8";
     ctx.beginPath();
     ctx.moveTo(chartX, zeroY);
     ctx.lineTo(chartX + chartW, zeroY);
@@ -10767,7 +10767,7 @@ function drawWheelGlyph(ctx, x, y, radius, angle, color) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.fillStyle = state.dark ? "#0f151b" : "#edf1f4";
+  ctx.fillStyle = state.dark ? "#0a0d13" : "#edf1f4";
   ctx.strokeStyle = color || palette.muted;
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -11206,7 +11206,7 @@ function drawPlotHover(ctx, chart, hoverState = undefined) {
     ? activeHover.pointerY - tooltipH - 10
     : plot.y + 8;
   const tooltipY = clamp(requestedY, plot.y + 8, plot.y + plot.height - tooltipH - 8);
-  ctx.fillStyle = state.dark ? "#1c242b" : "#ffffff";
+  ctx.fillStyle = state.dark ? "#161b25" : "#ffffff";
   ctx.strokeStyle = palette.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -11370,7 +11370,7 @@ function drawCleanComplianceChassis(ctx, x, y, width, height, { active, value })
   const tileW = Math.max(120, x + width - tileX - 18);
   const tileY = y + 48;
   const tileH = Math.max(96, height - 76);
-  drawPanel(ctx, tileX, tileY, tileW, tileH, state.dark ? "#1d2630" : "#f7f9fb");
+  drawPanel(ctx, tileX, tileY, tileW, tileH, state.dark ? "#161b25" : "#f7f9fb");
   drawCanvasText(ctx, "Active input", tileX + 14, tileY + 20, { size: 11, weight: 760, color: palette.muted });
   drawCanvasText(ctx, active ? `${formatNumber(value)} N m/rad` : "Unset", tileX + 14, tileY + 51, {
     size: tileW < 160 ? 13 : 17,
@@ -11789,7 +11789,7 @@ function drawMassLabel(ctx, point) {
   ctx.font = "760 10px Inter, sans-serif";
   const width = Math.min(170, Math.ceil(ctx.measureText(label).width) + paddingX * 2);
   const height = 20;
-  ctx.fillStyle = state.dark ? "rgba(32,40,49,0.88)" : "rgba(248,250,252,0.9)";
+  ctx.fillStyle = state.dark ? "rgba(24,30,42,0.88)" : "rgba(248,250,252,0.9)";
   ctx.strokeStyle = colorWithAlpha(point.color, point.id === state.massSelectedPointId ? 0.72 : 0.36);
   ctx.lineWidth = point.id === state.massSelectedPointId ? 1.5 : 1;
   ctx.beginPath();
@@ -12079,7 +12079,7 @@ function drawMiniCurves(ctx, width, height) {
 function drawMiniTires(ctx, width, height) {
   const palette = canvasPalette();
   [[0.3, 0.28], [0.7, 0.28], [0.3, 0.72], [0.7, 0.72]].forEach(([xFrac, yFrac], index) => {
-    ctx.fillStyle = state.dark ? "#0f151b" : "#edf1f4";
+    ctx.fillStyle = state.dark ? "#0a0d13" : "#edf1f4";
     ctx.strokeStyle = index < 2 ? palette.blue : palette.green;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -12171,7 +12171,7 @@ function drawSphere(ctx, point) {
   const gradient = ctx.createRadialGradient(point.x2 - radius * 0.35, point.y2 - radius * 0.45, 1, point.x2, point.y2, radius);
   gradient.addColorStop(0, "#ffffff");
   gradient.addColorStop(0.28, point.color);
-  gradient.addColorStop(1, state.dark ? "#0b1117" : "#24313f");
+  gradient.addColorStop(1, state.dark ? "#090c11" : "#24313f");
   ctx.save();
   if (hovered || selected) {
     ctx.strokeStyle = selected ? canvasPalette().amber : canvasPalette().blue;

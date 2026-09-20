@@ -1,53 +1,57 @@
 # BobSim App
 
-Run:
+The local browser app: a standard-library web shell over the existing BobSim
+workflows. User-facing docs live at [bobdyn.com/bobsim/app](https://bobdyn.com/bobsim/app);
+this file is the module map.
 
 ```bash
-python -m _5_App.app
+python -m _5_App.app      # then open http://127.0.0.1:8765
 ```
 
-Open `http://127.0.0.1:8765`.
+## What the UI is
 
-The app is a small standard-library web shell over the existing BobSim
-workflows. The left rail is intentionally small: `Setup` and `Standard Sim`.
-Setup is where the active vehicle is configured, visualized, loaded from a
-template or saved variant, and saved back into the local vehicle library. Once a
-vehicle is selected, Standard Sim becomes the focused run/review surface for the
-standard workflows.
+Three tabs, used in order:
 
-The active vehicle setup includes the checked-in architecture templates from
-`_0_Utils/vehicle_templates`, so changing between direct, bellcrank, and
-bellcrank-stabar packages can be done from the browser before running studies.
-Mutable app data lives under `_5_App/user_data` in development and under the
-user's BobSim runtime directory in packaged builds. Vehicle setup exposes
-vehicle parameters while hiding repo path plumbing, backed by a large
+| Tab | Surface |
+| --- | --- |
+| `Setup` | Configure, visualise, load, and save the active vehicle, then `Write to MBD` |
+| `Simulation` | Launch the StandardSim workflows, edit their run configs, stream job logs |
+| `Archive` | Download the archive package a completed run produced |
+
+Setup covers the checked-in architecture templates from
+`_0_Utils/vehicle_templates`, so swapping between direct, bellcrank, and
+bellcrank-stabar packages happens in the browser before any study runs. It
+exposes vehicle parameters while hiding repo path plumbing, backed by a large
 interactive preview with hardpoints, suspension links, scaled mass spheres, and
-representative inertia rods. The header theme toggle persists light/dark mode in
-the browser.
+representative inertia rods.
 
-Mutable app folders are grouped as:
+Styling follows the BobDocs/bobdyn.com theme: same Inter face, same palette
+tokens, same 8px/12px radius scale. Dark is the default; the header toggle
+persists a light override in `localStorage` under `bobsim-theme`. The CSS
+tokens in `static/styles.css` and the `canvasPalette()` values in `static/app.js`
+are two halves of one palette — change both together or the plots drift from the
+shell.
 
-- `_5_App/user_data/config/app`
-- `_5_App/user_data/config/vehicles`
-- `_5_App/user_data/config/simulations`
-- `_5_App/user_data/config/active`
-- `_5_App/user_data/config/defaults`
-- `_5_App/user_data/results/saved`
-- `_5_App/user_data/workspaces/vehicles`
-- `_5_App/user_data/cache/modelica`
+## Where data lives
 
-`config/active` is where the app edits a StandardSim study config. The file under
-`_3_StandardSim/` stays as checked in -- it is the seed a clean clone runs and
-what "Default" restores, and `_0_Utils/config_io.resolve` makes the CLI pick up
-the active copy when one exists, so `make standard-eval-*` runs what the app
-runs. `ConfigSpec.relocatable` marks which configs can move: EnvelopeSim and
-OptSim configs resolve `../` paths against their own directory, so they are still
-edited in place and keep their pristine copy in `config/defaults` instead.
+Mutable app data is under `_5_App/user_data` in development, and under the
+user's BobSim runtime directory in packaged builds. `storage.py` is the single
+source of truth for the layout:
+
+- `user_data/config/app` — app settings, OpenModelica selection
+- `user_data/config/vehicles` — saved vehicles
+- `user_data/config/simulations` — saved run configs
+- `user_data/results/saved` — archive packages
+- `user_data/workspaces/vehicles` — per-vehicle generated configs and results
+- `user_data/cache/modelica` — cached Modelica builds
+
+Shipped, read-only assets stay in the repo: `static/` (UI) and
+`sim_configs/_defaults/` (stock run configs).
 
 `_1_VisualSim` remains the visualization engine. `_5_App` owns the local browser
 shell, setup menus, job launch, output preview, and logs.
 
-## Module Layout
+## Module layout
 
 - `app.py`: compatibility facade for existing imports plus the CLI entrypoint.
   New code should prefer the domain modules below.
@@ -72,3 +76,4 @@ shell, setup menus, job launch, output preview, and logs.
 - `kinematics.py`: live suspension kinematic preview payloads.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
 - `desktop.py`: desktop/webview wrapper for packaged builds.
+- `static/`: `index.html`, `app.js`, `styles.css`, and the vendored Inter font.
