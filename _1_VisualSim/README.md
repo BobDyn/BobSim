@@ -17,9 +17,8 @@ make visual-demo       # synthetic scene, no simulation needed
 make app               # open the app, then the Replay tab
 ```
 
-There is nothing to install for it. The simulation behind `visual-rig` still
-goes through Docker like every other BobSim workflow; the conversion steps are
-host side and need only the base requirements.
+There is nothing to install for it. Every step runs in Docker like every other
+BobSim workflow, and so does `make app`.
 
 ---
 

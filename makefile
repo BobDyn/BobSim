@@ -109,6 +109,11 @@ SHELL_ENVELOPE_CMD := $(COMPOSE) run --rm envelope bash
 SHELL_OPT_CMD := $(COMPOSE) run --rm opt bash
 endif
 
+# The app needs a network to publish its port, so it uses the app service, not
+# bobsim. Recursive so that `make app RUN=` also runs the app on the host.
+APP_PORT ?= 8765
+APP_RUN = $(if $(RUN),$(COMPOSE) run --rm -p 127.0.0.1:$(APP_PORT):8765 app,)
+
 WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
 CLEAN_WORKSPACE ?= $(CURDIR)
 CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
@@ -139,7 +144,7 @@ help:
 		'  init                      Initialize submodules' \
 		'  docker-build              Build the Docker development image' \
 		'  docker-rebuild            Rebuild the Docker image from scratch' \
-		'  app                       Open the BobSim browser app' \
+		'  app                       Open the BobSim browser app in Docker' 		'      APP_PORT=8765 sets the host port, RUN= runs it on the host' \
 		'' \
 		'  BobVis - scenes for the Replay tab. Write one, then open the app.' \
 		'  visual-maneuver           Simulate a VehicleSim manoeuvre and write its scene' \
@@ -247,17 +252,17 @@ docker-rebuild:
 	$(DOCKER_REBUILD_CMD)
 
 app:
-	$(PYTHON) -m _5_App.app
+	$(if $(APP_RUN),@echo BobSim app in Docker. Open http://127.0.0.1:$(APP_PORT),)
+	$(APP_RUN) $(PYTHON) -m _5_App.app $(if $(APP_RUN),--host 0.0.0.0 --port 8765,--port $(APP_PORT))
 
 # A normal evaluation keeps only the scalar signals its metrics need, so its
 # result CSV has no geometry and cannot feed a scene. This re-runs one
 # evaluation (VISUAL_EVAL) asking OpenModelica for the suspension frames too,
-# then converts the result into a scene. The simulation goes through $(RUN);
-# the two conversion steps are host side and need only the base requirements.
+# then converts the result into a scene.
 visual-capture: $(VISUAL_EVAL_BUILD)
-	$(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
+	$(RUN) $(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
 	$(RUN) $(PYTHON) -m _3_StandardSim.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
-	$(PYTHON) -m _1_VisualSim.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
+	$(RUN) $(PYTHON) -m _1_VisualSim.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
 		--npz $(VISUAL_CAPTURE)_visual.npz --template $(VISUAL_CAPTURE)_visual.yml
 	@printf '%s\n' 'Scene written. Open it with: make app, then the Replay tab.'
 
@@ -273,7 +278,7 @@ visual-maneuver:
 # The demo scene is generated, never committed, so build it whenever it is
 # missing. Both outputs come from one run of the generator.
 $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA):
-	$(PYTHON) -m _1_VisualSim.demo --out-dir $(VISUAL_RESULTS)
+	$(RUN) $(PYTHON) -m _1_VisualSim.demo --out-dir $(VISUAL_RESULTS)
 
 visual-demo: $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA)
 	@printf '%s\n' 'Synthetic scene written. Open it with: make app, then the Replay tab.'

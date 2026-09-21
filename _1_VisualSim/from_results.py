@@ -698,8 +698,7 @@ def print_summary(npz_path: Path, template_path: Path, summary: dict[str, Any]) 
         print(f"[bobvis] warning: unmapped hardpoint {name}", file=sys.stderr)
     for message in summary.get("warnings", []):
         print(f"[bobvis] warning: {message}", file=sys.stderr)
-    print(f"[bobvis] open with: make visual VISUAL_CONFIG={template_path} "
-          f"VISUAL_DATA={npz_path}")
+    print(f"[bobvis] scene  {template_path} + {npz_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:

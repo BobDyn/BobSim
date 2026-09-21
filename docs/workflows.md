@@ -8,7 +8,7 @@ aren't obvious from the target names.
 ```bash
 make init          # git submodule update --init --recursive  ← do not skip
 make docker-build  # OpenModelica + requirements.txt
-make app           # http://127.0.0.1:8765
+make app           # in Docker, http://127.0.0.1:8765
 ```
 
 `make init` is not optional. Without it BobLib is empty or stale and every
@@ -20,12 +20,20 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 
 | Target | Runs on | Needs on host | Needs in container |
 | --- | --- | --- | --- |
-| `make app`, `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
-| `make visual-*` | Host, except the simulation step | — | Only for the capture step |
+| `make app` | Container (`app` service) or host with `RUN=` | — | Auto-built |
+| `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
+| `make visual-*` | Container (in `RUN`) | — | Auto-built |
 | `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
 | `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
 **Shortcut for native testing:** `make shell` opens a container shell for any workflow.
+
+`make app` uses the `app` service, not `bobsim`, because `bobsim` has no
+network and so cannot publish a port. The container listens on 8765 and
+publishes it on `127.0.0.1:$(APP_PORT)` (default 8765). The app in the container
+uses the image's `omc` and keeps its toolchain choice in
+`_5_App/user_data/config/app/openmodelica.docker.json`, so it never overwrites
+the host app's `openmodelica.json`. `make app RUN=` runs the app on the host.
 
 ## Target vocabulary
 
@@ -122,9 +130,8 @@ make app               # then open the Replay tab
 ```
 
 Each writes a `<name>_visual.yml` and `.npz` pair into `_1_VisualSim/results/`,
-and the Replay tab lists whatever it finds there. The conversion steps run on
-the host; the simulation inside `visual-rig` and `visual-maneuver` still goes
-through `$(RUN)` like every other BobSim workflow.
+and the Replay tab lists whatever it finds there. Every step goes through
+`$(RUN)` like every other BobSim workflow.
 
 A normal evaluation keeps only the scalar signals its metrics need, so it has
 columns of KnC numbers and nothing to draw. `make visual-capture` (which
