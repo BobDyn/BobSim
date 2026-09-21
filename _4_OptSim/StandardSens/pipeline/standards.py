@@ -14,10 +14,11 @@ means a second compile per vehicle and its own config conventions.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import csv
 from dataclasses import dataclass
 import hashlib
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -172,6 +173,23 @@ def run_standard(
     canonical = metrics_csv.with_name("metrics.csv")
     shutil.copyfile(metrics_csv, canonical)
     return canonical
+
+
+def case_loss(metrics: Mapping[str, float]) -> str | None:
+    """Say why a run is not whole, or return None when every case settled.
+
+    Every VehicleSim standard exports `n_cases` and `n_successful_cases`. A run
+    that lost cases fits its gradients through fewer points, so its metrics are
+    not comparable with a whole run's, and nothing downstream can tell from the
+    numbers alone.
+    """
+    total = metrics.get("n_cases", math.nan)
+    good = metrics.get("n_successful_cases", math.nan)
+    if not (math.isfinite(total) and math.isfinite(good)):
+        return "reported no case counts"
+    if good < total:
+        return f"{int(total - good)} of {int(total)} cases failed"
+    return None
 
 
 def read_metrics(path: Path) -> dict[str, tuple[float, str]]:

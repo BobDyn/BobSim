@@ -184,3 +184,24 @@ def test_cpus_go_to_concurrent_runs_until_each_would_be_starved() -> None:
 def test_float_noise_does_not_split_one_vehicle_into_two_cache_entries() -> None:
     assert variant_key({"b": 0.1 + 0.2, "a": 1.0}) == variant_key({"a": 1.0, "b": 0.3})
     assert variant_key({}) != variant_key({"a": 1.0})
+
+
+def test_the_solver_refuses_an_evaluation_that_lost_cases() -> None:
+    """One definition of "not whole", shared by the trade table and the solver.
+
+    A star point that lost a case still returns finite gradients, fitted through
+    fewer points. Accepted silently it bends the surrogate, and because
+    evaluations are cached it would bend every later solve as well.
+    """
+    from StandardSens.pipeline.evaluator import require_whole
+
+    whole = {"n_cases": 8.0, "n_successful_cases": 8.0, "understeer": 0.3}
+    assert standards.case_loss(whole) is None
+    require_whole({"rear.bar": 700.0}, whole)
+
+    lossy = {**whole, "n_successful_cases": 7.0}
+    assert standards.case_loss(lossy) == "1 of 8 cases failed"
+    with pytest.raises(RuntimeError, match="1 of 8 cases failed.*target_ays"):
+        require_whole({"rear.bar": 700.0}, lossy)
+
+    assert standards.case_loss({"understeer": 0.3}) == "reported no case counts"
