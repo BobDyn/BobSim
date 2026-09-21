@@ -6,22 +6,9 @@ import numpy as np
 
 
 class Damper(Link):
-    """
-    ## Damper
+    """Damper (shock).
 
-    Damper object
-    - Represents shock
-
-    Parameters
-    ----------
-    inboard : Node
-        Node representing inboard end of damper
-
-    outboard : Node
-        Node representing outboard end of damper
-    
-    damping_curve : Sequence[Tuple[float, float]]
-        Lookup table for damping values, in the form: Sequence[Tuple[`velocity`, `force`]]
+    damping_curve is a lookup table of (velocity, force) pairs.
     """
     def __init__(self, inboard_node: Node, outboard_node: Node, damping_curve: Sequence[Tuple[float, float]]) -> None:
         super().__init__(inboard_node=inboard_node, outboard_node=outboard_node)
@@ -34,14 +21,4 @@ class Damper(Link):
     
     @property
     def force(self) -> float:
-        """
-        ## Force
-
-        Damper force at current velocity
-
-        Returns
-        -------
-        float
-            Damper force
-        """
         return np.interp(self.velocity, self.velocity_reference, self.force_reference).__float__()

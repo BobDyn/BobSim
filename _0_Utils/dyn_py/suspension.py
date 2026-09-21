@@ -1,8 +1,6 @@
 """Compatibility exports for suspension force transmission.
 
-Kinematic curve construction is exposed by :mod:`_0_Utils.dyn_py.kinematics`.
-``dyn_py`` retains these names so existing reduced-order integrations do not
-need to know whether the active evaluator is interpolated or nonlinear.
+Kinematic curves live in :mod:`_0_Utils.dyn_py.kinematics`.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from _0_Utils.dyn_py.kinematics import (
 )
 
 
-# Backward-compatible name used by the first reduced-order implementation.
+# Old name kept for existing callers.
 DoubleWishboneGeometry = DoubleWishboneKinematicLookup
 
 

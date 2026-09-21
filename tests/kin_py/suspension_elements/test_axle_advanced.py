@@ -12,12 +12,9 @@ from _0_Utils.kin_py.mf52 import MF52
 from unittest import TestCase
 import numpy as np
 
-# Advanced axle test uses control arms configured with arbitrary points in 3D space
-# This particular configuration has anti geometry, a kingpin angled toward the car, and negative caster
+# Control arms at arbitrary 3D points: anti geometry, kingpin angled inboard, negative caster.
 
 class TestAxleAdvanced(TestCase):
-    ### Left corner
-    # Nodes
     lower_inboard_fore_L = Node(position=[2, 2, 0])
     lower_inboard_aft_L = Node(position=[0, 2, 0])
     lower_outboard_L = Node(position=[1, 4, 0.00006249])
@@ -40,7 +37,6 @@ class TestAxleAdvanced(TestCase):
 
     contact_patch_L = Node(position=[1.00042957, 4.49993731, -0.5])
 
-    # Links
     lower_fore_link_L = Link(inboard_node=lower_inboard_fore_L, outboard_node=lower_outboard_L)
     lower_aft_link_L = Link(inboard_node=lower_inboard_aft_L, outboard_node=lower_outboard_L)
 
@@ -57,15 +53,12 @@ class TestAxleAdvanced(TestCase):
 
     push_pull_rod_L = PushPullRod(outboard_rod=pushrod_L, spring=spring_L, inboard_rod=inboard_rod_L, bellcrank=bellcrank_L)
 
-    # Wishbones
     lower_wishbone_L = Wishbone(fore_link=lower_fore_link_L, aft_link=lower_aft_link_L)
     upper_wishbone_L = Wishbone(fore_link=upper_fore_link_L, aft_link=upper_aft_link_L)
     
-    # Tire
     tire_mf52_L = MF52(tire_name="test_tire", file_path="./tests/kin_py/_test_dependencies/unit_test_tire.tir")
     tire_L = Tire(tire=tire_mf52_L, contact_patch=contact_patch_L, outer_diameter=16*0.0254, width=7*0.0254, inner_diameter=10*0.0254)
 
-    # Set relation between upper wishbone and pushrod
     upper_outboard_L.add_child(node=pushrod_lower_L)
 
     quarter_car_L = QuarterCar(tire=tire_L,
@@ -74,7 +67,6 @@ class TestAxleAdvanced(TestCase):
                                 tie_rod=tie_rod_L,
                                 push_pull_rod=pushrod_L)
     
-    ### Right corner
     lower_inboard_fore_R = Node(position=[2, -2, 0])
     lower_inboard_aft_R = Node(position=[0, -2, 0])
     lower_outboard_R = Node(position=[1, -4, 0.00006249])
@@ -97,7 +89,6 @@ class TestAxleAdvanced(TestCase):
 
     contact_patch_R = Node(position=[1.00042957, -4.49993731, -0.5])
 
-    # Links
     lower_fore_link_R = Link(inboard_node=lower_inboard_fore_R, outboard_node=lower_outboard_R)
     lower_aft_link_R = Link(inboard_node=lower_inboard_aft_R, outboard_node=lower_outboard_R)
 
@@ -114,15 +105,12 @@ class TestAxleAdvanced(TestCase):
 
     push_pull_rod_R = PushPullRod(outboard_rod=pushrod_R, spring=spring_R, inboard_rod=inboard_rod_R, bellcrank=bellcrank_R)
 
-    # Wishbones
     lower_wishbone_R = Wishbone(fore_link=lower_fore_link_R, aft_link=lower_aft_link_R)
     upper_wishbone_R = Wishbone(fore_link=upper_fore_link_R, aft_link=upper_aft_link_R)
     
-    # Tire
     tire_mf52_R = MF52(tire_name="test_tire", file_path="./tests/kin_py/_test_dependencies/unit_test_tire.tir")
     tire_R = Tire(tire=tire_mf52_R, contact_patch=contact_patch_R, outer_diameter=16*0.0254, width=7*0.0254, inner_diameter=10*0.0254)
 
-    # Set relation between upper wishbone and pushrod
     upper_outboard_R.add_child(node=pushrod_lower_R)
 
     quarter_car_R = QuarterCar(tire=tire_R,
@@ -131,7 +119,6 @@ class TestAxleAdvanced(TestCase):
                                 tie_rod=tie_rod_R,
                                 push_pull_rod=pushrod_R)
 
-    ### Stabar
     left_arm_end = Node(position=[1.98908984, 2.5, 1.89611964])
     right_arm_end = Node(position=[1.98908984, -2.5, 1.89611964])
     left_droplink_end = Node(position=[1.62459170, 3.01250280, 1.11863524])
@@ -151,20 +138,17 @@ class TestAxleAdvanced(TestCase):
     left_droplink_end.add_listener(stabar)
     right_droplink_end.add_listener(stabar)
 
-    # Couple stabar to upper wishbone
     upper_outboard_L.add_child(node=left_droplink_end)
     upper_outboard_R.add_child(node=right_droplink_end)
     
     def test_jounce_resid_left(self):
-        # Known outputs for jounce of 0.25 units
+        # Known solution for a jounce of 0.25.
         lower_wishbone_angle = 7.5064069 * np.pi / 180
         upper_wishbone_angle = 8.92843131 * np.pi / 180
         wheel_angle = -1.92297609 * np.pi / 180
 
-        # Manually set jounce
         self.quarter_car_L.wheel_jounce = self.contact_patch_L.initial_position[2] + 0.25
 
-        # Calculate residuals and confirm residuals go to zero
         residuals = self.quarter_car_L._geometry_resid_func(x=[lower_wishbone_angle, upper_wishbone_angle, wheel_angle])
 
         rounded_residuals = [round(x, 2) for x in residuals]
@@ -298,15 +282,13 @@ class TestAxleAdvanced(TestCase):
                 self.assertLess(abs(test_results[i] - known_results[i]), tolerances[i], msg=corresponding_values[i])
 
     def test_jounce_resid_right(self):
-        # Known outputs for jounce of 0.25 units
+        # Known solution for a jounce of 0.25.
         lower_wishbone_angle = -7.5064069 * np.pi / 180
         upper_wishbone_angle = -8.92843131 * np.pi / 180
         wheel_angle = 1.92297609 * np.pi / 180
 
-        # Manually set jounce
         self.quarter_car_R.wheel_jounce = self.contact_patch_L.initial_position[2] + 0.25
 
-        # Calculate residuals and confirm residuals go to zero
         residuals = self.quarter_car_R._geometry_resid_func(x=[lower_wishbone_angle, upper_wishbone_angle, wheel_angle])
 
         rounded_residuals = [round(x, 2) for x in residuals]

@@ -2,9 +2,7 @@ name: CI
 
 on:
   workflow_dispatch:
-  # push and pull_request test different commits: push tests the branch as
-  # written, pull_request tests it merged into the base. Scoping push to main
-  # keeps both without running everything twice on every PR branch.
+  # pull_request tests the merge result. push is limited to main to prevent duplicate runs.
   push:
     branches: [main]
   pull_request:
@@ -14,9 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Lint, Type check and Tests are separate jobs because the protect-main
-  # ruleset requires them as named status checks. Each now runs exactly once:
-  # previously the Docker job re-ran `make ci`, duplicating all three.
+  # The protect-main ruleset requires these jobs as named status checks.
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -59,9 +55,7 @@ jobs:
       - name: Run mypy
         run: make typecheck RUN=
 
-  # Runs natively rather than in the image: every test that needs OpenModelica
-  # is gated on regression artifacts CI never generates, so the container added
-  # no coverage here -- only an image build.
+  # Runs natively. Tests that need OpenModelica also need regression artifacts, which CI does not make.
   tests:
     name: Tests
     runs-on: ubuntu-latest
@@ -83,14 +77,12 @@ jobs:
       - name: Run pytest
         run: make test RUN=
 
-  # Proves the environment users actually run in still works: the image builds,
-  # omc is functional, and the DOE pipeline runs inside it. Full StandardSim
-  # baselines stay out of CI -- they exceed hosted runner limits (CONTRIBUTING).
+  # Checks the user image: it builds, omc works, and the DOE pipeline runs.
   container:
     name: Container toolchain
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Only where it pays for itself: the image build is the expensive step.
+    # The image build is slow, so it runs only for pull requests and main.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
 
     steps:

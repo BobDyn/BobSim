@@ -25,7 +25,7 @@ class Tire:
         self.static_toe: float = static_toe
         self.static_gamma: float = static_gamma
 
-        # This only works for Z-up SAE J670 coords
+        # Valid only for SAE J670 Z-up axes.
         x_rot = np.array(rotation_matrix(unit_vec=[1, 0, 0], theta=static_gamma * np.pi / 180))
         z_rot = np.array(rotation_matrix(unit_vec=[0, 0, 1], theta=static_toe * np.pi / 180))
         
@@ -40,74 +40,21 @@ class Tire:
         
     @property
     def delta(self) -> float:
-        """
-        ## Tire Steered Angle
-
-        Calculates tire steered angle in radians
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        float
-            Tire steered angle in radians
-        """
+        """Steered angle in radians, including static toe."""
         return self.steered_angle + self.static_toe
 
     @property
     def gamma(self):
-        """
-        ## Tire Inclination Angle
-
-        Calculates tire inclination angle in radians
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        float
-            Tire inclination angle in radians
-        """
+        """Inclination angle in radians. Not implemented."""
         pass
     
     @property
     def center(self):
-        """
-        ## Tire Center
-
-        Calculates the centroid of the tire
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        Sequence[float]
-            Centroid of the tire
-        """
         return self.center_node.position
 
     @property
     def direction(self):
-        """
-        ## Tire Direction
-
-        Calculates unit vector acting through primary axis of tire (treated as a cylinder geometrically)
-
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        float
-            Tire direction unit vector
-        """
+        """Normal to the tire midplane (the tire spin axis). Not normalized."""
         pt_1 = np.array(self.contact_patch.position)
         pt_2 = np.array(self.center_node.position)
         pt_3 = np.array(self.front_node.position)

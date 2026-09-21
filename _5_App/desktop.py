@@ -152,8 +152,7 @@ def _open_external_browser(url: str) -> None:
 
 
 def _start_embedded_webview(webview_module, preferred_gui: Literal["qt"] | None) -> None:
-    # QtWebEngine can spawn desktop helper processes while rendering PDFs.
-    # Keep PyInstaller-private libraries out of those system child processes.
+    # QtWebEngine starts system helper processes for PDFs. Keep PyInstaller libraries out of them.
     with _sanitized_frozen_external_environment():
         if preferred_gui:
             webview_module.start(gui=preferred_gui)

@@ -23,7 +23,7 @@ execution:
   stream_logs: false
 
 test:
-  # Scalar or list of velocities; multiple values render as isolines.
+  # Scalar or list. Multiple values render as isolines.
   testVel: [15.0, 20.0]
   stepTime: 1.0
 
@@ -32,7 +32,6 @@ test:
 
   directions: [left]
 
-  # Representative step steer case.
   representative_step_deg: 5.0
   representative_step_direction: left
   steerStep_deg: [5.0]

@@ -1,7 +1,4 @@
-"""Compatibility imports for the shared suspension kinematics model.
-
-New code should import from the unified ``_0_Utils.dyn_py`` product surface.
-"""
+"""Compatibility imports. New code imports from ``_0_Utils.dyn_py``."""
 
 from _0_Utils.dyn_py import (
     BUMP_CURVE_SOURCES,

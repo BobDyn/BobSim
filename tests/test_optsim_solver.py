@@ -1,10 +1,4 @@
-"""Numerics of the target-metric solver, exercised without a simulator.
-
-The evaluator is injected, so a closed-form stand-in vehicle is enough to check
-the things that would otherwise only show up after an hour of OpenModelica: that
-an even response is not mistaken for no response, that unreachable targets say
-so, and that an under-determined question gets the nearest-to-baseline answer.
-"""
+"""Target-metric solver numerics, checked against a closed-form stand-in vehicle."""
 
 from __future__ import annotations
 
@@ -90,11 +84,7 @@ def test_solves_two_targets_in_a_linear_number_of_simulations() -> None:
 
 
 def test_even_response_is_not_mistaken_for_no_response() -> None:
-    """Toe acts through toe squared, so its slope at zero toe is exactly zero.
-
-    A one-sided gradient from the baseline would conclude toe does nothing and
-    never move it. Central steps see the curvature.
-    """
+    """Toe acts through toe squared, so a one-sided gradient at zero toe sees no slope."""
     toe_only = [solver.Knob(TOE, -0.25, 0.25, 0.0)]
     result = solver.solve(toe_only, {"understeer": 0.35}, {"understeer": 0.005}, CountingEvaluator())
     assert result.status == "converged"
@@ -113,11 +103,7 @@ def test_unreachable_target_says_so_and_names_the_limiting_knobs() -> None:
 
 
 def test_unreachable_target_does_not_pay_to_resimulate_the_same_setup() -> None:
-    """Pinned against every limit, the next proposal is the same setup again.
-
-    The bounded solve reaches a limit only to within float noise, so the repeat
-    has to be recognised on a range-relative basis or it is simulated twice.
-    """
+    """A bounded solve hits a limit only to float noise, so compare repeats range-relative."""
     knobs = [
         solver.Knob("front.spring", 21015.2202, 31522.8303, 26269.02525),
         solver.Knob("rear.spring", 35025.367, 52538.0505, 43781.70875),

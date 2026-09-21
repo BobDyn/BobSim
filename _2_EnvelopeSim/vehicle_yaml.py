@@ -1,10 +1,6 @@
 """Project vehicle.yml into the simplified EnvelopeSim vehicle models.
 
-The EnvelopeSim generators are intentionally lower fidelity than the full
-Modelica vehicle. This module keeps that reduction explicit: mass, CG,
-wheelbase/track, static load split, effective roll-stiffness lateral load
-transfer split, nominal aero, and tire peak coefficients are carried through;
-kinematics, compliance, damping, and transient effects are not.
+Kinematics, compliance, damping, and transient effects are not carried through.
 """
 
 from __future__ import annotations
@@ -28,8 +24,7 @@ DEFAULT_VEHICLE_YAML = REPO_ROOT / "vehicle.yml"
 DEFAULT_NOMINAL_RIDE_HEIGHT_M = 0.0762
 DEFAULT_FOUR_POST_METRICS = REPO_ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv"
 
-# Nominal FourPost-derived roll stiffnesses used only if the report metrics CSV
-# is unavailable. The source report presents these as Nm/deg.
+# FourPost roll stiffness fallbacks in Nm/deg, used when the metrics CSV is missing.
 NM_PER_DEG_TO_NM_PER_RAD = 1.0 / math.radians(1.0)
 DEFAULT_FRONT_SPRING_ROLL_STIFFNESS = 376.0 * NM_PER_DEG_TO_NM_PER_RAD
 DEFAULT_REAR_SPRING_ROLL_STIFFNESS = 224.0 * NM_PER_DEG_TO_NM_PER_RAD
@@ -312,7 +307,7 @@ def _project_lltd(
         "rear_baseline_stabar_rate_n_m_per_rad": base_rear_bar,
         "front_current_stabar_rate_n_m_per_rad": raw_front_bar,
         "rear_current_stabar_rate_n_m_per_rad": raw_rear_bar,
-        # Legacy name retained for downstream readers that already inspect it.
+        # Legacy name kept for downstream readers.
         "lltd_arb_only": raw_bar_lltd,
     }
     return lltd, summary
@@ -444,9 +439,8 @@ def _project_aero(
     else:
         cop_from_front_m = wheelbase * 0.5
 
-    # Preserve an inferred CoP outside the wheelbase. Clipping it would change
-    # the aero wrench; the corresponding axle reaction may legitimately be
-    # negative when the CoP is ahead of the front or behind the rear axle.
+    # Do not clip a CoP outside the wheelbase. Clipping changes the aero wrench.
+    # An axle reaction may then be negative.
     aero_balance_front_map = 1.0 - cop_from_front_m / wheelbase
     aero_balance_front = (
         aero_balance_front_map

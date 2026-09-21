@@ -67,7 +67,6 @@ class QuadLayout:
                         alpha=0.85,
                     )
 
-            # REFERENCES
             refs = sub.get("reference")
             if refs:
                 if isinstance(refs, dict):
@@ -81,7 +80,6 @@ class QuadLayout:
                             color=ref.get("color", "black"),
                         )
 
-            # AXES
             ax.set_title(sub["title"], fontsize=12)
             ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
             ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)

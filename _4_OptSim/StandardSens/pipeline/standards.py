@@ -1,15 +1,7 @@
-"""standards.py — Run any VehicleSim standard against a compiled variant.
+"""Run any VehicleSim standard against a compiled variant.
 
-SteadyStateEval, RampSteerEval and TransientEval are three questions asked of the
-same compiled model, `BobLib.Experiments.Standards.VehicleSim`. `_3_StandardSim`
-already builds that model once and points all three configs at it. They also
-share one interface: `python -m <module> <config.yml>`, a `simulation` block
-naming the executable, and a `report` block whose `output_path` decides where the
-PDF and its `<stem>_metrics.csv` land. So one compile per vehicle serves every
-standard here, and adding a standard is one entry in `STANDARDS`.
-
-FourPostEval is not listed: it runs a different model (`FourPostSim`), which
-means a second compile per vehicle and its own config conventions.
+All standards here share one compiled VehicleSim executable. FourPostEval is not
+listed because it runs a different model (FourPostSim).
 """
 
 from __future__ import annotations
@@ -36,7 +28,7 @@ ConfigEdit = Callable[[dict[str, Any]], None]
 @dataclass(frozen=True)
 class Standard:
     name: str
-    package: str  # directory under _3_StandardSim, also the python package
+    package: str  # directory under _3_StandardSim
     stem: str  # "<stem>_sim.py", "<stem>_config.yml", "<stem>_report.pdf"
 
     @property
@@ -63,11 +55,7 @@ STANDARDS: dict[str, Standard] = {
 
 
 def input_digest(standard: Standard) -> str:
-    """Fingerprint of what decides a standard's numbers besides the vehicle.
-
-    The pipeline hash covers SteadyStateEval's tooling only, so results cached
-    for another standard are stamped with this and rerun when it changes.
-    """
+    """Hash a standard's sim and config. The pipeline hash covers only SteadyStateEval tooling."""
     digest = hashlib.sha256()
     for path in (standard.sim_path, standard.config_path):
         digest.update(path.read_bytes())
@@ -95,10 +83,9 @@ def write_config(
     max_workers: int | None = None,
     edit: ConfigEdit | None = None,
 ) -> tuple[Path, Path]:
-    """Write the standard's config for one variant; return (config, metrics CSV).
+    """Write the standard's config for one variant. Return (config, metrics CSV).
 
-    The shared standard's own config file is read, never written. `edit` is the
-    hook for the few callers that need more than the executable swapped.
+    The shared standard config is read, never written. `edit` changes the copy.
     """
     with standard.config_path.open(encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
@@ -109,14 +96,12 @@ def write_config(
     simulation["build_dir"] = str(build_dir)
     simulation["exec_name"] = exec_name
 
-    # Otherwise execution settings stay exactly as the standard's config has them.
     if max_workers is not None:
         execution = config.setdefault("execution", {})
         execution["parallel"] = True
         execution["max_workers"] = int(max_workers)
 
-    # The metrics CSV path is derived from output_path whether or not the PDF is
-    # rendered, so anchoring it to the variant keeps both beside its results.
+    # The metrics CSV path comes from output_path even when the PDF is not rendered.
     results_dir = variant_dir / "results" / standard.name
     report = config.setdefault("report", {})
     report["enabled"] = render_report
@@ -168,21 +153,14 @@ def run_standard(
     if not metrics_csv.exists():
         raise FileNotFoundError(f"{standard.name} produced no metrics CSV: {metrics_csv}")
 
-    # A stable name beside the report-style one, which is what the sweep's
-    # batch runner and aggregator look for.
+    # The batch runner and aggregator look for metrics.csv.
     canonical = metrics_csv.with_name("metrics.csv")
     shutil.copyfile(metrics_csv, canonical)
     return canonical
 
 
 def case_loss(metrics: Mapping[str, float]) -> str | None:
-    """Say why a run is not whole, or return None when every case settled.
-
-    Every VehicleSim standard exports `n_cases` and `n_successful_cases`. A run
-    that lost cases fits its gradients through fewer points, so its metrics are
-    not comparable with a whole run's, and nothing downstream can tell from the
-    numbers alone.
-    """
+    """Say why a run is not whole, or return None when every case settled."""
     total = metrics.get("n_cases", math.nan)
     good = metrics.get("n_successful_cases", math.nan)
     if not (math.isfinite(total) and math.isfinite(good)):
@@ -195,12 +173,7 @@ def case_loss(metrics: Mapping[str, float]) -> str | None:
 def read_metrics(path: Path) -> dict[str, tuple[float, str]]:
     """Read a standard's metrics CSV as {name: (value, units)}.
 
-    TransientEval reports some metrics once per group under the same name
-    (`ay_gain_dc` for the step and again for the frequency sweep). Keyed by bare
-    name the later row would silently replace the earlier, so a name that spans
-    groups is exposed only in its qualified form, `group.metric`. A row repeated
-    with the same value is one metric; repeated with a different value it is an
-    ambiguity nothing here can resolve, and an error.
+    A name that appears in more than one group is keyed as `group.metric`.
     """
     with path.open(newline="", encoding="utf-8") as handle:
         rows = [row for row in csv.DictReader(handle) if row.get("metric")]

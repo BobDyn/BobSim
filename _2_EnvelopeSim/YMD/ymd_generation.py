@@ -1,26 +1,6 @@
-"""
-First-principles Yaw Moment Diagram generator for BobSim.
+"""Quasi-static yaw moment diagram generator for BobSim.
 
-This computes quasi-static yaw moment diagrams using:
-- mass properties
-- static weight distribution
-- aero downforce / drag
-- lateral load transfer
-- .tir-derived lateral peak friction
-- .tir-derived approximate cornering stiffness
-- saturated lateral tire forces
-- handwheel steer and vehicle sideslip sweeps
-
-The output is:
-- YMD wireframe/carpet plot: yaw moment Mz vs lateral acceleration ay
-- YMD beta-slice plot
-- contour map: yaw moment over beta / roadwheel angle space, with ay contours
-- CSV export
-- 3D YMD speed sweep wireframe
-- 3D YMD map speed sweep surface
-
-This is intended as a first-principles BobSim analysis utility. It is not a
-full Modelica trim solve and does not yet solve for steady-state yaw rate.
+Sweeps sideslip and steer at a prescribed yaw rate. It does not solve for steady-state yaw rate.
 """
 
 from __future__ import annotations
@@ -71,36 +51,30 @@ class VehicleParams:
 
     front_static_frac: float  # fraction of static weight on front axle
 
-    # Front convention:
-    #   lltd = front lateral load transfer / total lateral load transfer
+    # Front share of lateral load transfer.
     lltd: float
 
-    # Steering
     # delta_roadwheel = delta_hwa / steering_ratio
     steering_ratio: float = 1.0
 
-    # Aero
     rho: float = 1.225  # kg/m^3
     cl_a: float = 0.0  # downforce coefficient times area, positive
     cd_a: float = 0.0  # drag coefficient times area
     aero_balance_front: float = 0.50
 
-    # Tire model from .tir
     fz_ref: float = 654.0
     fz_min_valid: float = 100.0
     fz_max_valid: float = 1091.0
 
-    # Lateral Magic Formula peak coefficients:
-    #   mu_y ~= abs(PDY1 + PDY2 * dfz)
+    # mu_y ~= abs(PDY1 + PDY2 * dfz)
     pdy1: float = -2.40275
     pdy2: float = 0.343535
 
-    # Lateral cornering stiffness coefficients:
-    #   C_alpha ~= abs(PKY1) * Fz0 * sin(2 atan(Fz / (PKY2 * Fz0)))
+    # C_alpha ~= abs(PKY1) * Fz0 * sin(2 atan(Fz / (PKY2 * Fz0)))
     pky1: float = -53.2421
     pky2: float = 2.38205
 
-    # Safety floor for extrapolated loads
+    # Floor for extrapolated loads.
     mu_min: float = 0.8
 
 
@@ -117,8 +91,7 @@ class YMDConfig:
     hwa_max_deg: float = 18.0
     hwa_points: int = 61
 
-    # Moment-method YMD default.
-    # Later this can become a solved steady-state yaw-rate / curvature condition.
+    # Moment method uses a fixed yaw rate.
     yaw_rate: float = 0.0  # rad/s
 
     max_iter: int = 50
@@ -152,13 +125,7 @@ def force_to_aero_area(
     speed_mps: float,
     rho: float = 1.225,
 ) -> tuple[float, float]:
-    """
-    Convert CFD forces at a known speed to ClA and CdA.
-
-    The vehicle model expects:
-        downforce = 0.5 * rho * V^2 * cl_a
-        drag      = 0.5 * rho * V^2 * cd_a
-    """
+    """Convert CFD forces at a known speed to ClA and CdA."""
     if speed_mps <= 0.0:
         raise ValueError("speed_mps must be positive.")
 
@@ -170,12 +137,7 @@ def force_to_aero_area(
 
 
 def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, float]:
-    """
-    Return front downforce, rear downforce, and aero drag.
-
-    Positive downforce increases normal load.
-    Positive drag opposes forward motion.
-    """
+    """Return front downforce, rear downforce, and drag. Positive drag resists motion."""
     q = 0.5 * vehicle.rho * speed**2
 
     downforce = q * vehicle.cl_a
@@ -188,17 +150,7 @@ def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, floa
 
 
 def tire_mu_y(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
-    """
-    Approximate lateral peak friction from .tir PDY terms.
-
-    Uses:
-        mu_y = abs(PDY1 + PDY2 * dfz)
-
-    where:
-        dfz = (Fz - Fz0) / Fz0
-
-    Camber term PDY3 is ignored for this first-principles YMD.
-    """
+    """Return mu_y = abs(PDY1 + PDY2 * dfz), with dfz = (Fz - Fz0) / Fz0. Ignores PDY3."""
     fz_safe = np.maximum(fz, 1.0)
     dfz = (fz_safe - vehicle.fz_ref) / vehicle.fz_ref
 
@@ -211,17 +163,7 @@ def tire_cornering_stiffness_y(
     vehicle: VehicleParams,
     fz: FloatArray,
 ) -> FloatArray:
-    """
-    Approximate lateral cornering stiffness from .tir PKY terms.
-
-    PAC-style approximation:
-        Kya ~= PKY1 * Fz0 * sin(2 atan(Fz / (PKY2 * Fz0)))
-
-    We use the magnitude because sign convention is handled separately.
-
-    Returns:
-        C_alpha per tire [N/rad]
-    """
+    """Return C_alpha magnitude per tire in N/rad from the .tir PKY terms."""
     fz_safe = np.maximum(fz, 1.0)
 
     c_alpha = abs(vehicle.pky1) * vehicle.fz_ref * np.sin(
@@ -236,15 +178,7 @@ def saturated_lateral_force(
     fz: FloatArray,
     alpha: FloatArray,
 ) -> FloatArray:
-    """
-    Smooth lateral tire force model.
-
-    Linear near zero:
-        Fy ~= C_alpha * alpha
-
-    Saturated at:
-        Fy_max = mu_y(Fz) * Fz
-    """
+    """Return Fy, linear in alpha near zero and saturated at mu_y(Fz) * Fz."""
     fz_positive = np.maximum(fz, 0.0)
 
     fy_capacity = tire_mu_y(vehicle, fz) * fz_positive
@@ -256,20 +190,9 @@ def saturated_lateral_force(
 
 
 def wheel_positions(vehicle: VehicleParams) -> tuple[FloatArray, FloatArray]:
-    """
-    Wheel coordinates relative to CG.
-
-    Coordinate convention:
-        x forward
-        y left
-
-    Wheel order:
-        [FL, FR, RL, RR]
-    """
-    # Distance from CG to front axle
+    """Return [FL, FR, RL, RR] wheel coordinates from the CG. x forward, y left."""
     a = (1.0 - vehicle.front_static_frac) * vehicle.wheelbase
 
-    # Distance from CG to rear axle
     b = vehicle.front_static_frac * vehicle.wheelbase
 
     x = np.array([a, a, -b, -b], dtype=np.float64)
@@ -293,18 +216,9 @@ def wheel_loads(
     ax: float,
     ay: float,
 ) -> FloatArray:
-    """
-    Estimate individual wheel normal loads.
+    """Return [FL, FR, RL, RR] normal loads in N.
 
-    Returns:
-        [FL, FR, RL, RR] normal loads [N]
-
-    Sign convention:
-        ax > 0: accelerating
-        ax < 0: braking
-        ay > 0: lateral acceleration to vehicle left
-
-    For ay > 0, right-side tires are outside tires and gain load.
+    ax > 0 accelerates. ay > 0 points left, so the right tires gain load.
     """
     weight = vehicle.mass * G
 
@@ -313,14 +227,12 @@ def wheel_loads(
     fz_front = vehicle.front_static_frac * weight + front_aero
     fz_rear = (1.0 - vehicle.front_static_frac) * weight + rear_aero
 
-    # Longitudinal load transfer.
     # ax > 0 transfers load rearward.
     d_fz_long = vehicle.mass * ax * vehicle.cg_height / vehicle.wheelbase
 
     fz_front -= d_fz_long
     fz_rear += d_fz_long
 
-    # Lateral load transfer.
     total_lat_transfer_moment = vehicle.mass * ay * vehicle.cg_height
 
     front_lat_transfer = vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
@@ -343,24 +255,9 @@ def tire_slip_angles(
     hwa: float,
     yaw_rate: float = 0.0,
 ) -> FloatArray:
-    """
-    Compute tire slip angles for a simple planar 4-wheel model.
+    """Return [FL, FR, RL, RR] slip angles for a planar 4-wheel model.
 
-    beta:
-        vehicle sideslip angle at CG [rad]
-
-    hwa:
-        roadwheel angle [rad]
-
-    yaw_rate:
-        yaw velocity [rad/s]
-
-    Sign convention:
-        positive roadwheel angle steers front tires left
-        positive beta means velocity points left of vehicle x-axis
-
-    Wheel order:
-        [FL, FR, RL, RR]
+    hwa is the roadwheel angle. Positive hwa steers left. Positive beta points the velocity left.
     """
     x, y = wheel_positions(vehicle)
 
@@ -379,7 +276,7 @@ def tire_slip_angles(
 
     velocity_angle = np.arctan2(vy, vx)
 
-    # This convention gives positive front lateral force for positive steer.
+    # Gives positive front Fy for positive steer.
     alpha = wheel_heading - velocity_angle
 
     return alpha
@@ -392,14 +289,7 @@ def ymd_point(
     hwa: float,
     reduced_model: ReducedVehicleModel | None = None,
 ) -> tuple[float, float, bool]:
-    """
-    Solve one quasi-static YMD point.
-
-    Returns:
-        ay [m/s^2]
-        mz [N*m]
-        converged
-    """
+    """Solve one quasi-static YMD point. Return ay in m/s^2, mz in N*m, and converged."""
     if reduced_model is not None:
         trim = solve_moment_state(
             reduced_model,
@@ -461,8 +351,7 @@ def ymd_point(
 
         fy_tire = saturated_lateral_force(vehicle, fz=fz, alpha=alpha)
 
-        # Rotate front tire forces into vehicle body frame.
-        # Rear tires have steer = 0.
+        # Rotate tire forces into the body frame.
         wheel_heading = np.array(
             [delta_roadwheel, delta_roadwheel, 0.0, 0.0],
             dtype=np.float64,
@@ -489,17 +378,7 @@ def generate_ymd(
     config: YMDConfig,
     reduced_model: ReducedVehicleModel | None = None,
 ) -> YMDResult:
-    """
-    Generate a first-principles yaw moment diagram.
-
-    Sweeps:
-        beta = vehicle sideslip angle
-        hwa  = roadwheel angle
-
-    Outputs:
-        ay(beta, hwa)
-        mz(beta, hwa)
-    """
+    """Sweep beta and roadwheel angle to build ay(beta, hwa) and mz(beta, hwa)."""
     beta_vals = np.deg2rad(
         np.linspace(config.beta_min_deg, config.beta_max_deg, config.beta_points)
     )
@@ -603,9 +482,7 @@ def warn_if_tire_loads_outside_tir_range(
     beta_vals: FloatArray,
     hwa_vals: FloatArray,
 ) -> None:
-    """
-    Scan approximate finite YMD points and warn if wheel loads exceed .tir range.
-    """
+    """Warn where YMD wheel loads leave the .tir fitted range."""
     fz_min_seen = np.inf
     fz_max_seen = -np.inf
 
@@ -649,9 +526,7 @@ def value_to_blue_red(
     value: float,
     max_abs_value: float,
 ) -> tuple[float, float, float, float]:
-    """
-    Map negative values to blue, positive values to red, and zero to light gray.
-    """
+    """Map negative values to blue, positive to red, and zero to light gray."""
     if max_abs_value <= 0.0:
         return (0.5, 0.5, 0.5, 1.0)
 
@@ -671,29 +546,16 @@ def plot_ymd(
     result: YMDResult,
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Traditional YMD wireframe/carpet plot.
+    """Plot the YMD carpet of Mz against ay.
 
-    Shows both isoline families on the same Mz vs ay plane:
-
-        blue lines = constant beta, beta
-        red lines  = constant roadwheel angle, delta_rw
-
-    Slide-friendly labeling strategy:
-        - plot integer-degree isolines only
-        - label every plotted isoline
-        - do NOT rotate labels
-        - place labels away from the pinched endpoints
+    Blue lines hold beta constant. Red lines hold roadwheel angle constant.
     """
 
     def nearest_index(values: FloatArray, target: float) -> int:
         return int(np.argmin(np.abs(values - target)))
 
     def selected_integer_degree_indices(values_deg: FloatArray) -> list[int]:
-        """
-        Select indices corresponding to integer-degree values in the available range.
-        Each integer degree is matched to the nearest grid index.
-        """
+        """Return the nearest grid index for each integer degree in range."""
         vmin = float(np.nanmin(values_deg))
         vmax = float(np.nanmax(values_deg))
 
@@ -714,10 +576,7 @@ def plot_ymd(
         color: str,
         fontsize: float = 6.0,
     ) -> None:
-        """
-        Label a finite polyline at a fractional position through its valid points.
-        Labels are intentionally NOT rotated.
-        """
+        """Label a polyline at a fractional position along its finite points."""
         mask = np.isfinite(x) & np.isfinite(y)
         valid = np.where(mask)[0]
 
@@ -753,21 +612,12 @@ def plot_ymd(
 
     beta_deg = np.rad2deg(result.beta)
 
-    # NOTE:
-    # This variable is still named hwa in YMDResult for compatibility with the
-    # rest of the script, but with steering_ratio = 1.0 this is roadwheel angle.
+    # result.hwa is the roadwheel angle when steering_ratio = 1.0.
     delta_rw_deg = np.rad2deg(result.hwa)
 
-    # -------------------------------------------------------------------------
-    # Integer-degree isoline selection
-    # -------------------------------------------------------------------------
     beta_indices = selected_integer_degree_indices(beta_deg)
     delta_indices = selected_integer_degree_indices(delta_rw_deg)
 
-    # -------------------------------------------------------------------------
-    # Blue family: constant beta isolines
-    # Each row i sweeps delta_rw at fixed beta.
-    # -------------------------------------------------------------------------
     n_beta = max(1, len(beta_indices) - 1)
 
     for label_count, i in enumerate(beta_indices):
@@ -790,7 +640,6 @@ def plot_ymd(
             alpha=0.90,
         )
 
-        # Spread blue labels through the interior.
         frac = 0.16 + 0.68 * (label_count / n_beta)
 
         label_line(
@@ -803,10 +652,6 @@ def plot_ymd(
             fontsize=6.0,
         )
 
-    # -------------------------------------------------------------------------
-    # Red family: constant roadwheel-angle isolines
-    # Each column j sweeps beta at fixed delta_rw.
-    # -------------------------------------------------------------------------
     n_delta = max(1, len(delta_indices) - 1)
 
     for label_count, j in enumerate(delta_indices):
@@ -829,7 +674,7 @@ def plot_ymd(
             alpha=0.90,
         )
 
-        # Put red labels on an opposing band so they interleave with blue labels.
+        # Offset red labels so they interleave with blue labels.
         frac = 0.84 - 0.68 * (label_count / n_delta)
 
         label_line(
@@ -842,9 +687,6 @@ def plot_ymd(
             fontsize=6.0,
         )
 
-    # -------------------------------------------------------------------------
-    # Axes / styling
-    # -------------------------------------------------------------------------
     ax.axhline(0.0, linewidth=0.9, color="black", alpha=0.65)
     ax.axvline(0.0, linewidth=0.9, color="black", alpha=0.65)
 
@@ -862,7 +704,6 @@ def plot_ymd(
     ax.set_xlim(-1.10 * ay_abs, 1.10 * ay_abs)
     ax.set_ylim(-1.10 * mz_abs, 1.10 * mz_abs)
 
-    # Legend proxies
     blue_proxy, = ax.plot(
         [],
         [],
@@ -899,11 +740,7 @@ def plot_ymd_beta_slices(
     result: YMDResult,
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Alternate YMD plot.
-
-    Lines of constant beta are plotted across roadwheel angle.
-    """
+    """Plot constant-beta lines across roadwheel angle."""
     fig, ax = plt.subplots(figsize=(9.5, 6.2))
 
     ay_g = result.ay / G
@@ -964,9 +801,7 @@ def plot_ymd_contours(
     result: YMDResult,
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot beta/roadwheel angle contour map for yaw moment, with ay contours.
-    """
+    """Plot Mz contours over beta and roadwheel angle, with ay contours."""
     beta_deg = np.rad2deg(result.beta)
     hwa_deg = np.rad2deg(result.hwa)
 
@@ -1023,13 +858,7 @@ def plot_ymd_contours(
 
 
 def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
-    """
-    Save YMD result to CSV.
-
-    Columns:
-        speed_mps,beta_rad,beta_deg,hwa_rad,hwa_deg,
-        ay_mps2,ay_g,mz_nm,converged
-    """
+    """Save YMD result to CSV."""
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     rows: list[list[float]] = []
@@ -2287,9 +2116,7 @@ def generate_ymd_speed_sweep(
     speeds: FloatArray,
     reduced_model: ReducedVehicleModel | None = None,
 ) -> YMDSpeedSweepResult:
-    """
-    Generate YMD carpets across multiple velocities.
-    """
+    """Generate YMD carpets across multiple speeds."""
     results: list[YMDResult] = []
 
     print("=" * 72)
@@ -2333,17 +2160,7 @@ def plot_ymd_speed_sweep_3d(
     sweep: YMDSpeedSweepResult,
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot stacked YMD carpets across velocity.
-
-    Axes:
-        x = lateral acceleration, ay ($g$)
-        y = yaw moment, Mz ($N m$)
-        z = speed, V (m/s)
-
-    Blue lines = constant beta isolines.
-    Red lines  = constant delta_hwa isolines.
-    """
+    """Plot YMD carpets stacked by speed."""
     fig = plt.figure(figsize=(11.0, 8.0))
     ax = fig.add_subplot(111, projection="3d")
 
@@ -2357,7 +2174,6 @@ def plot_ymd_speed_sweep_3d(
 
         speed_grid = np.full_like(result.ay, speed, dtype=float)
 
-        # Blue family: constant beta lines
         beta_step = max(1, len(beta_deg) // 14)
 
         for i, _beta in enumerate(beta_deg):
@@ -2376,7 +2192,6 @@ def plot_ymd_speed_sweep_3d(
                     alpha=0.72,
                 )
 
-        # Red family: constant handwheel-angle lines
         hwa_step = max(1, len(hwa_deg) // 14)
 
         for j, _hwa in enumerate(hwa_deg):
@@ -2401,10 +2216,9 @@ def plot_ymd_speed_sweep_3d(
 
     ax.set_title("First-Principles Moment-Method YMD Speed Sweep")
 
-    # Good initial slide view.
     ax.view_init(elev=24, azim=-58)
 
-    # Manual visual scaling; do not use raw data ranges.
+    # Manual aspect. Raw data ranges distort the view.
     ax.set_box_aspect((1.25, 1.35, 1.0))
 
     blue_proxy, = ax.plot(
@@ -2444,17 +2258,7 @@ def plot_ymd_speed_sweep_surface(
     sweep: YMDSpeedSweepResult,
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot YMD as stacked beta/hwa surfaces across speed.
-
-    Axes:
-        x = beta (deg)
-        y = delta_hwa (deg)
-        z = speed (m/s)
-
-    Color:
-        yaw moment Mz ($N m$)
-    """
+    """Plot beta/hwa surfaces stacked by speed, colored by Mz."""
     fig = plt.figure(figsize=(11.0, 8.0))
     ax = fig.add_subplot(111, projection="3d")
 
@@ -2519,34 +2323,13 @@ def plot_ymd_speed_sweep_hull_surfaces(
     surface_alpha: float = 0.18,
     show_slice_wireframes: bool = True,
 ) -> None:
-    """
-    Plot a convex hull shell around the full YMD speed sweep, plus a small
-    number of selected interior constant-beta and constant-delta_hwa surfaces.
+    """Plot a convex hull of the YMD speed sweep with some interior beta and hwa surfaces.
 
-    Axes:
-        x = lateral acceleration, ay ($g$)
-        y = yaw moment, Mz ($N m$)
-        z = speed, V (m/s)
-
-    Gray transparent shell:
-        convex hull of all finite YMD points
-
-    Blue transparent surfaces:
-        selected constant beta surfaces
-
-    Red transparent surfaces:
-        selected constant delta_hwa surfaces
-
-    This version intentionally avoids plotting boundary isoline surfaces because
-    the convex hull already represents the outer envelope. The blue/red surfaces
-    are used as internal slices through the volume.
+    The hull is the outer envelope, so only interior slices are drawn.
     """
     if not sweep.results:
         raise ValueError("No YMD sweep results provided.")
 
-    # -------------------------------------------------------------------------
-    # Collect all finite points for convex hull
-    # -------------------------------------------------------------------------
     point_blocks: list[FloatArray] = []
 
     for result in sweep.results:
@@ -2577,15 +2360,9 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     hull = ConvexHull(points_all)
 
-    # -------------------------------------------------------------------------
-    # Figure
-    # -------------------------------------------------------------------------
     fig = plt.figure(figsize=(12.0, 8.5))
     ax = fig.add_subplot(111, projection="3d")
 
-    # -------------------------------------------------------------------------
-    # Convex hull shell
-    # -------------------------------------------------------------------------
     hull_faces = [points_all[simplex] for simplex in hull.simplices]
 
     hull_collection = Poly3DCollection(
@@ -2598,26 +2375,17 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     ax.add_collection3d(hull_collection)
 
-    # -------------------------------------------------------------------------
-    # Select only interior beta/hwa slices
-    # -------------------------------------------------------------------------
     beta_vals = sweep.results[0].beta
     hwa_vals = sweep.results[0].hwa
 
     def interior_indices(n: int, count: int) -> NDArray[np.int_]:
-        """
-        Return evenly spaced interior indices, excluding the boundary indices.
-
-        Example:
-            n=61, count=3 -> roughly [15, 30, 45]
-        """
+        """Return evenly spaced interior indices, excluding the boundaries."""
         if count <= 0:
             return np.array([], dtype=int)
 
         if n <= 2:
             return np.arange(n, dtype=int)
 
-        # Use 15% to 85% range to avoid outermost envelope surfaces.
         lo = int(round(0.15 * (n - 1)))
         hi = int(round(0.85 * (n - 1)))
 
@@ -2628,9 +2396,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     speeds = np.asarray([result.speed for result in sweep.results], dtype=float)
 
-    # -------------------------------------------------------------------------
-    # Blue surfaces: beta fixed, sweep hwa and speed
-    # -------------------------------------------------------------------------
     for beta_idx in beta_indices:
         ay_surface_list: list[FloatArray] = []
         mz_surface_list: list[FloatArray] = []
@@ -2676,9 +2441,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
                 cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
-    # -------------------------------------------------------------------------
-    # Red surfaces: hwa fixed, sweep beta and speed
-    # -------------------------------------------------------------------------
     for hwa_idx in hwa_indices:
         hwa_ay_surface_list: list[FloatArray] = []
         hwa_mz_surface_list: list[FloatArray] = []
@@ -2724,15 +2486,11 @@ def plot_ymd_speed_sweep_hull_surfaces(
                 cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
-    # -------------------------------------------------------------------------
-    # Add a light outline of each speed slice for readability
-    # -------------------------------------------------------------------------
     for result in sweep.results:
         ay_g = result.ay / G
         mz = result.mz
         speed_grid = np.full_like(result.ay, result.speed, dtype=float)
 
-        # Only plot outer-ish beta/hwa lines, not the full carpet.
         for i in (0, len(result.beta) - 1):
             mask = np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
             if np.any(mask):
@@ -2757,9 +2515,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
                     alpha=0.45,
                 )
 
-    # -------------------------------------------------------------------------
-    # Axes / styling
-    # -------------------------------------------------------------------------
     ax.set_xlabel(r"Lateral Acceleration, $a_y$ ($g$)", labelpad=10)
     ax.set_ylabel(r"Yaw Moment, $M_z$ ($N m$)", labelpad=10)
     ax.set_zlabel(r"Speed, $V$ ($m/s$)", labelpad=10)
@@ -2779,7 +2534,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
     ax.set_ylim(-1.08 * mz_abs, 1.08 * mz_abs)
     ax.set_zlim(np.min(speeds), np.max(speeds))
 
-    # Legend proxies.
     hull_proxy = mpatches.Patch(
         facecolor="lightgray",
         edgecolor="gray",
@@ -2873,9 +2627,6 @@ def main() -> None:
         f"{vehicle.fz_min_valid:.1f} to {vehicle.fz_max_valid:.1f} N"
     )
 
-    # -------------------------------------------------------------------------
-    # Single-speed YMD generation
-    # -------------------------------------------------------------------------
     config = config_to_ymd_config(ymd_report_config)
 
     reduced_model = Vehicle.from_yaml(vehicle_path).model(config.model_dof)
@@ -2908,9 +2659,6 @@ def main() -> None:
 
     summary, trim_rows = summarize_ymd(result)
 
-    # -------------------------------------------------------------------------
-    # YMD speed sweep
-    # -------------------------------------------------------------------------
     speed_sweep_cfg = ymd_report_config.get("speed_sweep") or {}
     speed_sweep = np.array(
         [float(v) for v in speed_sweep_cfg.get("speeds_mps", np.linspace(10.0, 25.0, 7))],

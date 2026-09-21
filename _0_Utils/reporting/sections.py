@@ -236,7 +236,6 @@ def add_summary_page(pdf, summary, title=None):
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
-    # --- Title ---
     page_title = title or "SteadyStateEval Summary"
     velocity = summary.get("velocity_mps")
     if velocity is not None and np.isfinite(velocity):
@@ -335,7 +334,6 @@ def add_summary_page(pdf, summary, title=None):
         ),
     ]
 
-    # --- column positions ---
     x_metric = 0.2
     x_value = 0.65
     x_units = 0.82
@@ -343,16 +341,13 @@ def add_summary_page(pdf, summary, title=None):
     y_top = 0.78
     row_h = 0.041
 
-    # --- header ---
     plt.text(x_metric, y_top, "Metric", fontsize=13, weight="bold")
     plt.text(x_value, y_top, "Value", fontsize=13, weight="bold", ha="right")
     plt.text(x_units, y_top, "Units", fontsize=13, weight="bold")
 
-    # header line
     plt.plot([0.18, 0.9], [y_top - 0.02, y_top - 0.02],
              color="black", linewidth=1.5)
 
-    # --- rows ---
     for i, (metric, value, units) in enumerate(rows):
         y = y_top - (i + 1) * row_h
 
@@ -360,7 +355,6 @@ def add_summary_page(pdf, summary, title=None):
         plt.text(x_value, y, value, fontsize=12, ha="right")
         plt.text(x_units, y, units, fontsize=12)
 
-    # bottom line
     plt.plot([0.18, 0.9],
              [y_top - (len(rows)+1)*row_h + 0.02,
               y_top - (len(rows)+1)*row_h + 0.02],
@@ -382,11 +376,9 @@ def add_knc_summary_page(
     fig = plt.figure(figsize=(11, 8.5))
     plt.axis("off")
 
-    # Title
     plt.text(0.5, 0.96, title,
              ha="center", fontsize=18, weight="bold")
 
-    # Column anchors
     x_left_label  = 0.03
     x_left_val    = 0.25
     x_left_unit   = 0.36
@@ -429,14 +421,8 @@ def add_knc_summary_page(
 
         return y - 0.04
 
-    # ============================================================
-    # LEFT COLUMN
-    # ============================================================
     y_left = y_top
 
-    # --------------------------
-    # HEAVE GAINS
-    # --------------------------
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
         "Heave Gains", [
             ("Camber", "camber_gain_heave_rad_per_m", "rad/m", "{:.4f}"),
@@ -447,9 +433,6 @@ def add_knc_summary_page(
             ("Scrub", "scrub_gain_heave_m_per_m", "m/m", "{:.4f}"),
         ])
 
-    # --------------------------
-    # ANTI METRICS
-    # --------------------------
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
         "Anti Metrics", [
             ("Anti-Dive", "avg_anti_dive_pct", "%", "{:.1f}"),
@@ -465,14 +448,8 @@ def add_knc_summary_page(
             ("Max Spring Target Error", "static_balance_max_abs_fz_error_pct", "%", "{:.2f}"),
         ], section_color="#b91c1c")
 
-    # ============================================================
-    # RIGHT COLUMN
-    # ============================================================
     y_right = y_top
 
-    # --------------------------
-    # ROLL GAINS (NOW FULLY SYMMETRIC)
-    # --------------------------
     y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
         "Roll Gains", [
             ("Camber", "camber_gain_roll_rad_per_rad", "rad/rad", "{:.4f}"),
@@ -483,9 +460,6 @@ def add_knc_summary_page(
             ("Scrub", "scrub_gain_roll_m_per_rad", "m/rad", "{:.4f}"),
         ])
 
-    # --------------------------
-    # MOTION RATIOS
-    # --------------------------
     y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
         "Motion Ratios", [
             ("Front MR", "avg_motion_ratio_front", "-", "{:.3f}"),
@@ -494,9 +468,6 @@ def add_knc_summary_page(
             ("Rear Bar MR", "avg_stabar_motion_ratio_rear", "-", "{:.3f}"),
         ])
 
-    # --------------------------
-    # ROLL STIFFNESS
-    # --------------------------
     y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
         "Roll Stiffness", [
             ("Spring Front", "spring_roll_stiffness_front_Nm_per_rad", "Nm/rad", "{:.0f}"),
@@ -691,9 +662,6 @@ def add_title_page(pdf, config):
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # ============================================================
-    # LOGO
-    # ============================================================
     logo = plt.imread("_0_Utils/reporting/media/bob.png")
 
     ax_logo = fig.add_axes([0.03, 0.72, 0.22, 0.19])
@@ -703,9 +671,6 @@ def add_title_page(pdf, config):
     ax_logo.set_zorder(0)
     ax.set_zorder(1)
 
-    # ============================================================
-    # MAIN TEXT
-    # ============================================================
     ax.text(
         0.5,
         0.80,
@@ -747,9 +712,6 @@ def add_title_page(pdf, config):
         alpha=0.85,
     )
 
-    # ============================================================
-    # NOTES PANEL
-    # ============================================================
     notes = report_cfg.get("notes", [])
     footer = report_cfg.get("footer", "")
 
@@ -769,7 +731,6 @@ def add_title_page(pdf, config):
     panel_top = 0.38
     panel_bottom = 0.13
 
-    # Panel title
     fig.text(
         panel_left,
         panel_top + 0.025,
@@ -780,7 +741,6 @@ def add_title_page(pdf, config):
         alpha=0.9,
     )
 
-    # Divider above notes
     fig.lines.append(
         plt.Line2D(
             [panel_left, panel_right],
@@ -792,7 +752,6 @@ def add_title_page(pdf, config):
         )
     )
 
-    # Two-column wrapped notes
     if clean_notes:
         col_x = [panel_left, 0.52]
         col_width_chars = 48
@@ -829,7 +788,6 @@ def add_title_page(pdf, config):
             if col > 1:
                 break
 
-            # If even column 2 is full, stop cleanly.
             if line_in_col >= max_lines_per_col:
                 break
 
@@ -851,9 +809,6 @@ def add_title_page(pdf, config):
 
             line_in_col += int(round(paragraph_gap / line_spacing))
 
-    # ============================================================
-    # BOTTOM DIVIDER
-    # ============================================================
     divider_y = 0.075
 
     fig.lines.append(
@@ -867,9 +822,6 @@ def add_title_page(pdf, config):
         )
     )
 
-    # ============================================================
-    # BOBDYN FOOTER
-    # ============================================================
     fig.text(
         0.94,
         divider_y + 0.018,

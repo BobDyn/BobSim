@@ -1,10 +1,8 @@
 """Import Lotus SHARK (.shk) suspension geometry into a BobSim vehicle.yml.
 
-A SHARK file describes a *single corner of a single axle* in millimetres. It
-carries no mass, aero, tyre or powertrain data, so the import merges only the
-suspension hardpoint block, the steering rack pickup and the actuation geometry
-into a copy of an existing vehicle.yml.
-
+A SHARK file holds one corner of one axle in millimetres and no mass, aero,
+tyre or powertrain data. The import merges only suspension, steering and
+actuation geometry into a copy of an existing vehicle.yml.
 See docs/conventions.md for the target coordinate convention.
 """
 
@@ -25,7 +23,7 @@ from _0_Utils.vehicle_io import load_yaml, repo_root
 
 MM_PER_M = 1000.0
 
-# Points a double-wishbone corner must provide before we will emit geometry.
+# Required for any double-wishbone corner.
 REQUIRED_POINTS = (
     "Lower wishbone front pivot",
     "Lower wishbone rear pivot",
@@ -38,7 +36,7 @@ REQUIRED_POINTS = (
     "Wheel centre point",
 )
 
-# Additional points required for a pushrod/bellcrank corner.
+# Also required for a pushrod/bellcrank corner.
 BELLCRANK_POINTS = (
     "Push rod wishbone end",
     "Push rod rocker end",
@@ -48,7 +46,7 @@ BELLCRANK_POINTS = (
     "Rocker axis 2nd point",
 )
 
-# Straight hardpoint mapping: vehicle.yml key -> SHARK point name.
+# vehicle.yml key -> SHARK point name.
 SUSPENSION_POINT_MAP = {
     "lower_fore_i_m": "Lower wishbone front pivot",
     "lower_aft_i_m": "Lower wishbone rear pivot",
@@ -78,15 +76,8 @@ def _numbers(line: str) -> list[float]:
 def parse_shark(path: str | Path) -> dict[str, Any]:
     """Return the named hardpoints of a SHARK file, in millimetres.
 
-    Point *names* come from the TEMP_SETTINGS block and coordinates from the
-    geometry block; they are paired by position. Pairing by name rather than by
-    index means a layout we do not recognise fails loudly instead of silently
-    mapping the wrong point.
-
-    Values are xyz tuples except for the dunder keys, which carry file-level
-    metadata: `__template__` (str), `__loaded_radius_mm__` (float or None) and
-    `__titles__` (list of str). Hence the loose value type - narrowing it to a
-    tuple would be a lie the callers then have to work around.
+    Values are xyz tuples. The dunder keys hold file metadata: `__template__`,
+    `__loaded_radius_mm__` and `__titles__`.
     """
     lines = Path(path).read_text(encoding="utf-8", errors="ignore").splitlines()
 
@@ -130,13 +121,8 @@ def _geometry_block(
 ) -> tuple[list[tuple[float, float, float]], list[float]]:
     """Return (xyz triples, trailing scalars) from the suspension geometry block.
 
-    The block header is a SHARK section label ("FRONT SUSPENSION") that names the
-    assembly slot, *not* the axle the geometry belongs to. The axle is determined
-    from the coordinates, never from this label.
-
-    The trailing scalars are returned rather than skipped because the first one is
-    the loaded rolling radius, which is the only evidence in the file bearing on
-    the vertical datum. See `assess_z_datum`.
+    The block header names the assembly slot, not the axle. The first trailing
+    scalar is the loaded rolling radius (see `assess_z_datum`).
     """
     for idx, line in enumerate(lines):
         if line.strip() in {"FRONT SUSPENSION", "REAR SUSPENSION"}:
@@ -155,12 +141,7 @@ def _geometry_block(
 
 
 def _titles(lines: Sequence[str]) -> list[str]:
-    """Return the free-text TITLES entries, if the file carries any.
-
-    SHARK stores an optional user annotation block here. It is the one place a
-    datum note could plausibly live, so it is parsed rather than ignored, even
-    though every file seen so far declares zero entries.
-    """
+    """Return the free-text TITLES entries, which may hold a datum note."""
     try:
         idx = lines.index("TITLES")
     except ValueError:
@@ -179,10 +160,7 @@ def _distance(a: Sequence[float], b: Sequence[float]) -> float:
 
 
 def detect_axle(points: dict[str, Any], vehicle: dict[str, Any]) -> tuple[str, float]:
-    """Decide which axle this corner belongs to by proximity of the wheel centre.
-
-    Returns the axle name and the wheel-centre offset in mm.
-    """
+    """Return the axle nearest the wheel centre and the offset in mm."""
     wheel_centre = points["Wheel centre point"]
     best: tuple[str, float] | None = None
     for axle in ("front", "rear"):
@@ -196,12 +174,7 @@ def detect_axle(points: dict[str, Any], vehicle: dict[str, Any]) -> tuple[str, f
 
 
 def verify_shared_frame(points: dict[str, Any], vehicle: dict[str, Any], axle: str) -> dict[str, float]:
-    """Prove the SHARK file and vehicle.yml share a coordinate frame.
-
-    Two independently authored files agreeing on a package point to a few
-    hundredths of a millimetre in x and y is not coincidence. If they do not
-    agree we refuse rather than inventing a datum shift.
-    """
+    """Refuse the import unless the SHARK file and vehicle.yml share a frame."""
     shark_wc = points["Wheel centre point"]
     baseline_wc = [value * MM_PER_M for value in vehicle[axle]["suspension"]["wheel_center_m"]]
     dx, dy, dz = (shark_wc[i] - baseline_wc[i] for i in range(3))
@@ -220,10 +193,7 @@ def verify_shared_frame(points: dict[str, Any], vehicle: dict[str, Any], axle: s
 # A contact patch this close to z = 0 is taken as sitting on the ground plane.
 GROUND_PLANE_TOLERANCE_MM = 0.05
 
-# Curves whose value depends on where the vertical datum sits. While the datum is
-# unresolved these are computed but withheld from shareable output. A rigid z
-# translation leaves angles and lengths alone, so the rest of the deck is safe;
-# these are the ones that move with the datum, plus the two the caller called out.
+# Curves that move with the vertical datum. They are withheld while it is unresolved.
 Z_DEPENDENT_CURVE_IDS = frozenset(
     {
         "bump_rc_z_mm", "roll_rc_z_mm",
@@ -244,13 +214,8 @@ Z_DATUM_UNRESOLVED_WARNING = (
 def assess_z_datum(points: dict[str, Any], vehicle: dict[str, Any], axle: str) -> dict[str, Any]:
     """Decide whether the vertical datum can be established from the file itself.
 
-    TODO(datum): unresolved for 2027_RR_SuV12. Reading the trailing scalar as the
-    loaded rolling radius, a shared ground-plane datum implies contact patch z = 0.
-    The baseline satisfies that to 0.008 mm; the SHARK wheel centre misses it by
-    1.198 mm. So the file corroborates the datum for one car and contradicts it for
-    the other, which is *worse* than no evidence - it rules out quietly taking z raw.
-    Resolve by confirming with whoever produced the export whether the 1.19 mm is a
-    real ride-height delta or a datum shift, then delete this branch.
+    TODO(datum): unresolved for 2027_RR_SuV12. Confirm with the exporter whether
+    the SHARK wheel-centre z offset is a ride-height change or a datum shift.
     """
     loaded_radius = points.get("__loaded_radius_mm__")
     titles = points.get("__titles__") or []
@@ -307,11 +272,7 @@ def assess_z_datum(points: dict[str, Any], vehicle: dict[str, Any], axle: str) -
 
 
 def check_single_side(points: dict[str, Any]) -> None:
-    """Refuse asymmetric left/right geometry.
-
-    The schema stores one side and mirrors by Y sign flip, so a file spanning
-    both sides cannot be represented without silently picking one.
-    """
+    """Refuse geometry on both sides. The schema stores one side and mirrors it."""
     ys = [
         value[1]
         for name, value in points.items()
@@ -336,19 +297,14 @@ def _rod_attachment(points: dict[str, Any]) -> str:
     return "lower" if to_lower <= to_upper else "upper"
 
 
-# A carried-over stabar pickup may sit no further from the pivot than this multiple
-# of the largest SHARK-defined arm before we treat the rocker as incoherent.
+# Max carried stabar arm, as a multiple of the largest SHARK-defined arm.
 STABAR_ARM_RATIO_LIMIT = 2.0
 
 
 def _check_carried_stabar_is_coherent(bellcrank: dict[str, Any]) -> None:
     """Refuse a carried-over ARB pickup that the new bellcrank cannot support.
 
-    The stabar pickup is defined in the *baseline* bellcrank's local geometry. If
-    the SHARK redesign moved the pivot, transplanting that point yields a rocker
-    with a drop-link arm wildly out of scale with the rod and shock arms. The
-    Modelica model compiles and then fails to solve part-way through the sweep, so
-    catch it here rather than after a long build.
+    An out-of-scale drop-link arm lets the Modelica model compile but fail mid-sweep.
     """
     pickups = bellcrank.get("pickups_m", {})
     pivot = pickups and bellcrank.get("pivot_m")
@@ -440,10 +396,8 @@ def build_axle_block(
     pickups["rod"] = _to_m(points["Push rod rocker end"])
     pickups["shock"] = _to_m(points["Damper to rocker point"])
 
-    # SHARK carries no anti-roll bar pickups, and the ARB takes no part in the
-    # kinematic solve (CornerKinematics reads suspension/steering/wheel only), so
-    # dropping it is the default. --keep-arb exists for the opt-in four-post run,
-    # which is the only path where the bar changes a number.
+    # SHARK has no ARB pickups and the kinematic solve ignores the ARB, so drop it
+    # by default. --keep-arb is for the four-post run.
     if keep_stabar:
         if "stabar" in actuation:
             _check_carried_stabar_is_coherent(bellcrank)
@@ -476,15 +430,8 @@ def import_shark(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Import a SHARK corner into a copy of the baseline vehicle.
 
-    `baseline_path` is the vehicle the hardpoints are merged *into*, which for a
-    second-axle import is an already-imported car. `datum_baseline_path` is the
-    reference the vertical datum is judged against, and must stay the original
-    baseline: assessing the datum against a car built from this same SHARK file
-    compares the file to itself, collapses dz to zero, and can report a shared
-    ground plane that was never established. Defaults to `baseline_path` for the
-    ordinary first import, where the two are the same file.
-
-    Returns the merged vehicle mapping and a report describing what was done.
+    `datum_baseline_path` must stay the original baseline. A car built from the
+    same SHARK file would compare the file to itself and hide a datum shift.
     """
     baseline_path = Path(baseline_path) if baseline_path else repo_root() / "vehicle.yml"
     baseline = load_yaml(baseline_path)
@@ -545,16 +492,9 @@ def datum_sidecar_path(vehicle_path: str | Path) -> Path:
 
 
 def geometry_digest(vehicle: dict[str, Any], axle: str) -> str:
-    """Deterministic digest of the geometry an axle's datum verdict describes.
+    """Digest the inputs `CornerKinematics.from_vehicle` reads for one axle.
 
-    Covers exactly the inputs `CornerKinematics.from_vehicle` reads - suspension
-    hardpoints, the steering rack pickup and the wheel - so any edit that could
-    change a gated curve also changes the digest. Actuation is excluded because it
-    takes no part in the kinematic solve and carries no vertical datum meaning.
-
-    Binding the verdict to this digest is what stops a hand-edit, such as nudging
-    the wheel-centre z to probe the datum question, from leaving a stale record
-    that vouches for geometry which no longer exists.
+    A hand-edit to that geometry changes the digest and makes the datum record stale.
     """
     side = vehicle.get(axle) or {}
     material = {
@@ -582,12 +522,7 @@ def write_datum_sidecar(
 ) -> Path:
     """Record one axle's datum verdict, merging into any existing record.
 
-    Merging rather than overwriting is what lets a later front import land beside
-    the rear verdict instead of erasing it. Each axle carries its own digest, so
-    the two are independently verifiable.
-
-    Kept out of the vehicle mapping so the file stays valid against
-    `boblib.vehicle.v1` and the Modelica generator never sees an unexpected key.
+    The record is a sidecar so the vehicle file stays valid against `boblib.vehicle.v1`.
     """
     payload = read_datum_sidecar(vehicle_path) or {}
     axles = payload.get("axles")
@@ -603,10 +538,7 @@ def write_datum_sidecar(
 def datum_gate(vehicle_path: str | Path, vehicle: dict[str, Any] | None = None) -> dict[str, Any]:
     """Decide whether z-dependent output may be published for this vehicle.
 
-    Fails closed. The verdict is `valid` only when a record exists, every axle it
-    describes is resolved, and every digest still matches the file on disk. Missing,
-    unresolved and stale all read the same way: we cannot vouch for the datum, so
-    the z-dependent outputs stay withheld.
+    Fails closed. `valid` requires a record, every axle resolved and every digest current.
     """
     path = Path(vehicle_path)
     payload = read_datum_sidecar(path)

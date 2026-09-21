@@ -1,46 +1,33 @@
-// Start clean
 clear();
 
 root := OpenModelica.Scripting.cd();
 boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
 buildDir := root + "/_3_StandardSim/BuildBobLib/FourPostSim";
 
-// Generate C simulation code
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
 
-// Allow larger tearing systems before falling back to untorn systems
 OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
 
-// Use dynamic state selection for multibody/index-reduced systems
 OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
 
-// Set matching algorithm
 OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
 
-// Enable analytic Jacobians for nonlinear strong components.
 OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
 
-// Load vendored dependencies explicitly.
 loadModel(Modelica, {"4.1.0"});
 loadModel(VehicleInterfaces, {"2.0.2"});
 
-// Load BobLib.
 loadFile(boblibDir + "/package.mo");
 
 mkdir(root + "/_3_StandardSim/BuildBobLib");
 mkdir(buildDir);
 
-// Go to build directory.
 cd(buildDir);
 
-// The makefile sets BOBSIM_NATIVE_CFLAGS per the container's actual
-// architecture (clang on AArch64 -- e.g. Apple Silicon under Docker
-// Desktop -- rejects -march=native, an x86-ism, and needs -mcpu=native
-// instead). Falls back to the old default if run outside `make`.
+// The makefile sets BOBSIM_NATIVE_CFLAGS for the container architecture. clang on AArch64 rejects -march=native.
 nativeCflags := OpenModelica.Scripting.getEnvironmentVar("BOBSIM_NATIVE_CFLAGS");
 nativeCflags := if nativeCflags == "" then "-O3 -march=native -mtune=native" else nativeCflags;
 
-// Build executable directly.
 res := buildModel(
   BobLib.Experiments.Standards.FourPostSim,
   startTime = 0,
@@ -50,6 +37,5 @@ res := buildModel(
   cflags = nativeCflags
 );
 
-// Print build result and errors/warnings.
 res;
 getErrorString();

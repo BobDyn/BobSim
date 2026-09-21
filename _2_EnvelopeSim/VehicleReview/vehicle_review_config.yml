@@ -1,7 +1,3 @@
-# Vehicle review / rubric coverage settings.
-# The review regenerates the active envelope artifacts by default so the
-# report stays aligned with the current vehicle.yml and .tir inputs.
-
 report:
   brand: BobDyn
   title: Vehicle Review and Rubric Coverage

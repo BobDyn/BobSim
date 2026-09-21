@@ -97,10 +97,6 @@ class FMURunner:
         if self.use_snapshot:
             self._ensure_initialized_snapshot()
 
-    # ============================================================
-    # CONFIG
-    # ============================================================
-
     @classmethod
     def from_config(cls, config):
         sim_cfg = config.get("simulation", {})
@@ -120,10 +116,6 @@ class FMURunner:
             init_parameters=sim_cfg.get("init_parameters", {}),
             init_input_values=sim_cfg.get("init_input_values", {}),
         )
-
-    # ============================================================
-    # PUBLIC API — mirrors ModelicaRunner
-    # ============================================================
 
     def run(self, signals, mode, cases, execution=None):
         execution = execution or {}
@@ -272,10 +264,6 @@ class FMURunner:
 
         return result
 
-    # ============================================================
-    # FMU LIFECYCLE
-    # ============================================================
-
     def _instantiate(self):
         self.fmu = FMU2Model(
             guid=self.model_description.guid,
@@ -336,10 +324,6 @@ class FMURunner:
             pass
 
         self.fmu = None
-
-    # ============================================================
-    # SNAPSHOT INIT
-    # ============================================================
 
     def _ensure_initialized_snapshot(self):
         if self.snapshot_file.exists():
@@ -422,10 +406,6 @@ class FMURunner:
 
         finally:
             self.terminate()
-
-    # ============================================================
-    # SIMULATION
-    # ============================================================
 
     def _simulate_case(
         self,
@@ -524,10 +504,6 @@ class FMURunner:
 
         return np.concatenate([self.dx_buffer.copy(), dx_ctrl])
 
-    # ============================================================
-    # INPUTS + PYTHON CONTROLLERS
-    # ============================================================
-
     def _apply_inputs_and_controller(
         self,
         t,
@@ -539,10 +515,9 @@ class FMURunner:
 
         values = {}
 
-        # Constant FMU inputs.
         values.update(case.get("_input_values", {}))
 
-        # Convenience: direct non-underscore case keys can set matching FMU inputs.
+        # Non-underscore case keys that match an FMU input set that input.
         for key, value in case.items():
             if key.startswith("_"):
                 continue
@@ -550,7 +525,6 @@ class FMURunner:
             if key in self.input_vrs:
                 values[key] = value
 
-        # Time-varying FMU inputs.
         for name, profile in case.get("_input_profiles", {}).items():
             values[name] = self._profile_value(profile, t)
 
@@ -702,7 +676,7 @@ class FMURunner:
         u = (t - start) / duration
         u = float(np.clip(u, 0.0, 1.0))
 
-        # Smoothstep, close enough to Modelica smooth(1, min/max ramp)
+        # Smoothstep approximates Modelica smooth(1, ...) ramps.
         return u * u * (3.0 - 2.0 * u)
 
     def _set_inputs(self, values):
@@ -741,10 +715,6 @@ class FMURunner:
 
         return float(np.interp(float(t), tp, yp, left=yp[0], right=yp[-1]))
 
-    # ============================================================
-    # OUTPUTS
-    # ============================================================
-
     def _extract_raw(self, signals, times, states):
         out = {"time": np.asarray(times, dtype=float)}
         values = {signal: [] for signal in signals}
@@ -773,7 +743,7 @@ class FMURunner:
         self.fmu.setTime(self._global_time(t))
         self.fmu.setContinuousStates(self._ptr(x_plant), self.nx)
 
-        # Apply controller/input values at the sampled point before reading outputs.
+        # Apply inputs at the sampled point before the output read.
         self._apply_inputs_and_controller(
             t=float(t),
             x_plant=x_plant,
@@ -797,10 +767,6 @@ class FMURunner:
             )
 
         return float(self.fmu.getReal([self.vrs[name]])[0])
-
-    # ============================================================
-    # HELPERS
-    # ============================================================
 
     def _apply_init_values(self):
         for name, value in self.init_parameters.items():

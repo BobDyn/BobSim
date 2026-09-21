@@ -4,24 +4,9 @@ from typing import Sequence, Tuple
 
 
 class Bellcrank:
-    """
-    ## Bellcrank
+    """Bellcrank that rotates its pickup nodes about a pivot axis.
 
-    Bellcrank object
-
-    Parameters
-    ----------
-    *nodes : Sequence[Node]
-        All distinct pickup Nodes on bellcrank
-
-        - First entry should connect to push/pull rod
-        - Final entry should connect to inboard rod/shock
-
-    pivot : Node
-        Bellcrank pivot Node
-
-    pivot_direction : Tuple[float, float, float]
-        Unit vector representing Bellcrank pivot axis
+    The first node connects to the push/pull rod. The last node connects to the inboard rod or shock.
     """
     def __init__(self, *nodes: Node, pivot: Node, pivot_direction: Tuple[float, float, float]) -> None:
         self.nodes: Sequence[Node] = nodes
@@ -31,16 +16,7 @@ class Bellcrank:
         self.angle: float = 0
 
     def rotate(self, angle: float) -> None:
-        """
-        ## Rotate
-
-        Rotates bellcrank
-
-        Parameters
-        ----------
-        angle : float
-            Angle of rotation in radians
-        """
+        """Rotate the bellcrank by angle radians from the initial position."""
         for node in self.nodes:
             node.reset()
             node.rotate(origin=self.pivot, direction=self.pivot_direction, angle=angle)

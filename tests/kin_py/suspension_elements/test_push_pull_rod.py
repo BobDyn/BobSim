@@ -97,7 +97,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(push_pull_rod.spring.length, 7), round(np.sqrt(5) - 1, 7))
     
     def test_push_pull_rod_full_outboard_translation_positive(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -108,13 +107,11 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.translate(translation=[0, 0, 1])
@@ -123,7 +120,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(push_pull_rod.bellcrank_angle * 180 / np.pi, 2), bellcrank_angle)
     
     def test_push_pull_rod_full_outboard_translation_negative(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -134,13 +130,11 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.translate(translation=[0, 0, -0.25])
@@ -149,7 +143,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(push_pull_rod.bellcrank_angle * 180 / np.pi, 2), bellcrank_angle)
     
     def test_push_pull_rod_full_outboard_rod_positive(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -160,13 +153,11 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.translate(translation=[0, 0, 1])
@@ -174,7 +165,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(outboard_rod.length, 5), round(outboard_rod.initial_length, 5))
     
     def test_push_pull_rod_full_outboard_rod_negative(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -185,13 +175,11 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.translate(translation=[0, 0, -0.25])
@@ -199,7 +187,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(outboard_rod.length, 5), round(outboard_rod.initial_length, 5))
     
     def test_push_pull_rod_full_outboard_rod_position(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -210,13 +197,11 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.translate(translation=[0, 0, 1])
@@ -225,7 +210,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual([round(x, 5) for x in push_pull_rod.outboard_rod.inboard_node], position)
     
     def test_push_pull_rod_full_outboard_node_rotation_positive(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -236,16 +220,13 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Pickup rotation origin
         pickup_rot_origin = Node(position=[0, 1, 0])
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.rotate(origin=pickup_rot_origin, direction=[1, 0, 0], angle=15 * np.pi / 180)
@@ -254,7 +235,6 @@ class TestPushPullRod(TestCase):
         self.assertEqual(round(push_pull_rod.bellcrank_angle * 180 / np.pi, 2), bellcrank_angle)
     
     def test_push_pull_rod_full_outboard_node_rotation_negative(self):
-        # Nodes
         outboard_rod_outboard = Node(position=[0, 0, 0])
         outboard_rod_inboard = Node(position=[0, 1, 1])
         inboard_rod_outboard = Node(position=[0, 2, 2])
@@ -265,16 +245,13 @@ class TestPushPullRod(TestCase):
         bellcrank_pivot = Node(position=[0, 2, 1])
         bellcrank_direction = [1, 0, 0]
 
-        # Pickup rotation origin
         pickup_rot_origin = Node(position=[0, 1, 0])
 
-        # Links
         bellcrank = Bellcrank(outboard_rod_inboard, inboard_rod_outboard, pivot=bellcrank_pivot, pivot_direction=bellcrank_direction)
         outboard_rod = Link(inboard_node=outboard_rod_inboard, outboard_node=outboard_rod_outboard)
         inboard_rod = Link(inboard_node=inboard_rod_inboard, outboard_node=inboard_rod_outboard)
         spring = Spring(inboard_node=spring_inboard, outboard_node=inboard_rod_inboard, free_length=1, rate=1)
         
-        # Full PushPullRod
         push_pull_rod = PushPullRod(outboard_rod=outboard_rod, spring=spring, inboard_rod=inboard_rod, bellcrank=bellcrank)
 
         outboard_rod_outboard.rotate(origin=pickup_rot_origin, direction=[1, 0, 0], angle=-15 * np.pi / 180)

@@ -3,16 +3,7 @@
     make opt-trade                                   # configs/trade_study.yaml
     make opt-trade STUDY=path/to/another_study.yaml
 
-OptSim asks three different questions of the same compiled vehicles:
-
-- `opt-standard` samples many vehicles to learn which parameters matter.
-- `opt-solve` inverts for the setup that hits target metrics.
-- `opt-trade`, this one, compares vehicles you name, on metrics you choose.
-
-Every candidate is compiled rather than overridden, so any swept variable is fair
-game — mass, CG and toe included — and SteadyStateEval, RampSteerEval and
-TransientEval all run against that one executable. See `pipeline/trade.py` for
-what the comparison insists on and why it offers no score.
+Every candidate is compiled, so any swept variable can change.
 """
 
 from __future__ import annotations
@@ -40,8 +31,7 @@ from StandardSens.pipeline.standards import (
 from StandardSens.pipeline.variants import VariantStore, split_cpus
 
 DEFAULT_STUDY = Path(__file__).resolve().parent / "configs/trade_study.yaml"
-# One store for every study: the baseline, and any candidate two studies share,
-# is compiled and simulated once.
+# One store for every study, so shared candidates are compiled once.
 TRADE_DIR = STANDARD_BUILD_DIR / "trade"
 RUN_TIMEOUT_S = 3600
 

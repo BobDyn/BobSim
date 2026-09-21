@@ -998,9 +998,7 @@ def _format_call(call: ModelicaCall, indent: int) -> str:
     lines = [f"{call.type_name}(" if call.type_name else "("]
     for index, (name, value) in enumerate(assignments):
         suffix = "," if index < len(assignments) - 1 else ""
-        # +4, not +2: this is the indent BobLib's checked-in records already use.
-        # Emitting +2 made every regeneration rewrite files whose values had not
-        # changed, so the library showed hundreds of lines of pure whitespace diff.
+        # +4 matches the checked-in BobLib records, so regeneration gives no whitespace diff.
         lines.extend(_format_assignment(name, value, indent + 4, suffix))
     lines.append(f"{' ' * indent})")
     return "\n".join(lines)
@@ -1061,21 +1059,10 @@ def _format_number(value: float) -> str:
 def _pickup_order(
     pickups: Mapping[str, Any], pivot: Sequence[float], axis: Sequence[float], path: str
 ) -> dict[str, int]:
-    """Number the bellcrank pickups the way BobLib defines them.
+    """Number the bellcrank pickups as the BobLib annotation defines them.
 
-    BobLib's own annotation is the spec: "1 is the most counter-clockwise pickup
-    about the left bellcrank (generally with the lowest Z coordinate)". So the
-    index is a property of where the points sit on the rocker, not of the order
-    somebody happened to list them in.
-
-    Deriving it from `bellcrank.order` was wrong: that list reads
-    ['rod', 'shock', 'stabar'] on both axles of the baseline, while the true
-    ordering is stabar/rod/shock at the front and rod/shock/stabar at the rear.
-    One list cannot encode two different arrangements, so it never could have
-    been right for both.
-
-    Counter-clockwise is cyclic, so the lowest-Z pickup anchors index 1 - which
-    is what the parenthetical in the annotation is telling us.
+    Index 1 is the lowest-Z pickup. Indices go counter-clockwise about the left bellcrank.
+    Do not use `bellcrank.order`. It does not match the geometry on both axles.
     """
     for item in ("rod", "shock"):
         if item not in pickups:
@@ -1087,8 +1074,7 @@ def _pickup_order(
         raise ValueError(f"{path}: bellcrank axis has zero length")
     normal /= length
 
-    # Any reference not parallel to the axis gives a valid in-plane basis; the
-    # resulting angles are only ever compared with each other.
+    # Any non-parallel reference works. The angles are only compared with each other.
     reference = np.array([0.0, 0.0, 1.0])
     if abs(float(np.dot(reference, normal))) > 0.9:
         reference = np.array([1.0, 0.0, 0.0])
@@ -1209,11 +1195,7 @@ def _ensure_package_order_entry(path: Path, entry: str) -> None:
 
 
 def _display_path(path: Path, repo_root: Path) -> str:
-    """Repo-relative path for API payloads and the browser UI.
-
-    Always forward-slashed: these strings are compared against and served as
-    repo-relative keys, so they must not vary with the host OS separator.
-    """
+    """Repo-relative path with forward slashes, used as a key by the API and UI."""
     try:
         return path.resolve().relative_to(repo_root).as_posix()
     except ValueError:

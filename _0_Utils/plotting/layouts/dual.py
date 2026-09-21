@@ -67,7 +67,6 @@ class DualLayout:
                         alpha=0.85,
                     )
 
-            # REFERENCE LINES
             refs = sub.get("reference")
             if refs:
                 if isinstance(refs, dict):
@@ -82,7 +81,6 @@ class DualLayout:
                             label=ref.get("label", None),
                         )
 
-            # AXES
             ax.set_title(sub["title"], fontsize=12)
             ax.set_xlabel(sub["x"].get("label", sub["x"]["key"]), fontsize=11)
             ax.set_ylabel(sub["y"].get("label", sub["y"]["key"]), fontsize=11)

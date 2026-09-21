@@ -1,4 +1,4 @@
-"""generator.py — Take sampled variant dicts and write one variant.mo each."""
+"""Write one variant.mo for each sampled variant dict."""
 
 import csv
 import math
@@ -11,9 +11,7 @@ from StandardSens.pipeline.modelica_params import replace_value, scale_value
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# FourPostEval writes to generated_results/ (see four_post_eval_config.yml and
-# test_report_outputs_stay_under_standard_generated_results). The bare results/
-# path is the legacy location, kept as a fallback for older local artifacts.
+# The second path is a fallback for older local artifacts.
 FOUR_POST_METRICS_CANDIDATES = (
     REPO_ROOT / "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv",
     REPO_ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv",
@@ -164,17 +162,14 @@ def _static_balance_free_length(
 
 
 def substitute_param(text: str, block: str, param: str, value: float) -> str:
-    # Find block name in text
     block_start = text.find(block)
     if block_start == -1:
         raise ValueError(f"Block '{block}' not found in record")
 
-    # Find the opening paren of this block
     paren_open = text.find("(", block_start)
     if paren_open == -1:
         raise ValueError(f"No opening paren found for block '{block}'")
 
-    # Walk to find the matching closing paren, tracking depth
     depth = 1
     i = paren_open + 1
     n = len(text)
@@ -184,38 +179,32 @@ def substitute_param(text: str, block: str, param: str, value: float) -> str:
         elif text[i] in ")}":
             depth -= 1
         i += 1
-    paren_close = i - 1  # position of closing paren
+    paren_close = i - 1
 
     block_body = text[paren_open + 1: paren_close]
 
-    # Find param inside block body
     param_start = block_body.find(param)
     if param_start == -1:
         raise ValueError(f"Param '{param}' not found in block '{block}'")
 
-    # Find the '=' after param name
     eq_pos = block_body.find("=", param_start)
     if eq_pos == -1:
         raise ValueError(f"No '=' found after param '{param}'")
 
-    # Walk past whitespace to find value start
     val_start = eq_pos + 1
     while val_start < len(block_body) and block_body[val_start] in " \t\n\r":
         val_start += 1
 
-    # Walk to find value end (stops at comma or closing paren)
     val_end = val_start
     while val_end < len(block_body) and block_body[val_end] not in ",)":
         val_end += 1
 
-    # Splice new value into block body
     new_body = (
             block_body[:val_start]
             + str(value)
             + block_body[val_end:]
     )
 
-    # Splice new block body back into full text
     return text[: paren_open + 1] + new_body + text[paren_close:]
 
 
@@ -225,10 +214,7 @@ def substitute_variable(
     value: float,
     context: dict[str, Any] | None = None,
 ) -> str:
-    """Patch a variable using the extended DOE spec.
-
-    Falls back to the original scalar block/param behavior for old configs.
-    """
+    """Patch a variable into the record text using the DOE spec."""
     for target, target_value in resolve_targets(spec, value, context):
         if "targets" in spec and target.get("operation") == "scale":
             text = scale_value(text, target, target_value)
@@ -244,10 +230,7 @@ def resolve_targets(
 ) -> list[tuple[dict, float]]:
     """Return every (target spec, Modelica-side value) a swept value fans out to.
 
-    One `vehicle.yml` value can drive several record parameters — a spring rate
-    sets both the spring table and the free length that holds ride height. This
-    is the single place that mapping is computed, so writing a variant.mo and
-    overriding a compiled executable cannot disagree about what a value means.
+    variant.mo generation and runtime overrides both use this, so they cannot disagree.
     """
     if "targets" not in spec:
         return [(spec, value * float(spec.get("scale", 1.0)))]
@@ -272,7 +255,7 @@ def resolve_targets(
 
 
 def build_context(cfg: dict, config_path: Path) -> dict[str, Any]:
-    """Load what target resolution needs: the vehicle and the FourPost ratios."""
+    """Load the vehicle and the FourPost motion ratios for target resolution."""
     template_path = (config_path.parents[1] / cfg["architecture"]["template"]).resolve()
     return {
         "vehicle": load_config(template_path),
@@ -291,7 +274,6 @@ def generate_variants(
     population_dir = Path(population_dir).resolve()
     cfg = load_config(config_path)
 
-    # Resolve base record relative to config file
     config_dir = config_path.parent
     mo_path = (config_dir / cfg["baseline_mo"]).resolve()
     base_text = mo_path.read_text()

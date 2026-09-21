@@ -1,27 +1,8 @@
-"""Tire grip use and lateral load transfer for BobVis.
+"""Tire grip use and lateral load transfer for BobVis. Numpy only.
 
-Numpy only, like :mod:`_1_VisualSim.navigation`, so it tests without the
-rendering stack. Two things are derived here from signals a run already has:
-
-Friction circles
-    How much of its available grip each tire is using. The limit is MF5.2's
-    pure-slip peak friction, from the same expressions BobLib's
-    ``MF52.PureSlip`` evaluations use::
-
-        dfz  = (Fz - FNOMIN*LFZO) / (FNOMIN*LFZO)
-        mu_x = (PDX1 + PDX2*dfz) * (1 - PDX3*gamma^2) * LMUX
-        mu_y = (PDY1 + PDY2*dfz) * (1 - PDY3*gamma^2) * LMUY
-
-    Usage is the radius on the friction ellipse, ``hypot(Fx/(mu_x Fz),
-    Fy/(mu_y Fz))``: 1.0 is at the peak. The ellipse is an approximation of
-    MF5.2's combined-slip envelope, so read the edge as "at the limit", not as
-    a hard wall.
-
-LLTD
-    Each axle's lateral load transfer is half its left-right load split,
-    measured from where the run started so a static asymmetry does not read as
-    transfer. LLTD is the front axle's share of the total, and is left
-    undefined while there is too little transfer to divide by.
+Grip usage is the friction-ellipse radius against MF5.2 pure-slip peak friction,
+as in BobLib ``MF52.PureSlip``. The ellipse approximates the combined-slip envelope.
+Load transfer is measured from the first sample so static asymmetry does not count.
 """
 
 from __future__ import annotations
@@ -44,11 +25,7 @@ LLTD_MIN_FRACTION = 0.01
 
 
 def friction_coefficients(tir: Mapping[str, float | str]) -> dict[str, float]:
-    """The peak-friction terms of a parsed ``.tir`` file.
-
-    Scale factors default to 1 and camber terms to 0, as a ``.tir`` that omits
-    them means. A missing required term raises ``KeyError`` naming it.
-    """
+    """The peak-friction terms of a parsed ``.tir`` file. Raises ``KeyError`` for a missing required term."""
     missing = [key for key in REQUIRED_TIR_KEYS if key not in tir]
     if missing:
         raise KeyError(f"tire file lacks {', '.join(missing)}")
@@ -83,8 +60,7 @@ def grip_usage(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Forces as fractions of peak grip: ``(longitudinal, lateral, usage)``.
 
-    ``usage`` is the friction-ellipse radius, 1.0 at the limit. All three are
-    NaN where the tire is off the ground.
+    ``usage`` is 1.0 at the limit. All three are NaN where the tire is off the ground.
     """
     fx = np.asarray(fx, dtype=float)
     fy = np.asarray(fy, dtype=float)

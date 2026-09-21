@@ -1,10 +1,4 @@
-"""Checks for the result-CSV to BobVis-scene converter.
-
-No PyVista and no OpenModelica: the converter is plain numpy and PyYAML, and
-the parts worth protecting are the frame-name map (a BobLib rename silently
-empties the scene) and the upright refit that stands in for the wheel-centre
-frames OpenModelica's alias elimination removes.
-"""
+"""Checks for the result-CSV to BobVis-scene converter."""
 
 from __future__ import annotations
 
@@ -33,15 +27,10 @@ from _1_VisualSim.from_results import (
 from tests.test_visual_templates import _referenced_signals
 
 
-# ---------------------------------------------------------------------------
-# Frame map
-# ---------------------------------------------------------------------------
-
 def test_frame_map_covers_every_corner_uniquely() -> None:
     paths = frame_paths()
     assert len(paths) == len(CORNERS) * len(FRAME_MAP)
-    # A copy-paste slip in the templates would alias two hardpoints onto one
-    # frame and silently collapse part of the linkage.
+    # A copy-paste slip in the templates would put two hardpoints on one frame.
     assert len(set(paths.values())) == len(paths)
 
 
@@ -75,10 +64,6 @@ def test_variable_filter_asks_for_every_tire_force_under_the_prefix() -> None:
         assert re.escape(column) in pattern
     assert re.escape(prefix + "frAxleDW.leftTire.Fy") in pattern
 
-
-# ---------------------------------------------------------------------------
-# Rigid refit
-# ---------------------------------------------------------------------------
 
 def test_kabsch_recovers_a_known_rigid_transform() -> None:
     reference = np.array([[0.0, 0.5, 0.1], [0.0, 0.5, 0.3], [0.1, 0.5, 0.2]])
@@ -116,10 +101,6 @@ def test_kabsch_is_exact_for_a_point_off_the_fitted_triad() -> None:
     assert np.allclose(R[0] @ other + t[0], other @ R_true.T + t_true, atol=1e-9)
 
 
-# ---------------------------------------------------------------------------
-# End-to-end conversion against a synthetic result CSV
-# ---------------------------------------------------------------------------
-
 def _write_result_csv(
     path: Path,
     samples: int = 12,
@@ -130,11 +111,7 @@ def _write_result_csv(
 ) -> None:
     """A CSV shaped like an OpenModelica result, carrying every mapped frame.
 
-    Contact-patch Z and the wheel-centre frames are left out on purpose: that
-    is exactly what alias elimination does to a real run, and the converter is
-    expected to refit them. ``prefix`` nests the axles as VehicleSim does,
-    ``speed`` drives the car forward, ``loads`` names per-tire Fz columns, and
-    ``tire_forces`` adds each tire's own force state.
+    Contact-patch Z and the wheel-centre frames are left out, as alias elimination does.
     """
     time = np.linspace(0.0, 1.0, samples)
     columns: dict[str, np.ndarray] = {"time": time}
@@ -183,8 +160,6 @@ def test_convert_writes_a_scene_the_template_fully_describes(tmp_path: Path) -> 
     with np.load(npz_path) as raw:
         stored = set(raw.files)
 
-    # The generated pair must be self-consistent: this is the whole point of
-    # emitting the template and the data together.
     assert not _referenced_signals(cfg) - stored
     assert not summary["missing"]
     assert summary["points"] == len(CORNERS) * len(FRAME_MAP)
@@ -209,7 +184,6 @@ def test_convert_refits_the_points_alias_elimination_removes(tmp_path: Path) -> 
         # The rig's ground plane is z = 0, so every contact patch sits on it.
         patch_z = raw["pos/fl_ContactPatch_z"]
         assert np.allclose(patch_z, 0.0)
-        # And the wheel centre must sit above it, near the tire radius.
         assert np.all(raw["pos/fl_WheelCenter_z"] > 0.1)
 
 
@@ -222,7 +196,7 @@ def test_detect_prefix_finds_the_axles_wherever_the_model_nests_them() -> None:
 
 
 def test_convert_reads_a_driving_vehicle_result(tmp_path: Path) -> None:
-    """VehicleSim nests the axles and names loads Fz_*; the car moves, so tracks."""
+    """VehicleSim nests the axles and names loads Fz_*. The car moves, so it has tracks."""
     result = tmp_path / "VehicleSim_res.csv"
     vehicle_loads = tuple(names[1] for names in LOAD_SIGNALS.values())
     _write_result_csv(result, prefix="chassis.detailedChassis.", speed=20.0,
@@ -242,7 +216,7 @@ def test_convert_reads_a_driving_vehicle_result(tmp_path: Path) -> None:
 
 
 def test_convert_gives_the_rig_loads_but_no_tracks(tmp_path: Path) -> None:
-    """The rig holds the car in place; a trail there would only be a dot."""
+    """The rig holds the car in place, so a trail would be a dot."""
     result = tmp_path / "FourPostSim_res.csv"
     _write_result_csv(result, loads=tuple(names[0] for names in LOAD_SIGNALS.values()))
 
@@ -350,8 +324,7 @@ def test_capture_config_keeps_the_evaluations_own_signals(
     prefix = capture.EVALUATIONS[evaluation].prefix
     assert re.escape(prefix + "frAxleDW.leftWishboneUprightLoop.") in pattern
 
-    # Regression: VehicleSim's axle frames are protected, so without this flag
-    # the run silently wrote only the evaluation's own 17 columns.
+    # Regression: without this flag, the run leaves out VehicleSim's protected axle frames.
     assert "-emit_protected" in cfg["simulation"]["extra_args"]
     # A capture must never overwrite the metrics the regression checks read.
     for key in ("output_path", "metrics_csv_path"):
@@ -387,5 +360,4 @@ def test_vehicle_yaml_supplies_mirrored_reference_hardpoints() -> None:
     assert references["fl"]["Lower_o"][1] == pytest.approx(
         -references["fr"]["Lower_o"][1]
     )
-    # Front and rear are different corners of the car.
     assert references["fl"]["Lower_o"][0] != references["rl"]["Lower_o"][0]

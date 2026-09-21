@@ -185,7 +185,7 @@ aero:
     - [238.4332, 261.4048, 286.5552, 305.715, 332.3768]
     - [219.5836, 226.6504, 253.3114, 284.1392, 304.1904]
 
-  # Symmetric FRH/RRH-only aero map should not create roll moment.
+  # Zero because the FRH/RRH-only map is symmetric.
   mx_table_nm:
     - [0, 0, 0, 0, 0]
     - [0, 0, 0, 0, 0]
@@ -193,10 +193,7 @@ aero:
     - [0, 0, 0, 0, 0]
     - [0, 0, 0, 0, 0]
 
-  # Free pitch moment at aero_ref_m.
-  # Computed as:
-  #   my_free = my_cfd_total - downforce
-  # because aero_ref_m = [1, 0, 0] naturally creates +downforce pitch moment.
+  # Free pitch moment at aero_ref_m = [1, 0, 0]: my_cfd_total - downforce.
   my_table_nm:
     - [-825.9932, -825.4692, -808.9816, -764.9962, -718.26171250]
     - [-755.724, -801.59830, -877.6862, -874.8364, -858.4004]
@@ -204,7 +201,7 @@ aero:
     - [-644.1302, -696.5430, -757.7346, -799.6382, -860.9186]
     - [-607.5192, -615.3586, -683.1710, -758.2042, -802.5116]
 
-  # Symmetric FRH/RRH-only aero map should not create yaw moment.
+  # Zero because the FRH/RRH-only map is symmetric.
   mz_table_nm:
     - [0, 0, 0, 0, 0]
     - [0, 0, 0, 0, 0]

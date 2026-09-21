@@ -1,16 +1,7 @@
-"""evaluator.py — Turn a knob setting into SteadyStateEval metrics, cheaply.
+"""Turn a knob setting into SteadyStateEval metrics.
 
-A sweep compiles every variant, and the compile is most of a variant's wall time
-even though the model's equations never change. This evaluator compiles only
-when it has to. Knobs in `overrides.RUNTIME_SAFE_PATHS` are applied to a cached
-executable with `-override`; every other value gets its own executable, cached by
-value. That default is the slow one on purpose: a compile is always correct, and
-a wrong override is silent. See `overrides.py` for why the list is what it is.
-
-Executables live in a `VariantStore` and evaluations beside it; both are
-discarded when BobLib, the vehicle or the SteadyStateEval tooling changes. The
-star design does not depend on the targets, so a second solve against new targets
-reuses every star evaluation and pays only for verification.
+Knobs in `overrides.RUNTIME_SAFE_PATHS` go to a cached executable with `-override`.
+Every other value gets its own compiled executable, cached by value.
 """
 
 from __future__ import annotations
@@ -44,8 +35,7 @@ class SteadyStateEvaluator:
     """Callable mapping a batch of variants to their SteadyStateEval metrics."""
 
     def __init__(self, *, isoline: Isoline, cpus: int) -> None:
-        # Longest cases first: they are the high-a_y ones, and queued last they
-        # all land in the final wave and set its length.
+        # Longest (high a_y) cases first, so they do not all land in the final wave.
         self.isoline = Isoline(
             float(isoline.velocity_mps), tuple(sorted(map(float, isoline.target_ays), reverse=True))
         )
@@ -67,7 +57,7 @@ class SteadyStateEvaluator:
         if pending:
             compiled = [compiled_part(v, self.baseline) for v in pending]
             self.store.ensure_compiled(compiled)
-            for vehicle in compiled:  # parse each init XML once, before the threads race to
+            for vehicle in compiled:  # parse each init XML once, before the threads start
                 self._init_parameters(self.store.build_dir(vehicle))
 
             concurrent, workers = split_cpus(len(pending), self.cpus)
@@ -104,7 +94,7 @@ class SteadyStateEvaluator:
             ),
             isoline=self.isoline,
             max_workers=workers,
-            render_report=False,  # the solver reads the metrics CSV, never the PDF
+            render_report=False,
         )
 
     def _init_parameters(self, build_dir: Path) -> dict[str, ov.InitParameter]:
@@ -122,12 +112,7 @@ class SteadyStateEvaluator:
 
 
 def require_whole(variant: Variant, metrics: Metrics) -> None:
-    """Refuse an evaluation that lost simulation cases.
-
-    Its gradients are fitted through fewer points than its neighbours', so it
-    would bend the surrogate without any number looking wrong, and because
-    evaluations are cached it would keep bending every later solve too.
-    """
+    """Refuse an evaluation that lost simulation cases. It would silently skew the cached surrogate."""
     why = case_loss(metrics)
     if why:
         raise RuntimeError(
@@ -140,11 +125,9 @@ def require_whole(variant: Variant, metrics: Metrics) -> None:
 
 
 def compiled_part(variant: Variant, baseline: Variant) -> Variant:
-    """The changes that decide which executable a variant needs.
+    """Return the changes that decide which executable a variant needs.
 
-    Runtime-safe knobs never appear, so every setting of them shares one
-    executable. A compile-only knob left at its baseline does not appear either,
-    so it shares the baseline executable instead of forcing an identical rebuild.
+    Runtime-safe knobs and compile-only knobs at baseline are left out, so they share an executable.
     """
     return {
         path: value

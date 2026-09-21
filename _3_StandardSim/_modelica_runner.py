@@ -19,9 +19,7 @@ import pandas as pd
 
 
 MODELICA_OVERRIDE_ALIASES = {
-    # BobLib's VCU target velocity is a calculated parameter derived from the
-    # top-level VehicleSim initialVel. Override the source parameter so chassis,
-    # driveline, and VCU speed target all move together.
+    # VCU targetVel derives from initialVel. Override the source so chassis, driveline, and VCU move together.
     "targetVel": "initialVel",
     "targetAy": "vcu.targetAy",
     "useMode": "vcu.useMode",
@@ -427,9 +425,7 @@ class ModelicaRunner:
             mode=mode,
         )
 
-        # Preserve non-table metadata from the case dictionary.
-        # Keys starting with "_" are Python-only metadata and are intentionally
-        # not written to the Modelica override file, but they are preserved here.
+        # Keep "_" metadata keys in the result. They do not go to the override file.
         for key, value in case.items():
             if key.startswith("_"):
                 extracted[key] = value
@@ -722,12 +718,11 @@ class ModelicaRunner:
         init_defaults = self._init_parameter_defaults()
         with Path(path).open("w", newline="\n") as f:
             for key, value in case.items():
-                # Python-only metadata. Keep in result dict, but do not pass to OM.
+                # "_" keys are Python-only metadata.
                 if key.startswith("_"):
                     continue
 
-                # Runtime flags, not necessarily Modelica parameters.
-                # These are handled in _build_command().
+                # _build_command() passes these as runtime flags.
                 if key in {"startTime", "stopTime"}:
                     continue
 
@@ -794,10 +789,7 @@ class ModelicaRunner:
     def _build_command(self, override_file, result_file, case=None):
         case = case or {}
 
-        # Important:
-        # OpenModelica generated executables expect their *_init.xml file
-        # in the current working directory. Therefore subprocess.run uses
-        # cwd=self.build_dir, and the executable is launched locally.
+        # OM executables read *_init.xml from the working directory, so run from build_dir.
         cmd = [
             str(self.exe_path),
             f"-overrideFile={override_file}",

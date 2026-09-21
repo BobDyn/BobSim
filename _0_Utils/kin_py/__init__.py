@@ -1,8 +1,6 @@
 """Suspension-kinematics implementation and compatibility exports.
 
-New vehicle-model consumers should import the unified public surface from
-``_0_Utils.dyn_py``.  This package remains stable for the original standalone
-kinematics workflows and their detailed element tests.
+New vehicle-model consumers import from ``_0_Utils.dyn_py``.
 """
 
 from _0_Utils.kin_py.kinematics import (

@@ -5,20 +5,7 @@ import numpy as np
 
 
 class SerialLink:
-    """
-    ## Serial Link
-
-    Serial link object
-    - Intended for two coincident, fixed links
-
-    Parameters
-    ----------
-    rigid_link : Link
-        Link with negligible deformation
-
-    compliant_link : Link
-        Link with significant deformation
-    """
+    """Two coincident links in series: one rigid and one compliant."""
     def __init__(self, rigid_link: Link, compliant_link: Link) -> None:
         self.rigid_link = rigid_link
         self.compliant_link = compliant_link
@@ -26,12 +13,7 @@ class SerialLink:
         self.rigid_link.outboard_node.add_listener(self)
 
     def update(self) -> None:
-        """
-        ## Update
-
-        - Updates rigid_link to match initial geometry
-        - Updates compliant_link to remain coincident with rigid_link
-        """
+        """Keep rigid_link at its initial length and move its inboard end along compliant_link."""
         direction = unit_vec(p1=self.rigid_link.outboard_node.position, p2=self.compliant_link.inboard_node.position)
         new_rigid_inboard = np.array(direction) * self.rigid_link.initial_length + np.array(self.rigid_link.outboard_node.position)
 

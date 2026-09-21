@@ -20,19 +20,17 @@ simulation:
   no_grid: true
   no_event_emit: true
 
-  # Explicit Modelica overrides used by closed-loop steady-state evaluation.
+  # Modelica overrides.
   init_parameters:
     useMode: 3
     steerStart: 2.0
 
-    # Closed-loop lateral-acceleration target shaping and steering PI.
     steadyStateAyRampRate: 10.0
     steadyStateMaxHandwheel: 3.141592653589793
     steadyStateAyGain: 0.05
     steadyStateAyTi: 1.0
     steadyStateSteerTimeConstant: 0.15
 
-    # Settled-point detection.
     steadyHoldDuration: 0.5
     steadyStateAyTolerance: 0.10
     steadyStateAyRateTolerance: 0.05
@@ -43,33 +41,27 @@ simulation:
     steadyStateSettleTimeout: 30.0
     linearitySlopeSamplePeriod: 0.10
 
-    # Safety guards. Failed/unsettled points are skipped in the report.
+    # Failed or unsettled points are skipped in the report.
     terminateOnTireLift: true
     tireLiftTerminateLoad: 75.0
     enableLinearityTermination: false
     enableNormalLoadSteerLimiter: false
 
-    # Longitudinal velocity controller.
     velGain: 100.0
     velTi: 2.0
 
 execution:
   parallel: true
-  # 22 swept cases: 8 workers halves the wave count versus 4, and matches the
-  # worker count TransientEval already runs at. Deliberately below the host core
-  # count so solver processes are not competing against case_timeout_s.
+  # Below the host core count so solvers do not compete against case_timeout_s.
   max_workers: 8
   cleanup: false
   stream_logs: false
   fail_fast: false
 
 sweep:
-  # Velocity isolines for steady-state lateral acceleration characterization.
   testVels: [12.5, 15.0, 17.5, 20.0]
 
-  # Each target is driven by VehicleSim useMode=3 until steady conditions hold.
   targetAys: [2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0]
-  # Optional velocity-specific caps keep default target points in feasible territory.
   maxAyByVelocity:
     12.5: 16.0
     15.0: 10.0
@@ -78,11 +70,11 @@ sweep:
   includeNegative: false
 
 fit:
-  # Linear-region bound used for reported understeer/gradient fits.
+  # Upper |a_y| bound (m/s^2) for linear-region fits.
   ay_linear_max: 4.0
-  # Exclude the low-|measured a_y| region before analysis.
+  # Minimum |a_y| (m/s^2) for analysis.
   ay_min_magnitude: 1.0
-  # Endpoint sweeps are sparse, so use a light robust prefilter and smooth fit.
+  # Sparse endpoint sweeps need a light prefilter and a smooth fit.
   hampel_window: 3
   hampel_nsigmas: 3.0
   spline_smoothing_fraction: 0.02

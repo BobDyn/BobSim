@@ -1,19 +1,11 @@
-# A trade study: named vehicles compared across the standard sims.
-#
-#   make opt-trade
+# Named vehicles compared across the standard sims. See docs/doe-reverse-engineering.md.
 #   make opt-trade STUDY=path/to/another_study.yaml
-#
-# See docs/doe-reverse-engineering.md. Copy this file for each study; results land
-# in _4_OptSim/results/trade/<name>.md and .csv.
+# Results go to _4_OptSim/results/trade/<name>.md and .csv.
 name: rear_roll_stiffness
 
-# Each candidate is the baseline vehicle with these variables changed. Any
-# variable declared in vehicle_architecture.yaml may be used, mass and CG
-# included, because every candidate is compiled rather than overridden. The
-# baseline is always included and needs no entry.
-#
-# `both` makes exactly the changes of the other two, so the report also says
-# whether those two changes stack or interact.
+# Each candidate is the baseline with these variables changed. Any variable in
+# vehicle_architecture.yaml is allowed because every candidate is compiled.
+# The baseline is always included.
 candidates:
   stiff_rear_bar:
     rear.stabar.rate_n_m_per_rad: 961.495352
@@ -23,13 +15,8 @@ candidates:
     rear.stabar.rate_n_m_per_rad: 961.495352
     front.actuation.spring_rate_n_per_m: 21015.2202
 
-# What to compare, per standard: SteadyStateEval, RampSteerEval or TransientEval.
-# All three run against the one executable compiled for each candidate.
-#
-# `resolution` is the smallest change worth acting on. A smaller delta is still
-# reported, marked `~`. Leave it off and the delta is reported unjudged. There is
-# no score and no ranking: what a tenth of a degree of understeer is worth in
-# settling time is your call, not the tool's.
+# `resolution` is the smallest change worth acting on. A smaller delta is marked `~`.
+# With no resolution the delta is not judged.
 metrics:
   SteadyStateEval:
     understeer_gradient_deg_per_g: {resolution: 0.02}
@@ -41,9 +28,8 @@ metrics:
     roll_overshoot_pct: {resolution: 1.0}
     settling_time_s: {resolution: 0.05}
 
-# Also render each standard's PDF report per vehicle. Worth having when the study
-# goes in front of a design review; costs roughly ten seconds per run.
+# Renders each standard's PDF report per vehicle.
 render_reports: true
 
-# CPUs available to simulations (the Docker container's count, not the host's).
+# The Docker container's CPU count, not the host's.
 cpus: 12

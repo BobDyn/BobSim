@@ -1,10 +1,4 @@
-"""DOE plumbing checks for the StandardSens sweep.
-
-These cover the pure-Python half of the pipeline — config generation, sampling
-the baseline BobLib record, and writing variant Modelica — so a broken DOE is
-caught without an OpenModelica toolchain. The compile/simulate stages are not
-exercised here.
-"""
+"""DOE plumbing checks that run without OpenModelica."""
 
 from __future__ import annotations
 
@@ -17,8 +11,7 @@ import pytest
 import yaml
 
 if TYPE_CHECKING:
-    # `pd` below is bound by pytest.importorskip, which mypy sees as a value
-    # rather than a module, so annotations need the real module name.
+    # mypy reads `pd` from importorskip as a value, so annotations name the module.
     import pandas
 
 
@@ -26,9 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = ROOT / "_4_OptSim"
 ARCHITECTURE_CONFIG = OPTSIM_DIR / "StandardSens/configs/vehicle_architecture.yaml"
 
-# The OptSim workflows are invoked with _4_OptSim on the path (see the opt-*
-# make targets), so mirror that here rather than importing via the _4_OptSim
-# package prefix.
+# Import as the opt-* make targets do, with _4_OptSim on the path.
 if str(OPTSIM_DIR) not in sys.path:
     sys.path.insert(0, str(OPTSIM_DIR))
 
@@ -40,13 +31,7 @@ from StandardSens.pipeline import generate_configs, generator, search  # noqa: E
 
 
 def _localize(doe_config_path: Path) -> Path:
-    """Rewrite the config's relative paths as absolute ones.
-
-    `build_doe_config` always emits paths relative to the real configs/
-    directory, so a config generated into a tmp dir cannot resolve them. Tests
-    write outside the repo to avoid dirtying the checked-in config, so resolve
-    the references against their true base here.
-    """
+    """Resolve the config's relative paths against the real configs/ directory."""
     cfg = yaml.safe_load(doe_config_path.read_text())
     config_dir = generate_configs.DOE_CONFIG.parent
     cfg["baseline_mo"] = str((config_dir / cfg["baseline_mo"]).resolve())
@@ -85,17 +70,7 @@ def test_generated_config_uses_posix_separators(doe_config: Path) -> None:
 
 
 def test_checked_in_config_matches_regeneration(doe_config: Path) -> None:
-    """The committed _doe_config.yaml should not drift from its source.
-
-    Compares the committed blob rather than the working copy, as a local run
-    with DOE_SAMPLES/DOE_METHOD/DOE_SCOPE legitimately rewrites the file on
-    disk. The blob is the reference precisely so that dirt does not fail this.
-
-    The one exception: when generation has gained output the committed blob does
-    not have yet, the blob is merely behind. That is distinguishable — the
-    working copy will match regeneration — and it is a commit away from fixed,
-    so it skips with that instruction instead of failing.
-    """
+    """Compare the committed blob. A local DOE_* run rewrites the working copy."""
     import subprocess
 
     regenerated = yaml.safe_load(doe_config.read_text())
@@ -162,11 +137,7 @@ def _variable_paths(architecture_config_path: Path = ARCHITECTURE_CONFIG) -> dic
 
 
 def _expected_paths(scope: str) -> list[str]:
-    """The paths a given scope should select, in architecture-YAML order.
-
-    Filtering preserves file order, and untagged variables are interleaved
-    among the tagged ones, so grouping by scope would not reproduce it.
-    """
+    """Scope paths in YAML order, which grouping by scope does not keep."""
     raw = yaml.safe_load(ARCHITECTURE_CONFIG.read_text())["sweep"]["variables"]
     return [
         spec["path"]
@@ -208,7 +179,7 @@ def test_scope_filters_variables(tmp_path: Path) -> None:
     assert [v["path"] for v in architecture["variables"]] == _expected_paths(
         "architecture"
     )
-    # The partition is the point: neither half may be the whole sweep.
+    # Neither half may be the whole sweep.
     total = len(_generate(tmp_path)["variables"])
     assert len(setup["variables"]) < total
     assert len(architecture["variables"]) < total
@@ -285,7 +256,7 @@ def test_misspelled_variable_scope_fails_the_default_sweep(tmp_path: Path) -> No
 
 
 def test_scoped_generation_keeps_untagged_variables(tmp_path: Path) -> None:
-    """Strip a tag in a copy of the YAML; the variable must still be swept."""
+    """Remove a tag in a copy of the YAML. The variable must still be swept."""
     untagged: list[str] = []
 
     def untag(variables: list[dict]) -> None:
@@ -307,11 +278,7 @@ def test_scoped_generation_keeps_untagged_variables(tmp_path: Path) -> None:
 
 
 def test_reviewed_partition_sizes() -> None:
-    """Pin the partition the vehicle-dynamics review signed off on.
-
-    Retagging a variable is meant to be a one-line YAML edit, but it changes
-    what every scoped sweep covers, so it should not pass unnoticed.
-    """
+    """Pin the partition that the vehicle-dynamics review approved."""
     grouped = _variable_paths()
     assert len(grouped["setup"]) == 10
     assert len(grouped["architecture"]) == 9
@@ -331,9 +298,7 @@ def test_generated_config_records_the_scope(tmp_path: Path) -> None:
     assert _generate(tmp_path, scope="setup")["scope"] == "setup"
     assert _generate(tmp_path, scope="architecture")["scope"] == "architecture"
 
-    # And the reverse lookup reads back what generation wrote. Deliberately
-    # via a freshly generated config, not the working copy: an override run
-    # (make opt-standard-setup) legitimately leaves a scoped config on disk.
+    # Use a fresh config. An override run can leave a scoped config on disk.
     _generate(tmp_path, scope="setup")
     assert search.load_sweep_scope(tmp_path / "_doe_config.yaml") == "setup"
     _generate(tmp_path)
@@ -383,11 +348,7 @@ def test_search_warns_when_the_population_scope_is_narrow(tmp_path: Path) -> Non
 
 
 def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path) -> None:
-    """Restoring _doe_config.yaml from git after a scoped run looks like this.
-
-    The config claims 23 parameters; the population only ever varied the
-    scoped subset, and nothing in the table says so.
-    """
+    """The state after a scoped run when _doe_config.yaml is restored from git."""
     swept = ["front.wheel.toe_deg", "rear.wheel.toe_deg"]
     claimed = swept + ["sprung_mass.mass_kg", "body.torsional_stiff_n_m_per_rad"]
 
@@ -402,9 +363,7 @@ def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path)
         _results(swept), claimed, legacy
     ) == search.SCOPE_UNKNOWN
 
-    # Column presence does not depend on row count, so a single-row table is
-    # flagged too. It used to be excluded, which left the missing parameters
-    # reported only by the second warning that has since been merged in here.
+    # A single-row table is flagged too. Column presence does not depend on row count.
     assert search._warn_if_results_scope_is_narrow(
         _results(swept, rows=1), claimed, restored
     ) == search.SCOPE_UNKNOWN
@@ -413,13 +372,7 @@ def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path)
 def test_scope_warning_is_the_only_one_and_names_the_missing_params(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One condition, one warning, carrying both halves of what it replaced.
-
-    A narrower-than-config table used to print twice: a scope explanation here
-    and a separate list of unreportable parameters further down in search().
-    A reviewer reads the pair as a bug, so they are one warning now — which
-    still has to name the specific parameters.
-    """
+    """One warning, and it names the specific missing parameters."""
     swept = ["front.wheel.toe_deg", "rear.wheel.toe_deg"]
     absent = ["sprung_mass.mass_kg", "body.torsional_stiff_n_m_per_rad"]
     claimed = swept + absent
@@ -472,11 +425,7 @@ def _population(values: list[float]) -> pandas.DataFrame:
 
 
 def test_search_warns_when_target_is_outside_the_population() -> None:
-    """An unreachable target must not be reported as if it were met.
-
-    Guards the real case that prompted this: understeer gradient sampled over
-    [0.278, 0.331] answering a target of 0.05 with a bare distance of 4.35.
-    """
+    """Regression: a 0.05 target over samples in [0.278, 0.331] was reported as met."""
     df = _population([0.278154, 0.295, 0.310, 0.330610])
     ranges = np.array([df["metric"].max() - df["metric"].min()])
 
@@ -556,8 +505,7 @@ def test_small_doe_generates_variants(
     variants = sample(doe_config_path)
     assert len(variants) == samples + 1, "LHS returns the baseline plus N samples"
 
-    # Static balance free length needs FourPostEval motion ratios. Stub them so
-    # this stays a plumbing test rather than a simulation test.
+    # Stub the FourPostEval motion ratios so this test does not simulate.
     metrics_csv = tmp_path / "four_post_eval_report_metrics.csv"
     metrics_csv.write_text(
         "metric,value\n"
@@ -587,11 +535,7 @@ def test_small_doe_generates_variants(
 
 
 def test_build_template_renders(tmp_path: Path) -> None:
-    """The .mos template is filled with str.format.
-
-    Literal Modelica braces such as the MSL version list `{"4.1.0"}` must be
-    escaped as `{{...}}` or format() reads them as replacement fields.
-    """
+    """Literal Modelica braces must be escaped as `{{...}}` for str.format."""
     from StandardSens.pipeline import compiler
 
     rendered = compiler.generate_mos(

@@ -1,8 +1,6 @@
 """BobVis friction-circle and LLTD arithmetic.
 
-:mod:`_1_VisualSim.tire_state` is numpy only, so these run everywhere, CI
-included. The friction limit has to match BobLib's MF5.2 peak exactly, or a
-tire the solver has sliding would look like it has grip to spare.
+The friction limit must match the BobLib MF5.2 peak exactly.
 """
 
 from __future__ import annotations

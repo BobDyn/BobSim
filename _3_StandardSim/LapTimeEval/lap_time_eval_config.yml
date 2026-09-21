@@ -5,8 +5,7 @@ model_dof: 3  # Shared by GGV/QSS generation and the transient lap: 3, 6, 10, or
 
 event:
   name: endurance
-  # Constant event-level starting assumption. This is not yet an energy-state
-  # or thermal-derate model; other FSAE dynamic events use the 80 kW YAML cap.
+  # Constant event power cap. No energy-state or thermal-derate model yet.
   drive_power_limit_w: 32000
 
 track:
@@ -21,11 +20,10 @@ racing_line:
   lap_time_max_iterations: 15
 
 qss:
-  # Reuses EnvelopeSim output when present. If absent, a compact map is
-  # generated from the selected dyn_py model and written here.
+  # Reuses EnvelopeSim output. If absent, generates a map from the dyn_py model.
   ggv_csv: _2_EnvelopeSim/Build/GGV/ggv_dyn_py_{model_dof}dof_endurance_32kw.csv
   generate_if_missing: true
-  max_speed_mps: null  # Optional lap speed cap; useful for transient validation
+  max_speed_mps: null  # Optional lap speed cap
   speeds_mps: [5.0, 10.0, 15.0, 20.0, 25.0]
   ay_max_g: 4.0
   ay_points: 21

@@ -1,4 +1,4 @@
-"""sampler.py — Read baseline car + DOE config, generate DOE variant dicts."""
+"""Generate DOE variant dicts from the baseline record and DOE config."""
 
 from collections.abc import Iterable
 from itertools import product
@@ -164,7 +164,6 @@ def sample(config_path: str | Path) -> list[dict[str, float]]:
         raise TypeError("sampling must be a mapping when provided")
     method = sampling_cfg.get("method", "lhs")
 
-    # Resolve mo_path relative to the config file
     config_dir = Path(config_path).resolve().parent
     mo_path = (config_dir / cfg["baseline_mo"]).resolve()
 

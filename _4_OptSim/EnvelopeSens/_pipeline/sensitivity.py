@@ -1,9 +1,4 @@
-"""EnvelopeSim sensitivity generation and execution.
-
-This workflow is deliberately scoped to quasi-static vehicle envelope physics:
-mass properties, CG, simple load transfer, aero scale/balance, tire peak/load
-sensitivity, longitudinal limits, and architecture-scale wheelbase/track.
-"""
+"""EnvelopeSim sensitivity generation and execution, limited to quasi-static envelope physics."""
 
 from __future__ import annotations
 

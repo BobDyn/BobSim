@@ -882,8 +882,7 @@ class FourPostEvalSim:
             "pVehicle.pRrAxleDW.springFreeLength": float(setup["rear_spring_free_length"]),
             "pVehicle.pFrStabar.barRate": front_stabar_rate,
             "pVehicle.pRrStabar.barRate": rear_stabar_rate,
-            # FourPost templates zero the exposed bars for pure-K&C runs; set
-            # the public bar records for the physical load-transfer pass.
+            # Templates zero the bars for pure K&C. Set them for the load-transfer pass.
             "pFrStabar.barRate": front_stabar_rate,
             "pRrStabar.barRate": rear_stabar_rate,
         }
@@ -1351,10 +1350,7 @@ class FourPostEvalSim:
                 heave_series[f"{corner}_{key}_vs_heave"] = heave_sig[heave_idx]
                 roll_series[f"{corner}_{key}_vs_roll"] = roll_sig[roll_idx]
 
-        # Jacking is the incremental chassis reaction from the force pulse at a
-        # fixed pose, not the absolute axle support load. Subtract the dead-tail
-        # force at the same pose so we only retain the load introduced by the
-        # heave/roll force pulse.
+        # Jacking is the load from the force pulse only. Subtract the dead-tail force at the same pose.
         fr_jack = -sig("frKnC", "jackingForce")
         rr_jack = -sig("rrKnC", "jackingForce")
         fr_fx = sig("frKnC", "fx")
@@ -1508,10 +1504,8 @@ class FourPostEvalSim:
         fr_anti_roll = _plausible_array(100.0 * fr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
         rr_anti_roll = _plausible_array(100.0 * rr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
 
-        # Force-based roll-center equivalent height from moment equivalence:
-        # h_eq = (track / 2) * (delta_Fz,right - delta_Fz,left) / Fy.
-        # This is deliberately separate from geometric anti-roll, which uses
-        # the total axle jacking reaction rather than the left/right load split.
+        # Force-based roll-center height: h_eq = (track / 2) * (dFz_right - dFz_left) / Fy.
+        # Geometric anti-roll uses total axle jacking instead of the left/right split.
         fr_fbrc_ratio = _safe_divide_series(
             roll_fz_delta[("frKnC", "right")] - roll_fz_delta[("frKnC", "left")],
             fr_roll_force_denominator,

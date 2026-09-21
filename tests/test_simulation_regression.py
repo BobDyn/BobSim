@@ -80,9 +80,7 @@ STUDY_CONFIGS = {
     "transient": "_3_StandardSim/TransientEval/transient_eval_config.yml",
 }
 
-# Only sections that can move a simulated number. `execution` (worker counts),
-# `report`, and `plots` are deliberately excluded so cosmetic edits and
-# parallelism tuning do not invalidate a baseline that is still valid.
+# Only sections that can move a simulated number.
 RESULT_AFFECTING_SECTIONS = ("simulation", "sweep", "fit")
 
 BOBLIB_SUBMODULE = "_0_Utils/external/BobLib"
@@ -459,11 +457,7 @@ def test_transient_regression_metrics_remain_physically_consistent(
 
 
 def test_baseline_provenance_matches_simulation_inputs() -> None:
-    """Fail fast when the baseline no longer describes the current inputs.
-
-    Runs without OpenModelica so it gates every PR. The baseline previously went
-    stale for 79 commits because nothing tied it to the pin and configs it guards.
-    """
+    """Fail fast when the baseline no longer matches the current inputs."""
     baseline = _load_baseline()
     provenance = baseline.get("provenance")
     assert isinstance(provenance, dict), (
@@ -552,9 +546,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
     reason="set BOBSIM_BASELINE_REGRESSION=1 to compare against the default vehicle baseline",
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
-    # Every metric is checked before failing: this test is gated behind a ~12 min
-    # simulation refresh, so aborting on the first mismatch would leak one drifted
-    # metric per run.
+    # Check every metric before failing, because a refresh takes about 12 min.
     failures: list[str] = []
 
     for metric, spec in _metric_baselines(workflow_data.spec).items():

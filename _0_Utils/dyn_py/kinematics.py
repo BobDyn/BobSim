@@ -1,11 +1,4 @@
-"""Suspension-kinematics public surface for :mod:`_0_Utils.dyn_py`.
-
-The nonlinear hardpoint solver remains an independently testable subsystem,
-but users of the reduced vehicle product should not need to assemble it beside
-the dynamics package themselves.  This module is the stable composition
-boundary; ``_0_Utils.kin_py`` remains available for compatibility with the
-original kinematics-only workflows.
-"""
+"""Suspension-kinematics public surface for :mod:`_0_Utils.dyn_py`."""
 
 from _0_Utils.kin_py import (
     BUMP_CURVE_SOURCES,
