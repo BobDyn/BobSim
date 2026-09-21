@@ -27,6 +27,8 @@ import difflib
 from itertools import combinations
 import math
 
+from StandardSens.pipeline.standards import case_loss
+
 BASELINE = "baseline"
 
 Variant = dict[str, float]
@@ -80,12 +82,9 @@ def lost_cases(results: Results) -> dict[tuple[str, str], str]:
     problems: dict[tuple[str, str], str] = {}
     for candidate, by_standard in results.items():
         for standard, metrics in by_standard.items():
-            total = metrics.get("n_cases", (math.nan, ""))[0]
-            good = metrics.get("n_successful_cases", (math.nan, ""))[0]
-            if not (math.isfinite(total) and math.isfinite(good)):
-                problems[candidate, standard] = "reported no case counts"
-            elif good < total:
-                problems[candidate, standard] = f"{int(total - good)} of {int(total)} cases failed"
+            why = case_loss({name: value for name, (value, _units) in metrics.items()})
+            if why:
+                problems[candidate, standard] = why
     return problems
 
 

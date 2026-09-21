@@ -64,9 +64,18 @@ class VariantStore:
 
         compiler_cfg = load_compiler_config(COMPILER_CONFIG)
         self.standard_cfg: dict[str, Any] = compiler_cfg["standards"][BUILD_STANDARD]
-        boblib_path = (COMPILER_CONFIG.resolve().parent / compiler_cfg["boblib_path"]).resolve()
+        self._boblib_path = (
+            COMPILER_CONFIG.resolve().parent / compiler_cfg["boblib_path"]
+        ).resolve()
 
-        self.was_reset = self._drop_if_inputs_changed(boblib_path)
+        # A cache must never outlive the inputs it was built from.
+        self.was_reset = self.variants_dir.exists() and self._inputs_changed()
+        if self.was_reset:
+            print(
+                f"Cache under {self.root.name}/ predates a change to BobLib, the vehicle, or "
+                "the simulation tooling; discarding it."
+            )
+            shutil.rmtree(self.variants_dir)
         index_path = self.variants_dir / "index.json"
         self._index: dict[str, int] = json.loads(index_path.read_text()) if index_path.exists() else {}
 
@@ -94,10 +103,8 @@ class VariantStore:
         self.doe_config_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
         return cfg
 
-    def _drop_if_inputs_changed(self, boblib_path: Path) -> bool:
-        """A cache must never outlive the inputs it was built from."""
-        if not self.variants_dir.exists():
-            return False
+    def _inputs_changed(self) -> bool:
+        """Whether the inputs differ from the ones the compiled variants were built from."""
         try:
             # The same call compile_all makes, so the two cannot disagree about
             # what counts as stale.
@@ -105,16 +112,11 @@ class VariantStore:
                 self.variants_dir,
                 self.doe_config_path,
                 COMPILER_CONFIG,
-                boblib_path,
+                self._boblib_path,
                 ARCHITECTURE_CONFIG,
                 PIPELINE_TOOLING_INPUTS,
             )
         except RuntimeError:
-            print(
-                f"Cache under {self.root.name}/ predates a change to BobLib, the vehicle, or "
-                "the simulation tooling; discarding it."
-            )
-            shutil.rmtree(self.variants_dir)
             return True
         return False
 
@@ -129,6 +131,15 @@ class VariantStore:
         new = sorted({variant_key(v) for v in variants} - set(self._index))
         if not new and all(find_exe(self.build_dir(v), self.standard_cfg) for v in variants):
             return
+
+        if self.variants_dir.exists() and self._inputs_changed():
+            # Only reachable mid-run: a stale cache is discarded at construction.
+            raise RuntimeError(
+                "BobLib, the vehicle or the simulation tooling changed while this run was in "
+                "progress, so the vehicles already simulated and the ones still to compile "
+                "would not be comparable. Nothing on disk is damaged: run it again once the "
+                "edits have settled, and the cache will be rebuilt against the current inputs."
+            )
 
         for key in new:
             self._index[key] = len(self._index)

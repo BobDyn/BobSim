@@ -29,6 +29,7 @@ from StandardSens.pipeline import overrides as ov
 from StandardSens.pipeline.generator import build_context, read_metrics_csv
 from StandardSens.pipeline.orchestration import STANDARD_BUILD_DIR
 from StandardSens.pipeline.sampler import read_baseline
+from StandardSens.pipeline.standards import case_loss
 from StandardSens.pipeline.steady_state_eval_report import Isoline, run_report
 from StandardSens.pipeline.variants import BUILD_STANDARD, VariantStore, split_cpus, variant_key
 
@@ -82,7 +83,10 @@ class SteadyStateEvaluator:
                 for done, _ in enumerate(pool.map(simulate, pending), start=1):
                     print(f"  [{done}/{len(pending)}] {time.time() - started:.0f}s", flush=True)
 
-        return [read_metrics_csv(self._metrics_path(v)) for v in variants]
+        results = [read_metrics_csv(self._metrics_path(v)) for v in variants]
+        for variant, metrics in zip(variants, results, strict=True):
+            require_whole(variant, metrics)
+        return results
 
     def _simulate(self, variant: Variant, *, workers: int) -> None:
         build_dir = self.store.build_dir(compiled_part(variant, self.baseline))
@@ -115,6 +119,24 @@ class SteadyStateEvaluator:
 
     def _metrics_path(self, variant: Variant) -> Path:
         return self._eval_dir(variant) / "results" / BUILD_STANDARD / "metrics.csv"
+
+
+def require_whole(variant: Variant, metrics: Metrics) -> None:
+    """Refuse an evaluation that lost simulation cases.
+
+    Its gradients are fitted through fewer points than its neighbours', so it
+    would bend the surrogate without any number looking wrong, and because
+    evaluations are cached it would keep bending every later solve too.
+    """
+    why = case_loss(metrics)
+    if why:
+        raise RuntimeError(
+            f"SteadyStateEval was not whole for {variant}: {why}. Its metrics are not "
+            "comparable with the other evaluations, so the solve stops here rather than "
+            "fit through them. The usual cause is a target a_y this setup cannot settle "
+            "at: lower the top of `test_matrix.target_ays` in solve_config.yaml (which "
+            "re-simulates the star), or inspect the run under Build/StandardSens/solve/."
+        )
 
 
 def compiled_part(variant: Variant, baseline: Variant) -> Variant:
