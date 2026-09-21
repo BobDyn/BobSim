@@ -11,7 +11,7 @@ Read in this order:
 | [architecture.md](architecture.md) | You need the `_0_` … `_5_` layer map and how data flows between them. Start here. |
 | [simulation-entrypoints.md](simulation-entrypoints.md) | You need to understand the fidelity levels and use cases of VehicleSim, EnvelopeSim, StandardSim, and FourPostSim — or you're publishing results and need to specify which workflow was used. |
 | [workflows.md](workflows.md) | You want to *run* something: app, standard studies, envelopes, sensitivities, tests. |
-| [doe-reverse-engineering.md](doe-reverse-engineering.md) | You are doing DOE work — sweeping parameters or going backwards from target performance metrics to a car. Start here for `make opt-standard`. |
+| [doe-reverse-engineering.md](doe-reverse-engineering.md) | You are doing OptSim work: sweeping parameters (`make opt-standard`), solving for the setup that hits target metrics (`make opt-solve`), or comparing named vehicles across standard sims (`make opt-trade`). It opens with which of the three to reach for. |
 
 | [reduced-order-dynamics.md](reduced-order-dynamics.md) | You are working on 3/6/10/14DOF transient models, QSS envelopes, or BobLib correlation. |
 | [lap-time-simulation.md](lap-time-simulation.md) | You are optimizing a QSS racing line/speed profile or running the same lap as a forward transient. |
