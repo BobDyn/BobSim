@@ -20,6 +20,7 @@ BUILD_FOUR_POST_MOS := _3_StandardSim/build_four_post_sim.mos
 SEARCH_TOP ?= 1
 TARGETS ?=
 KNOBS ?=
+STUDY ?=
 REDUCED_DOF ?= 6
 REDUCED_KINEMATICS ?= lookup
 REDUCED_BOBLIB_CSV ?=
@@ -137,7 +138,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	lap-validation-visuals \
 	envelope-ggv envelope-ymd envelope-all \
 	opt-standard opt-standard-setup opt-standard-architecture \
-	opt-envelope opt-refined opt-search opt-solve opt-doe-smoke \
+	opt-envelope opt-refined opt-search opt-solve opt-trade opt-doe-smoke \
 	clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned clean-all
 
 ifeq ($(OS),Windows_NT)
@@ -226,12 +227,14 @@ help:
 		'  opt-refined               Run StandardSens refined response surfaces' \
 		'  opt-search                Reverse lookup: target metrics -> vehicle parameters' \
 		'  opt-solve                 Solve for the setup that hits target metrics, then simulate it' \
+		'  opt-trade                 Compare named vehicles across the standard sims' \
 		'' \
 		'  Search variables:' \
 		'    METRICS="NAME=VALUE ..."             Required target metrics' \
 		'    SEARCH_TOP=<n>                       Nearest variants to return. Default: 1' \
 		'    TARGETS="NAME=VALUE ..."             opt-solve targets. Default: configs/solve_config.yaml' \
 		'    KNOBS="path ..."                     opt-solve knobs. Default: configs/solve_config.yaml' \
+		'    STUDY=<path>                         opt-trade study. Default: configs/trade_study.yaml' \
 		'' \
 		'  DOE sweep variables (default: configs/vehicle_architecture.yaml):' \
 		'    DOE_METHOD=lhs|interval_splice       Sampling method' \
@@ -505,6 +508,12 @@ opt-search:
 # the free length with it to hold ride height.
 opt-solve: $(FOUR_POST_METRICS)
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup $(if $(TARGETS),--targets $(TARGETS),) $(if $(KNOBS),--knobs $(KNOBS),)
+
+# Compiles each named candidate once and runs every requested standard against
+# that one executable. Needs the FourPostEval motion ratios whenever a candidate
+# changes a spring rate, for the same reason opt-standard does.
+opt-trade: $(FOUR_POST_METRICS)
+	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.trade_study $(if $(STUDY),--study $(STUDY),)
 
 clean:
 	bash -lc 'find $(CLEAN_WORKSPACE) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; \
