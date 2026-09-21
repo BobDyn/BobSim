@@ -258,12 +258,11 @@ app:
 # A normal evaluation keeps only the scalar signals its metrics need, so its
 # result CSV has no geometry and cannot feed a scene. This re-runs one
 # evaluation (VISUAL_EVAL) asking OpenModelica for the suspension frames too,
-# then converts the result into a scene. The simulation goes through $(RUN);
-# the two conversion steps are host side and need only the base requirements.
+# then converts the result into a scene.
 visual-capture: $(VISUAL_EVAL_BUILD)
-	$(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
+	$(RUN) $(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
 	$(RUN) $(PYTHON) -m _3_StandardSim.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
-	$(PYTHON) -m _1_VisualSim.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
+	$(RUN) $(PYTHON) -m _1_VisualSim.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
 		--npz $(VISUAL_CAPTURE)_visual.npz --template $(VISUAL_CAPTURE)_visual.yml
 	@printf '%s\n' 'Scene written. Open it with: make app, then the Replay tab.'
 
@@ -279,7 +278,7 @@ visual-maneuver:
 # The demo scene is generated, never committed, so build it whenever it is
 # missing. Both outputs come from one run of the generator.
 $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA):
-	$(PYTHON) -m _1_VisualSim.demo --out-dir $(VISUAL_RESULTS)
+	$(RUN) $(PYTHON) -m _1_VisualSim.demo --out-dir $(VISUAL_RESULTS)
 
 visual-demo: $(VISUAL_DEMO_CONFIG) $(VISUAL_DEMO_DATA)
 	@printf '%s\n' 'Synthetic scene written. Open it with: make app, then the Replay tab.'

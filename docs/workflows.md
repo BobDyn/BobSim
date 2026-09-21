@@ -22,7 +22,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 | --- | --- | --- | --- |
 | `make app` | Container (`app` service) or host with `RUN=` | — | Auto-built |
 | `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
-| `make visual-*` | Host, except the simulation step | — | Only for the capture step |
+| `make visual-*` | Container (in `RUN`) | — | Auto-built |
 | `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
 | `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
@@ -130,9 +130,8 @@ make app               # then open the Replay tab
 ```
 
 Each writes a `<name>_visual.yml` and `.npz` pair into `_1_VisualSim/results/`,
-and the Replay tab lists whatever it finds there. The conversion steps run on
-the host; the simulation inside `visual-rig` and `visual-maneuver` still goes
-through `$(RUN)` like every other BobSim workflow.
+and the Replay tab lists whatever it finds there. Every step goes through
+`$(RUN)` like every other BobSim workflow.
 
 A normal evaluation keeps only the scalar signals its metrics need, so it has
 columns of KnC numbers and nothing to draw. `make visual-capture` (which

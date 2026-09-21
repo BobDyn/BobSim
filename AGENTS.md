@@ -99,8 +99,7 @@ machine. Use it after touching `_4_OptSim` or the BobLib records it reads.
 
 Most targets shell out to `docker compose` unless you are already inside the
 container. `make app` also runs in a container, the `app` service, which has a
-network so it can publish its port. `deploy-*` and the conversion steps of
-`visual-*` run on the host.
+network so it can publish its port. `deploy-*` runs on the host.
 
 Paths that get written into configs, JSON payloads, or anything consumed on
 another machine must be `as_posix()`, never `str(Path)` — native Windows
