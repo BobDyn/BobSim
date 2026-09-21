@@ -109,6 +109,11 @@ SHELL_ENVELOPE_CMD := $(COMPOSE) run --rm envelope bash
 SHELL_OPT_CMD := $(COMPOSE) run --rm opt bash
 endif
 
+# The app needs a network to publish its port, so it uses the app service, not
+# bobsim. Recursive so that `make app RUN=` also runs the app on the host.
+APP_PORT ?= 8765
+APP_RUN = $(if $(RUN),$(COMPOSE) run --rm -p 127.0.0.1:$(APP_PORT):8765 app,)
+
 WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
 CLEAN_WORKSPACE ?= $(CURDIR)
 CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
@@ -139,7 +144,7 @@ help:
 		'  init                      Initialize submodules' \
 		'  docker-build              Build the Docker development image' \
 		'  docker-rebuild            Rebuild the Docker image from scratch' \
-		'  app                       Open the BobSim browser app' \
+		'  app                       Open the BobSim browser app in Docker' 		'      APP_PORT=8765 sets the host port, RUN= runs it on the host' \
 		'' \
 		'  BobVis - scenes for the Replay tab. Write one, then open the app.' \
 		'  visual-maneuver           Simulate a VehicleSim manoeuvre and write its scene' \
@@ -247,7 +252,8 @@ docker-rebuild:
 	$(DOCKER_REBUILD_CMD)
 
 app:
-	$(PYTHON) -m _5_App.app
+	$(if $(APP_RUN),@echo BobSim app in Docker. Open http://127.0.0.1:$(APP_PORT),)
+	$(APP_RUN) $(PYTHON) -m _5_App.app $(if $(APP_RUN),--host 0.0.0.0 --port 8765,--port $(APP_PORT))
 
 # A normal evaluation keeps only the scalar signals its metrics need, so its
 # result CSV has no geometry and cannot feed a scene. This re-runs one

@@ -8,7 +8,7 @@ aren't obvious from the target names.
 ```bash
 make init          # git submodule update --init --recursive  ← do not skip
 make docker-build  # OpenModelica + requirements.txt
-make app           # http://127.0.0.1:8765
+make app           # in Docker, http://127.0.0.1:8765
 ```
 
 `make init` is not optional. Without it BobLib is empty or stale and every
@@ -20,12 +20,20 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 
 | Target | Runs on | Needs on host | Needs in container |
 | --- | --- | --- | --- |
-| `make app`, `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
+| `make app` | Container (`app` service) or host with `RUN=` | — | Auto-built |
+| `make deploy-*` | Host (not in `RUN`) | `requirements.txt` installed | — |
 | `make visual-*` | Host, except the simulation step | — | Only for the capture step |
 | `make lint`, `make test`, `make typecheck` | Container (in `RUN`) | — | Auto-built |
 | `make standard-*`, `make envelope-*`, `make opt-*` | Container or host | `omc` on `PATH` (OpenModelica) | Auto-built |
 
 **Shortcut for native testing:** `make shell` opens a container shell for any workflow.
+
+`make app` uses the `app` service, not `bobsim`, because `bobsim` has no
+network and so cannot publish a port. The container listens on 8765 and
+publishes it on `127.0.0.1:$(APP_PORT)` (default 8765). The app in the container
+uses the image's `omc` and keeps its toolchain choice in
+`_5_App/user_data/config/app/openmodelica.docker.json`, so it never overwrites
+the host app's `openmodelica.json`. `make app RUN=` runs the app on the host.
 
 ## Target vocabulary
 

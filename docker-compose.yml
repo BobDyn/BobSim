@@ -25,3 +25,11 @@ services:
   opt:
     <<: *bobsim-base
     working_dir: /workspace/_4_OptSim
+
+  app:
+    <<: *bobsim-base
+    network_mode: bridge
+    init: true
+    environment:
+      PYTHONPATH: /workspace
+      BOBSIM_OPENMODELICA_SETTINGS: openmodelica.docker.json

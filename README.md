@@ -72,7 +72,10 @@ Start the BobSim app:
 make app
 ```
 
-Then open `http://127.0.0.1:8765`.
+Then open `http://127.0.0.1:8765`. The app runs in Docker and uses the
+image's OpenModelica, so the app's simulations need no local install. Use
+`make app APP_PORT=8766` for another port, or `make app RUN=` to run it on the
+host.
 
 The app is the primary entry point for normal vehicle-development work. Use it
 to select or edit a vehicle configuration, save the setup, write the generated

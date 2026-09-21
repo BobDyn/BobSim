@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from _0_Utils import config_io
@@ -26,7 +27,8 @@ ACTIVE_SIM_CONFIG_ROOT = config_io.ACTIVE_CONFIG_ROOT
 # Pristine snapshot for configs that are still edited in place, so "Default"
 # keeps working for them without a second copy in the repo.
 DEFAULT_SNAPSHOT_ROOT = USER_CONFIG_ROOT / "defaults"
-OPENMODELICA_SETTINGS_PATH = SETTINGS_ROOT / "openmodelica.json"
+# The Docker app sets its own file so container and host omc paths never overwrite each other.
+OPENMODELICA_SETTINGS_PATH = SETTINGS_ROOT / os.environ.get("BOBSIM_OPENMODELICA_SETTINGS", "openmodelica.json")
 RUNTIME_SEED_MANIFEST_PATH = SETTINGS_ROOT / "runtime_seed.json"
 
 USER_DATA_DIRS = (

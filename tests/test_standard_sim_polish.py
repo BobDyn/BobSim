@@ -199,11 +199,13 @@ def test_compose_services_match_workflow_language() -> None:
     services = compose.get("services")
 
     assert isinstance(services, dict)
-    assert set(services) == {"bobsim", "standard", "envelope", "opt"}
+    assert set(services) == {"bobsim", "standard", "envelope", "opt", "app"}
     assert services["bobsim"]["working_dir"] == "/workspace"
     assert services["standard"]["working_dir"] == "/workspace/_3_StandardSim"
     assert services["envelope"]["working_dir"] == "/workspace/_2_EnvelopeSim"
     assert services["opt"]["working_dir"] == "/workspace/_4_OptSim"
+    assert services["app"]["working_dir"] == "/workspace"
+    assert services["app"]["network_mode"] == "bridge"
 
 
 def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:
