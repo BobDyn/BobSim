@@ -17,6 +17,7 @@ max_workers is configurable in compiler_config.yaml.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 import platform
 import subprocess
 import sys
@@ -55,6 +56,7 @@ DEFAULT_MODELICA_RUNNER = REPO_ROOT / "_3_StandardSim/_modelica_runner.py"
 # list would keep caches its neighbour had already declared stale.
 PIPELINE_TOOLING_INPUTS = (
     DEFAULT_REPORT_WRAPPER,
+    STANDARD_DIR / "pipeline/standards.py",
     DEFAULT_STEADY_STATE_SIM,
     DEFAULT_STEADY_STATE_CONFIG,
     DEFAULT_MODELICA_RUNNER,
@@ -269,8 +271,12 @@ def compile_all(
         template_path: Path = DEFAULT_MOS_TEMPLATE,
         doe_config_path: Path = DEFAULT_DOE_CONFIG,
         architecture_config_path: Path = DEFAULT_ARCHITECTURE_CONFIG,
+        only_standards: Collection[str] | None = None,
 ) -> dict[str, list[Path]]:
     """Compile all variants in population_dir for all standards in config.
+
+    `only_standards` narrows that to the named ones, for callers that run several
+    standards against one executable and must not pay for a build per standard.
 
     Skips variants that are already compiled and whose inputs haven't changed.
     Runs variants in parallel using ProcessPoolExecutor.
@@ -279,6 +285,8 @@ def compile_all(
     """
     cfg = load_compiler_config(compiler_config_path)
     standards: dict[str, dict] = cfg["standards"]
+    if only_standards is not None:
+        standards = {name: standards[name] for name in only_standards}
     max_workers: int = cfg.get("max_workers", 2)
 
     # Resolve boblib_path relative to the config file

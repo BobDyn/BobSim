@@ -130,11 +130,11 @@ def test_runtime_safe_knobs_share_one_executable_and_the_rest_do_not() -> None:
     assert bar in overrides.RUNTIME_SAFE_PATHS
     assert toe not in overrides.RUNTIME_SAFE_PATHS, "toe is baked into the wheel rotation matrix"
     baseline = {bar: 535.0, toe: 0.0}
-    soft = evaluator.compile_key({bar: 400.0, toe: 0.0}, baseline)
-    stiff = evaluator.compile_key({bar: 900.0, toe: 0.0}, baseline)
-    toed = evaluator.compile_key({bar: 900.0, toe: 0.1}, baseline)
-    assert soft == stiff == (), "bar changes must reuse the baseline executable"
-    assert toed == ((toe, 0.1),), "a toe change must get its own executable"
+    soft = evaluator.compiled_part({bar: 400.0, toe: 0.0}, baseline)
+    stiff = evaluator.compiled_part({bar: 900.0, toe: 0.0}, baseline)
+    toed = evaluator.compiled_part({bar: 900.0, toe: 0.1}, baseline)
+    assert soft == stiff == {}, "bar changes must reuse the baseline executable"
+    assert toed == {toe: 0.1}, "a toe change must get its own executable"
 
 
 def test_command_line_targets_replace_the_configured_ones() -> None:

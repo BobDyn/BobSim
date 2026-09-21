@@ -1,4 +1,4 @@
-"""batch.py — Run the SteadyStateEval report wrapper for all variants.
+"""batch.py — Run each configured standard for all variants.
 
 For each variant_XXXX/build/<standard>/ that has a compiled executable:
   1. Skip if metrics.csv already exists and is valid (correct row count)
@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from StandardSens.pipeline.steady_state_eval_report import run_report
+from StandardSens.pipeline.standards import get_standard, run_standard
 
 # ---------------------------------------------------------------------------
 # Config
@@ -83,7 +83,10 @@ def run_variant(
     results_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        metrics_csv = run_report(
+        # Dispatch on the standard's name: running one standard's report against
+        # another's executable fails late and unhelpfully.
+        metrics_csv = run_standard(
+            get_standard(standard),
             variant_dir=variant_dir,
             build_dir=build_dir,
             exec_name=standard_cfg["model"],
