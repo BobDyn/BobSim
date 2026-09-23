@@ -42,7 +42,7 @@ def _load_metrics_csv(path: Path | None = None) -> dict[str, float]:
 
 
 def read_metrics_csv(path: Path) -> dict[str, float]:
-    """Read a report's `metric,value` CSV; anything unparsable becomes NaN."""
+    """Read a report's `metric,value` CSV. A value that does not parse becomes NaN."""
     metrics: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):

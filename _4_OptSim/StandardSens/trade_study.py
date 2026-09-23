@@ -42,7 +42,7 @@ def load_candidates(study: dict[str, Any], variables: dict[str, dict[str, Any]])
     candidates: dict[str, Variant] = {}
     for name, changes in (study.get("candidates") or {}).items():
         if name == trade.BASELINE:
-            raise ValueError(f"{trade.BASELINE!r} is always included; name your candidate something else")
+            raise ValueError(f"{trade.BASELINE!r} is always included. Give your candidate a different name.")
         if not changes:
             raise ValueError(f"Candidate {name!r} changes nothing, so it is the baseline")
         unknown = sorted(set(changes) - set(variables))

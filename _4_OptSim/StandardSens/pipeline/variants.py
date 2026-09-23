@@ -59,7 +59,7 @@ class VariantStore:
         if self.was_reset:
             print(
                 f"Cache under {self.root.name}/ predates a change to BobLib, the vehicle, or "
-                "the simulation tooling; discarding it."
+                "the simulation tooling. Discarding it."
             )
             shutil.rmtree(self.variants_dir)
         index_path = self.variants_dir / "index.json"

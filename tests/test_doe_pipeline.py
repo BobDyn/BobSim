@@ -94,8 +94,8 @@ def test_checked_in_config_matches_regeneration(doe_config: Path) -> None:
     on_disk = yaml.safe_load(generate_configs.DOE_CONFIG.read_text())
     if on_disk == regenerated:
         pytest.skip(
-            f"{rel} has been regenerated but not committed; commit it so this "
-            "check can compare against HEAD again"
+            f"{rel} was regenerated but not committed. Commit it so that this "
+            "check can compare against HEAD again."
         )
 
     assert committed == regenerated, (

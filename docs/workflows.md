@@ -116,15 +116,15 @@ make opt-trade      # compare the vehicles named in configs/trade_study.yaml
 ```
 
 `opt-solve` and `opt-trade` cache compiled vehicles and results under
-`_4_OptSim/Build/StandardSens/{solve,trade}/`, and discard them when BobLib, the
-vehicle or the simulation tooling changes, so a rerun is usually seconds. Which of
-the `opt-*` tools answers which question is the first section of
-[doe-reverse-engineering.md](doe-reverse-engineering.md).
+`_4_OptSim/Build/StandardSens/{solve,trade}/`. They discard the cache when BobLib,
+the vehicle or the simulation tooling changes. So a rerun usually takes seconds.
+The first section of [doe-reverse-engineering.md](doe-reverse-engineering.md)
+says which `opt-*` tool answers which question.
 
 Note the `opt-*` targets set `PYTHONPATH=_4_OptSim:.` and invoke modules as
 `StandardSens.*` / `EnvelopeSens.*`, not `_4_OptSim.StandardSens.*`. If you run
 one by hand, replicate that or the imports of `_shared` will fail. `PYTHONPATH`
-uses the platform's separator, so on Windows outside the container it is
+uses the platform's separator. On Windows outside the container, it is
 `PYTHONPATH="_4_OptSim;."`.
 
 ## Visualizing a run

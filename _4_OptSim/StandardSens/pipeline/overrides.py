@@ -61,12 +61,12 @@ def load_init_parameters(init_xml: Path) -> dict[str, InitParameter]:
 def find_init_xml(build_dir: Path, exec_name: str) -> Path:
     init_xml = build_dir / f"{exec_name}_init.xml"
     if not init_xml.exists():
-        raise FileNotFoundError(f"No init XML at {init_xml}; that executable was never compiled.")
+        raise FileNotFoundError(f"No init XML at {init_xml}. That executable was never compiled.")
     return init_xml
 
 
 def override_name(target: dict[str, Any]) -> str:
-    """Name a target's root parameter; DOE indices are 0-based, Modelica's 1-based."""
+    """Name a target's root parameter. DOE indices are 0-based. Modelica indices are 1-based."""
     name = f"{VEHICLE_RECORD}.{target['block']}.{target['param']}"
     if "index" in target:
         name += "[" + ",".join(str(int(i) + 1) for i in target["index"]) + "]"

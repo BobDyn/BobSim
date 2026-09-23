@@ -76,26 +76,27 @@ above. Keep the set small; a stale doc is worse than no doc.
   [`skills/shark-import/SKILL.md`](skills/shark-import/SKILL.md).
 
 - **An OpenModelica `-override` can be accepted and do nothing.** Static toe and
-  camber feed the wheel's `toHub.R_rel` rotation matrix, which is evaluated at
-  compile time; every mass and CG value goes the same way through
-  `combineMassRecords`. The parameter still reports `isValueChangeable="true"`,
-  the override raises no warning, and the simulated car does not change. Only the
-  variables in `RUNTIME_SAFE_PATHS` (`_4_OptSim/StandardSens/pipeline/overrides.py`)
-  are proven to follow an override; anything else must be compiled. The runner
-  also silently drops an override name it cannot find in the init XML. Before
-  trusting a new override, read that file's comment on how to vet one.
-- **OptSim is three tools, and picking the wrong one wastes hours.**
-  `opt-standard` samples a space to learn what matters, `opt-solve` inverts for the
-  setup that hits target metrics, `opt-trade` compares vehicles you name. None
+  camber feed the wheel's `toHub.R_rel` rotation matrix. OpenModelica evaluates
+  that matrix at compile time. Every mass and CG value fails in the same way
+  through `combineMassRecords`. The parameter still reports
+  `isValueChangeable="true"`, the override gives no warning, and the simulated
+  car does not change. Only the variables in `RUNTIME_SAFE_PATHS`
+  (`_4_OptSim/StandardSens/pipeline/overrides.py`) are proven to follow an
+  override. Compile every other variable. The runner also silently drops an
+  override name that it cannot find in the init XML. Before you trust a new
+  override, read the comment in that file on how to check one.
+- **OptSim is three tools. The wrong tool wastes hours.** `opt-standard`
+  samples a space to learn what matters. `opt-solve` inverts for the setup that
+  hits target metrics. `opt-trade` compares vehicles that you name. None of them
   finds a "best" car, and none replaces another. A consumer that needs variable
-  specs or compiled vehicles should use `pipeline/variants.py::VariantStore`,
-  never rewrite the sweep's committed `_doe_config.yaml`: that file records the
-  scope its population was built at, and `opt-search` relies on it.
-- **Git Bash on Windows rewrites container paths.** `make` targets pass
-  `/workspace/...` to Docker, and MSYS turns that into
-  `C:/Program Files/Git/workspace/...`, so the run dies in seconds with a
-  file-not-found. Prefix the command with `MSYS_NO_PATHCONV=1`. The same
-  conversion mangles `git show origin/main:path`.
+  specs or compiled vehicles should use `pipeline/variants.py::VariantStore`. It
+  must never rewrite the sweep's committed `_doe_config.yaml`. That file records
+  the scope of its population, and `opt-search` needs it.
+- **Git Bash on Windows rewrites container paths.** `make` targets send
+  `/workspace/...` to Docker. MSYS changes that to
+  `C:/Program Files/Git/workspace/...`, and the run stops in seconds with a
+  file-not-found error. Put `MSYS_NO_PATHCONV=1` before the command. The same
+  conversion also breaks `git show origin/main:path`.
 
 ## Verifying a change
 

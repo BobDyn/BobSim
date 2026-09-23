@@ -223,8 +223,8 @@ def solve(
     anchor = (center, surrogate.f0)
     status = "best_effort"
     message = (
-        f"Still outside tolerance after {max_verifications} verification run(s); "
-        "this is the closest setup that was simulated."
+        f"Still outside tolerance after {max_verifications} verification run(s). "
+        "This is the closest setup that was simulated."
     )
 
     for _ in range(max_verifications):
@@ -253,8 +253,8 @@ def solve(
     if status != "converged" and at_bound:
         status = "unreachable"
         message = (
-            "These targets are outside what the knobs can reach within their "
-            f"ranges; limited by: {', '.join(at_bound)}. {message}"
+            "These targets are outside what the knobs can reach within their ranges. "
+            f"Knobs at a limit: {', '.join(at_bound)}. {message}"
         )
 
     return SolveResult(
