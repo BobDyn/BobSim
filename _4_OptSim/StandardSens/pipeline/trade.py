@@ -1,23 +1,6 @@
-"""trade.py — Compare named vehicles across standard-sim metrics.
+"""Compare named vehicles across standard-sim metrics.
 
-A trade study asks "what does this change buy, and what does it cost", across
-several metrics at once. This module turns simulated metrics into that
-comparison and nothing more. There is deliberately no score and no ranking: how
-much understeer is worth how much roll is the engineer's call, and a weighted sum
-would hide that call inside a number.
-
-What it does insist on is that a difference be worth reading:
-
-- Every metric may carry a `resolution`, the smallest change worth acting on. A
-  smaller delta is still shown, marked as not resolved.
-- A vehicle whose simulation lost cases is not comparable. Its fits run through
-  fewer points than the baseline's, so a delta would mix the design change with
-  the missing data.
-- Where one candidate is exactly two others combined, the interaction is
-  reported: whether the two changes stack, or the combination does something
-  neither predicts.
-
-Nothing here touches the filesystem or a simulator.
+There is no score or ranking on purpose. The trade-off between metrics is the engineer's call.
 """
 
 from __future__ import annotations
@@ -132,12 +115,7 @@ def _lookup(results: Results, candidate: str, spec: MetricSpec) -> tuple[float, 
 
 
 def interactions(candidates: dict[str, Variant], comparisons: list[Comparison]) -> list[Interaction]:
-    """Find candidates that are two others combined and measure how they stack.
-
-    `both = a + b` qualifies when `a` and `b` change disjoint variables and `both`
-    makes exactly their changes. The interaction is then the part of `both`'s
-    effect that neither `a` nor `b` accounts for.
-    """
+    """Find candidates that are two disjoint others combined, and measure how they stack."""
     deltas = {
         (c.candidate, c.spec): c.delta for c in comparisons if c.verdict != NOT_COMPARABLE
     }

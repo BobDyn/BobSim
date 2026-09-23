@@ -1,19 +1,7 @@
-"""pipeline_hash.py — Track pipeline state to detect stale artifacts.
+"""Hash pipeline inputs to detect stale compiled artifacts.
 
-Computes a hash of all inputs that affect compiled executables:
-  - StandardSens/configs/_doe_config.yaml
-  - StandardSens/configs/vehicle_architecture.yaml
-  - StandardSens/configs/compiler_config.yaml
-  - SteadyStateEval wrapper/config inputs
-  - BobLib submodule SHA   (upstream model changes)
-
-Stores the hash in population/.pipeline.hash on each fresh run.
-On subsequent runs, compares current hash to stored hash.
-If mismatch — raises loud error telling user to clean and rerun.
-
-Per-variant hashes:
-  - variant.mo             (generator output, one hash per variant)
-Stored in population/variant_XXXX/.variant.hash
+population/.pipeline.hash covers the configs, tooling, and BobLib SHA.
+population/variant_XXXX/.variant.hash covers each variant.mo.
 """
 
 from __future__ import annotations
@@ -37,7 +25,7 @@ def _hash_string(s: str) -> str:
 
 
 def _boblib_sha(boblib_path: Path) -> str:
-    """Get the git commit SHA of the BobLib submodule."""
+    """Return the BobLib submodule SHA, or a hash of package.mo if git is unavailable."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -49,7 +37,6 @@ def _boblib_sha(boblib_path: Path) -> str:
             return result.stdout.strip()
     except Exception:
         pass
-    # Fallback: hash package.mo directly if git unavailable
     pkg = boblib_path if boblib_path.is_file() else boblib_path / "package.mo"
     if pkg.exists():
         return _hash_file(pkg)
@@ -104,10 +91,7 @@ def check_pipeline_hash(
     architecture_config: Path | None = None,
     extra_inputs: tuple[Path, ...] = (),
 ) -> None:
-    """Raise RuntimeError if pipeline inputs have changed since last run.
-
-    Does nothing if no hash file exists (first run).
-    """
+    """Raise RuntimeError if pipeline inputs changed since the last run. No-op on the first run."""
     hash_path = population_dir / HASH_FILE
     if not hash_path.exists():
         return
@@ -137,10 +121,6 @@ def check_pipeline_hash(
         )
 
 
-# ---------------------------------------------------------------------------
-# Variant hash
-# ---------------------------------------------------------------------------
-
 def write_variant_hash(variant_dir: Path) -> str:
     """Hash variant.mo and write to variant_XXXX/.variant.hash."""
     variant_mo = variant_dir / "variant.mo"
@@ -150,10 +130,7 @@ def write_variant_hash(variant_dir: Path) -> str:
 
 
 def variant_is_stale(variant_dir: Path) -> bool:
-    """Return True if variant.mo has changed since last compile.
-
-    Returns False (not stale) if no hash file exists yet.
-    """
+    """Return True if variant.mo changed since the last compile. False if there is no hash yet."""
     hash_path = variant_dir / VARIANT_HASH_FILE
     if not hash_path.exists():
         return False

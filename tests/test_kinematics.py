@@ -531,9 +531,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     assert len(payload["roll_deg"]) == 20
     assert len(payload["steer_m"]) == 21
     assert len(payload["curve_meta"]) == len(KINEMATIC_CURVE_META)
-    # Pin the absolute count too. Comparing only against KINEMATIC_CURVE_META is
-    # self-referential and passes even if the registry is silently truncated, which
-    # is exactly how a bad merge resolution once dropped the ten curves below.
+    # Pin the absolute count. A bad merge once dropped ten curves from the registry.
     assert len(payload["curve_meta"]) == 33
     published = {item["id"] for item in payload["curve_meta"]}
     assert {
@@ -544,8 +542,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
         "steer_camber_deg", "steer_scrub_mm", "steer_mech_trail_mm",
         "steer_rc_y_mm", "steer_rc_z_mm", "steer_kpi_deg", "steer_caster_deg",
     } <= published
-    # The original sixteen curves keep their identity and ordering; instant-centre
-    # and roll-centre curves were appended after them.
+    # Instant-centre and roll-centre curves come after the original sixteen.
     assert [item["source_plot"] for item in payload["curve_meta"]][:16] == [
         "Plot1",
         "Plot2",
@@ -579,9 +576,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     for item in KINEMATIC_CURVE_META:
         if item["id"].startswith("steer_"):
             assert rear_curves[item["id"]] == []
-    # Steer's x-axis is the *solved* road-wheel angle, not the commanded rack
-    # displacement, so it need not be monotonic in lockstep with the rack sweep,
-    # but it must vary and stay centered near zero at zero rack displacement.
+    # Steer's x-axis is the solved road-wheel angle, so it need not track the rack sweep.
     steer_x = payload["x_axes"]["steer_deg"]
     zero_index = payload["steer_m"].index(0.0)
     assert steer_x[zero_index] == pytest.approx(0.0, abs=0.5)

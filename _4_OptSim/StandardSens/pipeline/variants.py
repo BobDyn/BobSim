@@ -1,15 +1,6 @@
-"""variants.py — A cache of compiled vehicles, addressed by what was changed.
+"""A cache of compiled vehicles, keyed by the set of changes from baseline.
 
-The sweep numbers its variants in sampling order, which is right for a population
-that is generated once. The solver and the trade study instead ask for vehicles
-by content — "the baseline with this toe", "the car with the stiff rear bar" —
-repeatedly and in no fixed order, and a compile is the most expensive thing either
-does. This store maps each distinct set of changes to one compiled variant
-directory, compiles whatever is missing in a single parallel batch, and throws
-everything away when BobLib, the vehicle or the simulation tooling changes.
-
-It reuses the sweep's generator and compiler unchanged, so a variant here is
-compiled exactly as the same variant in a sweep would be.
+Uses the sweep's generator and compiler. The cache is dropped when pipeline inputs change.
 """
 
 from __future__ import annotations
@@ -32,25 +23,20 @@ from StandardSens.pipeline.generate_configs import SWEEP_SCOPE_ALL, refresh_doe_
 from StandardSens.pipeline.generator import generate_variants
 from StandardSens.pipeline.orchestration import ARCHITECTURE_CONFIG, COMPILER_CONFIG, DOE_CONFIG
 
-# Every VehicleSim standard runs the executable the sweep builds for this one.
+# Every VehicleSim standard runs the executable built for this one.
 BUILD_STANDARD = "SteadyStateEval"
 
 Variant = dict[str, float]
 
 
 def split_cpus(n_jobs: int, cpus: int, min_workers: int = 4) -> tuple[int, int]:
-    """Return (jobs to run at once, case workers for each).
-
-    Simulation throughput on a 12-CPU container was 1.9x higher with every CPU
-    busy than with four, so concurrent jobs are preferred until each would drop
-    below `min_workers`; a lone job gets every CPU.
-    """
+    """Return (jobs to run at once, case workers for each). Keeps every CPU busy."""
     concurrent = max(1, min(n_jobs, cpus // min_workers))
     return concurrent, max(1, cpus // concurrent)
 
 
 def variant_key(variant: Variant) -> str:
-    """Canonical text for a set of changes; float noise must not split an entry."""
+    """Canonical text for a set of changes. Rounds so float noise does not split an entry."""
     return json.dumps({p: float(f"{float(v):.12g}") for p, v in sorted(variant.items())})
 
 
@@ -73,22 +59,14 @@ class VariantStore:
         if self.was_reset:
             print(
                 f"Cache under {self.root.name}/ predates a change to BobLib, the vehicle, or "
-                "the simulation tooling; discarding it."
+                "the simulation tooling. Discarding it."
             )
             shutil.rmtree(self.variants_dir)
         index_path = self.variants_dir / "index.json"
         self._index: dict[str, int] = json.loads(index_path.read_text()) if index_path.exists() else {}
 
     def _write_own_doe_config(self) -> dict[str, Any]:
-        """Generate a DOE config here rather than over the sweep's.
-
-        The sweep's `_doe_config.yaml` is committed and records the scope its
-        population was built at, which `opt-search` relies on. Consumers of this
-        store need every variable's spec whatever that scope was, so they keep
-        their own copy. The generated file names the baseline record and vehicle
-        template relative to the sweep's config directory; here they are made
-        absolute so they resolve from anywhere.
-        """
+        """Write an all-scope DOE config here, with absolute paths. The sweep's copy records its scope."""
         cfg = refresh_doe_config(
             architecture_config_path=ARCHITECTURE_CONFIG,
             compiler_config_path=COMPILER_CONFIG,
@@ -106,8 +84,7 @@ class VariantStore:
     def _inputs_changed(self) -> bool:
         """Whether the inputs differ from the ones the compiled variants were built from."""
         try:
-            # The same call compile_all makes, so the two cannot disagree about
-            # what counts as stale.
+            # Same call as compile_all, so both agree on what is stale.
             check_pipeline_hash(
                 self.variants_dir,
                 self.doe_config_path,

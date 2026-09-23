@@ -118,13 +118,7 @@ def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: P
 def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> None:
     """BobLib numbers pickups by position on the rocker, not by list order.
 
-    Its annotation is the spec: "1 is the most counter-clockwise pickup about the
-    left bellcrank (generally with the lowest Z coordinate)". The baseline lists
-    ['rod', 'shock', 'stabar'] on both axles while the true arrangement is
-    stabar/rod/shock at the front and rod/shock/stabar at the rear - one list
-    cannot encode both, so list position was never a valid source.
-
-    Expected values are the ones BobLib ships in its own checked-in record.
+    Expected values come from the record that BobLib ships.
     """
     from _0_Utils.vehicle_io import load_yaml, vehicle_yaml_path
     from _5_App.modelica_generator import _pickup_order
@@ -140,8 +134,7 @@ def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> Non
             bellcrank["pickups_m"], bellcrank["pivot_m"], bellcrank["axis"], axle
         ) == want
 
-    # The two axles disagree, which is the proof that the shared order list -
-    # identical for both - cannot be the source.
+    # The axles differ, so one shared order list cannot be the source.
     assert vehicle["front"]["actuation"]["bellcrank"]["order"] == \
         vehicle["rear"]["actuation"]["bellcrank"]["order"]
     assert expected["front"] != expected["rear"]

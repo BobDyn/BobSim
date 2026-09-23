@@ -1,9 +1,7 @@
 """Unified suspension kinematics and reduced-order vehicle dynamics.
 
-``Vehicle`` is the product-level entry point.  The lower-level kinematics,
-model, QSS, and transient interfaces remain public for focused workflows.
-
-The model names count generalized coordinates, not first-order states:
+``Vehicle`` is the main entry point. Model names count generalized
+coordinates, not first-order states:
 
 * 3DOF: global x/y/yaw planar body motion.
 * 6DOF: full rigid-body translation and rotation.

@@ -1,10 +1,4 @@
-"""The trade study's comparison logic, and the multi-standard plumbing under it.
-
-A trade study is only worth running if its table can be trusted, so these pin the
-ways a comparison goes quietly wrong: a delta too small to mean anything read as
-a finding, a run that lost cases compared as if it were whole, two changes
-assumed to add when they do not, and a metric name that means two things.
-"""
+"""Trade study comparison logic and the multi-standard plumbing under it."""
 
 from __future__ import annotations
 
@@ -187,12 +181,7 @@ def test_float_noise_does_not_split_one_vehicle_into_two_cache_entries() -> None
 
 
 def test_the_solver_refuses_an_evaluation_that_lost_cases() -> None:
-    """One definition of "not whole", shared by the trade table and the solver.
-
-    A star point that lost a case still returns finite gradients, fitted through
-    fewer points. Accepted silently it bends the surrogate, and because
-    evaluations are cached it would bend every later solve as well.
-    """
+    """One definition of "not whole", shared by the trade table and the solver."""
     from StandardSens.pipeline.evaluator import require_whole
 
     whole = {"n_cases": 8.0, "n_successful_cases": 8.0, "understeer": 0.3}

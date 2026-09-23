@@ -1,26 +1,9 @@
 """Turn a BobLib simulation result into a BobVis scene.
 
-The visual templates in ``visual_templates/`` expect a ``*_visual.npz`` of
-hardpoint positions. Nothing in the repo produced one: the evaluations write a
-Modelica result CSV, and their ``variable_filter`` keeps only scalar KnC and
-handling metrics, so the geometry never leaves the solver. The bundled
-templates name signals (``signals/visfrontaxleleft…``) that no current model
-emits, which is why they cannot be opened against a real run.
-
-This module closes that gap from the BobSim side, without touching BobLib:
-
-* :data:`FRAME_MAP` names the MultiBody frame behind each suspension hardpoint,
-  so :func:`variable_filter` can ask OpenModelica for exactly those and nothing
-  else - 200-odd columns rather than 39,000;
-* :func:`convert` reads the resulting CSV and writes both the ``*_visual.npz``
-  and a matching visual template, so the pair is generated together and cannot
-  drift.
-
-    make visual-capture          # run the rig with geometry on, then convert
-
-Frame paths are BobLib component paths, and a BobLib revision may rename them.
-Every lookup is checked and reported by name rather than failing deep inside
-the conversion.
+:func:`variable_filter` asks OpenModelica for the hardpoint frames in
+:data:`FRAME_MAP`. :func:`convert` writes the ``*_visual.npz`` and its template
+together so they cannot drift. Frame paths are BobLib component paths, and a
+BobLib revision may rename them.
 """
 
 from __future__ import annotations
@@ -35,10 +18,6 @@ from typing import Any, Iterable
 
 import numpy as np
 import yaml
-
-# ---------------------------------------------------------------------------
-# Model geometry map
-# ---------------------------------------------------------------------------
 
 CORNERS: dict[str, tuple[str, str]] = {
     "fl": ("frAxleDW", "left"),
@@ -76,7 +55,6 @@ FRAME_MAP: dict[str, str] = {
 #: The frame whose orientation gives each wheel's spin axis and heading.
 WHEEL_FRAME = "{axle}.to{Side}WheelCenter.frame_b"
 
-#: Link groups, as pairs of hardpoint names within one corner.
 LINK_GROUPS: dict[str, list[tuple[str, str]]] = {
     "lower": [("LowerFore_i", "Lower_o"), ("LowerAft_i", "Lower_o")],
     "upper": [("UpperFore_i", "Upper_o"), ("UpperAft_i", "Upper_o")],
@@ -97,7 +75,6 @@ LINK_GROUPS: dict[str, list[tuple[str, str]]] = {
             ("ArmEnd", "DroplinkUpper")],
 }
 
-#: Cross-car links, as (corner, point) pairs.
 AXLE_LINKS: list[tuple[tuple[str, str], tuple[str, str]]] = [
     (("fl", "LowerFore_i"), ("fr", "LowerFore_i")),
     (("rl", "LowerFore_i"), ("rr", "LowerFore_i")),
@@ -129,7 +106,7 @@ STYLE: dict[str, Any] = {
     },
 }
 
-#: Scalar signals worth plotting when the run happens to contain them.
+#: Plotted when the run contains them.
 PREFERRED_PLOTS: list[tuple[str, str]] = [
     ("Heave (m)", "frKnC.heave"),
     ("Roll (rad)", "frKnC.roll"),
@@ -144,8 +121,7 @@ PREFERRED_PLOTS: list[tuple[str, str]] = [
 
 TIRE_DEFAULTS = {"radius": 0.2045, "width": 0.1778}
 
-#: A frame every BobLib double-wishbone car has. The rig names it at the top
-#: level; VehicleSim nests the same axle under ``chassis.detailedChassis.``.
+#: A frame every BobLib double-wishbone car has. Its prefix locates the axles.
 ANCHOR_FRAME = "frAxleDW.leftWishboneUprightLoop.lowerFrame_o.r_0[1]"
 
 #: Per-tire vertical load: the rig's KnC channels, or VehicleSim's.
@@ -156,8 +132,7 @@ LOAD_SIGNALS: dict[str, tuple[str, ...]] = {
     "rr": ("rrKnC.rightFz", "Fz_RR"),
 }
 
-#: Each corner's MF5.2 tire, and the state the friction circles read from it.
-#: The rig's tires carry no road forces, so only driving runs have these.
+#: Only driving runs have tire forces. The rig's tires carry no road forces.
 TIRE_COMPONENT = "{axle}.{side}Tire"
 TIRE_STATE = ("Fx", "Fy", "Fz", "gamma")
 
@@ -168,7 +143,7 @@ def default_vehicle_yaml() -> Path:
     return Path(vehicle_yaml_path())
 
 
-#: The three outboard points that pin the upright, and what they let us derive.
+#: Three outboard points that fix the upright pose.
 UPRIGHT_TRIAD = ("Lower_o", "Upper_o", "Tie_o")
 DERIVED_FROM_UPRIGHT = ("WheelCenter", "ContactPatch")
 
@@ -176,10 +151,6 @@ DERIVED_FROM_UPRIGHT = ("WheelCenter", "ContactPatch")
 class ResultMappingError(RuntimeError):
     """Raised when a result file does not carry the expected geometry."""
 
-
-# ---------------------------------------------------------------------------
-# Names
-# ---------------------------------------------------------------------------
 
 def _frame(template: str, axle: str, side: str) -> str:
     return template.format(axle=axle, side=side, Side=side.capitalize())
@@ -219,11 +190,7 @@ def detect_prefix(names: Iterable[str]) -> str:
 
 
 def variable_filter(extra: Iterable[str] = (), prefix: str = "") -> str:
-    """An OpenModelica ``variableFilter`` selecting time, geometry and metrics.
-
-    Whole-model output is 39k variables and gigabytes of CSV. This asks for the
-    few hundred columns BobVis actually reads.
-    """
+    """An OpenModelica ``variableFilter`` for the columns BobVis reads."""
     parts = ["time"]
     for path in sorted(set(frame_paths(prefix).values())):
         parts.append(re.escape(path) + r"\.r_0\[[123]\]")
@@ -239,10 +206,6 @@ def variable_filter(extra: Iterable[str] = (), prefix: str = "") -> str:
 def signal_name(corner: str, point: str, axis: str) -> str:
     return f"pos/{corner}_{point}_{axis}"
 
-
-# ---------------------------------------------------------------------------
-# Reading
-# ---------------------------------------------------------------------------
 
 def read_result_csv(path: Path) -> dict[str, np.ndarray]:
     """Load an OpenModelica CSV result into ``{name: array}``."""
@@ -274,8 +237,7 @@ def _vector(columns: dict[str, np.ndarray], frame: str, what: str) -> np.ndarray
 def _kabsch(reference: np.ndarray, current: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Best-fit rigid transform taking ``reference`` (3,3) onto ``current`` (N,3,3).
 
-    Returns ``(R, t)`` with shapes ``(N,3,3)`` and ``(N,3)``. Exact, not
-    approximate, for three points on a rigid body.
+    Returns ``(R, t)`` with shapes ``(N,3,3)`` and ``(N,3)``.
     """
     ref_c = reference - reference.mean(axis=0)
     cur_mean = current.mean(axis=1)
@@ -295,8 +257,7 @@ def _kabsch(reference: np.ndarray, current: np.ndarray) -> tuple[np.ndarray, np.
 def _upright_hardpoints(vehicle_yaml: Path) -> dict[str, dict[str, np.ndarray]]:
     """Reference outboard hardpoints per corner, from ``vehicle.yml``.
 
-    Right-hand corners mirror the left about the car's centreline, which is how
-    the BobLib axle records are built (``Vector.mirrorXZ``).
+    Right corners mirror the left, as in BobLib (``Vector.mirrorXZ``).
     """
     with open(vehicle_yaml, "r", encoding="utf-8") as handle:
         vehicle = yaml.safe_load(handle)
@@ -327,10 +288,6 @@ def _matrix(columns: dict[str, np.ndarray], frame: str) -> np.ndarray | None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Conversion
-# ---------------------------------------------------------------------------
-
 def convert(
     result_csv: Path,
     npz_path: Path,
@@ -342,9 +299,7 @@ def convert(
 ) -> tuple[Path, Path, dict[str, Any]]:
     """Write ``npz_path`` and ``template_path`` from a Modelica result CSV.
 
-    ``metrics_csv``, when it exists, is recorded in the template so the viewer
-    can show the run's metrics beside it. Returns the two paths plus a small
-    summary for the caller to print.
+    Returns the two paths and a summary.
     """
     vehicle_yaml = vehicle_yaml or default_vehicle_yaml()
     columns = read_result_csv(result_csv)
@@ -467,10 +422,8 @@ def _build_tire_forces(
 ) -> tuple[dict[str, Any], list[str]]:
     """Per-tire forces plus each axle's friction model, for the friction circles.
 
-    Needs ``Fx`` and ``Fy`` from the tire itself. ``Fz`` falls back to the load
-    channel the ground layer uses, and camber to zero when the run dropped it.
-    Returns the template block (empty when the run has no tire forces, as on
-    the rig) and any warnings worth printing.
+    ``Fz`` falls back to the ground-layer load channel. Returns the template
+    block and any warnings.
     """
     paths = tire_state_paths(prefix)
     corners: dict[str, Any] = {}
@@ -510,12 +463,7 @@ def _derive_upright_points(
 ) -> list[str]:
     """Rebuild wheel centres, contact patches and wheel axes from the uprights.
 
-    OpenModelica's alias elimination drops variables it can prove redundant,
-    and the wheel-centre frames and contact-patch Z go with them - they are
-    rigidly tied to points that survive. Rather than recompiling the model
-    without that optimisation, refit the upright: three surviving outboard
-    points fix its pose exactly, so every other point on it follows, as does
-    the wheel's spin axis.
+    OpenModelica alias elimination drops the wheel-centre frames and contact-patch Z.
     """
     references = _upright_hardpoints(vehicle_yaml)
     derived: list[str] = []
@@ -541,7 +489,7 @@ def _derive_upright_points(
 
         for point, world in (
             ("WheelCenter", wheel_centre),
-            # The road is z = 0 on the rig and in VehicleSim, so the patch sits below.
+            # The road is z = 0.
             ("ContactPatch", None if wheel_centre is None
              else wheel_centre * np.array([1.0, 1.0, 0.0])),
         ):
@@ -556,7 +504,7 @@ def _derive_upright_points(
             points_cfg[name] = cols
             derived.append(name)
 
-        # Wheel axes ride with the upright: +x forward, +y toward the car's left.
+        # +x forward, +y toward the car's left.
         for axis_key, unit in (("ex", np.array([1.0, 0.0, 0.0])),
                                ("ey", np.array([0.0, 1.0, 0.0]))):
             vec = np.einsum("nij,j->ni", R, unit)
@@ -592,8 +540,7 @@ def _build_tires(
                     "width": float(width),
                 }
             continue
-        # Modelica resolves R as body-from-world, so its rows are the body axes
-        # expressed in world coordinates.
+        # R is body-from-world, so its rows are the body axes in world coordinates.
         ex, ey = R[:, 0, :], R[:, 1, :]
         cols: dict[str, list[str]] = {"x": [], "y": []}
         for axis_key, vec in (("ex", ex), ("ey", ey)):
@@ -638,7 +585,7 @@ def _build_ground(
     points_cfg: dict[str, list[str]],
     signals: dict[str, np.ndarray],
 ) -> dict[str, Any]:
-    """Load footprints wherever the run kept per-tire Fz; tracks once the car moves."""
+    """Load footprints where the run kept per-tire Fz. Tracks when the car moves."""
     ground: dict[str, Any] = {}
 
     corners: dict[str, Any] = {}
@@ -652,7 +599,7 @@ def _build_ground(
         ground["loads"] = {"radius": 0.22, "corners": corners}
 
     patches = [f"{c}_ContactPatch" for c in CORNERS if f"{c}_ContactPatch" in points_cfg]
-    # The rig holds the car in place, where a trail would only be a dot.
+    # The rig holds the car in place.
     moved = any(
         float(np.ptp(signals[points_cfg[p][axis]])) > 1.0 for p in patches for axis in (0, 1)
     )
@@ -678,12 +625,7 @@ def _build_camera(points_cfg: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
 def print_summary(npz_path: Path, template_path: Path, summary: dict[str, Any]) -> None:
-    """What a conversion wrote, and how to open it."""
     print(f"[bobvis] data     {npz_path}")
     print(f"[bobvis] template {template_path}")
     print(f"[bobvis] {summary['samples']} samples, {summary['points']} points, "

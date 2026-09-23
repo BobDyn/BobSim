@@ -595,7 +595,7 @@ class TestSuspension(TestCase):
 
                 for j in range(len(test_results)):
                     with self.subTest(i=j):
-                        # 2D projection doesn't account for CP_x migration, so don't check x-values (the math here is known to be more accurate)
+                        # The 2D projection ignores contact patch x migration, so skip x.
                         self.assertLess(np.linalg.norm(np.array(test_results[j][1:]) - np.array(known_results[i][j][1:])), 
                                         tolerances[j], msg=f"{corresponding_values[j]} |\nTest:\n{test_results[j][1:]}\nKnown:\n{known_results[i][j][1:]}")
 
@@ -628,13 +628,10 @@ class TestSuspension(TestCase):
 
                 for j in range(len(test_results)):
                     with self.subTest(i=j):
-                        # 2D projection doesn't account for CP_x migration, so don't check x-values (the math here is known to be more accurate)
+                        # The 2D projection ignores contact patch x migration, so skip x.
                         self.assertLess(np.linalg.norm(np.array(test_results[j][1:]) - np.array(known_results[i][j][1:])), 
                                         tolerances[j], msg=f"{corresponding_values[j]} |\nTest:\n{test_results[j][1:]}\nKnown:\n{known_results[i][j][1:]}")
     
-    # Not having anti geometry is so common that i need to find some way to standardize this
-    # def test_static_SVIC(self):
-
     def test_roll_steer_positive(self):
         warnings.warn("Roll steer tests aren't valid since the unit test vehicle has no bump steer")
         sus_data = SuspensionData(path="./tests/kin_py/_test_dependencies/unit_test_vehicle.yml")
@@ -738,7 +735,7 @@ class TestSuspension(TestCase):
         sus_data = SuspensionData(path="./tests/kin_py/_test_dependencies/unit_test_vehicle.yml")
         sus = Suspension(sus_data=sus_data)
 
-        # Note that -0.45 is different from earlier tests (fix DYN-REF, Abishek)
+        # -0.45 differs from earlier tests (DYN-REF fix, Abishek).
         roll_vals = [-1, -0.45]
 
         known_results = [[0.6110, -1.3955, -0.3905, -0.3985],
@@ -1031,6 +1028,3 @@ class TestSuspension(TestCase):
                     with self.subTest(i=j):
                         self.assertLess(abs(test_results[j] - known_results[i][j]), 
                                         tolerances[j], msg=f"{corresponding_values[j]} |\nTest:\n{test_results[j]}\nKnown:\n{known_results[i][j]}")
-    
-    # Need to do transformations on DYN-REF outputs, and I trust the math here more
-    # def test_roll_FVIC_positive(self):

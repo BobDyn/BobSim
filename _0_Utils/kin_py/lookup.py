@@ -1,10 +1,7 @@
 """Precomputed and exact suspension-kinematics evaluators.
 
-The nonlinear double-wishbone constraint solve belongs here in ``kin_py``.
-Consumers such as ``dyn_py`` can select either a jounce-indexed lookup table or
-the same nonlinear solve at every force evaluation.  Both backends expose the
-same four-corner state, which keeps the dynamics equations independent of how
-the kinematics were evaluated.
+Consumers such as ``dyn_py`` select a jounce-indexed lookup table or the full
+nonlinear solve. Both backends expose the same four-corner state.
 """
 
 from __future__ import annotations
@@ -221,10 +218,9 @@ class DoubleWishboneKinematicLookup:
 class NonlinearDoubleWishboneKinematics:
     """Solve the rigid suspension constraints inside every dynamics evaluation.
 
-    This backend is intentionally expensive.  It is useful as a correlation
-    oracle for lookup-grid selection and for short, high-accuracy transients.
-    The centered jounce perturbation is required to recover the reciprocal
-    instant-link slopes used by the force balance.
+    This backend is slow. Use it as a reference for lookup-grid selection and for
+    short, high-accuracy transients. The centered jounce perturbation recovers the
+    reciprocal instant-link slopes that the force balance uses.
     """
 
     mode: KinematicsMode = "nonlinear"

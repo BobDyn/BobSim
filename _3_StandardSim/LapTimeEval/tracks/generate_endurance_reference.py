@@ -12,11 +12,9 @@ OUTPUT = Path(__file__).with_name("endurance_reference.csv")
 
 
 def generate_reference(*, gate_count: int = 72, width_m: float = 5.0) -> np.ndarray:
-    """Return paired boundaries for a 694 m multi-feature closed course.
+    """Return paired boundaries for a 694 m synthetic closed course.
 
-    The Fourier centerline is deliberately non-circular: it contains a long
-    sweeper, a tight hairpin, offsets, and eight curvature-sign changes. It is
-    a stable regression/reference course, not a surveyed competition layout.
+    It is a stable regression course, not a surveyed competition layout.
     """
 
     theta = np.linspace(0.0, 2.0 * np.pi, gate_count, endpoint=False)

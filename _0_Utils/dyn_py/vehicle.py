@@ -43,16 +43,11 @@ from _0_Utils.dyn_py.transient import (
 class Vehicle:
     """One vehicle definition with shared kinematics and nested DOF models.
 
-    ``Vehicle`` is the preferred product-level entry point.  It projects the
-    vehicle definition once, owns one suspension-kinematics evaluator, and
-    lazily constructs the 3/6/10/14DOF systems around those same parameters::
+    The 3/6/10/14DOF systems are built on first use from the same parameters::
 
         vehicle = Vehicle.from_yaml()
         wheel_state = vehicle.kinematics_at([0.01, -0.01, 0.0, 0.0])
         model = vehicle.model(14)
-
-    The lower-level constructors remain public for workflows that need direct
-    control over model lifetime.
     """
 
     parameters: ReducedVehicleParameters
@@ -98,10 +93,8 @@ class Vehicle:
     def with_power_limit(self, power_limit_w: float) -> Vehicle:
         """Return an independent vehicle capped at an event-level drive power.
 
-        The cap cannot increase the hardware/VCU capability projected from the
-        vehicle definition.  Torque and motor-speed limits remain unchanged;
-        both QSS and transient consumers read the replaced power limit from the
-        same parameter object.
+        The cap cannot exceed the hardware/VCU limit. Torque and motor-speed
+        limits do not change.
         """
 
         limit = float(power_limit_w)
@@ -126,8 +119,6 @@ class Vehicle:
         return self._models[dof]
 
     def initial_state(self, dof: DOFModel, speed_mps: float = 0.0) -> FloatArray:
-        """Construct a correctly initialized state for one fidelity."""
-
         return self.model(dof).initial_state(speed_mps)
 
     def evaluate(
@@ -136,8 +127,6 @@ class Vehicle:
         state: ArrayLike,
         inputs: ModelInputs = ModelInputs(),
     ) -> ModelOutput:
-        """Evaluate forces and derivatives for one fidelity."""
-
         return self.model(dof).evaluate(state, inputs)
 
     def simulate(

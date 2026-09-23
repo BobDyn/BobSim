@@ -20,7 +20,6 @@ BOBLIB_METRIC_NAMES = {
 
 
 def load_metrics(path: str | Path) -> dict[str, float]:
-    """Load numeric FourPost report metrics by name."""
 
     metrics: dict[str, float] = {}
     with Path(path).open(newline="", encoding="utf-8") as handle:

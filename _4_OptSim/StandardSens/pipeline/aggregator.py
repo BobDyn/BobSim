@@ -1,22 +1,6 @@
-"""aggregator.py — Collect batch results into a single Parquet dataset.
+"""Collect batch results into one Parquet table.
 
-For each variant and each standard:
-  - Input parameters are reconstructed from sampler (seed is fixed in _doe_config.yaml)
-  - Output metrics are extracted from results/<standard>/metrics.csv
-
-Extraction strategy:
-  - Read the report-style metrics CSV written by the standard wrapper
-  - Pull the requested metric rows into the parquet table
-
-Metric columns are prefixed with the standard name e.g. SteadyStateEval_ay_min
-so multiple standards can coexist in the same parquet table.
-
-Output: _4_OptSim/Build/StandardSens/standard_sensitivity_results.parquet
-  Columns: [variant, <input params>, <standard_metric>, ...]
-
-To add a metric:   add one line under the standard in aggregator_config.yaml
-To add a standard: add a new block in aggregator_config.yaml
-Nothing else changes.
+Metric columns are prefixed with the standard name, e.g. SteadyStateEval_ay_min.
 """
 
 from __future__ import annotations
@@ -28,10 +12,6 @@ import pandas as pd
 import yaml
 
 from StandardSens.pipeline.sampler import sample
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
 
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
@@ -45,10 +25,6 @@ def load_aggregator_config(config_path: Path = AGGREGATOR_CONFIG) -> dict:
     with open(config_path) as f:
         return yaml.safe_load(f)
 
-
-# ---------------------------------------------------------------------------
-# Core
-# ---------------------------------------------------------------------------
 
 def _extract_metrics(
         csv_path: Path,
@@ -79,14 +55,11 @@ def aggregate(
         aggregator_config: Path = AGGREGATOR_CONFIG,
         output_path: Path = OUTPUT_PATH,
 ) -> pd.DataFrame:
-    """Aggregate all variant results into a single Parquet table.
-
-    Returns the full DataFrame.
-    """
+    """Aggregate all variant results into one Parquet table and return it."""
     cfg = load_aggregator_config(aggregator_config)
     standards: dict[str, dict] = cfg["standards"]
 
-    # Reconstruct inputs — seed is fixed so this is deterministic
+    # The DOE seed is fixed, so this reproduces the inputs of each variant.
     variants = sample(doe_config)
 
     rows = []
@@ -141,10 +114,6 @@ def aggregate(
 
     return result
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     df = aggregate()

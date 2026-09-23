@@ -557,10 +557,8 @@ def _project_aero(
     if abs(downforce) <= 1e-9:
         balance = 0.5
     else:
-        # ``my_table_nm`` is a free pitch moment applied at ``aero_ref_m``.
-        # A downward force forward of the front axle creates a positive pitch moment in
-        # BobLib's x-forward/z-up frame, so first translate the free moment to
-        # the front axle and then replace the pair with an equivalent CoP.
+        # ``my_table_nm`` is a free pitch moment at ``aero_ref_m`` (x-forward, z-up).
+        # Move it to the front axle, then replace force and moment with an equivalent CoP.
         total_pitch_about_front = (
             pitch_moment + (aero_ref_x - front_x) * downforce
         )

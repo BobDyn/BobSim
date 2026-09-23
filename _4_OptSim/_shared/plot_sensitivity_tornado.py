@@ -1,9 +1,6 @@
 """Generate tornado diagrams for OptSim one-factor sensitivity studies.
 
-The current interval-splice sampler writes variant_0000 as the baseline, then
-one-at-a-time perturbations of each input. This script joins those inputs with
-StandardSim or EnvelopeSim metrics and plots each metric's response to the input
-perturbations.
+Expects variant_0000 to be the baseline, as the interval-splice sampler writes it.
 
 Usage:
     python -m _shared.plot_sensitivity_tornado --source standard

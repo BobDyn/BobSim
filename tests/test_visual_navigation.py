@@ -1,10 +1,4 @@
-"""BobVis camera navigation checks.
-
-:mod:`_1_VisualSim.navigation` is numpy only, so unlike ``test_visual_scene.py``
-these run everywhere, CI included. They pin the properties that make a gesture
-feel right or wrong: what stays fixed on screen, what never flips, and where a
-double-click lands when there is no geometry under it.
-"""
+"""BobVis camera navigation checks. Numpy only, so these run in CI."""
 
 from __future__ import annotations
 
@@ -53,8 +47,6 @@ def _distance(pose: CameraPose) -> float:
     return float(np.linalg.norm(pose.focal - pose.position))
 
 
-# -- orbit ------------------------------------------------------------------
-
 def test_orbit_keeps_distance_focal_and_height_for_pure_azimuth() -> None:
     before = _pose()
     after = orbit(before, 90.0, 0.0)
@@ -99,8 +91,6 @@ def test_orbit_from_a_top_view_tilts_without_spinning_the_picture() -> None:
     assert after.up[1] > 0.0  # screen-up still points along +y
 
 
-# -- pan --------------------------------------------------------------------
-
 def test_pan_translates_camera_and_focal_together() -> None:
     before = _pose()
     after = pan(before, 37.0, -12.0, 800.0)
@@ -124,8 +114,6 @@ def test_dragging_right_moves_the_camera_left() -> None:
     after = pan(before, 50.0, 0.0, 600.0)
     assert (after.position - before.position) @ right < 0.0
 
-
-# -- zoom -------------------------------------------------------------------
 
 @pytest.mark.parametrize("ndc", [(0.0, 0.0), (0.6, -0.4), (-0.9, 0.8)])
 @pytest.mark.parametrize("parallel", [False, True])
@@ -171,8 +159,6 @@ def test_recenter_moves_the_orbit_centre_without_turning() -> None:
     np.testing.assert_allclose(camera_basis(after)[0], camera_basis(before)[0])
 
 
-# -- recentring -------------------------------------------------------------
-
 def test_cursor_ray_starts_at_the_eye_and_points_through_the_cursor() -> None:
     pose = _pose()
     origin, direction = cursor_ray(pose, 0.4, -0.2, ASPECT)
@@ -215,7 +201,7 @@ def test_ground_point_gives_up_on_the_sky() -> None:
 
 
 def test_ground_point_gives_up_near_the_horizon() -> None:
-    """A grazing hit is miles off; recentring there would leave the car a speck."""
+    """A grazing hit is far away. Recentring there would leave the car a speck."""
     # Nearly level, so the top of the frame looks past the horizon.
     pose = _pose(position=(-6.0, -4.0, 1.2), focal=(4.0, 3.0, 1.2))
     distance = float(np.linalg.norm(pose.focal - pose.position))
@@ -229,8 +215,6 @@ def test_ground_point_gives_up_near_the_horizon() -> None:
             assert np.linalg.norm(hit - pose.position) <= GROUND_REACH * distance + 1e-6
 
 
-# -- wheel ------------------------------------------------------------------
-
 def test_wheel_zoom_is_proportional_to_scroll_distance() -> None:
     assert wheel_zoom_factor(0, WHEEL_NOTCH) == pytest.approx(ZOOM_PER_NOTCH)
     assert wheel_zoom_factor(0, -WHEEL_NOTCH) == pytest.approx(1.0 / ZOOM_PER_NOTCH)
@@ -239,7 +223,7 @@ def test_wheel_zoom_is_proportional_to_scroll_distance() -> None:
 
 
 def test_wheel_zoom_reads_pixel_deltas_when_that_is_all_there_is() -> None:
-    """macOS trackpads report pixels and no angle; they must still zoom."""
+    """macOS trackpads report pixels and no angle. They must still zoom."""
     assert wheel_zoom_factor(0, 0, pixel_dy=40) > 1.0
     assert wheel_zoom_factor(0, 0, pixel_dy=-40) < 1.0
     assert wheel_zoom_factor(0, 0) == pytest.approx(1.0)

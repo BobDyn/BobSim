@@ -12,7 +12,6 @@ import numpy as np
 
 
 class TestQuarterCar(TestCase):
-    # Nodes
     lower_inboard_fore = Node(position=[2, 0, 0.5])
     lower_inboard_aft = Node(position=[0, 0, 0.5])
     lower_outboard = Node(position=[1, 2, 0.5])
@@ -30,7 +29,6 @@ class TestQuarterCar(TestCase):
 
     contact_patch = Node(position=[1, 2.5, 0])
 
-    # Links
     lower_fore_link = Link(inboard_node=lower_inboard_fore, outboard_node=lower_outboard)
     lower_aft_link = Link(inboard_node=lower_inboard_aft, outboard_node=lower_outboard)
 
@@ -44,15 +42,12 @@ class TestQuarterCar(TestCase):
     spring = Spring(inboard_node=spring_upper, outboard_node=shared_node, free_length=1, rate=1)
     push_pull_rod = PushPullRod(outboard_rod=pushrod, spring=spring)
 
-    # Wishbones
     lower_wishbone = Wishbone(fore_link=lower_fore_link, aft_link=lower_aft_link)
     upper_wishbone = Wishbone(fore_link=upper_fore_link, aft_link=upper_aft_link)
 
-    # Tire
     tire_mf52 = MF52(tire_name="test_tire", file_path="./tests/kin_py/_test_dependencies/unit_test_tire.tir")
     tire = Tire(tire=tire_mf52, contact_patch=contact_patch, outer_diameter=16*0.0254, width=7*0.0254, inner_diameter=10*0.0254)
 
-    # Set relation between upper wishbone and pushrod
     upper_outboard.add_child(node=pushrod_lower)
 
     quarter_car = QuarterCar(tire=tire,
@@ -62,14 +57,12 @@ class TestQuarterCar(TestCase):
                                 push_pull_rod=pushrod)
     
     def test_jounce_resid(self):
-        # Known outputs for jounce of 0.25 units
+        # Known solution for a jounce of 0.25.
         wishbone_angles = 7.18076 * np.pi / 180
         wheel_angle = -3.67105 * np.pi / 180
 
-        # Manually set jounce
         self.quarter_car.wheel_jounce = 0.25
 
-        # Calculate residuals and confirm residuals go to zero
         residuals = self.quarter_car._geometry_resid_func(x=[wishbone_angles, wishbone_angles, wheel_angle])
 
         rounded_residuals = [round(x, 6) for x in residuals]

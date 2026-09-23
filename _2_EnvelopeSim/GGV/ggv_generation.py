@@ -1,22 +1,7 @@
-"""
-First-principles GGV envelope generator for BobSim.
+"""Quasi-static GGV envelope generator for BobSim.
 
-This computes quasi-static full-vehicle acceleration envelopes using:
-- mass properties
-- static weight distribution
-- aero downforce / drag
-- longitudinal and lateral load transfer
-- tire load-sensitive peak friction from .tir coefficients
-- power limit and optional actuator force caps
-- friction ellipse / combined-slip tire usage
-
-The output is:
-- 2D ax-ay GGV envelopes at multiple speeds
-- 3D closed GGV envelope surface, with speed as the vertical axis
-- CSV export with feasibility flags
-
-This is intended as a first-principles BobSim analysis utility. It is not yet
-a full Magic Formula combined-slip tire solver or full FMU trim solve.
+Writes ax-ay envelopes per speed, a 3D envelope surface, and a CSV with
+feasibility flags.
 """
 
 from __future__ import annotations
@@ -65,19 +50,15 @@ class VehicleParams:
 
     front_static_frac: float  # fraction of static weight on front axle
 
-    # Roll / lateral load transfer distribution.
-    # 0.5 means equal front/rear lateral load transfer.
-    # Higher means more front lateral load transfer.
+    # Front share of lateral load transfer.
     lltd: float
 
-    # Aero
     rho: float = 1.225  # kg/m^3
     cl_a: float = 0.0  # downforce coefficient times area, positive number
     cd_a: float = 0.0  # drag coefficient times area
     aero_balance_front: float = 0.50  # fraction of downforce on front axle
 
-    # Powertrain / braking.
-    # Force caps are optional actuator limits; inf leaves the tire as the limit.
+    # Force caps are optional actuator limits. inf leaves the tire as the limit.
     max_drive_power: float = 80_000.0  # W
     max_drive_force: float = float("inf")  # N
     max_drive_speed: float = float("inf")  # m/s, motor rpm through gearing
@@ -85,23 +66,19 @@ class VehicleParams:
     drive_distribution_front: float = 0.0  # 0 for RWD, 1 for FWD, 0.5 for AWD
     brake_distribution_front: float = 0.84
 
-    # Tire model from .tir peak friction terms
     fz_ref: float = 654.0  # N, FNOMIN
     fz_min_valid: float = 100.0  # N, FZMIN
     fz_max_valid: float = 1091.0  # N, FZMAX
 
-    # Longitudinal Magic Formula peak coefficients:
     # mu_x ~= PDX1 + PDX2 * dfz
     pdx1: float = 2.597991
     pdx2: float = -0.618826
 
-    # Lateral Magic Formula peak coefficients:
-    # mu_y ~= abs(PDY1 + PDY2 * dfz)
-    # PDY1 is negative because of tire force sign convention.
+    # mu_y ~= abs(PDY1 + PDY2 * dfz). PDY1 is negative by tire sign convention.
     pdy1: float = -2.40275
     pdy2: float = 0.343535
 
-    # Safety floor for very weird extrapolated loads
+    # Floor for extrapolated loads.
     mu_min: float = 0.8
 
 
@@ -115,28 +92,21 @@ class GGVConfig:
     ax_search_max_g: float = 2.8
     ax_search_points: int = 801
 
-    # Exclude mathematically balanced drift/countersteer roots from a racing
-    # acceleration envelope. YMD remains the tool for prescribed high-beta
-    # operating points.
+    # Reject drift/countersteer roots. YMD covers high-beta points.
     max_abs_beta_rad: float = 0.25
     max_abs_steering_rad: float = 0.5
     ax_binary_iterations: int = 14
 
-    # Treat the fitted .tir load range as a validity domain, not a warning.
-    # Optional multistart is attempted only after the continuation seed fails,
-    # limiting the cost while still checking for disconnected trim branches.
+    # Multistart runs only after the continuation seed fails.
     enforce_tire_load_range: bool = True
     trim_multistart: bool = False
 
-    # Symmetric GGV by default.
-    # Later, this can become asymmetric if tire/camber/turn direction is modeled.
+    # Mirror the positive-ay branch.
     include_left_right: bool = True
 
-    # Console progress reporting
     verbose: bool = True
     progress_every: int = 25
 
-    # Warn if calculated tire normal loads leave .tir validated range.
     warn_tire_load_range: bool = True
 
 
@@ -154,15 +124,7 @@ def force_to_aero_area(
     speed_mps: float,
     rho: float = 1.225,
 ) -> tuple[float, float]:
-    """
-    Convert CFD forces at a known speed to ClA and CdA.
-
-    The GGV code expects:
-        downforce = 0.5 * rho * V^2 * cl_a
-        drag      = 0.5 * rho * V^2 * cd_a
-
-    This avoids needing to know the CFD reference area.
-    """
+    """Convert CFD forces at a known speed to ClA and CdA without a reference area."""
     if speed_mps <= 0.0:
         raise ValueError("speed_mps must be positive.")
 
@@ -174,12 +136,7 @@ def force_to_aero_area(
 
 
 def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, float]:
-    """
-    Return front downforce, rear downforce, and aero drag.
-
-    Positive downforce means increased normal load.
-    Positive drag means resisting forward motion.
-    """
+    """Return front downforce, rear downforce, and drag. Positive drag resists motion."""
     q = 0.5 * vehicle.rho * speed**2
     downforce = q * vehicle.cl_a
     drag = q * vehicle.cd_a
@@ -191,17 +148,7 @@ def aero_loads(vehicle: VehicleParams, speed: float) -> tuple[float, float, floa
 
 
 def tire_mu_x(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
-    """
-    Approximate longitudinal peak friction from .tir PDX terms.
-
-    Uses:
-        mu_x = PDX1 + PDX2 * dfz
-
-    where:
-        dfz = (Fz - Fz0) / Fz0
-
-    Camber term PDX3 is ignored for this first-principles GGV.
-    """
+    """Return mu_x = PDX1 + PDX2 * dfz, with dfz = (Fz - Fz0) / Fz0. Ignores PDX3."""
     fz_safe = np.maximum(fz, 1.0)
     dfz = (fz_safe - vehicle.fz_ref) / vehicle.fz_ref
 
@@ -211,21 +158,10 @@ def tire_mu_x(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
 
 
 def tire_mu_y(vehicle: VehicleParams, fz: FloatArray) -> FloatArray:
-    """
-    Approximate lateral peak friction from .tir PDY terms.
-
-    Uses:
-        mu_y = abs(PDY1 + PDY2 * dfz)
-
-    where:
-        dfz = (Fz - Fz0) / Fz0
-
-    Camber term PDY3 is ignored for this first-principles GGV.
-    """
+    """Return mu_y = abs(PDY1 + PDY2 * dfz), with dfz = (Fz - Fz0) / Fz0. Ignores PDY3."""
     fz_safe = np.maximum(fz, 1.0)
     dfz = (fz_safe - vehicle.fz_ref) / vehicle.fz_ref
 
-    # PDY1 is negative because of tire force sign convention.
     mu = np.abs(vehicle.pdy1 + vehicle.pdy2 * dfz)
 
     return np.maximum(mu, vehicle.mu_min)
@@ -237,35 +173,23 @@ def wheel_loads(
     ax: float,
     ay: float,
 ) -> FloatArray:
-    """
-    Estimate individual wheel normal loads.
+    """Return [FL, FR, RL, RR] normal loads in N.
 
-    Returns:
-        [FL, FR, RL, RR] normal loads in N
-
-    Sign convention:
-        ax > 0: accelerating
-        ax < 0: braking
-        ay > 0: left turn / lateral acceleration to vehicle left
-
-    For ay > 0, right-side tires are assumed outside tires and gain load.
+    ax > 0 accelerates. ay > 0 turns left, so the right tires gain load.
     """
     weight = vehicle.mass * G
 
     front_aero, rear_aero, _drag = aero_loads(vehicle, speed)
 
-    # Static + aero axle loads
     fz_front = vehicle.front_static_frac * weight + front_aero
     fz_rear = (1.0 - vehicle.front_static_frac) * weight + rear_aero
 
-    # Longitudinal load transfer.
     # ax > 0 transfers load rearward.
     d_fz_long = vehicle.mass * ax * vehicle.cg_height / vehicle.wheelbase
 
     fz_front -= d_fz_long
     fz_rear += d_fz_long
 
-    # Lateral load transfer split by LLTD.
     total_lat_transfer_moment = vehicle.mass * ay * vehicle.cg_height
 
     front_lat_transfer = vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
@@ -273,7 +197,6 @@ def wheel_loads(
         (1.0 - vehicle.lltd) * total_lat_transfer_moment / vehicle.track_rear
     )
 
-    # Per-wheel loads
     fl = 0.5 * fz_front - 0.5 * front_lat_transfer
     fr = 0.5 * fz_front + 0.5 * front_lat_transfer
     rl = 0.5 * fz_rear - 0.5 * rear_lat_transfer
@@ -283,15 +206,7 @@ def wheel_loads(
 
 
 def distribute_lateral_force(vehicle: VehicleParams, ay: float) -> FloatArray:
-    """
-    Distribute lateral force demand to each tire.
-
-    This is a first-principles approximation. We split lateral force by LLTD,
-    then split equally left/right on each axle.
-
-    Returns:
-        [FL, FR, RL, RR] lateral forces in N
-    """
+    """Return [FL, FR, RL, RR] lateral forces in N, split by LLTD then equally per axle."""
     total_fy = vehicle.mass * ay
 
     fy_front = vehicle.lltd * total_fy
@@ -313,15 +228,7 @@ def distribute_longitudinal_force(
     fx_total: float,
     mode: Literal["drive", "brake"],
 ) -> FloatArray:
-    """
-    Distribute longitudinal force demand to the tires.
-
-    Returns:
-        [FL, FR, RL, RR] longitudinal forces in N
-
-    Positive Fx = drive force.
-    Negative Fx = braking force.
-    """
+    """Return [FL, FR, RL, RR] longitudinal forces in N. Positive Fx drives."""
     if mode == "drive":
         front_frac = vehicle.drive_distribution_front
     elif mode == "brake":
@@ -349,15 +256,7 @@ def tire_usage(
     fx: FloatArray,
     fy: FloatArray,
 ) -> FloatArray:
-    """
-    Elliptical combined tire usage at each tire.
-
-    usage <= 1 means feasible.
-
-    This uses different longitudinal and lateral capacities:
-        Fx_capacity = mu_x(Fz) * Fz
-        Fy_capacity = mu_y(Fz) * Fz
-    """
+    """Return friction-ellipse usage per tire. usage <= 1 is feasible."""
     fz_positive = np.maximum(fz, 0.0)
 
     fx_capacity = tire_mu_x(vehicle, fz) * fz_positive
@@ -370,11 +269,7 @@ def tire_usage(
 
 
 def powertrain_force_limit(vehicle: VehicleParams, speed: float) -> float:
-    """
-    Maximum available drive force before tire limits.
-
-    Limited by both max drive force and power / speed.
-    """
+    """Return the drive force limit from the force cap and power / speed."""
     if speed > vehicle.max_drive_speed:
         return 0.0
     speed_safe = max(speed, 1.0)
@@ -391,12 +286,9 @@ def is_feasible(
     mode: Literal["drive", "brake"],
     enforce_tire_load_range: bool = True,
 ) -> bool:
-    """
-    Check whether a requested ax-ay point is feasible.
-    """
+    """Check whether a requested ax-ay point is feasible."""
     fz = wheel_loads(vehicle, speed=speed, ax=ax, ay=ay)
 
-    # Wheel lift / negative normal load = infeasible.
     if np.any(fz <= 0.0):
         return False
     if enforce_tire_load_range and (
@@ -406,7 +298,6 @@ def is_feasible(
 
     _front_aero, _rear_aero, drag = aero_loads(vehicle, speed)
 
-    # Required tire longitudinal force must overcome aero drag too.
     # Sum tire Fx = m*ax + drag.
     fx_total = vehicle.mass * ax + drag
 
@@ -445,15 +336,7 @@ def solve_ax_limit(
     enforce_tire_load_range: bool = GGVConfig.enforce_tire_load_range,
     trim_multistart: bool = GGVConfig.trim_multistart,
 ) -> float:
-    """
-    Find the maximum feasible acceleration or braking at a given ay.
-
-    For drive:
-        returns largest feasible positive ax.
-
-    For brake:
-        returns most negative feasible ax.
-    """
+    """Return the largest drive ax or the most negative brake ax at a given ay."""
     if reduced_model is not None:
         return _solve_ax_limit_qss(
             vehicle,
@@ -595,18 +478,15 @@ def _trim_is_racing_feasible(
 ) -> bool:
     """Reject unloaded and high-sideslip equilibrium roots.
 
-    GGV is an acceleration capability map at zero yaw rate, not a corner-radius
-    trim. Its steering sign is therefore a tire-force sign convention and must
-    not be interpreted as track countersteer.
+    GGV is a zero-yaw-rate map, so the steering sign is a tire-force sign, not countersteer.
     """
 
     beta = float(trim.unknowns["beta_rad"])
     steering = float(trim.unknowns["steering_rad"])
     if trim.output.generalized_acceleration.size < 10:
-        # Kinematic-wheel models have no angular-acceleration residual. Reject
-        # a trim if combined-slip saturation silently changed Fx away from the
-        # force implied by applied wheel torque; otherwise fixed brake/drive
-        # distribution can be bypassed at the GGV boundary.
+        # Kinematic-wheel models have no wheel-spin residual. Reject a trim when
+        # combined-slip saturation moved Fx away from the applied torque. Otherwise
+        # the boundary can bypass the fixed brake/drive split.
         steering = float(trim.inputs.steering_rad)
         wheel_steering = (
             np.array([steering, steering, 0.0, 0.0])
@@ -652,9 +532,7 @@ def _solve_racing_trim(
     seeds: list[Mapping[str, float] | None] = [initial_unknowns]
     if trim_multistart:
         inherited = dict(initial_unknowns or {})
-        # The continuation seed is always tried first.  This compact grid then
-        # crosses both beta/steer signs so a disconnected branch cannot be
-        # dismissed only because the local solve started on the wrong side.
+        # Grid crosses both beta/steer signs to find disconnected branches.
         for beta in (-0.20, 0.0, 0.20):
             for steering in (-0.30, 0.0, 0.30):
                 candidate = {**inherited, "beta_rad": beta, "steering_rad": steering}
@@ -686,9 +564,7 @@ def _solve_racing_trim(
             and enforce_tire_load_range
             and _trim_outside_tire_domain(trim, model)
         ):
-            # Alternate local roots cannot legitimize an operating point whose
-            # solved wheel load is outside the tire fit. Avoid paying the full
-            # multistart grid throughout the intentionally infeasible ay tail.
+            # A load outside the tire fit stays invalid. Skip the grid in the infeasible ay tail.
             return None
     return None
 
@@ -716,10 +592,7 @@ def solve_lateral_limit(
 ) -> tuple[float, float]:
     """Return the pure-lateral endpoint ``(ay, ax)`` at zero wheel Fx.
 
-    With aerodynamic drag, zero longitudinal tire force corresponds to a small
-    negative body acceleration rather than exactly ``ax = 0``.  Solving this
-    endpoint closes the acceleration and braking branches at the actual lateral
-    boundary instead of stopping at the last feasible lateral grid sample.
+    Drag makes this ax slightly negative. The endpoint closes both branches.
     """
 
     _front_aero, _rear_aero, drag = aero_loads(vehicle, speed)
@@ -769,12 +642,7 @@ def warn_if_tire_loads_outside_tir_range(
     vehicle: VehicleParams,
     envelopes: list[GGVEnvelope],
 ) -> None:
-    """
-    Scan generated finite GGV points and warn if wheel loads exceed .tir range.
-
-    This does not invalidate the plot; it just tells you where the simple model
-    is extrapolating beyond the fitted tire file range.
-    """
+    """Warn where GGV wheel loads leave the .tir fitted range."""
     fz_min_seen = np.inf
     fz_max_seen = -np.inf
 
@@ -817,9 +685,7 @@ def generate_ggv(
     config: GGVConfig,
     reduced_model: ReducedVehicleModel | None = None,
 ) -> list[GGVEnvelope]:
-    """
-    Generate GGV envelopes across the configured speeds.
-    """
+    """Generate GGV envelopes across the configured speeds."""
     ay_positive = np.linspace(0.0, config.ay_max_g * G, config.ay_points)
 
     ax_drive_grid = np.linspace(
@@ -932,8 +798,7 @@ def generate_ggv(
             enforce_tire_load_range=config.enforce_tire_load_range,
             trim_multistart=config.trim_multistart,
         )
-        # Retain solved interior slices, discard the intentionally infeasible
-        # search rows, and close both branches at the shared lateral endpoint.
+        # Drop infeasible search rows and close both branches at the lateral endpoint.
         interior = (
             (ay_positive < lateral_limit - 1e-9)
             & np.isfinite(ax_accel_pos)
@@ -943,7 +808,6 @@ def generate_ggv(
         ax_accel_branch = np.concatenate((ax_accel_pos[interior], [coast_ax]))
         ax_brake_branch = np.concatenate((ax_brake_pos[interior], [coast_ax]))
 
-        # Mirror the positive-lateral branch to create left/right symmetry.
         if config.include_left_right:
             ay_full = np.concatenate((-ay_branch[:0:-1], ay_branch))
             ax_accel_full = np.concatenate((ax_accel_branch[:0:-1], ax_accel_branch))
@@ -1003,12 +867,7 @@ def plot_ggv(
     envelopes: list[GGVEnvelope],
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot ax-ay GGV envelopes.
-
-    x-axis: lateral acceleration ($g$)
-    y-axis: longitudinal acceleration ($g$)
-    """
+    """Plot ax-ay GGV envelopes in g."""
     fig, ax = plt.subplots(figsize=(9.5, 6.2))
 
     for env in envelopes:
@@ -1063,16 +922,7 @@ def plot_ggv_surface(
     envelopes: list[GGVEnvelope],
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot the GGV as one continuous closed envelope surface.
-
-    Axes:
-        x = lateral acceleration ay ($g$)
-        y = longitudinal acceleration ax ($g$)
-        z = speed V ($m/s$)
-
-    This makes velocity the vertical axis.
-    """
+    """Plot the GGV as one closed surface with speed on the vertical axis."""
     if not envelopes:
         raise ValueError("No GGV envelopes provided.")
 
@@ -1093,7 +943,6 @@ def plot_ggv_surface(
         if not np.any(accel_mask) or not np.any(brake_mask):
             continue
 
-        # Accel branch: left -> right
         ay_accel = ay_g[accel_mask]
         ax_accel = ax_accel_g[accel_mask]
 
@@ -1101,7 +950,7 @@ def plot_ggv_surface(
         ay_accel = ay_accel[sort_accel]
         ax_accel = ax_accel[sort_accel]
 
-        # Brake branch: right -> left
+        # Brake branch runs right to left so the loop closes.
         ay_brake = ay_g[brake_mask]
         ax_brake = ax_brake_g[brake_mask]
 
@@ -1109,11 +958,9 @@ def plot_ggv_surface(
         ay_brake = ay_brake[sort_brake]
         ax_brake = ax_brake[sort_brake]
 
-        # Closed loop at this speed.
         ay_loop = np.concatenate([ay_accel, ay_brake, ay_accel[:1]])
         ax_loop = np.concatenate([ax_accel, ax_brake, ax_accel[:1]])
 
-        # Remove duplicate adjacent points.
         d_ay = np.diff(ay_loop)
         d_ax = np.diff(ax_loop)
         keep = np.concatenate([[True], np.hypot(d_ay, d_ax) > 1e-9])
@@ -1121,7 +968,6 @@ def plot_ggv_surface(
         ay_loop = ay_loop[keep]
         ax_loop = ax_loop[keep]
 
-        # Parameterize loop by perimeter distance.
         ds = np.hypot(np.diff(ay_loop), np.diff(ax_loop))
         s = np.concatenate([[0.0], np.cumsum(ds)])
 
@@ -1160,7 +1006,6 @@ def plot_ggv_surface(
         antialiased=True,
     )
 
-    # Draw speed slices on top of the surface.
     for i, _speed in enumerate(speeds):
         ax.plot(
             ay_surface[i, :],
@@ -1175,11 +1020,9 @@ def plot_ggv_surface(
 
     ax.set_title("BobSim First-Principles GGV Envelope Surface")
 
-    # Speed vertical; ay left/right; ax depth.
     ax.view_init(elev=24, azim=-62)
 
-    # Manual visual scaling. Do not use physical data ranges here because
-    # speed is numerically much larger than acceleration in g.
+    # Manual aspect. Speed values are much larger than g values.
     ax.set_box_aspect((1.35, 1.0, 1.15))
 
     ay_lim = np.nanmax(np.abs(ay_surface))
@@ -1203,16 +1046,7 @@ def plot_ggv_metrics(
     envelopes: list[GGVEnvelope],
     output_path: str | Path | None = None,
 ) -> None:
-    """
-    Plot scalar capability metrics extracted from the GGV vs speed.
-
-    Metrics:
-        - max cornering capability: max |ay|
-        - max acceleration capability: max ax on accel branch
-        - max braking capability: |min ax| on brake branch
-
-    All quantities are shown in g.
-    """
+    """Plot max |ay|, max ax, and max |brake ax| in g against speed."""
     if not envelopes:
         raise ValueError("No GGV envelopes provided.")
 
@@ -1302,11 +1136,7 @@ def plot_ggv_metrics(
 
 
 def save_ggv_csv(envelopes: list[GGVEnvelope], output_path: str | Path) -> None:
-    """
-    Save envelopes to CSV with columns:
-        speed_mps, ay_mps2, ax_accel_mps2, ax_brake_mps2,
-        accel_feasible, brake_feasible
-    """
+    """Save envelopes to CSV."""
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     rows: list[list[float]] = []

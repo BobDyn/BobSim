@@ -30,9 +30,8 @@ LAP_CONFIG ?= _3_StandardSim/LapTimeEval/lap_time_eval_config.yml
 LAP_SCENARIO ?= both
 LAP_DOF ?=
 
-# DOE sweep size overrides. Empty means "use configs/vehicle_architecture.yaml".
-# DOE_SCOPE restricts the sweep to one half of the partition tagged in that
-# file (scope: setup / architecture); empty means the default, all.
+# DOE overrides. Empty means use configs/vehicle_architecture.yaml.
+# DOE_SCOPE is setup or architecture. Empty means all.
 DOE_METHOD ?=
 DOE_SAMPLES ?=
 DOE_INTERVALS ?=
@@ -45,15 +44,12 @@ DOE_ENV := \
 
 FOUR_POST_METRICS := _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
 
-# BobVis. These targets only write scenes into $(VISUAL_RESULTS); the app's
-# Replay tab draws them. There is nothing to install and no window to open,
-# so the old visual-deps, visual and visual-*-video targets are gone.
+# BobVis targets write scenes into $(VISUAL_RESULTS). The app's Replay tab draws them.
 VISUAL_DIR := _1_VisualSim
 VISUAL_RESULTS := $(VISUAL_DIR)/results
 VISUAL_DEMO_CONFIG := $(VISUAL_RESULTS)/demo_step_steer.yml
 VISUAL_DEMO_DATA := $(VISUAL_RESULTS)/demo_step_steer.npz
-# The evaluation visual-capture runs: four_post, transient, ramp_steer or
-# steady_state. visual-rig pins four_post; visual-maneuver runs VISUAL_MANEUVER.
+# Evaluation for visual-capture: four_post, transient, ramp_steer or steady_state.
 VISUAL_EVAL ?= four_post
 VISUAL_MANEUVER ?= transient
 VISUAL_CAPTURE := $(VISUAL_RESULTS)/$(VISUAL_EVAL)
@@ -79,9 +75,7 @@ DEPLOY_SKIP_CONFLICT_CHECK_ARG := $(if $(filter 1 true yes,$(DEPLOY_SKIP_CONFLIC
 DEPLOY_VERSION_ARG := $(if $(DEPLOY_VERSION),--version $(DEPLOY_VERSION),)
 DEPLOY_UPLOAD_RELEASE_ARG := $(if $(filter 1 true yes,$(DEPLOY_UPLOAD_RELEASE)),--upload-release,)
 
-# Same cmd.exe parsing problem as COMPOSE below: this POSIX test prints "-f was
-# unexpected at this time" on Windows. A Windows host is never inside the Linux
-# container, so the answer there is simply empty.
+# cmd.exe cannot parse this POSIX test. A Windows host is never in the container.
 ifeq ($(OS),Windows_NT)
 IN_CONTAINER :=
 else
@@ -97,11 +91,7 @@ SHELL_STANDARD_CMD := cd _3_StandardSim && bash
 SHELL_ENVELOPE_CMD := cd _2_EnvelopeSim && bash
 SHELL_OPT_CMD := cd _4_OptSim && bash
 else
-# The probe below is POSIX shell. On Windows make runs it through cmd.exe, which
-# cannot parse `if ...; then ...; fi`: it prints "compose was unexpected at this
-# time" and yields an empty COMPOSE, so every Docker target degrades to a bare
-# `run --rm -T bobsim ...` and dies in CreateProcess. Docker Desktop has shipped
-# Compose v2 as `docker compose` for years, so skip the probe there entirely.
+# cmd.exe cannot parse the POSIX probe, so Windows uses `docker compose` directly.
 ifeq ($(OS),Windows_NT)
 COMPOSE ?= docker compose
 else
@@ -271,10 +261,8 @@ app:
 	$(if $(APP_RUN),@echo BobSim app in Docker. Open http://127.0.0.1:$(APP_PORT),)
 	$(APP_RUN) $(PYTHON) -m _5_App.app $(if $(APP_RUN),--host 0.0.0.0 --port 8765,--port $(APP_PORT))
 
-# A normal evaluation keeps only the scalar signals its metrics need, so its
-# result CSV has no geometry and cannot feed a scene. This re-runs one
-# evaluation (VISUAL_EVAL) asking OpenModelica for the suspension frames too,
-# then converts the result into a scene.
+# Normal evaluation CSVs have no geometry. This re-runs VISUAL_EVAL with the
+# suspension frames and converts the result to a scene.
 visual-capture: $(VISUAL_EVAL_BUILD)
 	$(RUN) $(PYTHON) -m _1_VisualSim.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
 	$(RUN) $(PYTHON) -m _3_StandardSim.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
@@ -286,8 +274,6 @@ visual-capture: $(VISUAL_EVAL_BUILD)
 visual-rig:
 	$(MAKE) visual-capture VISUAL_EVAL=four_post
 
-# The car driving: a VehicleSim manoeuvre with the same geometry capture, plus
-# tire tracks and load footprints on the ground.
 visual-maneuver:
 	$(MAKE) visual-capture VISUAL_EVAL=$(VISUAL_MANEUVER)
 
@@ -365,9 +351,7 @@ sync-vehicle:
 sync-vehicle-write:
 	$(PYTHON) -m _5_App.modelica_generator --write
 
-# The generated vehicle records and templates hold every hardpoint, so they must be
-# build dependencies. Without them make reports "up to date" after a geometry change
-# and the sim silently runs the previously compiled geometry.
+# Records and templates hold the hardpoints. Without them, make misses geometry changes.
 GENERATED_RECORDS := $(wildcard $(BOBLIB_PACKAGE_PATH)/Records/VehicleDefn/*.mo)
 GENERATED_TEMPLATES := \
 	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/Vehicle/*.mo) \
@@ -385,14 +369,8 @@ $(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PAC
 		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
 	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
 
-# SHARK is optional: with it the file is imported into the tracked variant vehicle
-# first; without it the already-imported variant is overlaid as it stands.
-#
-# Runs in the container like every other target here. The kinematic solve would work
-# on the host, but ARGS=--four-post would not: the Modelica stack is compiled inside
-# the container, so the simulator it produces only runs there. One route for both
-# keeps this consistent with the rest of the file and removes a whole class of
-# host/container mismatch.
+# SHARK is optional. Without it, the already-imported variant is overlaid.
+# Runs in the container because ARGS=--four-post needs the container-built simulator.
 SHARK_ARG := $(if $(SHARK),--shark $(SHARK),)
 shark-overlay:
 	$(RUN) $(PYTHON) -m _3_StandardSim.FourPostEval.shark_overlay_report $(SHARK_ARG) $(ARGS)
@@ -460,8 +438,7 @@ envelope-ymd:
 
 envelope-all: envelope-ggv envelope-ymd
 
-# Variant generation needs FourPostEval motion ratios to hold static ride
-# height while spring rate is swept, so produce them on demand.
+# Variant generation needs FourPostEval motion ratios to hold ride height.
 $(FOUR_POST_METRICS):
 	$(MAKE) standard-eval-four-post
 
@@ -471,12 +448,7 @@ opt-doe-smoke:
 opt-standard: $(FOUR_POST_METRICS)
 	$(RUN) env $(DOE_ENV) PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.pre_screen_sensitivities
 
-# Scoped sweeps over the setup/architecture partition tagged in
-# configs/vehicle_architecture.yaml. Changing scope rewrites the generated
-# _doe_config.yaml, so the pipeline-hash guard will ask for 'make clean-opt'
-# before reusing a population compiled at a different scope. That is
-# deliberate: cleaning automatically here would discard the previous sweep's
-# results without asking.
+# A scope change requires 'make clean-opt'. These targets do not clean, to keep earlier results.
 opt-standard-setup:
 	$(MAKE) opt-standard DOE_SCOPE=setup
 
@@ -502,16 +474,11 @@ opt-search:
 	fi
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.pipeline.search --metrics $(METRICS) --top $(SEARCH_TOP)
 
-# Solves for the setup directly instead of looking one up in a finished sweep,
-# and simulates the answer before returning it. Needs the FourPostEval motion
-# ratios for the same reason opt-standard does: a spring-rate knob has to move
-# the free length with it to hold ride height.
+# Solves for the setup directly and simulates the result.
 opt-solve: $(FOUR_POST_METRICS)
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup $(if $(TARGETS),--targets $(TARGETS),) $(if $(KNOBS),--knobs $(KNOBS),)
 
-# Compiles each named candidate once and runs every requested standard against
-# that one executable. Needs the FourPostEval motion ratios whenever a candidate
-# changes a spring rate, for the same reason opt-standard does.
+# Compiles each candidate once and runs every requested standard on it.
 opt-trade: $(FOUR_POST_METRICS)
 	$(RUN) env PYTHONPATH=$(WORKSPACE)/_4_OptSim:$(WORKSPACE) $(PYTHON) -m StandardSens.trade_study $(if $(STUDY),--study $(STUDY),)
 

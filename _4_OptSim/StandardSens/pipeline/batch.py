@@ -1,14 +1,6 @@
-"""batch.py — Run each configured standard for all variants.
+"""Run each configured standard for all compiled variants.
 
-For each variant_XXXX/build/<standard>/ that has a compiled executable:
-  1. Skip if metrics.csv already exists and is valid (correct row count)
-  2. Create variant_XXXX/results/<standard>/
-  3. Run the standard-sim wrapper against the variant executable
-  4. Verify the metrics CSV was produced and has expected rows
-  5. Write run_error_<standard>.log on failure and continue
-
-Parallelism: controlled by batch.max_workers in compiler_config.yaml.
-TACC: set max_workers to match your SLURM allocation's cores-per-node.
+On TACC, set batch.max_workers in compiler_config.yaml to the cores per node.
 """
 
 from __future__ import annotations
@@ -22,15 +14,10 @@ import yaml
 
 from StandardSens.pipeline.standards import get_standard, run_standard
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
 DEFAULT_CONFIG = STANDARD_DIR / "configs/compiler_config.yaml"
 
-# Minimum rows expected in a valid metrics CSV (header + at least 1 metric row)
 MIN_RESULT_ROWS = 2
 
 
@@ -39,15 +26,8 @@ def load_config(config_path: Path = DEFAULT_CONFIG) -> dict:
         return yaml.safe_load(f)
 
 
-# ---------------------------------------------------------------------------
-# CSV validation
-# ---------------------------------------------------------------------------
-
 def _csv_is_valid(csv_path: Path) -> bool:
-    """Return True if metrics CSV exists and has enough rows to be valid.
-
-    Guards against partial writes from crashed simulations.
-    """
+    """Return True if the metrics CSV exists and is not a partial write."""
     if not csv_path.exists():
         return False
     try:
@@ -57,21 +37,13 @@ def _csv_is_valid(csv_path: Path) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Single variant run
-# ---------------------------------------------------------------------------
-
 def run_variant(
         variant_dir: Path,
         standard: str,
         standard_cfg: dict,
         timeout: int,
 ) -> bool:
-    """Run one variant's report wrapper for one standard.
-
-    Returns True on success, False on failure.
-    Writes run_error_<standard>.log on failure.
-    """
+    """Run one variant's report wrapper for one standard. Writes run_error_<standard>.log on failure."""
     build_dir = variant_dir / "build" / standard
     exe = _find_exe(build_dir, standard_cfg)
 
@@ -83,8 +55,7 @@ def run_variant(
     results_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Dispatch on the standard's name: running one standard's report against
-        # another's executable fails late and unhelpfully.
+        # Dispatch on name. A report run on another standard's executable fails late.
         metrics_csv = run_standard(
             get_standard(standard),
             variant_dir=variant_dir,
@@ -105,7 +76,7 @@ def run_variant(
 
 def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
     model = standard_cfg["model"]
-    short = model.split(".")[-1]        # SteadyStateEval
+    short = model.split(".")[-1]
     candidates = [
         build_dir / model,
         build_dir / f"{model}.exe",
@@ -123,31 +94,18 @@ def _write_error(variant_dir: Path, standard: str, message: str) -> None:
     log.write_text(message)
 
 
-# ---------------------------------------------------------------------------
-# Worker (top-level for pickling with ProcessPoolExecutor)
-# ---------------------------------------------------------------------------
-
 def _worker(args: tuple) -> tuple[str, str, bool]:
-    """Unpack args and run one variant. Returns (variant_name, standard, success)."""
+    """Returns (variant_name, standard, success)."""
     variant_dir, standard, standard_cfg, timeout = args
     success = run_variant(variant_dir, standard, standard_cfg, timeout)
     return variant_dir.name, standard, success
 
 
-# ---------------------------------------------------------------------------
-# Run all variants
-# ---------------------------------------------------------------------------
-
 def run_all(
         population_dir: Path,
         config_path: Path = DEFAULT_CONFIG,
 ) -> dict[str, list[Path]]:
-    """Run the postprocessed report for all compiled variants.
-
-    Skips variants that already have valid metrics.csv files.
-    Returns dict mapping standard -> list of successful metrics.csv paths.
-    Failed variants are logged and skipped.
-    """
+    """Run the report for all compiled variants. Returns standard -> metrics.csv paths."""
     cfg = load_config(config_path)
     standards: dict[str, dict] = cfg["standards"]
     batch_cfg: dict = cfg.get("batch", {})
@@ -161,14 +119,12 @@ def run_all(
     total = len(variant_dirs)
     results: dict[str, list[Path]] = {s: [] for s in standards}
 
-    # Collect already-valid results
     for vdir in variant_dirs:
         for standard in standards:
             csv = vdir / "results" / standard / "metrics.csv"
             if _csv_is_valid(csv):
                 results[standard].append(csv)
 
-    # Build work list — skip variants with valid results
     work = [
         (variant_dir, standard, standard_cfg, timeout)
         for variant_dir in variant_dirs
@@ -207,10 +163,6 @@ def run_all(
 
     return results
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     population = OPTSIM_DIR / "Build/StandardSens/population"

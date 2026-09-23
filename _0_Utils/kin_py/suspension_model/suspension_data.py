@@ -13,16 +13,7 @@ from typing import Union
 import yaml
 
 class SuspensionData:
-    """
-    ## Suspension Assembler
-
-    Assembles suspension from vehicle definition yaml
-
-    Parameters
-    ----------
-    path : str
-        File path to vehicle definition yaml
-    """
+    """Build the suspension from a vehicle definition yaml."""
     def __init__(self, path: str):
         with open(path) as f:
             try:
@@ -73,11 +64,6 @@ class SuspensionData:
 
         if "FL QuarterCar" in raw_params.keys():
             
-            #################
-            ### FL Corner ###
-            #################
-
-            # Tire
             if "tire" in raw_params["FL QuarterCar"].keys():
                 FL_tire_params = raw_params["FL QuarterCar"]["tire"]
                 FL_tir_file_path = FL_tire_params["tir_path"]["Value"]
@@ -97,7 +83,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "tire" under "FL QuarterCar"')
             
-            # Lower wishbone
             if "lower_wishbone" in raw_params["FL QuarterCar"].keys():
                 FL_lower_params = raw_params["FL QuarterCar"]["lower_wishbone"]
                 FL_lower_fore_inboard = Node(position=FL_lower_params["fore_inboard"]["Value"])
@@ -119,7 +104,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "lower_wishbone" under "FL QuarterCar"')
 
-            # Upper wishbone
             if "upper_wishbone" in raw_params["FL QuarterCar"].keys():
                 FL_upper_params = raw_params["FL QuarterCar"]["upper_wishbone"]
                 FL_upper_fore_inboard = Node(position=FL_upper_params["fore_inboard"]["Value"])
@@ -141,7 +125,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "upper_wishbone" under "FL QuarterCar"')
             
-            # Tie rod
             if "tie_rod" in raw_params["FL QuarterCar"].keys():
                 FL_tie_params = raw_params["FL QuarterCar"]["tie_rod"]
                 FL_tie_inboard = Node(position=FL_tie_params["inboard"]["Value"])
@@ -163,7 +146,6 @@ class SuspensionData:
             else:
                 raise Exception("You must set a steering ratio")
 
-            # Push/pull rod
             if "push_pull_rod" in raw_params["FL QuarterCar"].keys():
                 FL_ppr_params = raw_params["FL QuarterCar"]["push_pull_rod"]
                 FL_ppr_outboard_inboard = Node(position=FL_ppr_params["outboard_rod"]["inboard_node"]["Value"])
@@ -230,11 +212,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "push_pull_rod" under "FL QuarterCar"')
 
-            #################
-            ### FR Corner ###
-            #################
-
-            # Tire
             FR_tire_params = raw_params["FL QuarterCar"]["tire"]
             FR_tir_file_path = FR_tire_params["tir_path"]["Value"]
             FR_contact_patch = Node(position=FR_tire_params["contact_patch"]["Value"]).mirrored_xz
@@ -250,7 +227,6 @@ class SuspensionData:
 
             self.FR_nodes["contact_patch"] = FR_contact_patch
             
-            # Lower wishbone
             FR_lower_params = raw_params["FL QuarterCar"]["lower_wishbone"]
             FR_lower_fore_inboard = Node(position=FR_lower_params["fore_inboard"]["Value"]).mirrored_xz
             FR_lower_aft_inboard = Node(position=FR_lower_params["aft_inboard"]["Value"]).mirrored_xz
@@ -268,7 +244,6 @@ class SuspensionData:
             self.FR_links["lower_fore"] = FR_lower_fore
             self.FR_links["lower_aft"] = FR_lower_aft
 
-            # Upper wishbone
             FR_upper_params = raw_params["FL QuarterCar"]["upper_wishbone"]
             FR_upper_fore_inboard = Node(position=FR_upper_params["fore_inboard"]["Value"]).mirrored_xz
             FR_upper_aft_inboard = Node(position=FR_upper_params["aft_inboard"]["Value"]).mirrored_xz
@@ -286,7 +261,6 @@ class SuspensionData:
             self.FR_links["upper_fore"] = FR_upper_fore
             self.FR_links["upper_aft"] = FR_upper_aft
 
-            # Tie rod
             FR_tie_params = raw_params["FL QuarterCar"]["tie_rod"]
             FR_tie_inboard = Node(position=FR_tie_params["inboard"]["Value"]).mirrored_xz
             FR_tie_outboard = Node(position=FR_tie_params["outboard"]["Value"]).mirrored_xz
@@ -298,7 +272,6 @@ class SuspensionData:
 
             self.FR_links["tie"] = FR_tie
 
-            # Push/pull rod
             FR_ppr_params = raw_params["FL QuarterCar"]["push_pull_rod"]
             FR_ppr_outboard_inboard = Node(position=FR_ppr_params["outboard_rod"]["inboard_node"]["Value"]).mirrored_xz
             FR_ppr_outboard_outboard = Node(position=FR_ppr_params["outboard_rod"]["outboard_node"]["Value"]).mirrored_xz
@@ -407,11 +380,6 @@ class SuspensionData:
             
         if "RL QuarterCar" in raw_params.keys():
             
-            #################
-            ### RL Corner ###
-            #################
-
-            # Tire
             if "tire" in raw_params["RL QuarterCar"].keys():
                 RL_tire_params = raw_params["RL QuarterCar"]["tire"]
                 RL_tir_file_path = RL_tire_params["tir_path"]["Value"]
@@ -431,7 +399,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "tire" under "RL QuarterCar"')
             
-            # Lower wishbone
             if "lower_wishbone" in raw_params["RL QuarterCar"].keys():
                 RL_lower_params = raw_params["RL QuarterCar"]["lower_wishbone"]
                 RL_lower_fore_inboard = Node(position=RL_lower_params["fore_inboard"]["Value"])
@@ -453,7 +420,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "lower_wishbone" under "RL QuarterCar"')
 
-            # Upper wishbone
             if "upper_wishbone" in raw_params["RL QuarterCar"].keys():
                 RL_upper_params = raw_params["RL QuarterCar"]["upper_wishbone"]
                 RL_upper_fore_inboard = Node(position=RL_upper_params["fore_inboard"]["Value"])
@@ -475,7 +441,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "upper_wishbone" under "RL QuarterCar"')
             
-            # Tie rod
             if "tie_rod" in raw_params["RL QuarterCar"].keys():
                 RL_tie_params = raw_params["RL QuarterCar"]["tie_rod"]
                 RL_tie_inboard = Node(position=RL_tie_params["inboard"]["Value"])
@@ -491,7 +456,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "tie_rod" under "RL QuarterCar"')
 
-            # Push/pull rod
             if "push_pull_rod" in raw_params["RL QuarterCar"].keys():
                 RL_ppr_params = raw_params["RL QuarterCar"]["push_pull_rod"]
                 RL_ppr_outboard_inboard = Node(position=RL_ppr_params["outboard_rod"]["inboard_node"]["Value"])
@@ -558,11 +522,6 @@ class SuspensionData:
             else:
                 raise Exception('Vehicle definition yaml must contain "push_pull_rod" under "RL QuarterCar"')
 
-            #################
-            ### RR Corner ###
-            #################
-
-            # Tire
             RR_tire_params = raw_params["RL QuarterCar"]["tire"]
             RR_tir_file_path = RR_tire_params["tir_path"]["Value"]
             RR_contact_patch = Node(position=RR_tire_params["contact_patch"]["Value"]).mirrored_xz
@@ -578,7 +537,6 @@ class SuspensionData:
 
             self.RR_nodes["contact_patch"] = RR_contact_patch
             
-            # Lower wishbone
             RR_lower_params = raw_params["RL QuarterCar"]["lower_wishbone"]
             RR_lower_fore_inboard = Node(position=RR_lower_params["fore_inboard"]["Value"]).mirrored_xz
             RR_lower_aft_inboard = Node(position=RR_lower_params["aft_inboard"]["Value"]).mirrored_xz
@@ -596,7 +554,6 @@ class SuspensionData:
             self.RR_links["lower_fore"] = RR_lower_fore
             self.RR_links["lower_aft"] = RR_lower_aft
 
-            # Upper wishbone
             RR_upper_params = raw_params["RL QuarterCar"]["upper_wishbone"]
             RR_upper_fore_inboard = Node(position=RR_upper_params["fore_inboard"]["Value"]).mirrored_xz
             RR_upper_aft_inboard = Node(position=RR_upper_params["aft_inboard"]["Value"]).mirrored_xz
@@ -614,7 +571,6 @@ class SuspensionData:
             self.RR_links["upper_fore"] = RR_upper_fore
             self.RR_links["upper_aft"] = RR_upper_aft
 
-            # Tie rod
             RR_tie_params = raw_params["RL QuarterCar"]["tie_rod"]
             RR_tie_inboard = Node(position=RR_tie_params["inboard"]["Value"]).mirrored_xz
             RR_tie_outboard = Node(position=RR_tie_params["outboard"]["Value"]).mirrored_xz
@@ -626,7 +582,6 @@ class SuspensionData:
 
             self.RR_links["tie"] = RR_tie
 
-            # Push/pull rod
             RR_ppr_params = raw_params["RL QuarterCar"]["push_pull_rod"]
             RR_ppr_outboard_inboard = Node(position=RR_ppr_params["outboard_rod"]["inboard_node"]["Value"]).mirrored_xz
             RR_ppr_outboard_outboard = Node(position=RR_ppr_params["outboard_rod"]["outboard_node"]["Value"]).mirrored_xz
@@ -733,7 +688,7 @@ class SuspensionData:
         else:
             raise Exception('Vehicle definition yaml must contain "RL QuarterCar"')
     
-        # Remove validation here and implement a schema for the inpuy yaml
+        # TODO: replace this validation with a schema for the input yaml.
         if "Mass Properties" in raw_params.keys():
             cg_x = (self.FL_tire.contact_patch[0] - self.RL_tire.contact_patch[0]) * raw_params["Mass Properties"]["CGBX"]["Value"] + self.RL_tire.contact_patch[0]
             cg_y = (self.FL_tire.contact_patch[1] - self.FR_tire.contact_patch[1]) * raw_params["Mass Properties"]["CGBY"]["Value"] + self.FR_tire.contact_patch[1]

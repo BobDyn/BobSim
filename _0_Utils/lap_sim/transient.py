@@ -57,10 +57,8 @@ def simulate_transient_lap(
     requested_initial_speed = max(float(qss_lap.speed_mps[0]), 1.0)
     curvature = float(line.curvature_per_m[0])
     trim = None
-    # A speed interpolated from discrete GGV slices can land exactly on (or a
-    # few numerical counts beyond) the steady-state feasibility boundary.
-    # Search inward for a valid equilibrium instead of starting from a
-    # dynamically inconsistent hand-built state.
+    # An interpolated GGV speed can sit on or just past the feasibility boundary.
+    # Search inward for a valid equilibrium.
     for speed_factor in (1.0, 0.98, 0.95, 0.90, 0.80, 0.70, 0.60):
         initial_speed = max(speed_factor * requested_initial_speed, 1.0)
         initial_yaw_rate = initial_speed * curvature

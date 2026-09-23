@@ -1,9 +1,4 @@
-"""steady_state_eval_report.py — SteadyStateEval's own options on the standards runner.
-
-`standards.run_standard` runs any VehicleSim standard for a variant. This adds the
-two things only SteadyStateEval callers ask for: Modelica parameter overrides
-applied to every case, and a single isoline in place of the standard's four.
-"""
+"""Run SteadyStateEval with parameter overrides and an optional single isoline."""
 
 from __future__ import annotations
 
@@ -33,9 +28,7 @@ def run_report(
 ) -> Path:
     """Run SteadyStateEval for one variant and return its metrics CSV.
 
-    `init_parameters` lets one compiled executable stand in for a vehicle it was
-    not compiled as. `isoline` swaps the standard's four-isoline matrix for one,
-    without touching the shared standard's own config or regression baselines.
+    `init_parameters` are runtime overrides. `isoline` replaces the standard's test matrix.
     """
 
     def edit(config: dict[str, Any]) -> None:
@@ -45,8 +38,7 @@ def run_report(
             merged.update({name: float(value) for name, value in init_parameters.items()})
             simulation["init_parameters"] = merged
         if isoline is not None:
-            # These move together: the cap and the exported-metric velocity must
-            # name the one isoline being run, or the report selects nothing.
+            # All four must name the same isoline, or the report selects nothing.
             sweep = config.setdefault("sweep", {})
             sweep["testVels"] = [isoline.velocity_mps]
             sweep["targetAys"] = list(isoline.target_ays)

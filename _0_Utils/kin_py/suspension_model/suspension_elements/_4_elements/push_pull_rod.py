@@ -8,24 +8,9 @@ import numpy as np
 
 
 class PushPullRod:
-    """
-    ## Push/Pull Rod
+    """Push/pull rod, with an optional bellcrank and inboard rod.
 
-    Push/pull rod object
-
-    Parameters
-    ----------
-    outboard_rod : Link
-        Link representing push or pull rod. If connecting to bellcrank, share Node across Link and Bellcrank.
-
-    spring : Spring
-        Spring attached to rigid Link. Share Node between Link and Spring
-        
-    inboard_rod : Union[Link, None], optional
-        Link representing rod from bellcrank to Spring -> frame, by default None
-
-    bellcrank : Union[Bellcrank, None], optional
-        Bellcrank connecting outboard_rod to inboard_rod, by default None. Share Nodes with connecting elements.
+    Share nodes between connected elements. Give both inboard_rod and bellcrank, or neither.
     """
     """
     **kwargs : dict[str, Union[str, Link, str]]
@@ -76,11 +61,11 @@ class PushPullRod:
             diff_rot_mat = rotation_matrix(unit_vec=outb_p.rotation_direction, theta=np.sign(outb_p.rotation_angle) * 0.01 * np.pi / 180)
             differential_point = (np.matmul(diff_rot_mat, (outb_p - outb_p.rotation_origin).position) + outb_p.rotation_origin.position)
 
-        # Determine whether differential step in the rotation direction results in tension or compression
+        # A small step in the rotation direction shows tension or compression.
         initial_length = self.outboard_rod.initial_length
         differential_length = np.linalg.norm(np.array(self.outboard_rod.inboard_node.initial_position) - differential_point).__float__()
 
-        # Find direction of rotation
+        # Moment arm from the bellcrank pivot sets the rotation direction.
         r_vec = np.array(outb_p.initial_position) - np.array(self.bellcrank.pivot.position)
 
         if differential_length > initial_length:

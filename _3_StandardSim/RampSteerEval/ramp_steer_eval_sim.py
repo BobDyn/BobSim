@@ -44,7 +44,6 @@ DEFAULT_CONFIG_PATH = config_io.resolve(SEED_CONFIG_PATH)
 RampSteerEval_SIGNALS = [
     "steerExcess",
 
-    # Standard report signals
     "handwheelAngle",
     "leftSteerAngle",
     "rightSteerAngle",
@@ -386,10 +385,6 @@ class RampSteerEvalSim:
                 f"Got start_time={self.start_time}, stop_time={self.stop_time}."
             )
 
-    # ============================================================
-    # CASE GENERATION
-    # ============================================================
-
     def _trim_pre_steer_start(
         self,
         time: np.ndarray,
@@ -435,18 +430,10 @@ class RampSteerEvalSim:
         if max_ay <= 0.0:
             raise ValueError("sweep.maxAy (or ay_max) must be positive")
 
-        # One positive open-loop ramp-steer run per velocity.
-        # VehicleSim uses targetAy's sign to choose the handwheel direction;
-        # the useful limit is measured from model termination.
-        #
-        # The negative branch is symmetric, so we skip it to reduce runtime.
-        # Handwheel ramping and useful-limit termination are handled inside VehicleSim.
+        # One positive run per velocity. The targetAy sign sets the handwheel direction.
+        # The negative branch is symmetric, so it is skipped.
         target_ays = np.array([max_ay], dtype=float)
 
-        # VehicleSim owns its own defaults.
-        #
-        # simulation.init_parameters is only for explicit overrides.
-        #
         init_parameters = _as_override_dict(
             sim_cfg.get("init_parameters", {}),
             name="simulation.init_parameters",
@@ -460,25 +447,13 @@ class RampSteerEvalSim:
                 target_ay = float(target_ay_raw)
 
                 case: dict[str, Any] = {
-                    # =========================
-                    # Python-only metadata
-                    # =========================
                     "_mode": "open_loop_ramp_steer",
                     "_testVel": float(test_vel),
                     "_testAy": target_ay,
 
-                    # =========================
-                    # Modelica executable overrides
-                    # =========================
-                    #
-                    # These are the case-specific RampSteerEval inputs.
-                    # Controller behavior is owned by VehicleSim defaults unless
-                    # explicitly overridden through simulation.init_parameters.
                     "targetVel": float(test_vel),
                     "targetAy": target_ay,
 
-                    # Handled by ModelicaRunner._build_command(), not written into
-                    # the override file.
                     "startTime": self.start_time,
                     "stopTime": stop_time_case,
                 }
@@ -488,10 +463,6 @@ class RampSteerEvalSim:
                 cases.append(case)
 
         return cases
-
-    # ============================================================
-    # RUN
-    # ============================================================
 
     def run(self) -> dict[str, Any]:
         cases = self.build_cases()
@@ -786,17 +757,8 @@ class RampSteerEvalSim:
 
         return grouped_series
 
-    # ============================================================
-    # METRICS CSV
-    # ============================================================
-
     def write_metrics_csv(self, metrics: list[dict[str, Any]]) -> Path:
-        """
-        Write one RampSteerEval metrics CSV beside the PDF report.
-
-        This intentionally exports only the report-level metric rows, not
-        sweep data and not raw case data.
-        """
+        """Write the report-level metric rows to a CSV beside the PDF report."""
         report_cfg = self.config.get("report", {})
 
         report_path = Path(
@@ -826,10 +788,6 @@ class RampSteerEvalSim:
             writer.writerows(metrics)
 
         return output_path
-
-    # ============================================================
-    # SUMMARY
-    # ============================================================
 
     def summarize(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         if not results:
@@ -1228,7 +1186,6 @@ class RampSteerEvalSim:
         if ay.size == 0:
             raise ValueError("RampSteerEval produced no usable Ay samples.")
 
-        # Use measured Ay as the common analysis axis.
         ay_param = ay
 
         idx = np.argsort(ay_param)
@@ -1289,9 +1246,7 @@ class RampSteerEvalSim:
             torque,
         )
 
-        # Build smoothing-spline analysis channels so downstream fits and
-        # gradients are evaluated from clean response curves rather than raw
-        # solver samples.
+        # Fit smoothing splines so fits and gradients use clean curves, not raw solver samples.
         analysis_inputs = {
             "roadwheel": roadwheel,
             "handwheel": handwheel,

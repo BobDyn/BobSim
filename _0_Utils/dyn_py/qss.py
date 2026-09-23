@@ -56,10 +56,8 @@ def steady_state_residual(
 ) -> FloatArray:
     """Return all generalized accelerations constrained by QSS trim.
 
-    At constant body-frame velocities, suspension positions, unsprung positions,
-    and wheel speeds, every generalized acceleration is zero. Centripetal
-    acceleration is retained by the body-frame ``omega x velocity`` term in the
-    transient equations; it must not be manually added to this residual.
+    Do not add centripetal acceleration here. The body-frame ``omega x velocity``
+    term in the transient equations already includes it.
     """
 
     return model.evaluate(state, inputs).generalized_acceleration.copy()
@@ -76,11 +74,7 @@ def solve_steady_state(
     max_nfev: int = 400,
     tolerance: float = 1e-8,
 ) -> QSSResult:
-    """Solve a constant-speed, constant-radius QSS operating point.
-
-    The unknown set grows with fidelity while the constraint is unchanged:
-    all generalized accelerations from the transient model are zero.
-    """
+    """Solve a constant-speed, constant-radius QSS operating point."""
 
     return _solve_trim(
         model,
@@ -198,9 +192,8 @@ def _solve_trim(
 
     lower_array = np.asarray(lower, dtype=float)
     upper_array = np.asarray(upper, dtype=float)
-    # Kinematic steering is only an initial estimate. Tight corners at low speed
-    # can put that estimate beyond the physical roadwheel bound even though the
-    # correct outcome is simply an infeasible trim, not an optimizer exception.
+    # The kinematic steer guess can exceed the roadwheel bound in tight, slow
+    # corners. That must give an infeasible trim, not an optimizer exception.
     bounded_guess = np.clip(np.asarray(guess, dtype=float), lower_array, upper_array)
     solution = least_squares(  # type: ignore[operator]
         residual,
@@ -255,9 +248,8 @@ def solve_moment_state(
 ) -> QSSResult:
     """Solve vertical/longitudinal QSS while leaving lateral force and yaw moment free.
 
-    This is the operating condition needed by a yaw-moment diagram: sideslip
-    and steer are imposed, heave/roll/pitch and the rotating/unsprung states are
-    equilibrated, and lateral acceleration plus yaw moment are outputs.
+    Used for yaw-moment diagrams. Sideslip and steer are inputs. Lateral
+    acceleration and yaw moment are outputs.
     """
 
     if speed_mps <= 0.0:

@@ -62,13 +62,7 @@ MODULE_ROOTS = (
 )
 
 EXCLUDED_MODULES = (
-    # BobVis used to be a second desktop app, and every _1_VisualSim module was
-    # excluded to keep ~120 MB of Qt and VTK out of this executable. It is now
-    # the app's own Replay tab: what is left of _1_VisualSim is numpy and YAML,
-    # _5_App/visual.py imports it, and it ships.
-    #
-    # These stay excluded. Nothing imports them any more, and that is exactly
-    # when an accidental dependency would slip back in unnoticed.
+    # Nothing imports these. The exclusion stops an accidental import from adding Qt or VTK to the bundle.
     "PyQt5",
     "PyQt6",
     "PySide2",
