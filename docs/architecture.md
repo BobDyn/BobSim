@@ -56,11 +56,15 @@ GGV (grip-acceleration) and YMD (yaw moment diagram) generators. Quasi-steady ma
 Output: `generated_results/` (CSVs, PDFs)
 
 ### `_4_OptSim/` — sensitivities and DOE
-- **`StandardSens/`**: sweep StandardSim studies over parameter ranges
+- **`StandardSens/`**: sweep StandardSim studies over parameter ranges, solve for a
+  setup from target metrics (`solve_setup.py`), and compare named vehicles across
+  standard sims (`trade_study.py`). `pipeline/standards.py` is the registry of
+  VehicleSim standards one compiled vehicle can serve; `pipeline/variants.py` is the
+  content-addressed cache of compiled vehicles the solver and trade study share.
 - **`EnvelopeSens/`**: sweep envelope outputs (same ranges)
 - **`_shared/`**: console progress, tornado-plot rendering
 
-See [doe-reverse-engineering.md](doe-reverse-engineering.md) for reverse-lookup (target metrics → car parameters).
+See [doe-reverse-engineering.md](doe-reverse-engineering.md) for all three: the sweep and its reverse lookup, the setup solver, and trade studies.
 
 ### `_5_App/` — browser UI and HTTP server
 Main user entry point: `python -m _5_App.app` (port 8765). Pick/edit vehicle, generate Modelica, launch jobs, view logs and results.
