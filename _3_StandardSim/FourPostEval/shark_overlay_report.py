@@ -28,6 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from collections.abc import Sequence
 from typing import Any, Iterator
@@ -64,9 +65,22 @@ COLOR_BASELINE = "#2a78d6"
 COLOR_VARIANT = "#eb6834"
 INK = "#1a1a19"
 MUTED = "#6b6b68"
-GRID = "#e4e4e1"
-SURFACE = "#fcfcfb"
 WARN = "#a8341a"
+
+# Same typography and grid as the StandardSim reports.
+REPORT_RC = {
+    "font.family": "STIXGeneral",
+    "mathtext.fontset": "stix",
+    "font.size": 12,
+    "axes.titlesize": 11,
+    "axes.labelsize": 10,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "legend.fontsize": 9,
+    "axes.grid": True,
+    "grid.linestyle": "--",
+    "grid.alpha": 0.4,
+}
 
 # How much a curve must move before it is worth an engineer's attention, in the
 # curve's own units. Ranking on delta-over-baseline-range alone is unusable on a
@@ -272,16 +286,10 @@ def curve_metrics(
 
 
 def _style_axis(ax: Any, xlabel: str, ylabel: str, title: str) -> None:
-    ax.set_title(title, fontsize=9, color=INK, pad=6, loc="left")
-    ax.set_xlabel(xlabel, fontsize=7.5, color=MUTED)
-    ax.set_ylabel(ylabel, fontsize=7.5, color=MUTED)
-    ax.grid(True, color=GRID, linewidth=0.8, zorder=0)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     ax.set_axisbelow(True)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    for spine in ("left", "bottom"):
-        ax.spines[spine].set_color(GRID)
-    ax.tick_params(colors=MUTED, labelsize=7, length=0)
 
 
 def _plot_curve(
@@ -325,23 +333,25 @@ def _plot_curve(
     if identical:
         ax.text(
             0.5, 0.06, "curves coincide - axle unchanged by this import",
-            transform=ax.transAxes, fontsize=6.5, color=MUTED, ha="center",
+            transform=ax.transAxes, fontsize=8, color=MUTED, ha="center",
         )
     if show_legend:
-        ax.legend(frameon=False, fontsize=7, labelcolor=INK)
+        ax.legend()
 
 
 def _text_page(pdf: Any, title: str, lines: Sequence[str], *, warn: bool = False) -> None:
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(11.0, 8.5), facecolor=SURFACE)
-    fig.text(0.04, 0.94, title, fontsize=15, color=INK, va="top", ha="left")
-    body = "\n".join(lines)
+    fig = plt.figure(figsize=(11.0, 8.5))
+    fig.text(0.5, 0.95, title, ha="center", va="top", fontsize=18, weight="bold")
+    wrapped = []
+    for line in lines:
+        wrapped += textwrap.wrap(line, width=120, subsequent_indent="    ") or [""]
     fig.text(
-        0.04, 0.88, body, fontsize=9, color=WARN if warn else MUTED,
-        va="top", ha="left", wrap=True,
+        0.08, 0.87, "\n".join(wrapped), fontsize=11, color=WARN if warn else INK,
+        va="top", ha="left", linespacing=1.4,
     )
-    pdf.savefig(fig, facecolor=SURFACE)
+    pdf.savefig(fig)
     plt.close(fig)
 
 
@@ -356,10 +366,9 @@ def _grid_page(
 ) -> None:
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(11.0, 8.5), facecolor=SURFACE)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(11.0, 8.5))
     axes = np.atleast_2d(axes)
     for ax in axes.flat:
-        ax.set_facecolor(SURFACE)
         ax.set_visible(False)
 
     for index, (meta, axle) in enumerate(panels):
@@ -367,9 +376,9 @@ def _grid_page(
         ax.set_visible(True)
         _plot_curve(ax, payloads, meta, axle, show_legend=index == 0)
 
-    fig.suptitle(title, fontsize=12, color=INK, x=0.02, ha="left", y=0.985)
+    fig.suptitle(title, fontsize=16, y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.955))
-    pdf.savefig(fig, facecolor=SURFACE)
+    pdf.savefig(fig)
     plt.close(fig)
 
 
@@ -382,13 +391,16 @@ def _table_page(
     subtitle: str = "",
     col_widths: Sequence[float] | None = None,
 ) -> None:
-    """Render a real table: ruled header, aligned columns, zebra striping."""
+    """Render a ruled table in the StandardSim summary-page style."""
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(11.0, 8.5), facecolor=SURFACE)
-    fig.text(0.04, 0.95, title, fontsize=14, color=INK, va="top", ha="left")
+    fig = plt.figure(figsize=(11.0, 8.5))
+    fig.text(0.5, 0.95, title, ha="center", va="top", fontsize=18, weight="bold")
     if subtitle:
-        fig.text(0.04, 0.905, subtitle, fontsize=8, color=MUTED, va="top", ha="left")
+        fig.text(
+            0.5, 0.9, "\n".join(textwrap.wrap(subtitle, width=150)),
+            fontsize=9, color=MUTED, va="top", ha="center",
+        )
 
     ax = fig.add_axes((0.04, 0.05, 0.92, 0.82))
     ax.axis("off")
@@ -400,24 +412,25 @@ def _table_page(
         loc="upper center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(7)
+    table.set_fontsize(8.5)
     table.scale(1.0, 1.25)
 
+    last_row = max(row for row, _ in table.get_celld())
     for (row, col), cell in table.get_celld().items():
-        cell.set_edgecolor(GRID)
-        cell.set_linewidth(0.6)
+        cell.set_facecolor("none")
+        cell.set_edgecolor("black")
         if row == 0:
-            cell.set_facecolor(GRID)
-            cell.set_text_props(color=INK, fontweight="bold")
-            cell.set_height(cell.get_height() * 1.1)
+            cell.visible_edges = "TB"
+            cell.set_linewidth(1.2)
+            cell.set_text_props(fontweight="bold")
         else:
-            cell.set_facecolor(SURFACE if row % 2 else "#f4f4f1")
-            cell.set_text_props(color=INK)
+            cell.visible_edges = "B" if row == last_row else ""
+            cell.set_linewidth(1.0)
         if col == 0:
             cell.set_text_props(ha="left")
             cell.get_text().set_x(0.02)
 
-    pdf.savefig(fig, facecolor=SURFACE)
+    pdf.savefig(fig)
     plt.close(fig)
 
 
@@ -441,6 +454,8 @@ def build_report(
     import matplotlib.pyplot as plt  # noqa: F401  (backend must be set first)
     from matplotlib.backends.backend_pdf import PdfPages
 
+    from _0_Utils.reporting.sections import add_title_page
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     publishable = [row for row in metrics if not row["withheld"]]
     headline = [
@@ -449,24 +464,40 @@ def build_report(
 
     tol_text = ", ".join(f"{unit}: {value:g}" for unit, value in sorted(tolerances.items()))
 
-    with PdfPages(out_path) as pdf:
-        cover = [f"{BASELINE_LABEL} (vehicle.yml) vs {VARIANT_LABEL} kinematic curves.", ""]
-        cover += [f"- {note}" for note in notes]
-        cover += [
-            "",
-            f"Engineering tolerances used for ranking - {tol_text}.",
-            "A curve is called significant when its peak change exceeds one tolerance.",
-            "",
-            "Design position (zero) is an explicit sample point in both sweeps: "
-            f"bump {len(BUMP_SWEEP_M)} points over "
-            f"{min(BUMP_SWEEP_M) * 1000.0:+.0f}..{max(BUMP_SWEEP_M) * 1000.0:+.0f} mm, "
-            f"roll {len(ROLL_SWEEP_DEG)} points over "
-            f"{min(ROLL_SWEEP_DEG):+.2f}..{max(ROLL_SWEEP_DEG):+.2f} deg.",
-        ]
+    sweep_text = (
+        f"Bump {len(BUMP_SWEEP_M)} points over "
+        f"{min(BUMP_SWEEP_M) * 1000.0:+.0f}..{max(BUMP_SWEEP_M) * 1000.0:+.0f} mm, "
+        f"roll {len(ROLL_SWEEP_DEG)} points over "
+        f"{min(ROLL_SWEEP_DEG):+.2f}..{max(ROLL_SWEEP_DEG):+.2f} deg, "
+        f"steer {len(STEER_SWEEP_M)} points over "
+        f"{min(STEER_SWEEP_M) * 1000.0:+.0f}..{max(STEER_SWEEP_M) * 1000.0:+.0f} mm rack "
+        "(front axle only). Zero is a sample point in every sweep."
+    )
+    cover_notes = [
+        f"Baseline: {BASELINE_LABEL} (vehicle.yml). Variant: {VARIANT_LABEL}.",
+        f"Ranking tolerances: {tol_text}. A curve is significant when its peak "
+        "change exceeds one tolerance.",
+        sweep_text,
+        (
+            f"Datum gate closed: {len(withheld)} z-dependent curves withheld."
+            if withheld else "Datum gate open: all curves published."
+        ),
+        "Full run notes are on the next page.",
+    ]
+
+    with matplotlib.rc_context(REPORT_RC), PdfPages(out_path) as pdf:
+        add_title_page(pdf, {"report": {
+            "brand": "BobSim",
+            "title": "SHARK Kinematic Overlay",
+            "subtitle": f"{VARIANT_LABEL} suspension kinematics against the {BASELINE_LABEL} baseline",
+            "notes": cover_notes,
+        }})
+
+        details = [f"- {note}" for note in notes]
         if withheld:
-            cover += ["", "DATUM GATE CLOSED - the following curves are withheld:"]
-            cover += [f"  - {curve_id}" for curve_id in sorted(withheld)]
-        _text_page(pdf, "SHARK import overlay", cover, warn=bool(withheld))
+            details += ["", "Withheld curves (datum gate closed):"]
+            details += [f"  - {curve_id}" for curve_id in sorted(withheld)]
+        _text_page(pdf, "Run Notes", details, warn=bool(withheld))
 
         # Summary table: design-position values and working-range slopes. Paginated
         # because 26 curves across two axles is 52 rows, which does not fit a page.
