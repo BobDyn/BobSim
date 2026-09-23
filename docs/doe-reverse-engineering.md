@@ -21,6 +21,7 @@ samples. Leave the overrides off to use the full sweep configured in
 | `DOE_METHOD` | `lhs` or `interval_splice` |
 | `DOE_SAMPLES` | LHS sample count, plus the baseline |
 | `DOE_INTERVALS` | `interval_splice` steps per variable |
+| `DOE_SCOPE` | `all` (default), `setup`, or `architecture` — see [Sweep scope](#sweep-scope-setup-vs-architecture) |
 
 The overrides rewrite the generated `_doe_config.yaml`, so it will show as
 modified afterwards. `git checkout _4_OptSim/StandardSens/configs/_doe_config.yaml`
@@ -105,6 +106,97 @@ loudly at compile; a wrong `path` silently sweeps nothing.
 The `architecture` and `baseline_mo` paths are relative to the config file, not
 the repo root.
 
+### Sweep scope: setup vs. architecture
+
+Each `sweep.variables` entry may carry a `scope:` tag, splitting the 23-variable
+sweep into the two studies it otherwise conflates:
+
+| `scope:` | What it holds | Tagged |
+| --- | --- | --- |
+| `setup` | knobs adjustable on the built car between sessions — front/rear toe, camber, spring package, damper rate, anti-roll bar rate | 10 |
+| `architecture` | properties fixed once the car exists — sprung and unsprung masses, sprung CG, driver inertias, body torsional stiffness | 9 |
+| *(omitted)* | genuinely both, or neither — swept in **every** scope | 4 |
+
+So `DOE_SCOPE=setup` sweeps **14** variables (10 tagged + 4 untagged),
+`DOE_SCOPE=architecture` sweeps **13** (9 + 4), and `all` sweeps all 23.
+
+Leaving `scope:` off is deliberately permissive: `_variable_in_scope()` treats an
+untagged variable as a member of every scope, so a newly added entry is never
+silently dropped from a scoped sweep. The failure mode is a parameter swept where
+it didn't need to be — visible as an extra column in the results table — rather
+than one missing from it, which is not. The partition is a vehicle-dynamics
+judgement call and lives entirely in the YAML; `generate_configs.py` hardcodes no
+variable lists.
+
+Two of the four untagged entries are untagged on purpose, after review, and the
+reasoning is worth keeping so it isn't re-litigated:
+
+- **`aero.load_scale`** applies `operation: scale` identically to `dragTable`,
+  `downforceTable`, `mxTable`, `myTable` and `mzTable`, so it holds aero balance
+  and L/D exactly constant while moving downforce level. No wing adjustment
+  behaves that way. It represents air density, a whole-configuration swap, or
+  CFD/tunnel map uncertainty — neither a paddock knob nor a fixed property.
+- **`driver_mass.mass_kg`, `driver_mass.cg_m.x`, `driver_mass.cg_m.z`** are both.
+  Teams run different drivers between skidpad, autocross and endurance, and seat
+  inserts and pedal-box adjustment move driver CG the same afternoon. `cg_m.x` is
+  also the second-strongest influence on understeer gradient in the whole set
+  (~0.27 deg/g across its range), so dropping it from a setup sweep would hide a
+  first-order effect. The driver *inertia* entries (`ixx`/`iyy`/`izz`) stay
+  `architecture`.
+
+Select a scope with `DOE_SCOPE`, or with the two wrapper targets:
+
+```bash
+make opt-standard-setup                    # = make opt-standard DOE_SCOPE=setup
+make opt-standard-architecture             # = make opt-standard DOE_SCOPE=architecture
+make opt-standard DOE_SCOPE=setup DOE_METHOD=lhs DOE_SAMPLES=30
+```
+
+`DOE_SCOPE` reaches the run as `BOBSIM_DOE_SCOPE` (the `DOE_ENV` block in the
+makefile). `_resolve_sweep_scope()` prefers an explicit `scope=` argument to
+`refresh_doe_config()`, then the env var, then `all` — so every existing
+invocation keeps sweeping all 23 variables. Any other value raises before a
+single variant is generated, naming the three legal ones.
+
+**Why it exists.** "Prescribe target metrics, solve for a setup" is only
+actionable over parameters you can actually turn. Sweeping driver Izz and body
+torsional stiffness jointly with front toe spends the sample budget on axes the
+answer cannot act on, and the reverse lookup then hands back a car you would
+have to rebuild rather than a setup sheet. Sweep `setup` when you want the setup;
+sweep `architecture` when you are deciding what to build.
+
+**A scoped sweep is traceable, but only partly.** `_doe_config.yaml` records the
+resolved scope as a top-level `scope:` key (`scope: all` in the checked-in file);
+the per-variable `scope:` tags are stripped, since scope is a generation-time
+filter. `search.py` reads that key back with `load_sweep_scope()` and
+`_warn_if_results_scope_is_narrow()` warns in two situations:
+
+- the config names a scope other than `all` — every parameter outside it was
+  pinned at baseline and was never a free variable;
+- the config names `all` (or predates the key, which reads as unknown rather than
+  unrestricted) but the results table is missing parameters the config lists.
+  That is what restoring `_doe_config.yaml` from git after a scoped run looks
+  like: the config claims every parameter, the population only covers some.
+
+The second case is **inferred from the table's columns**, not read from
+provenance: the aggregated results table still records no scope of its own. So
+the guard can tell you a population is narrower than the config claims, but not
+which scope produced it, and it would miss a scoped run whose columns happened to
+cover everything the config names. Recording the scope alongside the results is a
+known follow-up, deliberately not part of this change. That condition also
+currently trips more than one warning line — the older missing-columns message
+covers the same ground — so read the condition, not the count.
+
+`make opt-standard-setup` then `make opt-search` therefore reports 14 parameters
+and says why. `python -m StandardSens.pipeline.generate_configs` prints
+`scope: setup (14 variables)`; the pipeline run itself does not echo it.
+
+Run `make clean-opt` when you change scope. The variant count changes with the
+scope, so a rerun against an existing population stops rather than quietly
+reusing it — both the population-count check in `prepare_variants()` and the
+pipeline-hash check tell you to clean first, and it is not worth working out
+which one caught you.
+
 ### Editing `configs/build_template.mos`
 
 That file is filled in with Python's `str.format()`, so **every literal brace
@@ -151,6 +243,11 @@ PYTHONPATH=_4_OptSim:. python -m StandardSens.pipeline.search \
     --top 3
 ```
 
+`PYTHONPATH` uses the platform's own separator. On Windows, outside the
+container, that is `;` — `PYTHONPATH="_4_OptSim;."` — and the `:` form above
+fails with `No module named 'StandardSens'`, which reads like a broken checkout
+rather than a path problem.
+
 It reads the parquet, or falls back to a sibling `.csv` if no parquet exists.
 If neither is present you get `Results not found ... Has the pipeline run?` —
 run `make opt-standard` first.
@@ -163,17 +260,64 @@ useful for ranking candidates against each other, not as a physical error.
 ### Reading the result honestly
 
 This is nearest-neighbour lookup over a finite sampled population, not an
-optimizer. Three limits to keep in front of you:
+optimizer. `search.py` runs four guards on every query and prints what they find
+to **stderr**. All four are advisory: none of them raise, drop a row, or change
+the returned frame. The variant you get under four warnings is the same variant
+you would have got in silence — so if you send stderr to `/dev/null`, or read
+only the formatted block on stdout, you have discarded the only thing marking the
+answer as unusable.
 
-- **The answer is only as good as the population.** If your targets sit outside
-  the sampled ranges, you get the closest edge variant with a large distance,
-  not a warning. Check `distance` and check the target against the `range`
-  bounds in `_doe_config.yaml`.
+| Guard (`pipeline/search.py`) | Fires when | Reports |
+| --- | --- | --- |
+| `_warn_targets_outside_population` | a target is below its metric column's `min()` or above its `max()` | the observed `[low, high]` bounds, and the overshoot past the nearer edge in **population-widths** — overshoot ÷ that column's sampled range, the same normalization the KDTree uses — then points you at the `range` bounds in `configs/vehicle_architecture.yaml` |
+| `_warn_population_too_small` | the table has fewer rows than `MIN_USEFUL_POPULATION` (10) | the row count *and* the swept-parameter count, i.e. how under-determined the lookup and any fitted surface are |
+| `_warn_if_results_are_stale` | the results file's mtime predates `_doe_config.yaml`, `vehicle_architecture.yaml`, `compiler_config.yaml`, `aggregator_config.yaml`, or the repo-root `vehicle.yml` | which of those inputs is newer than the table |
+| `_warn_if_results_scope_is_narrow` | the config names a scope other than `all`, **or** names `all` while the table is missing parameters the config lists | that the answer rests on a scope-restricted population — see [Sweep scope](#sweep-scope-setup-vs-architecture) for what it can and cannot tell you |
+
+An older warning also lists any swept parameter that has no column in the results
+table, then leaves it out of the report. It overlaps the scope guard's second
+case, so one condition can produce more than one warning line; read the
+condition, not the number of lines. It only fires when a parameter is *absent*,
+which is why the mtime guard exists — a config edit that keeps the same parameter
+names leaves a stale table looking valid.
+
+With a single target metric, the population-widths number and the reported
+`distance` are the same quantity. With several, `distance` is the Euclidean
+combination across normalized dimensions, while each guard line is per-metric.
+
+#### The query that motivated the guards
+
+```bash
+make opt-search METRICS="SteadyStateEval_understeer_gradient_deg_per_g=0.05"
+```
+
+Run against a four-variant smoke population, this returned `variant_0000` with
+`distance: 4.349424`. That population spanned `[0.278154, 0.330610]` for the
+metric, and the target was `0.05`: the number is not physical error and not a
+near miss in awkward units — it is **4.35 population-widths outside the range
+the sweep ever visited**, attached to a variant whose actual understeer gradient
+was 0.278154 deg/g. Before the guards this printed with no warning at all, and
+read like an answer.
+
+Those figures are one recorded run. Re-sweep and the bounds and the distance
+move; the shape of the failure does not, so check the warnings rather than
+matching the numbers.
+
+The same table holds **4 variants against 23 swept parameters**. That is what
+`DOE_SAMPLES=3` produces — a smoke-test population, not a design population.
+Four rows cannot resolve 23 axes, so the "nearest" variant is close to arbitrary
+regardless of what you ask for. Omit `DOE_SAMPLES` for the full sweep before
+believing any answer.
+
+Two limits the guards only partly cover:
+
 - **The reported parameters are the swept ones only.** `search.py` derives them
   from `variables[].path` in `_doe_config.yaml`, so it reports exactly what the
-  sweep varied (23 parameters as configured today). Everything else in the
-  returned variant is baseline. If the results table predates a config change,
-  the search warns about the parameters it could not report.
+  sweep varied — 23 parameters at the default scope, 14 or 13 at a scoped one.
+  Everything else in the returned variant sits at baseline. The scope guard tells
+  you *that* the set was narrowed; nothing tells you which baseline values the
+  rest of the car was pinned at, so read the variant's own definition under
+  `_4_OptSim/Build/StandardSens/population/` if it matters.
 - **Under-constrained targets have many answers.** Naming one metric will find a
   variant that matches it and says nothing about the rest of the car. Use
   `--top`/`SEARCH_TOP` to see the spread of candidates rather than trusting the
@@ -187,7 +331,9 @@ Treat the result as a starting point, then run the real study
 Edit `configs/vehicle_architecture.yaml` — **not** `_doe_config.yaml`, which is
 generated from it by `pipeline/generate_configs.py` and overwritten on every
 run. Each entry needs a `vehicle.yml` `path` plus the `block`/`param`(/`index`)
-that locate it in the Modelica record.
+that locate it in the Modelica record. Add a `scope:` too — without one the
+variable is swept in *every* scope, which is safe but probably not what you
+meant.
 
 The sampler, aggregator, and reverse lookup all key off `variables[].path`, so
 nothing else needs updating. Rerun `make opt-standard` to rebuild the table;

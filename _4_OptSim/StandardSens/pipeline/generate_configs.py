@@ -3,6 +3,13 @@
 The vehicle architecture YAML is the source of truth for which baseline record,
 sampling controls, and sweepable parameter blocks should be used. This script
 writes the derived _doe_config.yaml so the rest of the DOE pipeline can stay simple.
+
+The sweep is also partitioned by *scope*: `setup` for knobs adjustable on the
+built car, `architecture` for properties fixed once it exists, and untagged for
+variables belonging to both or neither. Which variable belongs to which lives in
+the architecture YAML, never here. The resolved scope is written to
+_doe_config.yaml as a top-level `scope` key so downstream consumers — the
+reverse lookup in particular — can tell a scoped population from a full one.
 """
 
 from __future__ import annotations
@@ -22,6 +29,21 @@ CONFIG_DIR = STANDARD_DIR / "configs"
 ARCHITECTURE_CONFIG = CONFIG_DIR / "vehicle_architecture.yaml"
 DOE_CONFIG = CONFIG_DIR / "_doe_config.yaml"
 COMPILER_CONFIG = CONFIG_DIR / "compiler_config.yaml"
+
+SCOPE_ENV_VAR = "BOBSIM_DOE_SCOPE"
+
+# Sweep scopes. `all` is the default and sweeps every variable, so existing
+# invocations and the committed _doe_config.yaml are unaffected. The other two
+# split the study the 23-variable sweep conflates: setup knobs that can be
+# changed on the built car, versus architecture properties that cannot.
+#
+# The membership of each scope is declared per variable in
+# vehicle_architecture.yaml (`scope:`) and is deliberately *not* listed here —
+# the partition is a vehicle-dynamics judgement call, so it must be editable
+# without touching Python.
+SWEEP_SCOPE_ALL = "all"
+SWEEP_SCOPES = (SWEEP_SCOPE_ALL, "setup", "architecture")
+DEFAULT_SWEEP_SCOPE = SWEEP_SCOPE_ALL
 
 
 def _relpath_posix(target: Path | str, start: Path | str) -> str:
@@ -47,6 +69,53 @@ def _env_int(name: str) -> int | None:
         return int(raw)
     except ValueError:
         raise ValueError(f"{name} must be an integer, got {raw!r}") from None
+
+
+def _validate_scope(raw: str, source: str) -> str:
+    """Normalize a sweep scope, naming the legal values when it is wrong."""
+    scope = raw.strip().lower()
+    if scope not in SWEEP_SCOPES:
+        raise ValueError(
+            f"{source} must be one of {', '.join(SWEEP_SCOPES)}, got {raw!r}"
+        )
+    return scope
+
+
+def _resolve_sweep_scope(scope: str | None = None) -> str:
+    """Pick the sweep scope: explicit argument, then env var, then the default.
+
+    Same precedence as the sampling overrides — an explicit call wins over
+    BOBSIM_DOE_SCOPE, which wins over the checked-in behaviour of `all`.
+    """
+    if scope is not None:
+        return _validate_scope(scope, "sweep scope")
+    raw = _env_str(SCOPE_ENV_VAR)
+    if raw is None:
+        return DEFAULT_SWEEP_SCOPE
+    return _validate_scope(raw, SCOPE_ENV_VAR)
+
+
+def _variable_in_scope(spec: dict[str, Any], scope: str) -> bool:
+    """Does this sweep variable belong to the requested scope?
+
+    A variable with no `scope:` key belongs to *every* scope. An untagged or
+    newly added entry is therefore never silently dropped from a scoped sweep:
+    the worst case is that it gets swept when it did not need to be, which is
+    visible in the results table, rather than missing from it, which is not.
+    """
+    declared = spec.get("scope")
+    if declared is None:
+        return True
+
+    # Validated even when the requested scope is `all`, so a misspelled tag
+    # fails on the default sweep that CI regenerates rather than lying dormant
+    # until someone asks for a scoped one.
+    declared_scope = _validate_scope(
+        str(declared), f"sweep variable {spec.get('path')!r} scope"
+    )
+    if scope == SWEEP_SCOPE_ALL:
+        return True
+    return declared_scope in (scope, SWEEP_SCOPE_ALL)
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -106,6 +175,7 @@ def build_doe_config(
     template_cfg_path: Path,
     architecture_cfg: dict[str, Any],
     architecture_config_path: Path,
+    scope: str | None = None,
 ) -> dict[str, Any]:
     vehicle_cfg = template_cfg.get("vehicle", {})
     if not isinstance(vehicle_cfg, dict):
@@ -136,10 +206,14 @@ def build_doe_config(
     if not isinstance(raw_variables, list) or not raw_variables:
         raise ValueError("architecture YAML sweep.variables must be a non-empty list")
 
+    sweep_scope = _resolve_sweep_scope(scope)
+
     variables: list[dict[str, Any]] = []
     for spec in raw_variables:
         if not isinstance(spec, dict):
             raise TypeError("Each sweep variable must be a mapping")
+        if not _variable_in_scope(spec, sweep_scope):
+            continue
         for field in ("path", "range"):
             if field not in spec:
                 raise KeyError(f"Missing sweep variable field {field!r}")
@@ -180,7 +254,8 @@ def build_doe_config(
 
     if not variables:
         raise ValueError(
-            f"No DOE sweep variables were enabled for architecture {vehicle_name!r}"
+            f"No DOE sweep variables were enabled for architecture {vehicle_name!r} "
+            f"at scope {sweep_scope!r}"
         )
 
     sampling_cfg = architecture_cfg.get("sampling", {})
@@ -212,6 +287,11 @@ def build_doe_config(
             "source": _relpath_posix(architecture_config_path, STANDARD_DIR),
         },
         "baseline_mo": _relpath_posix(record_path, DOE_CONFIG.parent),
+        # The resolved scope is recorded so a results table can be traced back
+        # to the sweep that produced it. Without it, restoring this generated
+        # file from git after a scoped run leaves the reverse lookup reporting
+        # every variable as swept when only a subset was.
+        "scope": sweep_scope,
         "variables": variables,
         "sampling": sampling_cfg,
         "samples": samples,
@@ -223,8 +303,13 @@ def refresh_doe_config(
     architecture_config_path: Path = ARCHITECTURE_CONFIG,
     compiler_config_path: Path = COMPILER_CONFIG,
     doe_config_path: Path = DOE_CONFIG,
+    scope: str | None = None,
 ) -> dict[str, Any]:
-    """Generate the active DOE config from the selected vehicle architecture."""
+    """Generate the active DOE config from the selected vehicle architecture.
+
+    `scope` restricts which sweep variables are written; it defaults to
+    BOBSIM_DOE_SCOPE, and to `all` when that is unset.
+    """
     architecture_cfg = load_yaml(architecture_config_path)
     template_ref = architecture_cfg.get("vehicle_template")
     if template_ref is None:
@@ -264,6 +349,7 @@ def refresh_doe_config(
         template_cfg_path=template_cfg_path,
         architecture_cfg=architecture_cfg,
         architecture_config_path=architecture_config_path,
+        scope=scope,
     )
 
     doe_config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,4 +362,5 @@ def refresh_doe_config(
 if __name__ == "__main__":
     cfg = refresh_doe_config()
     print(f"Generated DOE config: {DOE_CONFIG}")
+    print(f"  scope: {_resolve_sweep_scope()} ({len(cfg['variables'])} variables)")
     print(cfg)
