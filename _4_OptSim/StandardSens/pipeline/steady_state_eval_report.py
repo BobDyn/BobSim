@@ -10,13 +10,20 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = STANDARD_DIR.parent.parent
 BASE_CONFIG = REPO_ROOT / "_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml"
+
+
+class Isoline(NamedTuple):
+    """One constant-speed line of target lateral accelerations."""
+
+    velocity_mps: float
+    target_ays: tuple[float, ...]
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -39,8 +46,18 @@ def build_report_config(
     build_dir: Path,
     exec_name: str,
     base_config_path: Path = BASE_CONFIG,
+    init_parameters: dict[str, float] | None = None,
+    isoline: Isoline | None = None,
+    max_workers: int | None = None,
+    render_report: bool = True,
 ) -> tuple[Path, Path]:
     """Write a temporary SteadyStateEval config for one DOE variant.
+
+    `init_parameters` are Modelica parameter overrides applied to every case, so
+    one compiled executable can stand in for a vehicle it was not compiled as.
+    `isoline` swaps the standard's four-isoline matrix for a single one, without
+    touching the shared standard's own config or its regression baselines.
+    `render_report=False` skips the PDF; the metrics CSV is written either way.
 
     Returns:
         (config_path, canonical_metrics_csv_path)
@@ -62,12 +79,30 @@ def build_report_config(
     simulation["build_dir"] = str(build_dir)
     simulation["exec_name"] = exec_name
 
-    # Leave execution settings exactly as defined in the standard-sim config.
-    # That config controls whether velocity cases run serially or in parallel.
+    if init_parameters:
+        merged = dict(simulation.get("init_parameters") or {})
+        merged.update({name: float(value) for name, value in init_parameters.items()})
+        simulation["init_parameters"] = merged
+
+    if isoline is not None:
+        # These three move together: the cap and the exported-metric velocity
+        # must name the one isoline being run, or the report selects nothing.
+        sweep = config.setdefault("sweep", {})
+        sweep["testVels"] = [isoline.velocity_mps]
+        sweep["targetAys"] = list(isoline.target_ays)
+        sweep["maxAyByVelocity"] = {isoline.velocity_mps: max(isoline.target_ays)}
+        report["metric_target_velocity_mps"] = isoline.velocity_mps
+
+    # Otherwise execution settings stay exactly as the standard-sim config has
+    # them; that config controls whether cases run serially or in parallel.
+    if max_workers is not None:
+        execution["parallel"] = True
+        execution["max_workers"] = int(max_workers)
 
     # Keep the report output location anchored to the variant so the generated
-    # PDF and metrics CSV live beside the DOE result artifacts.
-    report["enabled"] = True
+    # PDF and metrics CSV live beside the DOE result artifacts. The CSV path is
+    # derived from output_path whether or not the PDF is rendered.
+    report["enabled"] = render_report
     report["output_path"] = str(
         variant_dir / "results" / "SteadyStateEval" / "steady_state_eval_report.pdf"
     )
@@ -87,6 +122,10 @@ def run_report(
     exec_name: str,
     timeout: int | None = None,
     base_config_path: Path = BASE_CONFIG,
+    init_parameters: dict[str, float] | None = None,
+    isoline: Isoline | None = None,
+    max_workers: int | None = None,
+    render_report: bool = True,
 ) -> Path:
     """Run the SteadyStateEval report wrapper and return the metrics CSV path."""
     config_path, metrics_csv = build_report_config(
@@ -94,6 +133,10 @@ def run_report(
         build_dir=build_dir,
         exec_name=exec_name,
         base_config_path=base_config_path,
+        init_parameters=init_parameters,
+        isoline=isoline,
+        max_workers=max_workers,
+        render_report=render_report,
     )
 
     cmd = [
