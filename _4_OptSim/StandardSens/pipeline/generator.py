@@ -40,6 +40,11 @@ def _load_metrics_csv(path: Path | None = None) -> dict[str, float]:
             f"Searched:\n  {searched}"
         )
 
+    return read_metrics_csv(path)
+
+
+def read_metrics_csv(path: Path) -> dict[str, float]:
+    """Read a report's `metric,value` CSV; anything unparsable becomes NaN."""
     metrics: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -224,27 +229,55 @@ def substitute_variable(
 
     Falls back to the original scalar block/param behavior for old configs.
     """
-    if "targets" in spec:
-        for target in spec["targets"]:
-            target_value = value
-            if target.get("operation") == "static_balance_free_length":
-                if context is None:
-                    raise ValueError("static_balance_free_length requires generator context")
-                target_value = _static_balance_free_length(value, target, context)
-            elif "range" in target:
-                src_lo, src_hi = spec["range"]
-                dst_lo, dst_hi = target["range"]
-                if src_hi == src_lo:
-                    raise ValueError(f"Cannot map zero-width range for {spec['path']}")
-                fraction = (value - src_lo) / (src_hi - src_lo)
-                target_value = dst_lo + fraction * (dst_hi - dst_lo)
-            target_value *= float(target.get("scale", 1.0))
-            if target.get("operation") == "scale":
-                text = scale_value(text, target, target_value)
-            else:
-                text = replace_value(text, target, target_value)
-        return text
-    return replace_value(text, spec, value * float(spec.get("scale", 1.0)))
+    for target, target_value in resolve_targets(spec, value, context):
+        if "targets" in spec and target.get("operation") == "scale":
+            text = scale_value(text, target, target_value)
+        else:
+            text = replace_value(text, target, target_value)
+    return text
+
+
+def resolve_targets(
+    spec: dict,
+    value: float,
+    context: dict[str, Any] | None = None,
+) -> list[tuple[dict, float]]:
+    """Return every (target spec, Modelica-side value) a swept value fans out to.
+
+    One `vehicle.yml` value can drive several record parameters — a spring rate
+    sets both the spring table and the free length that holds ride height. This
+    is the single place that mapping is computed, so writing a variant.mo and
+    overriding a compiled executable cannot disagree about what a value means.
+    """
+    if "targets" not in spec:
+        return [(spec, value * float(spec.get("scale", 1.0)))]
+
+    resolved: list[tuple[dict, float]] = []
+    for target in spec["targets"]:
+        target_value = value
+        if target.get("operation") == "static_balance_free_length":
+            if context is None:
+                raise ValueError("static_balance_free_length requires generator context")
+            target_value = _static_balance_free_length(value, target, context)
+        elif "range" in target:
+            src_lo, src_hi = spec["range"]
+            dst_lo, dst_hi = target["range"]
+            if src_hi == src_lo:
+                raise ValueError(f"Cannot map zero-width range for {spec['path']}")
+            fraction = (value - src_lo) / (src_hi - src_lo)
+            target_value = dst_lo + fraction * (dst_hi - dst_lo)
+        target_value *= float(target.get("scale", 1.0))
+        resolved.append((target, target_value))
+    return resolved
+
+
+def build_context(cfg: dict, config_path: Path) -> dict[str, Any]:
+    """Load what target resolution needs: the vehicle and the FourPost ratios."""
+    template_path = (config_path.parents[1] / cfg["architecture"]["template"]).resolve()
+    return {
+        "vehicle": load_config(template_path),
+        "four_post_metrics": _load_metrics_csv(),
+    }
 
 
 def generate_variants(
@@ -262,12 +295,7 @@ def generate_variants(
     config_dir = config_path.parent
     mo_path = (config_dir / cfg["baseline_mo"]).resolve()
     base_text = mo_path.read_text()
-    template_path = (config_path.parents[1] / cfg["architecture"]["template"]).resolve()
-    vehicle = load_config(template_path)
-    context = {
-        "vehicle": vehicle,
-        "four_post_metrics": _load_metrics_csv(),
-    }
+    context = build_context(cfg, config_path)
 
     var_lookup = {var["path"]: var for var in cfg["variables"]}
 

@@ -1,0 +1,49 @@
+# Target-metric setup solver. See docs/doe-reverse-engineering.md.
+#
+#   make opt-solve
+#   make opt-solve TARGETS="understeer_gradient_deg_per_g=0.31 roll_gradient_deg_per_g=0.85"
+
+# What to hit, as SteadyStateEval metric names. `TARGETS=...` on the command line
+# replaces this block outright rather than merging with it.
+#
+# With the default knobs this car reaches roughly 0.31-0.33 deg/g understeer and
+# 0.80-0.90 deg/g roll in the linear band. A target the knobs cannot reach comes
+# back UNREACHABLE with the limiting knobs named.
+targets:
+  understeer_gradient_deg_per_g: 0.31
+  roll_gradient_deg_per_g: 0.85
+
+# What the solver may turn. Only `scope: setup` variables from
+# vehicle_architecture.yaml are accepted; bounds, part sizes and baselines come
+# from there. Each knob costs two more simulations.
+#
+# These four need no compile. Toe and camber are valid knobs but every value of
+# them is its own ~2.5 minute compile (pipeline/overrides.py explains why).
+# Dampers are absent on purpose: damper force is proportional to suspension
+# velocity, which is zero at a settled steady state, so they cannot move any
+# SteadyStateEval metric.
+knobs:
+  - front.stabar.rate_n_m_per_rad
+  - rear.stabar.rate_n_m_per_rad
+  - front.actuation.spring_rate_n_per_m
+  - rear.actuation.spring_rate_n_per_m
+
+# Acceptable error per metric. Every targeted metric needs one: it is also the
+# scale that decides how two targets trade off when both cannot be met.
+tolerances:
+  understeer_gradient_deg_per_g: 0.02
+  sideslip_gradient_deg_per_g: 0.02
+  roll_gradient_deg_per_g: 0.02
+  handwheel_angle_gradient_deg_per_g: 0.25
+  peak_handwheel_torque_Nm: 0.5
+
+# The solver's own test matrix: one isoline, with six points inside the 1-4 m/s^2
+# band the gradients are fitted over. The shared standard runs four isolines and
+# leaves three points in that band; it and its regression baselines are not
+# touched. Changing this re-simulates the cached star.
+test_matrix:
+  velocity_mps: 15.0
+  target_ays: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 7.0, 10.0]
+
+# CPUs available to simulations (the Docker container's count, not the host's).
+cpus: 12
