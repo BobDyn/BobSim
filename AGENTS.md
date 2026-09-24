@@ -11,7 +11,7 @@ Don't read the whole folder. Route by task:
 | --- | --- |
 | Anything non-trivial, first time in the repo | [`docs/architecture.md`](docs/architecture.md) |
 | Running / building / testing something | [`docs/workflows.md`](docs/workflows.md) |
-| Parameter sweeps, sensitivities, target-metrics → vehicle | [`docs/doe-reverse-engineering.md`](docs/doe-reverse-engineering.md) |
+| Parameter sweeps and sensitivities, solving for a setup from target metrics, trade studies across standard sims (`opt-*`) | [`docs/doe-reverse-engineering.md`](docs/doe-reverse-engineering.md) |
 | Reduced 3/6/10/14DOF dynamics, QSS envelopes, BobLib correlation | [`docs/reduced-order-dynamics.md`](docs/reduced-order-dynamics.md) |
 | QSS racing lines, speed profiles, and transient laps | [`docs/lap-time-simulation.md`](docs/lap-time-simulation.md) |
 | Modelica missing, build fails, BobLib edits | [`docs/boblib-submodule.md`](docs/boblib-submodule.md) |
@@ -74,6 +74,28 @@ above. Keep the set small; a stale doc is worse than no doc.
   bug before checking the datum sidecar — see
   [`docs/conventions.md`](docs/conventions.md#vertical-datum-z) and
   [`skills/shark-import/SKILL.md`](skills/shark-import/SKILL.md).
+
+- **An OpenModelica `-override` can be accepted and do nothing.** Static toe and
+  camber feed the wheel's `toHub.R_rel` rotation matrix, which is evaluated at
+  compile time; every mass and CG value goes the same way through
+  `combineMassRecords`. The parameter still reports `isValueChangeable="true"`,
+  the override raises no warning, and the simulated car does not change. Only the
+  variables in `RUNTIME_SAFE_PATHS` (`_4_OptSim/StandardSens/pipeline/overrides.py`)
+  are proven to follow an override; anything else must be compiled. The runner
+  also silently drops an override name it cannot find in the init XML. Before
+  trusting a new override, read that file's comment on how to vet one.
+- **OptSim is three tools, and picking the wrong one wastes hours.**
+  `opt-standard` samples a space to learn what matters, `opt-solve` inverts for the
+  setup that hits target metrics, `opt-trade` compares vehicles you name. None
+  finds a "best" car, and none replaces another. A consumer that needs variable
+  specs or compiled vehicles should use `pipeline/variants.py::VariantStore`,
+  never rewrite the sweep's committed `_doe_config.yaml`: that file records the
+  scope its population was built at, and `opt-search` relies on it.
+- **Git Bash on Windows rewrites container paths.** `make` targets pass
+  `/workspace/...` to Docker, and MSYS turns that into
+  `C:/Program Files/Git/workspace/...`, so the run dies in seconds with a
+  file-not-found. Prefix the command with `MSYS_NO_PATHCONV=1`. The same
+  conversion mangles `git show origin/main:path`.
 
 ## Verifying a change
 
