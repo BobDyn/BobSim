@@ -2,6 +2,22 @@
 
 **TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `_4_OptSim/StandardSens/`.
 
+## Three questions, one set of compiled vehicles
+
+OptSim asks three different things, and they are separate tools rather than
+stages of one:
+
+| Target | Question | Vehicles | Answer |
+| --- | --- | --- | --- |
+| `make opt-standard` (+ `opt-refined`, `opt-search`) | Which parameters matter, and roughly where is a car with these numbers? | many, sampled | sensitivities, response surfaces, nearest sampled car |
+| `make opt-solve` | What do I set on *this* car to hit these numbers? | a star of `2n + 1` around the current car | one setup, simulated |
+| `make opt-trade` | What does each of these specific changes buy, and cost? | the ones you name | a comparison table |
+
+None replaces another. The sweep is still how you learn a design space; the
+solver and the trade study are what you reach for once you have a specific
+question. All three write their vehicles with the same generator and compile them
+with the same compiler, so a variant means the same thing in each.
+
 ## Quick start: a small sweep
 
 From a clean checkout, this is the whole thing:
@@ -424,6 +440,84 @@ solve took about 8 minutes (one compile, nine star evaluations, one
 verification), and each later solve against different targets took about 70
 seconds. A four-variant sweep of the same car took 26 minutes and cannot
 interpolate between its samples.
+
+## Trade studies
+
+A trade study compares vehicles you name, on metrics you choose, across more than
+one standard sim:
+
+```bash
+make opt-trade                                   # configs/trade_study.yaml
+make opt-trade STUDY=path/to/another_study.yaml
+```
+
+The study file names candidates as changes from the baseline, and the metrics to
+compare per standard:
+
+```yaml
+name: rear_roll_stiffness
+candidates:
+  stiff_rear_bar:    {rear.stabar.rate_n_m_per_rad: 961.495352}
+  soft_front_spring: {front.actuation.spring_rate_n_per_m: 21015.2202}
+  both:              {rear.stabar.rate_n_m_per_rad: 961.495352,
+                      front.actuation.spring_rate_n_per_m: 21015.2202}
+metrics:
+  SteadyStateEval:
+    understeer_gradient_deg_per_g: {resolution: 0.02}
+  TransientEval:
+    yaw_rise_time_s: {resolution: 0.005}
+```
+
+The report lands in `_4_OptSim/results/trade/<name>.md` and `.csv`: one table per
+standard, each cell the simulated value with its change from baseline.
+
+**Every candidate is compiled, never overridden.** That is the opposite choice
+from `opt-solve`, for a reason: a trade study wants to change mass, CG, toe and
+camber, which are exactly the parameters an override silently fails to move (see
+above). A compile is always correct, costs about 36 s per vehicle when several
+build at once, and is cached by content, so the baseline and any candidate two
+studies share are built and simulated once across all of them.
+
+**One compile serves every standard.** SteadyStateEval, RampSteerEval and
+TransientEval all run the same model, `BobLib.Experiments.Standards.VehicleSim`;
+`_3_StandardSim` itself builds it once and points all three configs at it. They
+share one interface too, so a standard is one entry in `STANDARDS` in
+`pipeline/standards.py`. FourPostEval is not there: it runs `FourPostSim`, a
+different model, so it would need a second compile per vehicle.
+
+**There is no score and no ranking, on purpose.** How much understeer is worth how
+much settling time is an engineering judgement, and a weighted sum would bury it
+inside a number. What the report does insist on is that a difference be worth
+reading:
+
+- **Resolution.** Each metric may state the smallest change worth acting on. A
+  smaller delta is still shown, marked `~`, so a 0.001 s change in rise time is
+  not read as a finding. Leave it off and the delta is reported unjudged.
+- **Lost cases.** A run whose simulation lost cases is marked `n/c` and not
+  compared. Its fits run through fewer points than the baseline's, so the delta
+  would mix the design change with the missing data. A baseline that lost cases
+  makes every comparison on that standard `n/c`. The command exits 2.
+- **Stacking.** When one candidate makes exactly the changes of two others, the
+  report gives the interaction: the combined effect minus the sum of the parts.
+  Above the metric's resolution the combination does something neither part
+  predicts, and "we'll do both" is not the sum you budgeted for. Below it the
+  interaction cannot be told apart from zero, which is weaker than saying the
+  changes add, so the number is printed beside the label.
+- **Ambiguous names.** TransientEval reports some metrics once per group under
+  one name (`yaw_gain_dc` for the step and again for the frequency sweep). Those
+  are only available qualified, `step.yaw_gain_dc`, and asking for the bare name
+  is an error that lists the options.
+
+**A candidate can only change a declared variable.** The variables are the
+`sweep.variables` entries in `configs/vehicle_architecture.yaml`, because each
+needs the Modelica record block it maps to. To trade on something new, such as
+wheelbase, declare it there first (see *Adding a swept parameter*). A value outside
+a variable's sweep range is allowed and noted: the range bounds what the sweep
+samples, not what is physically valid.
+
+Compare like with like: a metric here comes from each standard's own test matrix,
+so a gradient from `opt-trade` matches `make standard-eval-steady-state`, not
+`opt-solve`, which fits through its own denser isoline.
 
 ## Envelope sensitivities
 
