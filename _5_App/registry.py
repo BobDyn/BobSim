@@ -87,6 +87,8 @@ POWERTRAIN_DEFAULTS: dict[str, dict[str, Any]] = {
             "eta_reg": 0.95,
             "w_eps": 1.0,
             "rotorJ": 0.02521,
+            "useTorqueTable": False,
+            "torqueTable": [[0.0, 1e9], [1.0, 1e9]],
         },
         "pDriveline": {
             "finalDriveRatio": 3.31,
@@ -107,6 +109,14 @@ POWERTRAIN_DEFAULTS: dict[str, dict[str, Any]] = {
             "halfshaftRightC": 15_000,
             "halfshaftRightJEquivalent": 0.02,
             "halfshaftRightD": 34.64101615137755,
+        },
+        "pTransmission": {
+            "nGears": 1,
+            "gearRatios": [3.31],
+            "upshiftSpeeds": [],
+            "downshiftSpeeds": [],
+            "initialGear": 1,
+            "wheelRadius": 0.2045,
         },
     },
 }

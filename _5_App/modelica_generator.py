@@ -246,6 +246,7 @@ POWERTRAIN_RECORDS: tuple[tuple[str, str], ...] = (
     ("pInverter", "PowerElectronics.InverterDCRecord"),
     ("pMotor", "ElectricDrives.MotorRecord"),
     ("pDriveline", "Drivelines.RearFinalDriveDifferentialRecord"),
+    ("pTransmission", "Transmissions.SpeedScheduledTransmissionRecord"),
 )
 
 VEHICLE_OMC_OPTIONS = (
@@ -511,6 +512,7 @@ def _vehicle_record_text(
         "  import PowerElectronics = BobLib.Records.VehicleRecord.PowerElectronics;",
         "  import ElectricDrives = BobLib.Records.VehicleRecord.ElectricDrives;",
         "  import Drivelines = BobLib.Records.VehicleRecord.Drivelines;",
+        "  import Transmissions = BobLib.Records.VehicleRecord.Transmissions;",
         "  import TireModel = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Tire.MF52;",
         "  import Wheel = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Tire;",
         "  import Rack = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.SteeringRack;",
