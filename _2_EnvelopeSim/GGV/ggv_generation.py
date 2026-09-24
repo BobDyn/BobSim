@@ -85,6 +85,12 @@ class VehicleParams:
     drive_distribution_front: float = 0.0  # 0 for RWD, 1 for FWD, 0.5 for AWD
     brake_distribution_front: float = 0.84
 
+    # Optional tractive-force-vs-speed envelope as ((speed_mps, force_n), ...),
+    # sorted by ascending speed. Built from a torque curve geared through the
+    # transmission (upper envelope across gears). When non-empty it overrides
+    # the constant-power drive force limit above.
+    drive_force_curve: tuple[tuple[float, float], ...] = ()
+
     # Tire model from .tir peak friction terms
     fz_ref: float = 654.0  # N, FNOMIN
     fz_min_valid: float = 100.0  # N, FZMIN
@@ -369,14 +375,42 @@ def tire_usage(
     return np.sqrt((fx / fx_capacity) ** 2 + (fy / fy_capacity) ** 2)
 
 
+def _drive_force_curve_limit(
+    curve: tuple[tuple[float, float], ...],
+    speed: float,
+) -> float:
+    """Linearly interpolate tractive force at ``speed`` from a drive-force curve.
+
+    Speeds outside the curve range clamp to the nearest endpoint force.
+    """
+    if speed <= curve[0][0]:
+        return curve[0][1]
+    if speed >= curve[-1][0]:
+        return curve[-1][1]
+    for (s0, f0), (s1, f1) in zip(curve, curve[1:]):
+        if s0 <= speed <= s1:
+            span = s1 - s0
+            if span <= 0.0:
+                return f1
+            return f0 + (f1 - f0) * (speed - s0) / span
+    return curve[-1][1]
+
+
 def powertrain_force_limit(vehicle: VehicleParams, speed: float) -> float:
     """
     Maximum available drive force before tire limits.
 
-    Limited by both max drive force and power / speed.
+    When a drive-force curve is provided it defines the powertrain limit
+    directly (still subject to the max drive force cap). Otherwise the limit is
+    the lesser of the max drive force cap and the constant-power force
+    (power / speed).
     """
     if speed > vehicle.max_drive_speed:
         return 0.0
+    if vehicle.drive_force_curve:
+        curve_force = _drive_force_curve_limit(vehicle.drive_force_curve, speed)
+        return min(vehicle.max_drive_force, curve_force)
+
     speed_safe = max(speed, 1.0)
     power_limited_force = vehicle.max_drive_power / speed_safe
 

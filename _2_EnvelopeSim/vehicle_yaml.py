@@ -115,6 +115,8 @@ def project_vehicle_yaml(
     }
 
     brake_distribution_front = _brake_distribution_front(vehicle_data)
+    drive_force_curve = _project_drive_force_curve(vehicle_data)
+
     ggv = GGVVehicleParams(
         **shared,
         max_drive_power=powertrain.peak_power_w,
@@ -122,6 +124,7 @@ def project_vehicle_yaml(
         max_drive_speed=powertrain.maximum_vehicle_speed_mps,
         drive_distribution_front=0.0,
         brake_distribution_front=brake_distribution_front,
+        drive_force_curve=drive_force_curve,
         pdx1=tire["PDX1"],
         pdx2=tire["PDX2"],
     )
@@ -316,6 +319,106 @@ def _project_lltd(
         "lltd_arb_only": raw_bar_lltd,
     }
     return lltd, summary
+
+
+def _project_drive_force_curve(
+    vehicle_data: dict[str, Any],
+) -> tuple[tuple[float, float], ...]:
+    """Gear a torque curve into a tractive-force-vs-speed envelope for the GGV.
+
+    Reads ``powertrain.pMotor.torqueTable`` (rows of ``[engine_rpm, torque_nm]``)
+    and gears each row through every ratio in
+    ``powertrain.pTransmission.gearRatios``, taking the best (maximum) tractive
+    force available at each road speed across gears.
+
+    BobLib uses "Option A" gearing: the complete reduction (primary + gearbox +
+    final drive) is folded into ``gearRatios`` and the driveline final drive is
+    unity (see ``BobLib/Transmissions/SpeedScheduledTransmission.mo``). So the
+    total ratio for gear ``i`` is ``gearRatios[i]`` alone:
+
+        wheel_speed_rad_s = engine_rpm * 2*pi / 60 / gear_ratio
+        road_speed_mps    = wheel_speed_rad_s * wheel_radius_m
+        tractive_force_n  = torque_nm * gear_ratio / wheel_radius_m
+
+    Returns an empty tuple (leaving the constant-power limit in effect) when the
+    table is absent or ``useTorqueTable`` is false.
+    """
+    powertrain = vehicle_data.get("powertrain")
+    if not isinstance(powertrain, dict):
+        return ()
+    motor = powertrain.get("pMotor")
+    if not isinstance(motor, dict):
+        return ()
+    if not bool(motor.get("useTorqueTable", False)):
+        return ()
+    rows = motor.get("torqueTable")
+    if not isinstance(rows, list) or not rows:
+        return ()
+
+    transmission = powertrain.get("pTransmission")
+    if isinstance(transmission, dict) and isinstance(transmission.get("gearRatios"), list):
+        raw_ratios = transmission["gearRatios"]
+    else:
+        # No gearbox: fall back to the final drive as the single total ratio.
+        driveline = powertrain.get("pDriveline")
+        final_drive = driveline.get("finalDriveRatio") if isinstance(driveline, dict) else None
+        raw_ratios = [final_drive] if final_drive is not None else []
+
+    gear_ratios: list[float] = []
+    for ratio in raw_ratios:
+        try:
+            value = float(ratio)
+        except (TypeError, ValueError):
+            continue
+        if _is_finite(value) and value > 0.0:
+            gear_ratios.append(value)
+    if not gear_ratios:
+        return ()
+
+    try:
+        wheel_radius = float(vehicle_data["rear"]["wheel"]["radius_m"])
+    except (KeyError, TypeError, ValueError):
+        return ()
+    if not _is_finite(wheel_radius) or wheel_radius <= 0.0:
+        return ()
+
+    torque_points: list[tuple[float, float]] = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            continue
+        try:
+            rpm = float(row[0])
+            torque = float(row[1])
+        except (TypeError, ValueError):
+            continue
+        if _is_finite(rpm) and _is_finite(torque):
+            torque_points.append((rpm, torque))
+    if len(torque_points) < 2:
+        return ()
+
+    # Force available at each (speed, gear) sample. Taking the max across gears
+    # at overlapping speeds yields the usable tractive-force envelope.
+    samples: list[tuple[float, float]] = []
+    for gear_ratio in gear_ratios:
+        for rpm, torque in torque_points:
+            wheel_speed_rad_s = rpm * 2.0 * math.pi / 60.0 / gear_ratio
+            speed_mps = wheel_speed_rad_s * wheel_radius
+            force_n = torque * gear_ratio / wheel_radius
+            samples.append((speed_mps, force_n))
+
+    samples.sort(key=lambda item: item[0])
+    # Collapse to a monotonic-in-speed upper envelope: for equal/near-equal
+    # speeds keep the largest force so interpolation follows the best gear.
+    envelope: list[tuple[float, float]] = []
+    for speed_mps, force_n in samples:
+        if envelope and abs(speed_mps - envelope[-1][0]) < 1e-9:
+            if force_n > envelope[-1][1]:
+                envelope[-1] = (speed_mps, force_n)
+        else:
+            envelope.append((speed_mps, force_n))
+    if len(envelope) < 2:
+        return ()
+    return tuple(envelope)
 
 
 def _stabar_rate(vehicle_data: dict[str, Any], axle: str) -> float:
