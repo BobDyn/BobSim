@@ -15,6 +15,34 @@ sampling:
 samples: 3
 seed: 42
 
+# Each sweep variable may declare a `scope:`, which separates the two studies
+# this sweep would otherwise conflate:
+#
+#   setup         knobs that can be changed on the built car between sessions
+#                 (alignment, springs, dampers, anti-roll bars)
+#   architecture  properties fixed once the car exists (sprung mass and CG,
+#                 driver inertias, unsprung mass, torsional stiffness)
+#   (no tag)      belongs to EVERY scope - see below
+#
+# Request one with BOBSIM_DOE_SCOPE=setup|architecture|all, or the
+# opt-standard-setup / opt-standard-architecture make targets. The default is
+# `all`, which sweeps everything regardless of tag. The resolved scope is
+# recorded as the top-level `scope:` key of the generated _doe_config.yaml, so
+# a results table can be traced back to the sweep that produced it.
+#
+# A variable with NO `scope:` key belongs to EVERY scope, so a newly added or
+# not-yet-classified entry is never silently dropped from a scoped sweep. If it
+# turns up in a sweep where it does not belong, tag it here - the fix is data,
+# not code. `generate_configs.py` deliberately hardcodes no variable lists.
+#
+# Untagged is also the right answer for a variable that genuinely belongs to
+# both studies, or to neither. Four entries below are untagged on purpose and
+# say why inline: driver mass and driver CG x/z (session-to-session AND design
+# variables), and aero.load_scale (a whole-map scale, not a trimmable knob).
+#
+# Current partition: 10 setup, 9 architecture, 4 untagged - 23 total. A scoped
+# sweep therefore covers 14 (setup) or 13 (architecture) variables.
+
 sweep:
   variables:
     # ---------------------------------------------------------------------
@@ -22,12 +50,14 @@ sweep:
     # ---------------------------------------------------------------------
     - path: sprung_mass.mass_kg
       label: sprung mass
+      scope: architecture
       block: pBaseSprungMass
       param: m
       range: [144.576, 176.704]
 
     - path: sprung_mass.cg_m.x
       label: sprung CG x
+      scope: architecture
       block: pBaseSprungMass
       param: rCM
       index: [0]
@@ -35,11 +65,21 @@ sweep:
 
     - path: sprung_mass.cg_m.z
       label: sprung CG z
+      scope: architecture
       block: pBaseSprungMass
       param: rCM
       index: [2]
       range: [0.20, 0.30]
 
+    # The next THREE entries (driver mass, driver CG x, driver CG z) are
+    # deliberately UNTAGGED, so they sweep in every scope. The driver inertias
+    # after them stay architecture-tagged. Driver mass and CG
+    # are design variables AND they change between sessions: teams run different
+    # drivers across skidpad/autocross/endurance, and seat inserts and pedal-box
+    # position move driver CG on the same afternoon. driver_mass.cg_m.x is also
+    # the second-strongest driver of understeer gradient in this set (~0.27
+    # deg/g across its range - more leverage than the front bar, both springs
+    # and both toes combined), so pinning it would gut a setup sweep.
     - path: driver_mass.mass_kg
       label: driver mass
       block: pDriverMass
@@ -62,6 +102,7 @@ sweep:
 
     - path: driver_mass.inertia_kg_m2.ixx
       label: driver Ixx
+      scope: architecture
       block: pDriverMass
       param: inertia
       index: [0, 0]
@@ -69,6 +110,7 @@ sweep:
 
     - path: driver_mass.inertia_kg_m2.iyy
       label: driver Iyy
+      scope: architecture
       block: pDriverMass
       param: inertia
       index: [1, 1]
@@ -76,6 +118,7 @@ sweep:
 
     - path: driver_mass.inertia_kg_m2.izz
       label: driver Izz
+      scope: architecture
       block: pDriverMass
       param: inertia
       index: [2, 2]
@@ -83,6 +126,7 @@ sweep:
 
     - path: body.torsional_stiff_n_m_per_rad
       label: body torsional stiffness
+      scope: architecture
       block: pTorsionalStiff
       range: [150000, 450000]
 
@@ -91,18 +135,21 @@ sweep:
     # ---------------------------------------------------------------------
     - path: front.wheel.toe_deg
       label: front toe
+      scope: setup
       block: pFrPartialWheel
       param: staticAlpha
       range: [-0.25, 0.25]
 
     - path: rear.wheel.toe_deg
       label: rear toe
+      scope: setup
       block: pRrPartialWheel
       param: staticAlpha
       range: [-0.25, 0.25]
 
     - path: front.wheel.camber_deg
       label: front camber
+      scope: setup
       block: pFrPartialWheel
       param: staticGamma
       scale: -1
@@ -110,6 +157,7 @@ sweep:
 
     - path: rear.wheel.camber_deg
       label: rear camber
+      scope: setup
       block: pRrPartialWheel
       param: staticGamma
       scale: -1
@@ -120,6 +168,7 @@ sweep:
     # ---------------------------------------------------------------------
     - path: front.actuation.spring_rate_n_per_m
       label: front spring package
+      scope: setup
       targets:
         - block: pFrAxleDW
           param: springTable
@@ -132,6 +181,7 @@ sweep:
 
     - path: front.actuation.damper_rate_n_s_per_m
       label: front damper rate
+      scope: setup
       targets:
         - block: pFrAxleDW
           param: damperTable
@@ -144,6 +194,7 @@ sweep:
 
     - path: front.stabar.rate_n_m_per_rad
       label: front anti-roll bar rate
+      scope: setup
       block: pFrStabar
       param: barRate
       range: [205.376938, 295.74279]
@@ -151,6 +202,7 @@ sweep:
 
     - path: front.masses.unsprung.mass_kg
       label: front unsprung mass
+      scope: architecture
       block: pFrAxleMass
       param: unsprungMass
       field_path: [m]
@@ -161,6 +213,7 @@ sweep:
     # ---------------------------------------------------------------------
     - path: rear.actuation.spring_rate_n_per_m
       label: rear spring package
+      scope: setup
       targets:
         - block: pRrAxleDW
           param: springTable
@@ -173,6 +226,7 @@ sweep:
 
     - path: rear.actuation.damper_rate_n_s_per_m
       label: rear damper rate
+      scope: setup
       targets:
         - block: pRrAxleDW
           param: damperTable
@@ -185,6 +239,7 @@ sweep:
 
     - path: rear.stabar.rate_n_m_per_rad
       label: rear anti-roll bar rate
+      scope: setup
       block: pRrStabar
       param: barRate
       range: [360.052058, 961.495352]
@@ -192,6 +247,7 @@ sweep:
 
     - path: rear.masses.unsprung.mass_kg
       label: rear unsprung mass
+      scope: architecture
       block: pRrAxleMass
       param: unsprungMass
       field_path: [m]
@@ -200,6 +256,13 @@ sweep:
     # ---------------------------------------------------------------------
     # Aero reference comparison
     # ---------------------------------------------------------------------
+    # Deliberately UNTAGGED: this is neither a setup knob nor an architecture
+    # property. It applies `operation: scale` identically to dragTable,
+    # downforceTable, mxTable, myTable and mzTable, so aero balance and L/D stay
+    # exactly constant while downforce level changes. No wing adjustment does
+    # that - it represents air density, a whole-configuration swap, or (most
+    # likely, per the heading above) CFD/tunnel map confidence. Keep the path
+    # name: it is a vehicle.yml path and the projection depends on it.
     - path: aero.load_scale
       label: aero load scale
       baseline: 1.0
