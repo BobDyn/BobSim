@@ -1503,7 +1503,10 @@ class FourPostEvalSim:
         ref_long = h_cg / wheelbase
         ref_roll = h_cg / ((track_front + track_rear) / 2.0)
 
-        fr_anti_heave = _plausible_array(100.0 * fr_coeff_heave / ref_long, FOUR_POST_PERCENT_ABS_LIMIT)
+        # Positive anti-dive denotes a front jacking response that resists braking dive.
+        # Braking Fx is negative in the x-forward frame, so negate the signed Fz/Fx
+        # coefficient here. Keep raw jacking coefficients and rear anti-squat unchanged.
+        fr_anti_heave = _plausible_array(-100.0 * fr_coeff_heave / ref_long, FOUR_POST_PERCENT_ABS_LIMIT)
         rr_anti_heave = _plausible_array(100.0 * rr_coeff_heave / ref_long, FOUR_POST_PERCENT_ABS_LIMIT)
         fr_anti_roll = _plausible_array(100.0 * fr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
         rr_anti_roll = _plausible_array(100.0 * rr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)

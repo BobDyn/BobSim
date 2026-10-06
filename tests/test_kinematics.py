@@ -1046,3 +1046,38 @@ def _curve_gain_rad_per_m(sweep_m: np.ndarray, curve_deg: list[float]) -> float:
 def _curve_gain_m_per_m(sweep_m: np.ndarray, curve_mm: list[float]) -> float:
     curve_m = np.asarray(curve_mm, dtype=float) / 1000.0
     return float(np.polyfit(sweep_m, curve_m, 1)[0])
+
+
+@pytest.mark.parametrize("pulse_force", [-1000.0, 1000.0])
+@pytest.mark.parametrize("expected_anti_pct", [-20.0, 20.0])
+def test_four_post_anti_dive_sign_is_independent_of_pulse_direction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pulse_force: float,
+    expected_anti_pct: float,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    result = _four_post_result_from_kinematics(
+        vehicle,
+        np.linspace(-0.03, 0.03, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+        np.linspace(-0.75, 0.75, four_post_eval.FOUR_POST_ROLL_POSE_COUNT),
+    )
+    front = CornerKinematics.from_vehicle(vehicle, "front").wheel_center_initial
+    rear = CornerKinematics.from_vehicle(vehicle, "rear").wheel_center_initial
+    wheelbase = abs(front[0] - rear[0])
+    # An upward response to negative braking Fx is dive-resisting geometry.
+    coefficient = -(expected_anti_pct / 100.0) * 0.35 / wheelbase
+    pulse = np.isin(
+        result["time"],
+        _jack_times(four_post_eval.FOUR_POST_HEAVE_START_S, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+    )
+    result["frKnC.fx"][pulse] = pulse_force
+    # The fixture reaction signal is opposite to the chassis jacking response.
+    result["frKnC.jackingForce"][pulse] = -coefficient * pulse_force
+    config = _four_post_unit_config(tmp_path)
+    summary, series = four_post_eval.FourPostEvalSim(config).summarize(result)
+
+    assert summary["avg_anti_dive_pct"] == pytest.approx(expected_anti_pct)
+    np.testing.assert_allclose(series["fr_anti_vs_heave"], expected_anti_pct)
+    assert summary["avg_longitudinal_jacking_coeff_front"] == pytest.approx(coefficient)
