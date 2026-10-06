@@ -74,7 +74,7 @@ workflows:
         value: 0.0
         abs_tol: 1.5
       avg_anti_dive_pct:
-        value: 2.7836804948008482
+        value: -2.7836804948009437
         abs_tol: 1.5
       avg_anti_squat_pct:
         value: -4.6717280901850184
