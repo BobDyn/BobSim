@@ -1,4 +1,4 @@
-FROM openmodelica/openmodelica:v1.26.3-ompython
+FROM openmodelica/openmodelica:v1.27.1-ompython
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
