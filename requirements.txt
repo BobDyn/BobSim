@@ -17,7 +17,7 @@ mypy==1.20.2
 pytest==9.1.0
 
 # FMU interface
-# fmpy
+fmpy==0.3.32
 # pyside6
 # typing-extensions
 # plotly

@@ -1,0 +1,47 @@
+// Export VehicleSim as an FMI 2.0 FMU so an external program (a ROS node,
+// a co-simulation master) can step the full-vehicle model itself instead of
+// running the standalone executable start to finish.
+clear();
+
+root := OpenModelica.Scripting.cd();
+boblibDir := root + "/_0_Utils/external/BobLib/BobLib";
+buildDir := root + "/_3_StandardSim/BuildBobLib/VehicleFMU";
+
+// Same translation options as build_vehicle_sim.mos, so the FMU and the
+// executable are the same model.
+OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
+OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
+OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
+OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
+OpenModelica.Scripting.setCommandLineOptions("-d=initialization,NLSanalyticJacobian");
+OpenModelica.Scripting.setCommandLineOptions("--generateDynamicJacobian=none");
+
+// Co-simulation mode would otherwise integrate with forward Euler. CVODE
+// keeps the stiff multibody system stable at the caller's step size.
+OpenModelica.Scripting.setCommandLineOptions("--fmiFlags=s:cvode");
+
+// The FMU initializes start values in one generated function of ~340k lines.
+// clang does not finish it in 400 s even at -O0; gcc compiles it in 35 s.
+OpenModelica.Scripting.setCompiler("gcc");
+OpenModelica.Scripting.setCXXCompiler("g++");
+
+loadModel(Modelica, {"4.1.0"});
+loadModel(VehicleInterfaces, {"2.0.2"});
+loadFile(boblibDir + "/package.mo");
+
+mkdir(root + "/_3_StandardSim/BuildBobLib");
+mkdir(buildDir);
+cd(buildDir);
+
+// No -march=native here: an FMU is meant to be copied to the machine that
+// runs it, so it must not depend on the build host's CPU.
+res := buildModelFMU(
+  BobLib.Experiments.Standards.VehicleSim,
+  version = "2.0",
+  fmuType = "me_cs",
+  fileNamePrefix = "VehicleSim",
+  platforms = {"static"}
+);
+
+res;
+getErrorString();

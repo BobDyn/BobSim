@@ -82,6 +82,37 @@ make reduced-kinematics-benchmark  # kinematics fidelity check
 
 ---
 
+### Closed-Loop Stepping (FMU and dyn_py)
+
+An external program, such as a ROS node or a driver model, can advance a vehicle model one controller period at a time and read the state back. Two models support this.
+
+| Property | Value |
+| --- | --- |
+| **VehicleSim FMU** | `make standard-build-fmu` exports `BobLib.Experiments.Standards.VehicleSim` as an FMI 2.0 FMU (model exchange and co-simulation, CVODE inside) to `_3_StandardSim/BuildBobLib/VehicleFMU/VehicleSim.fmu` |
+| **dyn_py** | Call `model.derivative` from your own integrator. 10 and 14 DOF need a stiff solver (Radau). |
+| **Benchmark** | `make standard-realtime-bench` steps each model at 50 Hz and writes `_3_StandardSim/generated_results/realtime_bench.json` |
+| **Reported as** | "VehicleSim FMU" or "NDOF dyn_py, closed loop" |
+
+The FMU build uses gcc. The FMU sets its start values in one generated C function of about 340,000 lines. clang does not compile that function in 400 s, even at `-O0`. gcc compiles it in 35 s.
+
+Measured with `make standard-realtime-bench` on an Apple Silicon Mac (Docker, arm64), Orion `vehicle.yml`, 20 ms controller period, 10 s per run:
+
+| Model | Step steer 5 deg at 15 m/s | Launch from rest |
+| --- | --- | --- |
+| dyn_py 3DOF (RK45) | 2.9x real time | 6.1x |
+| dyn_py 6DOF (RK45) | 3.8x | 5.5x |
+| dyn_py 10DOF (Radau) | 0.76x | 0.99x |
+| dyn_py 14DOF (Radau) | 1.3x | 1.2x |
+| VehicleSim FMU (CVODE, co-simulation) | Fails at t = 0.38 s | Not run |
+
+**Known limits of the FMU:**
+- Co-simulation stepping fails with a CVODE error at a model event. With a 20 ms step it fails at t = 0.38 s. With a 2 ms step it reaches t = 2.0 s, the `steerStart` of `StandardVCU`. Until it fails, it runs at 3.2x real time (20 ms) and 1.5x (2 ms).
+- `VehicleSim` has no inputs. `StandardVCU` generates the steering and pedal commands, and the termination monitors stop the run. A closed-loop caller needs a variant with external inputs.
+- fmpy has no CVODE or logging library for Linux arm64. On arm64, model-exchange runs need another solver, and FMU log messages print without their arguments.
+- The build takes about 25 min, against 2.5 min for `standard-build`.
+
+---
+
 ## Quick Reference: When to Use What
 
 | Goal | Workflow | Fidelity | Speed |
@@ -92,6 +123,7 @@ make reduced-kinematics-benchmark  # kinematics fidelity check
 | Transient lap validation | `LapTimeEval` reduced transient | Medium | Medium |
 | Compare reduced vs. full model | `ReducedOrderEval` | Medium (reduced) | Medium |
 | Four-post rig evaluation | `StandardSim` + FourPostSim | High (MBD) | Slow |
+| Drive a vehicle model from an external controller | VehicleSim FMU or `dyn_py` | High or Medium | See the benchmark |
 
 ---
 

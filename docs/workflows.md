@@ -73,6 +73,17 @@ make standard-eval-four-post   # uses the separate FourPostSim executable
 
 Output: `_3_StandardSim/generated_results/` (`*_report_metrics.csv`, `*_report.pdf`).
 
+## Closed-loop stepping
+
+```bash
+make standard-build-fmu       # export VehicleSim as an FMI 2.0 FMU
+make standard-realtime-bench  # time 50 Hz stepping of the FMU and dyn_py (build the FMU first)
+make standard-realtime-bench ARGS=--skip-fmu  # dyn_py only, no OpenModelica build
+```
+
+See [simulation-entrypoints.md](simulation-entrypoints.md#closed-loop-stepping-fmu-and-dyn_py)
+for measured speeds and the FMU's known limits.
+
 ## Lap-time simulation
 
 ```bash
