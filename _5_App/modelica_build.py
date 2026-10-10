@@ -398,6 +398,23 @@ def _modelica_existing_build_matches(
     return bool(stack.get("written_to_boblib")) and exe_path.stat().st_mtime >= latest_input_modified
 
 
+
+def _compile_fresh(action: ActionSpec, target: BuildTargetSpec, job_id: str) -> int:
+    """A zero OMC exit status cannot certify artifacts from an earlier build."""
+    build_dir = _safe_repo_path(target.build_dir)
+    for name in (*_modelica_build_exe_names(target), _modelica_build_init_name(target), BUILD_METADATA_FILENAME):
+        (build_dir / name).unlink(missing_ok=True)
+    returncode = _run_subprocess_action(action, job_id)
+    missing = _modelica_build_missing_files(target)
+    if returncode != 0 or missing:
+        # An incomplete/failed build must never be runnable or cacheable.
+        for name in (*_modelica_build_exe_names(target), _modelica_build_init_name(target)):
+            (build_dir / name).unlink(missing_ok=True)
+        JOBS.append_log(job_id, f"Build failed verification: returncode={returncode}, missing={missing}. "
+                        "Stopping before simulation run.\n")
+        return returncode or 1
+    return 0
+
 def _run_modelica_build_action(action: ActionSpec, target: BuildTargetSpec, job_id: str) -> int:
     JOBS.append_log(job_id, f"\n# {target.label} build cache\n")
     _ensure_modelica_build_directory(target, job_id)
@@ -406,12 +423,16 @@ def _run_modelica_build_action(action: ActionSpec, target: BuildTargetSpec, job_
         signature = _modelica_build_signature_payload(target, stack)
     except Exception as exc:
         JOBS.append_log(job_id, f"Build cache unavailable: {type(exc).__name__}: {exc}\n")
-        return _run_subprocess_action(action, job_id)
+        return _compile_fresh(action, target, job_id)
+
+    if stack.get("initialization_error"):
+        JOBS.append_log(job_id, str(stack["initialization_error"]) + "\n")
+        return 1
 
     short_signature = str(signature["signature"])[:12]
     if not stack.get("written_to_boblib"):
         JOBS.append_log(job_id, "BobLib vehicle definition is not current; running build directly.\n")
-        return _run_subprocess_action(action, job_id)
+        return _compile_fresh(action, target, job_id)
 
     if _restore_modelica_build_from_archive(target, signature, job_id):
         JOBS.append_log(job_id, f"{target.label} cache hit ({short_signature}); skipped OpenModelica build.\n")
@@ -423,7 +444,7 @@ def _run_modelica_build_action(action: ActionSpec, target: BuildTargetSpec, job_
         return 0
 
     JOBS.append_log(job_id, f"{target.label} cache miss ({short_signature}); running OpenModelica build.\n")
-    returncode = _run_subprocess_action(action, job_id)
+    returncode = _compile_fresh(action, target, job_id)
     if returncode == 0:
         if _store_modelica_build_archive(target, signature, job_id):
             JOBS.append_log(job_id, f"{target.label} build archived for signature {short_signature}.\n")

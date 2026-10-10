@@ -681,6 +681,10 @@ def delete_saved_result(*args: Any, **kwargs: Any) -> Any:
     return _data_service_call("delete_saved_result", *args, **kwargs)
 
 
+def capture_workflow_inputs(*args: Any, **kwargs: Any) -> Any:
+    return _data_service_call("capture_workflow_inputs", *args, **kwargs)
+
+
 def save_active_results(*args: Any, **kwargs: Any) -> Any:
     return _data_service_call("save_active_results", *args, **kwargs)
 
@@ -1090,6 +1094,7 @@ def _sync_actions_runtime() -> None:
     app_actions._run_modelica_build_action = _run_modelica_build_action
     app_actions._modelica_build_missing_files = _modelica_build_missing_files
     app_actions._workflow_by_id = _workflow_by_id
+    app_actions.capture_workflow_inputs = capture_workflow_inputs
     app_actions.save_active_results = save_active_results
     app_actions._run_subprocess_action = (
         _DEFAULT_RUN_SUBPROCESS_ACTION

@@ -342,6 +342,8 @@ class ModelicaRunner:
             manifest_file,
             {
                 "run_id": run_id,
+                "job_id": os.environ.get("BOBSIM_JOB_ID"),
+                "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
                 "case_label": case_label,
                 "status": "running",
                 "started_at": time.time(),
@@ -438,6 +440,8 @@ class ModelicaRunner:
             manifest_file,
             {
                 "run_id": run_id,
+                "job_id": os.environ.get("BOBSIM_JOB_ID"),
+                "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
                 "case_label": case_label,
                 "status": "succeeded",
                 "ended_at": time.time(),

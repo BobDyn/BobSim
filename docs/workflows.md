@@ -182,8 +182,8 @@ For a fast check of the DOE pipeline with no OpenModelica toolchain:
 make opt-doe-smoke
 ```
 
-CI runs lint, typecheck, and this DOE smoke natively for fast feedback, then
-the full fast gate inside the Docker image.
+CI runs lint, type checking, and tests natively. The container job checks
+OpenModelica and runs the DOE smoke tests.
 
 ## Cleaning
 

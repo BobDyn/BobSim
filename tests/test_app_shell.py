@@ -688,7 +688,10 @@ def test_modelica_build_action_creates_build_directory_before_omc(
     monkeypatch.setattr(app, "modelica_stack_status_payload", lambda _vehicle_path, _root: stack)
 
     def fake_build(_action: app.ActionSpec, _job_id: str) -> int:
-        assert (tmp_path / target.build_dir).is_dir()
+        build_dir = tmp_path / target.build_dir
+        assert build_dir.is_dir()
+        (build_dir / target.exec_name).write_text("fresh executable")
+        (build_dir / f"{target.exec_name}_init.xml").write_text("fresh init")
         return 0
 
     monkeypatch.setattr(app, "_run_subprocess_action", fake_build)
@@ -1765,3 +1768,26 @@ def test_non_relocatable_configs_are_still_edited_in_place(
 
     assert yaml.safe_load(config.read_text(encoding="utf-8"))["report"]["enabled"] is False
     assert not (tmp_path / app.ACTIVE_SIM_CONFIG_ROOT / "ggv_config.yml").exists()
+
+
+@pytest.mark.parametrize('returncode', [0, 1])
+def test_failed_rebuild_cannot_certify_previous_executable(tmp_path, monkeypatch, returncode):
+    from _5_App import modelica_build as builds
+    from _5_App.jobs import JobStore
+    target = app.MODELICA_BUILD_TARGETS['vehicle']
+    build_dir = tmp_path / target.build_dir
+    build_dir.mkdir(parents=True)
+    (build_dir / target.exec_name).write_text('old executable')
+    (build_dir / f'{target.exec_name}_init.xml').write_text('old init')
+    (build_dir / app.BUILD_METADATA_FILENAME).write_text('{"signature": "old"}')
+    monkeypatch.setattr(builds, '_safe_repo_path', lambda path: tmp_path / path)
+    jobs = JobStore(10000)
+    job = jobs.create('build', 'Build', [])
+    monkeypatch.setattr(builds, 'JOBS', jobs)
+    monkeypatch.setattr(builds, 'modelica_stack_status_payload', lambda *args: {'written_to_boblib': True})
+    monkeypatch.setattr(builds, '_modelica_build_signature_payload', lambda *args: {'signature': 'new'})
+    monkeypatch.setattr(builds, '_restore_modelica_build_from_archive', lambda *args: False)
+    monkeypatch.setattr(builds, '_run_subprocess_action', lambda *args: returncode)
+    assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) != 0
+    assert not (build_dir / target.exec_name).exists()
+    assert not (build_dir / app.BUILD_METADATA_FILENAME).exists()

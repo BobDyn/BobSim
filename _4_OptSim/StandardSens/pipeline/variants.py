@@ -106,9 +106,6 @@ class VariantStore:
     def ensure_compiled(self, variants: list[Variant]) -> None:
         """Compile whichever of these vehicles has no executable yet, in one batch."""
         new = sorted({variant_key(v) for v in variants} - set(self._index))
-        if not new and all(find_exe(self.build_dir(v), self.standard_cfg) for v in variants):
-            return
-
         if self.variants_dir.exists() and self._inputs_changed():
             # Only reachable mid-run: a stale cache is discarded at construction.
             raise RuntimeError(
@@ -117,6 +114,9 @@ class VariantStore:
                 "would not be comparable. Nothing on disk is damaged: run it again once the "
                 "edits have settled, and the cache will be rebuilt against the current inputs."
             )
+
+        if not new and all(find_exe(self.build_dir(v), self.standard_cfg) for v in variants):
+            return
 
         for key in new:
             self._index[key] = len(self._index)

@@ -39,6 +39,12 @@ PIPELINE_TOOLING_INPUTS = (
     DEFAULT_STEADY_STATE_SIM,
     DEFAULT_STEADY_STATE_CONFIG,
     DEFAULT_MODELICA_RUNNER,
+    STANDARD_DIR / "pipeline/generator.py",
+    STANDARD_DIR / "pipeline/modelica_params.py",
+    STANDARD_DIR / "pipeline/compiler.py",
+    STANDARD_DIR / "configs/build_template.mos",
+    REPO_ROOT / "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv",
+    REPO_ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv",
 )
 
 
@@ -152,6 +158,11 @@ def compile_variant(
     mos_path = variant_dir / f"build_{standard}.mos"
     mos_path.write_text(mos_content)
 
+    # Remove the old runnable pair before invoking OMC: soft failures can exit 0.
+    model = standard_cfg["model"]
+    for name in (model, f"{model}.exe", f"{model}_init.xml"):
+        (build_dir / name).unlink(missing_ok=True)
+
     try:
         result = subprocess.run(
             ["omc", str(mos_path)],
@@ -165,7 +176,9 @@ def compile_variant(
 
     # OMC exits 0 even on soft failures.
     exe = _find_exe(build_dir, standard_cfg)
-    if exe is None:
+    if result.returncode != 0 or exe is None or not (build_dir / f"{model}_init.xml").is_file():
+        if exe is not None:
+            exe.unlink()
         error_msg = (result.stdout + "\n" + result.stderr).strip()
         _write_error(variant_dir, standard, error_msg)
         return False

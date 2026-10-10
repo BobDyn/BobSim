@@ -161,3 +161,41 @@ def test_modelica_generator_cli_reports_then_writes(tmp_path: Path, capsys) -> N
     # A check straight after a write is clean, and writing does not report stale.
     assert modelica_generator.main(argv) == 0
     assert "state:    written" in capsys.readouterr().out
+
+
+def test_calibrated_initialization_survives_generation_and_rejects_changed_inputs(tmp_path):
+    import pytest
+    from _5_App.modelica_generator import plan_modelica_stack, _record_parameters
+    root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(root, tmp_path)
+    result = generate_modelica_stack(vehicle_path, root=tmp_path)
+    record = result.files[0].path
+    pinned = root / '_0_Utils/external/BobLib/BobLib/Records/VehicleDefn' / record.name
+    calibration = _record_parameters(pinned.read_text())["pQSSInitialization"]
+    record.write_text(record.read_text().replace('  annotation(', calibration + '\n  annotation(', 1))
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert calibration in record.read_text()
+    entry = result.files[3].path.read_text()
+    assert 'fixInitialSuspensionAngles = true' in entry
+    assert 'initialRearRightLowerArmAngle = pVehicle.pQSSInitialization.rearRightLowerArmAngle' in entry
+    assert 'abs(initialVel - pVehicle.pQSSInitialization.referenceVelocity)' in entry
+    before = {item.path: item.path.read_bytes() for item in result.files}
+    data = load_yaml(vehicle_path)
+    data['sprung_mass']['mass_kg'] += 10
+    vehicle_path.write_text(yaml.safe_dump(data))
+    assert plan_modelica_stack(vehicle_path, root=tmp_path).initialization_error
+    with pytest.raises(ValueError, match='Recalibrate'):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert before == {path: path.read_bytes() for path in before}
+    data['modelica_initialization'] = 'legacy'
+    vehicle_path.write_text(yaml.safe_dump(data))
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert 'pQSSInitialization' not in record.read_text()
+
+
+def test_current_pinned_calibration_cannot_be_silently_transplanted():
+    from _5_App.modelica_generator import plan_modelica_stack
+    root = Path(__file__).resolve().parents[1]
+    plan = plan_modelica_stack(root / 'vehicle.yml', root=root)
+    # The current YAML aero and VCU inputs differ from the solved BobLib car.
+    assert plan.initialization_error is not None

@@ -471,8 +471,16 @@ def test_ggv_pure_lateral_endpoint_is_closed_at_coast(parameters):
         binary_iterations=4,
     )
 
-    # The endpoint is where the first tire reaches FZMIN.
-    assert 1.6 * 9.80665 < ay < 1.9 * 9.80665
+    # Check feasibility rather than baking in the old zero-ARB fallback's
+    # numerical limit: the active YAML now supplies nominal linkage/bar rates.
+    assert 0 < ay < 2.6 * G
+    model = create_model(3, parameters)
+    trim = solve_acceleration_trim(model, speed_mps=12.0,
+                                  longitudinal_acceleration_mps2=ax,
+                                  lateral_acceleration_mps2=ay)
+    assert trim.success
+    assert _trim_is_racing_feasible(trim, model=model, ay=ay,
+                                   max_abs_beta_rad=0.25, max_abs_steering_rad=0.5)
     assert ax < 0.0
     assert abs(ax) < 1.0
 
@@ -625,3 +633,34 @@ def test_ggv_and_ymd_backends_call_shared_qss_model(parameters, dof):
     assert converged
     assert np.isfinite(ay)
     assert np.isfinite(mz)
+
+
+def test_nominal_actuation_tracks_vehicle_springs_and_bars(tmp_path):
+    from _0_Utils.dyn_py.actuation import nominal_actuation_metrics
+    data = load_yaml(vehicle_yaml_path())
+    vehicle = tmp_path / 'vehicle.yml'
+    vehicle.write_text(yaml.safe_dump(data))
+    original = load_reduced_vehicle_parameters(vehicle)
+    assert all(value > 0 for value in original.antiroll_stiffness_nm_per_rad)
+    for row in data['front']['actuation']['shock']['spring_table']['table']:
+        row[1] *= 2
+    data['rear']['actuation']['stabar']['rate_n_m_per_rad'] *= 3
+    vehicle.write_text(yaml.safe_dump(data))
+    changed = load_reduced_vehicle_parameters(vehicle)
+    assert changed.suspension_stiffness_n_per_m[0] == pytest.approx(2 * original.suspension_stiffness_n_per_m[0])
+    assert changed.antiroll_stiffness_nm_per_rad[1] == pytest.approx(3 * original.antiroll_stiffness_nm_per_rad[1])
+    assert changed.suspension_stiffness_n_per_m[2] == pytest.approx(original.suspension_stiffness_n_per_m[2])
+    data['front']['actuation']['bellcrank']['axis'] = [0, 0, 0]
+    with pytest.raises(ValueError, match='Degenerate'):
+        nominal_actuation_metrics(data)
+
+
+def test_reduced_projection_never_reads_global_four_post_report(monkeypatch):
+    import _0_Utils.dyn_py.parameters as projection
+    monkeypatch.setattr(projection, '_load_metrics', lambda _path: pytest.fail('implicit report read'))
+    projection.load_reduced_vehicle_parameters()
+
+
+def test_explicit_calibration_must_exist(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_reduced_vehicle_parameters(four_post_metrics_path=tmp_path / 'missing.csv')

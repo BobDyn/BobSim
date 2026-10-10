@@ -48,6 +48,7 @@ class ModelicaGenerationResult:
 class ModelicaStackPlan:
     result: ModelicaGenerationResult
     contents: tuple[tuple[Path, str], ...]
+    initialization_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -272,6 +273,8 @@ TARGET_SIGNATURE_KINDS: dict[str, tuple[str, ...]] = {
 
 def generate_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = None) -> ModelicaGenerationResult:
     plan = plan_modelica_stack(vehicle_path, root=root)
+    if plan.initialization_error:
+        raise ValueError(plan.initialization_error)
     for path, text in plan.contents:
         _write_text(path, text)
     for path, entry in (
@@ -357,18 +360,88 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         files=files,
         package_orders=(record_order, vehicle_template_order, four_post_template_order),
     )
+    record_text = _vehicle_record_text(data, tire_root, vehicle_name, record_name, front_arch, rear_arch)
+    initialization_error = None
+    try:
+        initialization = _preserved_initialization(record_path, record_text, data)
+        if (initialization is None and data.get("modelica_initialization") != "legacy"
+                and vehicle_entry_path.is_file()
+                and "pQSSInitialization" in vehicle_entry_path.read_text(encoding="utf-8")):
+            raise ValueError("The active VehicleSim uses a calibrated QSS pose. Recalibrate this vehicle "
+                             "or explicitly set modelica_initialization: legacy before replacing it.")
+    except ValueError as exc:
+        initialization = None
+        initialization_error = str(exc)
+    if initialization:
+        record_text = record_text.replace("  annotation(", initialization + "\n\n  annotation(", 1)
     contents = (
-        (record_path, _vehicle_record_text(data, tire_root, vehicle_name, record_name, front_arch, rear_arch)),
+        (record_path, record_text),
         (vehicle_template_path, _vehicle_template_text(vehicle_template_name, record_name, front_arch, rear_arch)),
         (
             four_post_template_path,
             _four_post_template_text(four_post_template_name, record_name, front_arch, rear_arch),
         ),
-        (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name)),
+        (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name, calibrated=bool(initialization))),
         (four_post_entry_path, _four_post_entry_text(four_post_template_name)),
     )
-    return ModelicaStackPlan(result=result, contents=contents)
+    return ModelicaStackPlan(result=result, contents=contents, initialization_error=initialization_error)
 
+
+
+def _record_parameters(text: str) -> dict[str, str]:
+    """Extract parameter statements, including tables with embedded semicolons."""
+    result = {}
+    for match in re.finditer(r"\bparameter\s+[\w.]+\s+(\w+)\s*", text):
+        depth = 0
+        for end in range(match.end(), len(text)):
+            char = text[end]
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            elif char == ";" and depth == 0:
+                result[match[1]] = text[match.start():end + 1]
+                break
+    return result
+
+
+def _canonical_parameter(text: str) -> str:
+    # The pinned record uses numeric products for rim dimensions; the generator
+    # emits their evaluated values. No Modelica expressions are executed here.
+    number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    product = rf"(?<![\w.])({number})\s*\*\s*({number})(?![\w.])"
+    while re.search(product, text):
+        text = re.sub(product, lambda m: format(float(m[1]) * float(m[2]), ".12g"), text)
+    text = re.sub(rf"(?<![\w.]){number}(?![\w.])", lambda m: format(float(m[0]), ".12g"), text)
+    return re.sub(r"\s+", "", text)
+
+
+def _preserved_initialization(path: Path, generated: str, data: Mapping[str, Any]) -> str | None:
+    """Retain a calibrated pose only when its complete physical record matches.
+
+    Never transplant a solved pose onto a changed car. An explicit legacy mode
+    permits the existing BobLib settling initialization for a new study instead.
+    """
+    mode = data.get("modelica_initialization", "preserve")
+    if mode not in {"preserve", "legacy"}:
+        raise ValueError("modelica_initialization must be 'preserve' or 'legacy'")
+    if mode == "legacy" or not path.is_file():
+        return None
+    existing = _record_parameters(path.read_text(encoding="utf-8"))
+    initialization = existing.pop("pQSSInitialization", None)
+    if initialization is None:
+        return None
+    expected = _record_parameters(generated)
+    if {key: _canonical_parameter(value) for key, value in existing.items()} != {
+        key: _canonical_parameter(value) for key, value in expected.items()
+    }:
+        raise ValueError(
+            "This vehicle differs from the record with a solved QSS initialization. "
+            "Recalibrate the BobLib record for this setup, or explicitly set "
+            "modelica_initialization: legacy to use the uncalibrated settling start. "
+            "No Modelica files were written."
+        )
+    return "  " + initialization
 
 def modelica_generation_payload(result: ModelicaGenerationResult, repo_root: str | Path) -> dict[str, Any]:
     root = Path(repo_root).resolve()
@@ -405,11 +478,12 @@ def modelica_stack_status_payload(vehicle_path: str | Path, repo_root: str | Pat
     )
     files_current = all(item["current"] for item in files)
     orders_current = all(item["contains_entry"] for item in package_orders)
-    written = files_current and orders_current
+    written = files_current and orders_current and not plan.initialization_error
     any_written = any(item["exists"] for item in files)
     state = "written" if written else "stale" if any_written else "missing"
     latest_modified = max((float(item["modified"] or 0.0) for item in files), default=0.0)
     return {
+        "initialization_error": plan.initialization_error,
         "state": state,
         "written_to_boblib": written,
         "vehicle_name": plan.result.vehicle_name,
@@ -911,7 +985,25 @@ def _four_post_template_text(
     return "\n".join(lines)
 
 
-def _vehicle_entry_text(vehicle_template_name: str) -> str:
+def _vehicle_entry_text(vehicle_template_name: str, *, calibrated: bool = False) -> str:
+    initialization = (
+        "(chassis(\n"
+        "      chassisReferencePosition = pVehicle.pQSSInitialization.chassisReferencePosition,\n"
+        "      chassisReferenceAngles = pVehicle.pQSSInitialization.chassisReferenceAngles,\n"
+        "      fixInitialSuspensionAngles = true,\n"
+        "      initialFrontLeftLowerArmAngle = pVehicle.pQSSInitialization.frontLeftLowerArmAngle,\n"
+        "      initialFrontRightLowerArmAngle = pVehicle.pQSSInitialization.frontRightLowerArmAngle,\n"
+        "      initialRearLeftLowerArmAngle = pVehicle.pQSSInitialization.rearLeftLowerArmAngle,\n"
+        "      initialRearRightLowerArmAngle = pVehicle.pQSSInitialization.rearRightLowerArmAngle))"
+        if calibrated else ""
+    )
+    check = (
+        "initial equation\n"
+        "  assert(abs(initialVel - pVehicle.pQSSInitialization.referenceVelocity) < 1e-6,\n"
+        '    "VehicleSim QSS initialization was solved at a different initial velocity",\n'
+        "    AssertionLevel.warning);\n"
+        if calibrated else ""
+    )
     return "\n".join(
         (
             "within BobLib.Experiments.Standards;",
@@ -919,9 +1011,10 @@ def _vehicle_entry_text(vehicle_template_name: str) -> str:
             "model VehicleSim",
             "",
             "  \"VehicleInterfaces-aligned BobLib vehicle simulation entrypoint\"",
-            f"  extends Templates.Vehicle.{vehicle_template_name};",
+            f"  extends Templates.Vehicle.{vehicle_template_name}{initialization};",
             "  extends BobLib.Icons.SimulationIcon;",
             "",
+            check,
             "  annotation(",
             "    experiment(StartTime = 0.0, StopTime = 10, Tolerance = 1e-06, Interval = 0.002),",
             f'    __OpenModelica_commandLineOptions = "{VEHICLE_OMC_OPTIONS}",',
@@ -1223,6 +1316,8 @@ def _cli_status_lines(status: Mapping[str, Any]) -> list[str]:
         else:
             mark = "stale"
         lines.append(f"  {mark:<8} {item['path']}")
+    if status.get("initialization_error"):
+        lines.append(f"  initialization blocked: {status['initialization_error']}")
     for order in status["package_orders"]:
         mark = "current" if order["contains_entry"] else "missing"
         lines.append(f"  {mark:<8} {order['path']} <- {order['entry']}")

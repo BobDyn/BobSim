@@ -19,7 +19,9 @@ VEHICLE_RECORD = "pVehicle"
 # Variables read at initialisation, so an override reaches the physics.
 # isValueChangeable="true" is not enough. Toe, camber, mass and CG are evaluated
 # at compile time. To vet a candidate, compile two variants that differ only in
-# it and diff their *_init.xml. Re-check this list when the BobLib pin moves.
+# it and diff their *_init.xml. A changed non-changeable start value identifies
+# a compiled dependency. Compare override results with the separately compiled
+# variant. Re-check this list when the BobLib pin moves.
 RUNTIME_SAFE_PATHS = frozenset(
     {
         "front.stabar.rate_n_m_per_rad",
