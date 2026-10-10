@@ -390,8 +390,8 @@ def test_camber_curves_modify_reduced_tire_capacity(parameters):
     high_camber = np.full(4, np.deg2rad(4.0))
 
     alpha = np.linspace(0, .3, 301)[:, None]
-    straight = parameters.tire.forces(loads, alpha, 0, zero_camber)[1]
-    inclined = parameters.tire.forces(loads, alpha, 0, high_camber)[1]
+    straight = parameters.front_tire.forces(loads, alpha, 0, zero_camber)[1]
+    inclined = parameters.front_tire.forces(loads, alpha, 0, high_camber)[1]
     assert np.all(inclined.max(axis=0) < straight.max(axis=0))
     assert np.all(inclined[1] < straight[1])
 
@@ -504,7 +504,7 @@ def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
     invalid_output = replace(
         result.output,
         normal_loads_n=np.array(
-            [parameters.tire.fz_min_n - 1.0, 500.0, 500.0, 500.0]
+            [parameters.front_tire.fz_min_n - 1.0, 500.0, 500.0, 500.0]
         ),
     )
     invalid_trim = replace(result, output=invalid_output)
@@ -715,7 +715,7 @@ def test_all_fidelities_use_mf52_forces(parameters, dof):
     if dof >= 10:
         state[-4:] *= 1.04
     output = model.evaluate(state, ModelInputs(steering_rad=.04, wheel_torques_nm=(10., 10., 15., 15.)))
-    fx, fy = parameters.tire.forces(output.normal_loads_n, output.slip_angles_rad,
+    fx, fy = parameters.front_tire.forces(output.normal_loads_n, output.slip_angles_rad,
                                     output.slip_ratios, output.camber_rad)
     heading = output.toe_rad
     expected = np.column_stack((fx*np.cos(heading)-fy*np.sin(heading),

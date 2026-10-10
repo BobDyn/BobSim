@@ -23,7 +23,7 @@ from simulations.envelope.YMD.ymd_generation import VehicleParams as YMDVehicleP
 from engines.dynpy.parameters import project_powertrain_limits
 
 
-from common.vehicle_io import repo_root
+from common.vehicle_io import repo_root, tire_template_name
 
 REPO_ROOT = repo_root()
 DEFAULT_VEHICLE_YAML = REPO_ROOT / "vehicle.yml"
@@ -470,10 +470,7 @@ def _project_aero(
 
 
 def _resolve_tire_path(vehicle_data: dict[str, Any], repo_root: Path) -> Path:
-    tire_template = (
-        vehicle_data.get("aero", {}).get("tire_template")
-        or vehicle_data["front"]["tire"]["template"]
-    )
+    tire_template = tire_template_name(vehicle_data, vehicle_data["front"])
     tire_templates = vehicle_data.get("paths", {}).get(
         "tire_templates",
         "common/tire_templates",

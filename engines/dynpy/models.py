@@ -372,11 +372,18 @@ class VehicleDynamicsSystem(ABC):
         tuple[NDArray, NDArray, NDArray]
             Longitudinal forces, lateral forces and evaluated slip ratios.
         """
-        tire = self.parameters.tire
-        if self.dof < 10:
-            requested_fx = np.asarray(inputs.wheel_torques_nm) / np.asarray(self.parameters.wheel_radius_m)
-            slip_ratios = tire.slip_for_force(normal_loads, slip_angles, camber_rad, requested_fx)
-        fx, fy = tire.forces(normal_loads, slip_angles, slip_ratios, camber_rad)
+        fx, fy = np.empty(4), np.empty(4)
+        slip_ratios = slip_ratios.copy()
+        requested_fx = np.asarray(inputs.wheel_torques_nm) / np.asarray(self.parameters.wheel_radius_m)
+        for axle, tire in enumerate((self.parameters.front_tire, self.parameters.rear_tire)):
+            corners = slice(2 * axle, 2 * axle + 2)
+            if self.dof < 10:
+                slip_ratios[corners] = tire.slip_for_force(
+                    normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx[corners],
+                )
+            fx[corners], fy[corners] = tire.forces(
+                normal_loads[corners], slip_angles[corners], slip_ratios[corners], camber_rad[corners],
+            )
         return fx, fy, slip_ratios
 
     def _geometric_vertical_forces(

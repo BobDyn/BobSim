@@ -53,6 +53,10 @@ omega_dot = I^-1 (sum(M) - omega × I·omega)  (rotational)
 - 14DOF: integrates unsprung vertical motion and tire vertical compliance
 
 **Tire model:**
+
+Front and rear use their own `tire.template` selections. `aero.tire_template`
+is a fallback only when an axle has no selection. Load validity is checked
+against each corner's active fit.
 - Contact patch position/velocity from kinematics evaluator (includes bump toe, camber, migration effects)
 - Slip evaluated in individual wheel frames
 - MF5.2 longitudinal and lateral force curves with load and camber dependence

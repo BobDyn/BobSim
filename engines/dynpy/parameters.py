@@ -67,7 +67,8 @@ class ReducedVehicleParameters:
     kinematics: VehicleKinematics
     tire_vertical_stiffness_n_per_m: tuple[float, float, float, float]
     tire_vertical_damping_n_s_per_m: tuple[float, float, float, float]
-    tire: MF52Tire
+    front_tire: MF52Tire
+    rear_tire: MF52Tire
     rho_air_kg_m3: float
     cl_area_m2: float
     cd_area_m2: float
@@ -81,6 +82,17 @@ class ReducedVehicleParameters:
     maximum_drive_speed_mps: float
     drive_distribution_front: float
     brake_distribution_front: float
+
+    @property
+    def tires(self) -> tuple[MF52Tire, MF52Tire, MF52Tire, MF52Tire]:
+        """## Corner Tires
+
+        Returns
+        -------
+        tuple[MF52Tire, MF52Tire, MF52Tire, MF52Tire]
+            Tire fits ordered FL, FR, RL, RR.
+        """
+        return self.front_tire, self.front_tire, self.rear_tire, self.rear_tire
 
     @property
     def double_wishbone(self) -> VehicleKinematics:
@@ -183,10 +195,12 @@ def load_reduced_vehicle_parameters(
     front_damping = _wheel_damping(data, "front", metrics)
     rear_damping = _wheel_damping(data, "rear", metrics)
 
-    tire_name = tire_template_name(data, data["front"])
-    tire_path = tire_templates_root(data) / f"{tire_name}.tir"
-    tire_values = parse_tir(tire_path)
-    tire = MF52Tire({key: _tir_float(tire_values, key) for key in FORCE_COEFFICIENTS})
+    axle_tires = []
+    for axle in ("front", "rear"):
+        tire_name = tire_template_name(data, data[axle])
+        tire_path = tire_templates_root(data) / f"{tire_name}.tir"
+        tire_values = parse_tir(tire_path)
+        axle_tires.append(MF52Tire({key: _tir_float(tire_values, key) for key in FORCE_COEFFICIENTS}))
 
     cl_area, cd_area, aero_balance, aero_cop, aero_drag_application = _project_aero(
         data,
@@ -248,7 +262,8 @@ def load_reduced_vehicle_parameters(
             float(data["rear"]["tire"]["vertical_damping_n_s_per_m"]),
             float(data["rear"]["tire"]["vertical_damping_n_s_per_m"]),
         ),
-        tire=tire,
+        front_tire=axle_tires[0],
+        rear_tire=axle_tires[1],
         rho_air_kg_m3=1.225,
         cl_area_m2=cl_area,
         cd_area_m2=cd_area,

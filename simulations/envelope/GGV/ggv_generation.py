@@ -668,8 +668,10 @@ def _trim_outside_tire_domain(
     model: ReducedVehicleModel,
 ) -> bool:
     loads = np.asarray(trim.output.normal_loads_n, dtype=float)
-    tire = model.parameters.tire
-    return bool(np.any(loads < tire.fz_min_n) or np.any(loads > tire.fz_max_n))
+    return any(
+        load < tire.fz_min_n or load > tire.fz_max_n
+        for load, tire in zip(loads, model.parameters.tires)
+    )
 
 
 def solve_lateral_limit(

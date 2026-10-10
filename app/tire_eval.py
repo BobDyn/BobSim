@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from common.vehicle_io import parse_tir
+from common.vehicle_io import parse_tir, tire_template_name
 
 
 def _num(values: dict[str, Any], key: str, default: float = 0.0) -> float:
@@ -116,14 +116,13 @@ def _active_static_load_summary(vehicle: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tire_template_for_side(vehicle: dict[str, Any], side_name: str) -> str:
-    aero = vehicle.get("aero", {})
-    if isinstance(aero, dict) and aero.get("tire_template"):
-        return str(aero["tire_template"])
     side = vehicle.get(side_name, {})
     if not isinstance(side, dict):
         return ""
-    tire = side.get("tire", {})
-    return str(tire.get("template", "")) if isinstance(tire, dict) else ""
+    try:
+        return tire_template_name(vehicle, side)
+    except KeyError:
+        return ""
 
 
 def _safe_under_root(root: Path, raw_path: str | Path) -> Path:

@@ -54,12 +54,13 @@ def require_side(vehicle_data: Mapping[str, Any], side: str) -> dict[str, Any]:
 
 
 def tire_template_name(vehicle_data: Mapping[str, Any], side: Mapping[str, Any]) -> str:
+    tire = side.get("tire", {})
+    if isinstance(tire, Mapping) and tire.get("template"):
+        return str(tire["template"])
     aero = vehicle_data.get("aero", {})
-    if isinstance(aero, dict) and aero.get("tire_template"):
+    if isinstance(aero, Mapping) and aero.get("tire_template"):
         return str(aero["tire_template"])
-
-    tire = require_section(side, "side", "tire")
-    return str(require_key(tire, "side.tire", "template"))
+    raise KeyError("Missing tire.template for axle and aero.tire_template fallback")
 
 
 def tire_templates_root(vehicle_data: Mapping[str, Any]) -> Path:
