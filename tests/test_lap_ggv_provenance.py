@@ -28,6 +28,7 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
     vehicle = tmp_path / 'vehicle.yml'
     vehicle.write_text(yaml.safe_dump({
         'paths': {'tire_templates': tires.as_posix()},
+        'aero': {'tire_template': 'unused-global'},
         'front': {'tire': {'template': 'front'}},
         'rear': {'tire': {'template': 'rear'}},
     }))

@@ -320,8 +320,8 @@ def _study_scope_summary(
             "component-derived mass, CG, and full inertia tensor",
         ],
         "validity_limits": {
-            "tire_normal_load_min_n": parameters.tire.fz_min_n,
-            "tire_normal_load_max_n": parameters.tire.fz_max_n,
+            "tire_normal_load_min_n": [tire.fz_min_n for tire in parameters.tires],
+            "tire_normal_load_max_n": [tire.fz_max_n for tire in parameters.tires],
             "tire_load_range_enforced": bool(
                 qss_config.get("enforce_tire_load_range", True)
             ),
