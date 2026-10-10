@@ -77,9 +77,10 @@ load closure. The CoP is not clipped to the wheelbase, because doing so would
 change the map's pitch moment.
 
 `vehicle.yml` supplies geometry, component mass/inertia, wheel/tire values,
-suspension tables, aero maps, and powertrain layout. When available, the
-FourPost metrics CSV supplies measured/projected wheel and anti-roll stiffness;
-the YAML shock tables are the fallback.
+suspension tables, aero maps, and powertrain layout. Nominal shock motion ratios and anti-roll stiffness are derived from the active
+YAML linkage geometry. Global FourPost reports are never read implicitly. A
+caller may explicitly supply `four_post_metrics_path` for a reviewed, matching
+calibration; a missing explicitly requested file raises an error.
 
 ## Double-wishbone kinematic coupling
 
@@ -132,8 +133,8 @@ lookup and 165 ms with in-loop solves on the development machine. Grid density
 has negligible interpolation-time cost, so 49 points remains the default.
 
 Spring/damper and stabilizer-bar forces remain a separate elastic path. Spring
-and damper tables are projected through the BobLib/FourPost motion ratio to an
-equivalent wheel rate. Bar torsion is projected to axle roll stiffness and
+and damper tables are projected through the nominal geometry-derived motion
+ratio to an equivalent wheel rate. Bar torsion is projected to axle roll stiffness and
 applied as equal-and-opposite corner force. In 6/10DOF the massless-upright
 closure is
 
@@ -262,7 +263,7 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
   steer, but commanded roadwheel steer is added afterward; rack travel,
   Ackermann, and steer-dependent camber/caster/trail require a future 2D
   jounce-by-rack map.
-- Pushrod/bellcrank motion ratio remains a static FourPost projection, and
+- Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.
 - The tire is a compact MF-derived saturation model, not the full MF52/MF6.2
@@ -280,3 +281,9 @@ The early Longhorn Racing Electric transient prototypes inspired the model
 ladder and state-count convention, but BobSim's implementation is original.
 The linked repository has no license file, and its incomplete source was not
 copied.
+
+The nominal actuation projection differentiates wishbone, pushrod, bellcrank,
+and drop-link constraints at zero jounce. It retains configured stabar torsion
+in clean checkouts, and changes when the YAML spring or bar changes. It is not
+a substitute for settled, finite-travel FourPost correlation. Singular linkage
+geometry fails explicitly instead of inventing a unity motion ratio.

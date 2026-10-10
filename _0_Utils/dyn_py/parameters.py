@@ -14,11 +14,11 @@ from numpy.typing import NDArray
 from _0_Utils.vehicle_io import (
     load_yaml,
     parse_tir,
-    repo_root,
     tire_template_name,
     tire_templates_root,
     vehicle_yaml_path,
 )
+from _0_Utils.dyn_py.actuation import nominal_actuation_metrics
 from _0_Utils.dyn_py.kinematics import (
     KinematicsMode,
     VehicleKinematics,
@@ -199,7 +199,6 @@ def load_reduced_vehicle_parameters(
 
     source = Path(path) if path is not None else vehicle_yaml_path()
     data = load_yaml(source)
-    root = repo_root()
 
     components = _mass_components(data)
     total_mass, total_cg, total_inertia = _combine_mass_properties(components)
@@ -241,12 +240,11 @@ def load_reduced_vehicle_parameters(
         0.5 * (1.0 - front_fraction) * total_mass * G,
     )
 
-    metrics_path = (
-        Path(four_post_metrics_path)
-        if four_post_metrics_path is not None
-        else root / "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv"
-    )
-    metrics = _load_metrics(metrics_path)
+    # A global report may describe another vehicle. Default projection depends
+    # exclusively on the requested YAML; measured calibration is explicit.
+    metrics = nominal_actuation_metrics(data)
+    if four_post_metrics_path is not None:
+        metrics.update(_load_metrics(Path(four_post_metrics_path)))
     kinematics = create_kinematics(
         data,
         mode=kinematics_mode,
@@ -511,8 +509,8 @@ def _table_slope(table: Sequence[Sequence[float]]) -> float:
 
 
 def _load_metrics(path: Path) -> dict[str, float]:
-    if not path.exists():
-        return {}
+    if not path.is_file():
+        raise FileNotFoundError(path)
     metrics: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
