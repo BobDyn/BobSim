@@ -134,7 +134,7 @@ def check_pipeline_hash(
 ) -> None:
     """Raise RuntimeError if pipeline inputs have changed since last run.
 
-    Does nothing if no hash file exists (first run).
+    A first run may lack a hash only when no compiled variant build exists.
     """
     hash_path = population_dir / HASH_FILE
     if not hash_path.exists():
@@ -163,7 +163,9 @@ def check_pipeline_hash(
             "  - _3_StandardSim/SteadyStateEval/steady_state_eval_sim.py\n"
             "  - _3_StandardSim/SteadyStateEval/steady_state_eval_config.yml\n"
             "  - _3_StandardSim/_modelica_runner.py\n"
-            "  - BobLib submodule\n"
+            "  - Referenced baseline record and vehicle template\n"
+            "  - Compiler/generator tooling, build template, and FourPost metrics\n"
+            "  - BobLib commit and working-tree Modelica sources\n"
         )
 
 
