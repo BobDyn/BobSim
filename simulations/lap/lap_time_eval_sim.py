@@ -315,7 +315,7 @@ def _study_scope_summary(
             f"{model_dof}DOF reduced vehicle equations",
             "speed-dependent QSS GGV",
             "forward transient lap when requested",
-            "MF5.2 steady-state longitudinal and lateral force curves",
+            "MF5.2 steady-state force and moment curves",
             "nominal ride-height aero map applied at mapped CoP",
             "component-derived mass, CG, and full inertia tensor",
         ],
@@ -333,7 +333,7 @@ def _study_scope_summary(
         },
         "known_unmodeled_or_uncorrelated": [
             "aero yaw dependence and in-motion ride-height map lookup",
-            "tire moments, temperature, wear, and relaxation length",
+            "tire temperature, wear, and relaxation length",
             "energy depletion and thermal derating",
             "driver execution, surface/weather, reliability, and penalties",
             "competition telemetry response-space coverage",

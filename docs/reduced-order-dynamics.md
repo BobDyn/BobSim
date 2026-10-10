@@ -59,7 +59,7 @@ is a fallback only when an axle has no selection. Load validity is checked
 against each corner's active fit.
 - Contact patch position/velocity from kinematics evaluator (includes bump toe, camber, migration effects)
 - Slip evaluated in individual wheel frames
-- MF5.2 longitudinal and lateral force curves with load and camber dependence
+- MF5.2 Fx, Fy, Mx, My and Mz curves with load and camber dependence
 - MF5.2 combined slip, shifts, scale factors and post-peak force reduction
 
 **Drive and brake:**
@@ -277,10 +277,13 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
 - Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.
-- Tire forces use BobLib's steady-state MF5.2 curves. Tire moments and
-  relaxation-length states are not included. The 3/6DOF models solve algebraic
+- Tire forces and moments use BobLib's steady-state MF5.2 curves.
+  Relaxation-length states are not included. The 3/6DOF models solve algebraic
   wheel slip within the tire fit bounds and reject trims that miss wheel torque
-  demand. The 10/14DOF models obtain slip from wheel rotation.
+  demand, including rolling resistance. The 10/14DOF models obtain slip from
+  wheel rotation with `J*omega_dot = torque + My - Fx*radius`. The chassis
+  moment balance excludes torque accelerating wheel spin. Wheel gyroscopic
+  coupling and steering inertia remain outside the reduced model.
 - The powertrain is represented by wheel torque in the transient equations;
   the GGV and lap-controller power cap remains an outer feasibility constraint.
 - The 32 kW endurance setting is a constant event cap, not an accumulator-energy

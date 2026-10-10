@@ -302,9 +302,20 @@ def test_flat_road_qss_loads_converge_across_fidelity_ladder(parameters):
         rtol=0.06,
         atol=15.0,
     )
+    # Wheel acceleration now reacts on chassis pitch. Equality with 6DOF holds
+    # in the negligible wheel-inertia limit, not with finite spinning inertia.
+    light_wheels = replace(parameters, wheel_inertia_kg_m2=tuple(
+        inertia * 1e-2 for inertia in parameters.wheel_inertia_kg_m2
+    ))
+    massless_limit = solve_acceleration_trim(
+        create_model(10, light_wheels), speed_mps=12.0,
+        longitudinal_acceleration_mps2=0.5 * G, lateral_acceleration_mps2=G,
+        initial_unknowns=results[10].unknowns,
+    )
+    assert massless_limit.success
     np.testing.assert_allclose(
         results[6].output.normal_loads_n,
-        results[10].output.normal_loads_n,
+        massless_limit.output.normal_loads_n,
         rtol=2e-4,
         atol=1e-3,
     )
@@ -526,6 +537,14 @@ def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
 
 
 def test_prescribed_acceleration_and_moment_qss_use_same_6dof_equations(parameters):
+    from engines.dynpy import MF52Tire
+    # Reflection is an invariant of a symmetric fit, not of measured residual
+    # moments and direction-dependent coefficients in an arbitrary tire file.
+    symmetric = MF52Tire({**parameters.front_tire.coefficients, **dict.fromkeys(
+        ('PEY3', 'PVY1', 'PVY2', 'PHY1', 'PHY2', 'QSX1', 'QDZ3', 'QDZ6',
+         'QDZ7', 'QBZ4', 'QEZ4', 'QHZ1', 'QHZ2'), 0.0,
+    )})
+    parameters = replace(parameters, front_tire=symmetric, rear_tire=symmetric)
     model = create_model(6, parameters)
     acceleration = solve_acceleration_trim(
         model,
@@ -590,6 +609,11 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
         "wheelCenterOffsetZRR",
         "instantLinkLongitudinalFL",
         "instantLinkLateralRR",
+        "tireFxFL",
+        "tireFyFR",
+        "tireMxFL",
+        "tireMyRL",
+        "tireMzRR",
     ):
         assert signal in result.signals
     metrics = compare_transient_signals(
@@ -723,3 +747,54 @@ def test_all_fidelities_use_mf52_forces(parameters, dof):
     np.testing.assert_allclose(output.wheel_forces_body_n[:, :2], expected, rtol=1e-12, atol=1e-10)
     if dof < 10:
         np.testing.assert_allclose(fx, np.array([10., 10., 15., 15.])/parameters.wheel_radius_m, atol=1e-7)
+
+
+@pytest.mark.parametrize('dof', [3, 6, 10, 14])
+def test_rolling_moment_closes_wheel_torque_balance(parameters, dof):
+    from engines.dynpy import MF52Tire
+    tire = MF52Tire({**parameters.front_tire.coefficients, 'QSY1': .02, 'QSY2': .003, 'QSY3': .001})
+    model = create_model(dof, replace(parameters, front_tire=tire, rear_tire=tire))
+    controls = ModelInputs(steering_rad=.04, wheel_torques_nm=(5., 5., 12., 12.))
+    state = model.initial_state(12.)
+    output = model.evaluate(state, controls)
+    heading = output.toe_rad
+    fx = output.wheel_forces_body_n[:, 0]*np.cos(heading)+output.wheel_forces_body_n[:, 1]*np.sin(heading)
+    my = output.wheel_moments_tire_nm[:, 1]
+    assert np.all(my < 0)
+    net_torque = np.asarray(controls.wheel_torques_nm)+my-fx*parameters.wheel_radius_m
+    if dof < 10:
+        np.testing.assert_allclose(net_torque, 0, atol=1e-7)
+    else:
+        np.testing.assert_allclose(output.generalized_acceleration[-4:]*parameters.wheel_inertia_kg_m2,
+                                   net_torque, atol=1e-10)
+
+
+@pytest.mark.parametrize('dof', [3, 6, 10, 14])
+def test_aligning_moment_changes_chassis_yaw_balance(parameters, dof):
+    from engines.dynpy import MF52Tire
+    zero_aligning = MF52Tire({**parameters.front_tire.coefficients,
+                             **{key: 0. for key in parameters.front_tire.coefficients
+                                if key.startswith(('QDZ', 'SSZ'))}})
+    full = create_model(dof, parameters)
+    without = create_model(dof, replace(parameters, front_tire=zero_aligning, rear_tire=zero_aligning))
+    controls = ModelInputs(steering_rad=.05)
+    state = full.initial_state(12.)
+    output, reference = full.evaluate(state, controls), without.evaluate(state, controls)
+    np.testing.assert_allclose(output.wheel_forces_body_n, reference.wheel_forces_body_n, atol=1e-10)
+    yaw_torque = sum(output.wheel_moments_tire_nm[:, 2])
+    assert abs(yaw_torque) > .1
+    assert output.body_moment_nm[2]-reference.body_moment_nm[2] == pytest.approx(yaw_torque, abs=1e-10)
+
+
+def test_chassis_and_wheel_moments_conserve_applied_pitch_torque(parameters):
+    model = create_model(10, parameters)
+    state = model.initial_state(12.)
+    state[-4:] *= 1.03
+    controls = ModelInputs(steering_rad=.06, wheel_torques_nm=(5., 5., 12., 12.))
+    output = model.evaluate(state, controls)
+    _, aero_moment = model._aero_load(state[model.dof:][:6])
+    external = np.sum(np.cross(output.contact_patch_positions_body_m, output.wheel_forces_body_n)
+                      + output.wheel_moments_body_nm, axis=0)+aero_moment
+    spin_axes = np.column_stack((-np.sin(output.toe_rad), np.cos(output.toe_rad), np.zeros(4)))
+    spin = output.generalized_acceleration[-4:]*parameters.wheel_inertia_kg_m2
+    np.testing.assert_allclose(output.body_moment_nm+np.sum(spin[:, None]*spin_axes, axis=0), external, atol=1e-10)

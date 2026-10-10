@@ -19,7 +19,7 @@ from common.vehicle_io import (
     vehicle_yaml_path,
 )
 from engines.dynpy.actuation import nominal_actuation_metrics
-from engines.dynpy.tire import FORCE_COEFFICIENTS, MF52Tire
+from engines.dynpy.tire import MF52_COEFFICIENTS, MF52Tire
 from engines.kinpy import (
     KinematicsMode,
     VehicleKinematics,
@@ -200,7 +200,7 @@ def load_reduced_vehicle_parameters(
         tire_name = tire_template_name(data, data[axle])
         tire_path = tire_templates_root(data) / f"{tire_name}.tir"
         tire_values = parse_tir(tire_path)
-        axle_tires.append(MF52Tire({key: _tir_float(tire_values, key) for key in FORCE_COEFFICIENTS}))
+        axle_tires.append(MF52Tire({key: _tir_float(tire_values, key) for key in MF52_COEFFICIENTS}))
 
     cl_area, cd_area, aero_balance, aero_cop, aero_drag_application = _project_aero(
         data,

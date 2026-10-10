@@ -478,5 +478,7 @@ def _wheel_force_balance_valid(
     headings = output.toe_rad
     forces = output.wheel_forces_body_n
     actual = forces[:, 0]*np.cos(headings)+forces[:, 1]*np.sin(headings)
-    requested = np.asarray(inputs.wheel_torques_nm)/np.asarray(model.parameters.wheel_radius_m)
+    requested = (
+        np.asarray(inputs.wheel_torques_nm) + output.wheel_moments_tire_nm[:, 1]
+    ) / np.asarray(model.parameters.wheel_radius_m)
     return bool(np.allclose(actual, requested, rtol=2e-3, atol=1.0))

@@ -67,6 +67,8 @@ class ModelOutput:
     body_force_n: FloatArray
     body_moment_nm: FloatArray
     wheel_forces_body_n: FloatArray
+    wheel_moments_tire_nm: FloatArray
+    wheel_moments_body_nm: FloatArray
     normal_loads_n: FloatArray
     slip_angles_rad: FloatArray
     slip_ratios: FloatArray
@@ -205,7 +207,16 @@ class VehicleDynamicsSystem(ABC):
                 slip_ratios,
                 kinematics.camber_rad,
                 inputs,
+                wheel_longitudinal_speed,
             )
+            tire_moments = self._tire_moments(
+                normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
+            )
+            wheel_moments_body = np.column_stack((
+                tire_moments[:, 0]*cos_delta-tire_moments[:, 1]*sin_delta,
+                tire_moments[:, 0]*sin_delta+tire_moments[:, 1]*cos_delta,
+                tire_moments[:, 2],
+            ))
             fx_body = fx_tire * cos_delta - fy_tire * sin_delta
             fy_body = fx_tire * sin_delta + fy_tire * cos_delta
             geometric_vertical = self._geometric_vertical_forces(
@@ -216,6 +227,7 @@ class VehicleDynamicsSystem(ABC):
             algebraic_load_transfer = self._algebraic_load_transfer(
                 fx_body,
                 fy_body,
+                wheel_moments_body,
             )
             closed_loads = np.maximum(
                 self._closed_normal_loads(
@@ -238,7 +250,16 @@ class VehicleDynamicsSystem(ABC):
             slip_ratios,
             kinematics.camber_rad,
             inputs,
+            wheel_longitudinal_speed,
         )
+        tire_moments = self._tire_moments(
+            normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
+        )
+        wheel_moments_body = np.column_stack((
+            tire_moments[:, 0]*cos_delta-tire_moments[:, 1]*sin_delta,
+            tire_moments[:, 0]*sin_delta+tire_moments[:, 1]*cos_delta,
+            tire_moments[:, 2],
+        ))
         fx_body = fx_tire * cos_delta - fy_tire * sin_delta
         fy_body = fx_tire * sin_delta + fy_tire * cos_delta
         geometric_vertical = self._geometric_vertical_forces(
@@ -249,6 +270,7 @@ class VehicleDynamicsSystem(ABC):
         algebraic_load_transfer = self._algebraic_load_transfer(
             fx_body,
             fy_body,
+            wheel_moments_body,
         )
         unsprung_accel = self._unsprung_acceleration_with_geometry(
             unsprung_accel,
@@ -266,8 +288,16 @@ class VehicleDynamicsSystem(ABC):
         aero_force, aero_moment = self._aero_load(body_velocities)
         body_force = np.sum(body_wheel_forces, axis=0) + gravity_body + aero_force
         body_moment = (
-            np.sum(np.cross(corner_positions, body_wheel_forces), axis=0) + aero_moment
+            np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
         )
+
+        if self.dof >= 10:
+            # Subtract the moment accelerating wheel spin from the chassis balance.
+            spin_torque = self._wheel_angular_acceleration(fx_tire, inputs, tire_moments[:, 1]) * np.asarray(
+                self.parameters.wheel_inertia_kg_m2
+            )
+            spin_axes = np.column_stack((-sin_delta, cos_delta, np.zeros(4)))
+            body_moment -= np.sum(spin_torque[:, None] * spin_axes, axis=0)
 
         omega = body_velocities[3:6]
         body_linear_accel = (
@@ -285,6 +315,7 @@ class VehicleDynamicsSystem(ABC):
             velocities,
             wheel_speeds,
             fx_tire,
+            tire_moments[:, 1],
             unsprung_accel,
             inputs,
         )
@@ -302,6 +333,8 @@ class VehicleDynamicsSystem(ABC):
             body_force_n=body_force,
             body_moment_nm=body_moment,
             wheel_forces_body_n=wheel_forces_body,
+            wheel_moments_tire_nm=tire_moments,
+            wheel_moments_body_nm=wheel_moments_body,
             normal_loads_n=normal_loads,
             slip_angles_rad=slip_angles,
             slip_ratios=slip_ratios,
@@ -349,6 +382,7 @@ class VehicleDynamicsSystem(ABC):
         slip_ratios: FloatArray,
         camber_rad: FloatArray,
         inputs: ModelInputs,
+        wheel_speed_mps: FloatArray | None = None,
     ) -> tuple[FloatArray, FloatArray, FloatArray]:
         """## Tire Forces
 
@@ -367,6 +401,9 @@ class VehicleDynamicsSystem(ABC):
         inputs : ModelInputs
             Applied wheel torques for the algebraic 3 and 6 DOF wheels.
 
+        wheel_speed_mps : NDArray or None
+            Wheel-frame longitudinal speeds for rolling resistance. Defaults to zero.
+
         Returns
         -------
         tuple[NDArray, NDArray, NDArray]
@@ -374,17 +411,38 @@ class VehicleDynamicsSystem(ABC):
         """
         fx, fy = np.empty(4), np.empty(4)
         slip_ratios = slip_ratios.copy()
-        requested_fx = np.asarray(inputs.wheel_torques_nm) / np.asarray(self.parameters.wheel_radius_m)
+        speed = np.zeros(4) if wheel_speed_mps is None else wheel_speed_mps
+        torques = np.asarray(inputs.wheel_torques_nm)
+        radii = np.asarray(self.parameters.wheel_radius_m)
         for axle, tire in enumerate((self.parameters.front_tire, self.parameters.rear_tire)):
             corners = slice(2 * axle, 2 * axle + 2)
             if self.dof < 10:
+                my_zero = tire.rolling_moment(normal_loads[corners], 0.0, speed[corners])
+                my_slope = tire.rolling_moment(normal_loads[corners], 1.0, speed[corners]) - my_zero
+                lever = radii[corners] - my_slope
+                if np.any(lever <= 0):
+                    raise ValueError("Tire rolling moment gives a nonpositive wheel torque lever.")
+                requested_fx = (torques[corners] + my_zero) / lever
                 slip_ratios[corners] = tire.slip_for_force(
-                    normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx[corners],
+                    normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx,
                 )
             fx[corners], fy[corners] = tire.forces(
                 normal_loads[corners], slip_angles[corners], slip_ratios[corners], camber_rad[corners],
             )
         return fx, fy, slip_ratios
+
+    def _tire_moments(
+        self, normal_loads: FloatArray, slip_angles: FloatArray, slip_ratios: FloatArray,
+        camber_rad: FloatArray, wheel_speed_mps: FloatArray,
+    ) -> FloatArray:
+        moments = np.empty((4, 3))
+        for axle, tire in enumerate((self.parameters.front_tire, self.parameters.rear_tire)):
+            corners = slice(2 * axle, 2 * axle + 2)
+            moments[corners] = np.column_stack(tire.moments(
+                normal_loads[corners], slip_angles[corners], slip_ratios[corners],
+                camber_rad[corners], wheel_speed_mps[corners],
+            ))
+        return moments
 
     def _geometric_vertical_forces(
         self,
@@ -413,10 +471,11 @@ class VehicleDynamicsSystem(ABC):
         self,
         fx_body: FloatArray,
         fy_body: FloatArray,
+        tire_moments_body: FloatArray,
     ) -> FloatArray:
         """Return planar pitch/roll load transfer when suspension DOFs are absent."""
 
-        del fx_body, fy_body
+        del fx_body, fy_body, tire_moments_body
         return np.zeros(4)
 
     def _unsprung_acceleration_with_geometry(
@@ -550,6 +609,7 @@ class VehicleDynamicsSystem(ABC):
         velocities: FloatArray,
         wheel_speeds: FloatArray,
         fx_tire: FloatArray,
+        my_tire: FloatArray,
         unsprung_accel: FloatArray,
         inputs: ModelInputs,
     ) -> FloatArray:
@@ -559,13 +619,14 @@ class VehicleDynamicsSystem(ABC):
         self,
         fx_tire: FloatArray,
         inputs: ModelInputs,
+        my_tire: FloatArray,
     ) -> FloatArray:
-        """Apply J*omega_dot = drive torque - tire reaction torque."""
+        """Apply J*omega_dot = drive torque + My - Fx*radius."""
 
         wheel_torque = np.asarray(inputs.wheel_torques_nm, dtype=float)
         wheel_radius = np.asarray(self.parameters.wheel_radius_m)
         wheel_inertia = np.asarray(self.parameters.wheel_inertia_kg_m2)
-        return (wheel_torque - fx_tire * wheel_radius) / wheel_inertia
+        return (wheel_torque + my_tire - fx_tire * wheel_radius) / wheel_inertia
 
     @abstractmethod
     def _coordinate_derivative(
@@ -674,6 +735,7 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         self,
         fx_body: FloatArray,
         fy_body: FloatArray,
+        tire_moments_body: FloatArray,
     ) -> FloatArray:
         """Close planar pitch and roll moments with contact-patch reactions."""
 
@@ -683,14 +745,14 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         wheelbase = front_x - rear_x
 
         # r x F gives My = z*Fx. Axle vertical reactions balance it.
-        horizontal_pitch_moment = float(np.sum(positions[:, 2] * fx_body))
+        horizontal_pitch_moment = float(np.sum(positions[:, 2] * fx_body + tire_moments_body[:, 1]))
         front_delta = horizontal_pitch_moment / wheelbase
         pitch_transfer = np.array(
             [front_delta / 2.0, front_delta / 2.0, -front_delta / 2.0, -front_delta / 2.0]
         )
 
         # Tire lateral force gives Mx = -z*Fy. Roll stiffness splits the reaction by axle.
-        horizontal_roll_moment = float(np.sum(-positions[:, 2] * fy_body))
+        horizontal_roll_moment = float(np.sum(-positions[:, 2] * fy_body + tire_moments_body[:, 0]))
         roll_transfer = self._roll_moment_load_transfer(
             horizontal_roll_moment,
             self._front_roll_stiffness_fraction(),
@@ -739,10 +801,11 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         velocities: FloatArray,
         wheel_speeds: FloatArray,
         fx_tire: FloatArray,
+        my_tire: FloatArray,
         unsprung_accel: FloatArray,
         inputs: ModelInputs,
     ) -> FloatArray:
-        del velocities, wheel_speeds, fx_tire, unsprung_accel, inputs
+        del velocities, wheel_speeds, fx_tire, my_tire, unsprung_accel, inputs
         return body_accel[[0, 1, 5]]
 
     def _coordinate_derivative(
@@ -865,10 +928,11 @@ class VehicleModel6DOF(VehicleModel3DOF):
         velocities: FloatArray,
         wheel_speeds: FloatArray,
         fx_tire: FloatArray,
+        my_tire: FloatArray,
         unsprung_accel: FloatArray,
         inputs: ModelInputs,
     ) -> FloatArray:
-        del velocities, wheel_speeds, fx_tire, unsprung_accel, inputs
+        del velocities, wheel_speeds, fx_tire, my_tire, unsprung_accel, inputs
         return body_accel
 
     def _coordinate_derivative(
@@ -896,7 +960,7 @@ class VehicleModel10DOF(VehicleModel6DOF):
         qdot* = [body_rate_6, wheel_speed_fl, wheel_speed_fr, wheel_speed_rl, wheel_speed_rr]
 
     Longitudinal force comes from tire slip ratio. Each wheel obeys
-    ``J*wheel_accel = applied_torque - Fx*radius``.
+    ``J*wheel_accel = applied_torque + My - Fx*radius``.
     """
 
     dof: ClassVar[DOFModel] = 10
@@ -937,11 +1001,12 @@ class VehicleModel10DOF(VehicleModel6DOF):
         velocities: FloatArray,
         wheel_speeds: FloatArray,
         fx_tire: FloatArray,
+        my_tire: FloatArray,
         unsprung_accel: FloatArray,
         inputs: ModelInputs,
     ) -> FloatArray:
         del velocities, wheel_speeds, unsprung_accel
-        wheel_accel = self._wheel_angular_acceleration(fx_tire, inputs)
+        wheel_accel = self._wheel_angular_acceleration(fx_tire, inputs, my_tire)
         return np.concatenate((body_accel, wheel_accel))
 
     def _coordinate_derivative(
@@ -1126,11 +1191,12 @@ class VehicleModel14DOF(VehicleModel10DOF):
         velocities: FloatArray,
         wheel_speeds: FloatArray,
         fx_tire: FloatArray,
+        my_tire: FloatArray,
         unsprung_accel: FloatArray,
         inputs: ModelInputs,
     ) -> FloatArray:
         del velocities, wheel_speeds
-        wheel_accel = self._wheel_angular_acceleration(fx_tire, inputs)
+        wheel_accel = self._wheel_angular_acceleration(fx_tire, inputs, my_tire)
         return np.concatenate((body_accel, unsprung_accel, wheel_accel))
 
     def _coordinate_derivative(
