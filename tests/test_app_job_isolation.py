@@ -35,6 +35,8 @@ def test_job_reserves_workspace_until_packaging_finishes(monkeypatch):
     monkeypatch.setattr(actions, 'ACTION_SPECS', {'simulate': action})
     monkeypatch.setattr(actions, 'WORKFLOWS', (workflow,))
     monkeypatch.setattr(actions, '_workflow_by_id', lambda _: workflow)
+    # Input capture is supplied by the independent archive-provenance fix.
+    monkeypatch.setattr(actions, 'capture_workflow_inputs', lambda _: {}, raising=False)
     monkeypatch.setattr(actions, '_run_action_process', lambda *_: 0)
     monkeypatch.setattr(actions, 'save_active_results', package)
     monkeypatch.setattr(actions.threading, 'Thread', tracked_thread)
