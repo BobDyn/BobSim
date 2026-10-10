@@ -251,6 +251,21 @@ def test_3dof_and_6dof_initial_planar_response_remains_same_order(parameters):
     )
 
 
+@pytest.mark.parametrize("steering_seed", (-1e-8, 0.0, 1e-8))
+def test_straight_trim_converges_across_zero_steering(parameters, steering_seed):
+    model = create_model(3, parameters)
+    trim = solve_steady_state(
+        model, speed_mps=12.0, initial_steering_rad=steering_seed,
+    )
+
+    assert trim.success
+    np.testing.assert_allclose(trim.output.generalized_acceleration, 0.0, atol=1e-7)
+    reference = solve_steady_state(model, speed_mps=12.0, initial_steering_rad=1e-3)
+    assert reference.success
+    np.testing.assert_allclose(trim.state, reference.state, atol=1e-7)
+    assert trim.inputs.steering_rad == pytest.approx(reference.inputs.steering_rad, abs=1e-8)
+
+
 def test_3dof_has_algebraic_load_transfer_and_rear_wheel_drive(parameters):
     model = create_model(3, parameters)
     static = solve_acceleration_trim(

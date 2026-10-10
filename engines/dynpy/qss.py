@@ -205,6 +205,8 @@ def _solve_trim(
     solution = least_squares(  # type: ignore[operator]
         residual,
         bounded_guess,
+        # Center differences across near-zero MF52 moment shifts and geometry roundoff.
+        jac="3-point",
         bounds=(lower_array, upper_array),
         xtol=tolerance,
         ftol=tolerance,
