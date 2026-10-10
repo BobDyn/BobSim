@@ -26,7 +26,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from engines.dynpy.parameters import G, ReducedVehicleParameters
-from engines.dynpy.kinematics import VehicleKinematicState
+from engines.kinpy import VehicleKinematicState
 
 
 FloatArray = NDArray[np.float64]

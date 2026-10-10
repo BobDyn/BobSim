@@ -18,7 +18,7 @@ from engines.dynpy import (
     Vehicle,
     compare_transient_signals,
 )
-from engines.dynpy import KinematicsMode
+from engines.kinpy import KinematicsMode
 
 
 COMPARISON_SIGNALS = ("velX", "velY", "yawVel", "sideslip", "accX", "accY", "roll")

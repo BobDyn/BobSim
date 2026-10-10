@@ -1,11 +1,4 @@
-"""Precomputed and exact suspension-kinematics evaluators.
-
-The nonlinear double-wishbone constraint solve belongs here in ``kin_py``.
-Consumers such as ``dyn_py`` can select either a jounce-indexed lookup table or
-the same nonlinear solve at every force evaluation.  Both backends expose the
-same four-corner state, which keeps the dynamics equations independent of how
-the kinematics were evaluated.
-"""
+"""Lookup and direct evaluators backed by KinPy's QuarterCar assembly."""
 
 from __future__ import annotations
 

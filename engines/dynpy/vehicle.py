@@ -9,7 +9,7 @@ from typing import Mapping
 
 from numpy.typing import ArrayLike
 
-from engines.dynpy.kinematics import (
+from engines.kinpy import (
     KinematicsMode,
     VehicleKinematicState,
     VehicleKinematics,

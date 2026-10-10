@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from app.http_utils import parse_byte_range as _parse_byte_range
 from app import visual as app_visual
 from app import execution as workspace_execution
-from engines.dynpy import kinematic_curves_payload
+from engines.kinpy import kinematic_curves_payload
 
 
 ROOT = Path.cwd()

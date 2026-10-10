@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 from typing import Mapping
 
-from engines.dynpy import DoubleWishboneInstantLinks, load_reduced_vehicle_parameters
+from engines.kinpy import DoubleWishboneInstantLinks
+from engines.dynpy import load_reduced_vehicle_parameters
 
 
 BOBLIB_METRIC_NAMES = {

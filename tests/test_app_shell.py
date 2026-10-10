@@ -1239,7 +1239,7 @@ def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
 def test_app_generates_live_kinematic_curves_for_active_vehicle() -> None:
     payload = app.kinematic_curves_from_active_vehicle()
 
-    assert payload["model"].startswith("BobSim native")
+    assert payload["model"] == "KinPy QuarterCar kinematics"
     if not payload["available"]:
         pytest.skip(payload["warnings"][0])
     assert payload["axles"]["front"]["ok"] is True

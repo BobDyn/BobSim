@@ -14,7 +14,6 @@ from engines.kinpy import (
     create_kinematics,
     kinematic_curves_payload,
 )
-from app import kinematics as app_kinematics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,11 +23,6 @@ INCH_TO_M = 0.0254
 def test_kinematics_model_lives_in_shared_suspension_package() -> None:
     assert CornerKinematics.__module__ == "engines.kinpy.kinematics"
     assert kinematic_curves_payload.__module__ == "engines.kinpy.kinematics"
-
-
-def test_app_kinematics_import_is_compatibility_shim() -> None:
-    assert app_kinematics.CornerKinematics is CornerKinematics
-    assert app_kinematics.kinematic_curves_payload is kinematic_curves_payload
 
 
 def test_precomputed_vehicle_kinematics_matches_in_loop_nonlinear_solution() -> None:
@@ -1076,3 +1070,35 @@ def test_four_post_anti_dive_sign_is_independent_of_pulse_direction(
     assert summary["avg_anti_dive_pct"] == pytest.approx(expected_anti_pct)
     np.testing.assert_allclose(series["fr_anti_vs_heave"], expected_anti_pct)
     assert summary["avg_longitudinal_jacking_coeff_front"] == pytest.approx(coefficient)
+
+
+@pytest.mark.parametrize("axle", ("front", "rear"))
+def test_kinpy_continuation_crosses_nominal_pose(axle: str) -> None:
+    vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text())
+    corner = CornerKinematics.from_vehicle(vehicle, axle)
+    guess = np.zeros(3)
+    for jounce in (-0.0025, 0.0, 0.0025):
+        guess, points, residual = corner.solve_jounce(jounce, guess)
+        assert residual < 1e-8
+        assert points.contact_patch[2] == pytest.approx(corner.contact_patch_initial[2] + jounce, abs=1e-8)
+
+
+def test_corner_snapshots_are_independent_of_later_solves() -> None:
+    corner = CornerKinematics.from_vehicle(_direct_quarter_car_vehicle(), "front")
+    _, first, _ = corner.solve_jounce(0.25, np.zeros(3))
+    saved = {name: values.copy() for name, values in vars(first).items()}
+    corner.solve_jounce(-0.3, np.zeros(3), rack_displacement_m=0.15)
+    for name, values in vars(first).items():
+        np.testing.assert_array_equal(values, saved[name])
+    _, repeated, _ = corner.solve_jounce(0.25, np.zeros(3))
+    for name, values in vars(repeated).items():
+        np.testing.assert_allclose(values, saved[name], atol=1e-10)
+
+
+def test_geometry_only_corner_rejects_unreachable_pose() -> None:
+    corner = CornerKinematics.from_vehicle(_direct_quarter_car_vehicle(), "front")
+    with pytest.raises(ValueError, match="constraint residual"):
+        corner.solve_jounce(100.0, np.zeros(3))
+    _, points, residual = corner.solve_jounce(0.25, np.zeros(3))
+    assert residual < 1e-8
+    assert points.contact_patch[2] == pytest.approx(0.25, abs=1e-8)

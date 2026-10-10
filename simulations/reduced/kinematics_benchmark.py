@@ -11,9 +11,9 @@ from typing import Any
 
 import numpy as np
 
+from engines.kinpy import create_kinematics
 from engines.dynpy import (
     ModelInputs,
-    create_kinematics,
     create_model,
     load_reduced_vehicle_parameters,
 )

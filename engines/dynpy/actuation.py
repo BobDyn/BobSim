@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 import numpy as np
 
-from engines.dynpy.kinematics import CornerKinematics
+from engines.kinpy import CornerKinematics
 
 
 def _unit(value):
