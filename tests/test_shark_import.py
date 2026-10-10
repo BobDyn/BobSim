@@ -231,7 +231,7 @@ def test_kinematic_solve_ignores_actuation_entirely() -> None:
     If the solver ever starts reading actuation, dropping the bar by default would
     silently change kinematic results and this test should fail loudly.
     """
-    from app.kinematics import CornerKinematics
+    from engines.kinpy import CornerKinematics
 
     baseline = _baseline()
     stripped = load_yaml(repo_root() / "vehicle.yml")

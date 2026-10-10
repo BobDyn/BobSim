@@ -1,9 +1,4 @@
-"""Suspension-kinematics implementation and compatibility exports.
-
-New vehicle-model consumers should import the unified public surface from
-``engines.dynpy``.  This package remains stable for the original standalone
-kinematics workflows and their detailed element tests.
-"""
+"""KinPy suspension elements, vehicle geometry adapters and lookup evaluators."""
 
 from engines.kinpy.kinematics import (
     BUMP_CURVE_SOURCES,

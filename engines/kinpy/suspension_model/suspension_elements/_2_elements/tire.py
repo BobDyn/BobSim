@@ -7,7 +7,7 @@ import numpy as np
 
 class Tire:
     def __init__(self, 
-                 tire: MF52, 
+                 tire: MF52 | None,
                  contact_patch: Node,
                  outer_diameter: float, 
                  width: float, 
@@ -36,6 +36,8 @@ class Tire:
         self.front_node = Node(position=np.array(contact_patch.position) + z_rot @ x_rot @ front_vec)
     
     def tire_eval(self, FZ: float, alpha: float, kappa: float, gamma: float) -> list[float]:
+        if self.tire is None:
+            raise ValueError("This tire has geometry only, with no force model")
         return self.tire.tire_eval(FZ=FZ, alpha=alpha, kappa=kappa, gamma=gamma)
         
     @property
@@ -118,7 +120,7 @@ class Tire:
         return np.cross(vec_12, vec_13)
 
     def __str__(self):
-        tire_name = self.tire.tire_name
+        tire_name = self.tire.tire_name if self.tire is not None else "Geometry"
         tire_center = self.center_node.position
 
         return f"Tire Name: {tire_name}\nTire Center: {tire_center}"

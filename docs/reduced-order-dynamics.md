@@ -2,7 +2,9 @@
 
 **TL;DR:** `engines/dynpy` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
 
-BobSim also includes the original `engines/kinpy/` kinematics — used for detailed suspension-element workflows, independent and backward-compatible.
+KinPy owns the suspension geometry. DynPy and the app use its original
+`QuarterCar`, `Wishbone`, `Link`, `Node` and `Tire` elements through a vehicle YAML
+adapter. Lookup tables are sampled from that same assembly.
 
 ## Using the unified vehicle interface
 
@@ -15,7 +17,8 @@ model_14dof = vehicle.model(14)                               # 14DOF transient
 trim = vehicle.steady_state(14, speed_mps=12.0)              # QSS trim at 12 m/s
 ```
 
-The vehicle definition and kinematics lookup are built once and shared across all DOF models. Lower-level functions (`create_kinematics`, `create_model`, QSS, transient) remain public for specialized use.
+The vehicle definition and kinematics lookup are built once and shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
+transient solvers are exposed by `engines.dynpy`.
 
 ## Fidelity ladder
 
@@ -46,7 +49,8 @@ omega_dot = I^-1 (sum(M) - omega × I·omega)  (rotational)
 **Load transfer:**
 - 3DOF: pitch/roll moments closed algebraically (longitudinal ∝ ride height + wheelbase, lateral ∝ roll-stiffness split)
 - 6DOF: heave/roll/pitch integrated with wheel rates, damping, anti-roll stiffness, preload
-- 10/14DOF: unsprung masses integrated separately; 14DOF adds tire vertical compliance
+- 10DOF: adds wheel rotation dynamics
+- 14DOF: integrates unsprung vertical motion and tire vertical compliance
 
 **Tire model:**
 - Contact patch position/velocity from kinematics evaluator (includes bump toe, camber, migration effects)
@@ -84,8 +88,8 @@ an explicit `four_post_metrics_path`.
 ## Double-wishbone kinematic coupling
 
 The dynamic system receives suspension hardpoints, not hand-entered curves,
-instant centers, or jacking coefficients. The `dyn_py` kinematics surface uses the
-shared nonlinear `CornerKinematics` constraint solver to derive contact-patch
+instant centers, or jacking coefficients. The KinPy `CornerKinematics` adapter uses the original
+`QuarterCar` constraint solver to derive contact-patch
 and wheel-center migration; camber, toe, caster, KPI, trail, and scrub; and the
 contact-patch tangent across wheel travel. At the current corner jounce,
 `dyn_py` consumes one four-corner kinematic state. The reciprocal instantaneous

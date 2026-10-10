@@ -19,7 +19,7 @@ from common.vehicle_io import (
     vehicle_yaml_path,
 )
 from engines.dynpy.actuation import nominal_actuation_metrics
-from engines.dynpy.kinematics import (
+from engines.kinpy import (
     KinematicsMode,
     VehicleKinematics,
     create_kinematics,

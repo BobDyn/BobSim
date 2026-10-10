@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 import math
 from typing import Any
 
-try:  # Keep the web shell importable even in a minimal Python environment.
-    import numpy as np  # type: ignore[import-not-found]
-    from scipy.optimize import root  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover - exercised only when optional deps are missing
-    np = None  # type: ignore[assignment]
-    root = None  # type: ignore[assignment]
-
+import numpy as np
+from engines.kinpy.suspension_model.suspension_elements._1_elements.node import Node
+from engines.kinpy.suspension_model.suspension_elements._1_elements.link import Link
+from engines.kinpy.suspension_model.suspension_elements._2_elements.tire import Tire
+from engines.kinpy.suspension_model.suspension_elements._2_elements.wishbone import Wishbone
+from engines.kinpy.suspension_model.suspension_elements._5_elements.quarter_car import QuarterCar
 
 DEFAULT_SWEEP_M = tuple(round(-0.04 + (0.08 / 19.0) * index, 6) for index in range(20))
 DEFAULT_ROLL_DEG = tuple(round(-1.5 + (3.0 / 19.0) * index, 6) for index in range(20))
@@ -220,9 +220,6 @@ class CornerKinematics:
 
     @classmethod
     def from_vehicle(cls, vehicle: dict[str, Any], axle: str) -> CornerKinematics:
-        if np is None:
-            raise RuntimeError("NumPy is required for kinematics previews")
-
         side = vehicle.get(axle, {})
         if not isinstance(side, dict):
             raise ValueError(f"{axle} vehicle section is missing")
@@ -347,71 +344,63 @@ class CornerKinematics:
             "warnings": warnings[:6],
         }
 
+    @cached_property
+    def quarter_car(self) -> QuarterCar:
+        """## Corner Assembly
+
+        Returns
+        -------
+        QuarterCar
+            Original KinPy elements assembled from the vehicle hardpoints.
+        """
+        def wishbone(fore: Any, aft: Any, outboard: Any) -> Wishbone:
+            pickup = Node(position=outboard)
+            return Wishbone(
+                fore_link=Link(Node(position=fore), pickup),
+                aft_link=Link(Node(position=aft), pickup),
+            )
+
+        radius = float(np.linalg.norm(self.wheel_center_initial - self.contact_patch_initial))
+        tire = Tire(None, Node(position=self.contact_patch_initial), 2.0 * radius, 0.0, 0.0)
+        # The YAML adapter supplies the wheel's initial pose, including static alignment.
+        tire.center_node = Node(position=self.wheel_center_initial)
+        tire.front_node = Node(position=self.tire_front_initial)
+        return QuarterCar(
+            tire=tire,
+            lower_wishbone=wishbone(self.lower_fore_i, self.lower_aft_i, self.lower_o_initial),
+            upper_wishbone=wishbone(self.upper_fore_i, self.upper_aft_i, self.upper_o_initial),
+            tie_rod=Link(Node(position=self.rack_pickup_initial), Node(position=self.tie_o_initial)),
+        )
+
     def solve_jounce(
-        self,
-        jounce_m: float,
-        guess: Any,
-        rack_displacement_m: float = 0.0,
+        self, jounce_m: float, guess: Any, *, rack_displacement_m: float = 0.0,
     ) -> tuple[Any, CornerPointSet, float]:
-        if root is None:
-            raise RuntimeError("SciPy is required for kinematics previews")
-        target_contact_z = float(self.contact_patch_initial[2] + jounce_m)
-        rack_pickup = self.rack_pickup_initial + np.array([0.0, rack_displacement_m, 0.0])
+        """## Solve Corner Position
 
-        def residuals(candidate: Any) -> list[float]:
-            point_set = self.point_set(candidate)
-            return [
-                float(_distance(point_set.lower_o, point_set.upper_o) - self.kingpin_length),
-                float(_distance(rack_pickup, point_set.tie_o) - self.tie_rod_length),
-                float(point_set.contact_patch[2] - target_contact_z),
-            ]
+        Parameters
+        ----------
+        jounce_m : float
+            Contact-patch travel from the initial pose in meters.
+        guess : array_like
+            Initial lower-arm, upper-arm and upright rotation guesses in radians.
+        rack_displacement_m : float
+            Lateral rack displacement in meters.
 
-        best_solution = None
-        best_norm = math.inf
-        candidates = [
-            guess,
-            np.array([0.0, 0.0, 0.0]),
-            np.array([0.35 * jounce_m, 0.4 * jounce_m, 0.0]),
-            np.array([-0.35 * jounce_m, -0.4 * jounce_m, 0.0]),
-        ]
-        for candidate in candidates:
-            solution = root(residuals, candidate, method="hybr")
-            residual_norm = float(np.linalg.norm(residuals(solution.x)))
-            if residual_norm < best_norm:
-                best_solution = solution
-                best_norm = residual_norm
-            if math.isfinite(residual_norm) and residual_norm <= 5e-5:
-                return solution.x, self.point_set(solution.x), residual_norm
-        if best_solution is None:
-            raise ValueError("constraint solve did not converge")
-        raise ValueError(f"constraint solve residual {best_norm:.3g} m")
-
-    def point_set(self, candidate: Any) -> CornerPointSet:
-        lower_angle, upper_angle, steer_angle = [float(value) for value in candidate]
-        lower_o = _rotate_about_axis(
-            self.lower_o_initial,
-            self.lower_fore_i,
-            self.lower_axis,
-            lower_angle,
-        )
-        upper_o = _rotate_about_axis(
-            self.upper_o_initial,
-            self.upper_fore_i,
-            self.upper_axis,
-            upper_angle,
-        )
-        contact_patch = self._upright_point(self.contact_patch_local, lower_o, upper_o, steer_angle)
-        wheel_center = self._upright_point(self.wheel_center_local, lower_o, upper_o, steer_angle)
-        tire_front = self._upright_point(self.tire_front_local, lower_o, upper_o, steer_angle)
-        tie_o = self._upright_point(self.tie_o_local, lower_o, upper_o, steer_angle)
-        return CornerPointSet(
-            lower_o=lower_o,
-            upper_o=upper_o,
-            tie_o=tie_o,
-            wheel_center=wheel_center,
-            contact_patch=contact_patch,
-            tire_front=tire_front,
-        )
+        Returns
+        -------
+        tuple
+            KinPy rotations, an independent snapshot of the points, and residual norm.
+        """
+        corner = self.quarter_car
+        solution, residual = corner.solve_position(jounce_m, rack_displacement_m, guess)
+        return solution, CornerPointSet(
+            lower_o=np.array(corner.lower_wishbone.fore_link.outboard_node.position, copy=True),
+            upper_o=np.array(corner.upper_wishbone.fore_link.outboard_node.position, copy=True),
+            tie_o=np.array(corner.tie_rod.outboard_node.position, copy=True),
+            wheel_center=np.array(corner.tire.center_node.position, copy=True),
+            contact_patch=np.array(corner.tire.contact_patch.position, copy=True),
+            tire_front=np.array(corner.tire.front_node.position, copy=True),
+        ), residual
 
     def curve_values(self, point_set: CornerPointSet, solution: Any, residual_norm: float) -> dict[str, float | None]:
         radial = point_set.wheel_center - point_set.contact_patch
@@ -644,42 +633,13 @@ class CornerKinematics:
         side_sign = 1.0 if float(point_set.contact_patch[1]) >= 0.0 else -1.0
         return magnitude * scrub_direction * side_sign
 
-    def _upright_point(self, local_point: Any, lower_o: Any, upper_o: Any, steer_angle: float) -> Any:
-        aligned = _from_link_centered_coords(local_point, lower_o, upper_o)
-        kingpin_axis = _unit(upper_o - lower_o)
-        return _rotate_about_axis(aligned, lower_o, kingpin_axis, steer_angle)
-
     @property
     def lower_axis(self) -> Any:
-        return _unit(self.lower_fore_i - self.lower_aft_i)
+        return np.asarray(self.quarter_car.lower_wishbone.direction)
 
     @property
     def upper_axis(self) -> Any:
-        return _unit(self.upper_fore_i - self.upper_aft_i)
-
-    @property
-    def kingpin_length(self) -> float:
-        return _distance(self.lower_o_initial, self.upper_o_initial)
-
-    @property
-    def tie_rod_length(self) -> float:
-        return _distance(self.rack_pickup_initial, self.tie_o_initial)
-
-    @property
-    def contact_patch_local(self) -> Any:
-        return _link_centered_coords(self.contact_patch_initial, self.lower_o_initial, self.upper_o_initial)
-
-    @property
-    def wheel_center_local(self) -> Any:
-        return _link_centered_coords(self.wheel_center_initial, self.lower_o_initial, self.upper_o_initial)
-
-    @property
-    def tire_front_local(self) -> Any:
-        return _link_centered_coords(self.tire_front_initial, self.lower_o_initial, self.upper_o_initial)
-
-    @property
-    def tie_o_local(self) -> Any:
-        return _link_centered_coords(self.tie_o_initial, self.lower_o_initial, self.upper_o_initial)
+        return np.asarray(self.quarter_car.upper_wishbone.direction)
 
 
 def kinematic_curves_payload(
@@ -693,9 +653,9 @@ def kinematic_curves_payload(
     roll = tuple(float(value) for value in roll_deg) if roll_deg else DEFAULT_ROLL_DEG
     steer = tuple(float(value) for value in steer_m) if steer_m else DEFAULT_STEER_M
     payload: dict[str, Any] = {
-        "model": "BobSim native double-wishbone kinematics preview",
+        "model": "KinPy QuarterCar kinematics",
         "basis": "Active plot deck mirrors simulation_toolkit/src/simulations/kin/kin_inputs/kin.yml",
-        "available": np is not None and root is not None,
+        "available": True,
         "sweep_m": [_json_float(value) for value in sweep],
         "roll_deg": [_json_float(value) for value in roll],
         "steer_m": [_json_float(value) for value in steer],
@@ -708,10 +668,6 @@ def kinematic_curves_payload(
         "axles": {},
         "warnings": [],
     }
-    if np is None or root is None:
-        payload["warnings"].append("Install NumPy and SciPy to enable live kinematics curves.")
-        return payload
-
     # No chassis in the registry has rear steer.
     for axle, axle_steer in (("front", steer), ("rear", ())):
         try:
@@ -764,17 +720,6 @@ def _finite_number(value: Any, label: str, *, default: float) -> float:
     return number
 
 
-def _unit(vector: Any) -> Any:
-    magnitude = float(np.linalg.norm(vector))
-    if magnitude < 1e-12:
-        raise ValueError("zero-length vector in kinematics geometry")
-    return vector / magnitude
-
-
-def _distance(point_a: Any, point_b: Any) -> float:
-    return float(np.linalg.norm(point_b - point_a))
-
-
 def _scale_optional(value: float | None, scale: float) -> float | None:
     if value is None or not math.isfinite(value):
         return None
@@ -822,52 +767,6 @@ def _curve_gradient(values: list[float | None], sweep_m: tuple[float, ...]) -> l
             continue
         gradients.append(_json_optional_float((float(right_value) - float(left_value)) / dx))
     return gradients
-
-
-def _rotate_about_axis(point: Any, origin: Any, axis: Any, angle: float) -> Any:
-    rot = _rotation_matrix(axis, angle)
-    return rot @ (point - origin) + origin
-
-
-def _rotation_matrix(unit_vector: Any, angle: float) -> Any:
-    ux, uy, uz = [float(value) for value in _unit(unit_vector)]
-    cos_t = math.cos(angle)
-    sin_t = math.sin(angle)
-    return np.array(
-        [
-            [ux**2 * (1 - cos_t) + cos_t, ux * uy * (1 - cos_t) - uz * sin_t, ux * uz * (1 - cos_t) + uy * sin_t],
-            [ux * uy * (1 - cos_t) + uz * sin_t, uy**2 * (1 - cos_t) + cos_t, uy * uz * (1 - cos_t) - ux * sin_t],
-            [ux * uz * (1 - cos_t) - uy * sin_t, uy * uz * (1 - cos_t) + ux * sin_t, uz**2 * (1 - cos_t) + cos_t],
-        ],
-        dtype=float,
-    )
-
-
-def _link_rotation_angles(lower_o: Any, upper_o: Any) -> tuple[float, float]:
-    origin_transform = upper_o - lower_o
-    length = _distance(lower_o, upper_o)
-    z_value = float(origin_transform[2])
-    y_value = float(origin_transform[1])
-    x_value = float(origin_transform[0])
-    ang_x = math.atan2(y_value, z_value)
-    ratio = max(-1.0, min(1.0, x_value / length))
-    ang_y = (1.0 if z_value >= 0.0 else -1.0) * math.asin(ratio)
-    return ang_x, ang_y
-
-
-def _link_centered_coords(point: Any, lower_o: Any, upper_o: Any) -> Any:
-    ang_x, ang_y = _link_rotation_angles(lower_o, upper_o)
-    translated = point - lower_o
-    x_rot = _rotation_matrix(np.array([1.0, 0.0, 0.0]), ang_x)
-    y_rot = _rotation_matrix(np.array([0.0, 1.0, 0.0]), -ang_y)
-    return y_rot @ (x_rot @ translated)
-
-
-def _from_link_centered_coords(local_point: Any, lower_o: Any, upper_o: Any) -> Any:
-    ang_x, ang_y = _link_rotation_angles(lower_o, upper_o)
-    x_rot = _rotation_matrix(np.array([1.0, 0.0, 0.0]), -ang_x)
-    y_rot = _rotation_matrix(np.array([0.0, 1.0, 0.0]), ang_y)
-    return x_rot @ (y_rot @ local_point) + lower_o
 
 
 def _json_float(value: Any) -> float:

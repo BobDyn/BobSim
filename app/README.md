@@ -74,7 +74,6 @@ shell, setup menus, job launch, output preview, and logs.
 - `storage.py`: canonical folder layout for shipped app assets and mutable user
   data.
 - `tire_eval.py`: MF52 tire-load and curve payload generation for the UI.
-- `kinematics.py`: live suspension kinematic preview payloads.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
 - `desktop.py`: desktop/webview wrapper for packaged builds.
 - `static/`: `index.html`, `app.js`, `styles.css`, and the vendored Inter font.

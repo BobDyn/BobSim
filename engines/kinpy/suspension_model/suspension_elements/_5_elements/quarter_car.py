@@ -30,8 +30,8 @@ class QuarterCar:
     tie_rod : Link
         Link object representing tie rod
         
-    push_pull_rod : PushPullRod
-        PushPullRod object representing push or pull rod
+    push_pull_rod : PushPullRod, optional
+        Actuation assembly. Omit for geometry-only queries.
 
     static_weight : float
         Static weight of the respective Quarter Car
@@ -42,7 +42,7 @@ class QuarterCar:
             lower_wishbone: Wishbone,
             upper_wishbone: Wishbone,
             tie_rod: Link,
-            push_pull_rod: PushPullRod,
+            push_pull_rod: PushPullRod | None = None,
             static_weight: float = 0.0):
         
         self.tire = tire
@@ -120,13 +120,58 @@ class QuarterCar:
         self.wheel_jounce = self.wheel_jounce + self.tire.contact_patch.initial_position[2] + jounce
         self._update_geometry()
     
-    def _update_geometry(self) -> None:
+    def solve_position(
+            self,
+            jounce: float,
+            rack_displacement: float = 0.0,
+            guess: Sequence[float] = (0.0, 0.0, 0.0)) -> tuple[np.ndarray, float]:
+        """
+        ## Solve Position
+
+        Position the corner with simultaneous contact-patch travel and rack input.
+
+        Parameters
+        ----------
+        jounce : float
+            Contact-patch vertical travel from the initial position in meters.
+        rack_displacement : float
+            Lateral rack travel from the initial position in meters.
+        guess : Sequence[float]
+            Initial lower-arm, upper-arm and upright rotation guesses in radians.
+
+        Returns
+        -------
+        tuple[np.ndarray, float]
+            Solved rotations and the constraint residual norm in meters.
+
+        Raises
+        ------
+        ValueError
+            Inputs are nonfinite or the geometry solve does not converge.
+        """
+        if np.shape(guess) != (3,):
+            raise ValueError("Corner position guess must contain three rotations")
+        if not np.all(np.isfinite([jounce, rack_displacement, *guess])):
+            raise ValueError("Corner position inputs must be finite")
+        self.wheel_jounce = self.tire.contact_patch.initial_position[2] + jounce
+        self.rack_displacement = rack_displacement
+        solution, residual = self._update_geometry(guess)
+        if not np.isfinite(residual) or residual > 1e-8:
+            raise ValueError(f"Corner geometry constraint residual {residual:.3g} m")
+        return solution, residual
+
+    def _update_geometry(self, guess: Sequence[float] = (0.0, 0.0, 0.0)) -> tuple[np.ndarray, float]:
         # Set the rack before the solve so it updates only once.
         self.tie_rod.inboard_node.position[1] = self.tie_rod.inboard_node.initial_position[1] + self.rack_displacement
-        lower_rot, upper_rot, _ = fsolve(func=self._geometry_resid_func, x0=[0, 0, 0])
-        
-        self.lower_wishbone.rotate(angle=lower_rot)
-        self.upper_wishbone.rotate(angle=upper_rot)
+        initial = np.asarray(guess, dtype=float)
+        # A near-zero continuation seed gives MINPACK a vanishing trust region.
+        initial = np.where(np.abs(initial) < 1e-12, 0.0, initial)
+        solution = fsolve(func=self._geometry_resid_func, x0=initial)
+        # fsolve's last residual evaluation need not be at its returned solution.
+        residual = float(np.linalg.norm(self._geometry_resid_func(solution)))
+        self.lower_wishbone.rotate(angle=solution[0])
+        self.upper_wishbone.rotate(angle=solution[1])
+        return solution, residual
 
     def _geometry_resid_func(self, x: Sequence[float]) -> Sequence[float]:
         """

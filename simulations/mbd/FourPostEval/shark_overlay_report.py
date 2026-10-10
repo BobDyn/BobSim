@@ -46,7 +46,7 @@ from common.shark_import import (
 )
 from engines.kinpy.kinematics import DEFAULT_ROLL_DEG, DEFAULT_STEER_M, DEFAULT_SWEEP_M
 from common.vehicle_io import load_yaml, repo_root, vehicle_yaml_path
-from app.kinematics import KINEMATIC_CURVE_META, kinematic_curves_payload
+from engines.kinpy import KINEMATIC_CURVE_META, kinematic_curves_payload
 from app.modelica_generator import generate_modelica_stack, modelica_stack_status_payload
 
 
