@@ -21,7 +21,7 @@ from _0_Utils.lap_sim import (
     write_transient_lap_csv,
 )
 from _0_Utils.lap_sim.racing_line import LineMode
-from _0_Utils.vehicle_io import load_yaml, repo_root
+from _0_Utils.vehicle_io import load_yaml, repo_root, tire_template_name, tire_templates_root
 
 
 DEFAULT_CONFIG = Path(__file__).with_name("lap_time_eval_config.yml")
@@ -178,7 +178,10 @@ def _load_or_generate_ggv(
                 "fingerprint": None,
             }
         if metadata_path.exists():
-            raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+            try:
+                raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                raw = None
             if isinstance(raw, dict) and raw.get("fingerprint") == expected_provenance["fingerprint"]:
                 return GGVMap.from_csv(path), {**raw, "status": "verified_cache"}
     if not bool(qss_config.get("generate_if_missing", True)):
@@ -234,13 +237,37 @@ def _ggv_provenance(
     physics_inputs = [
         Path(__file__),
         root / "_2_EnvelopeSim/GGV/ggv_generation.py",
-        *sorted((root / "_0_Utils/dyn_py").glob("*.py")),
+        root / "_2_EnvelopeSim/vehicle_yaml.py",
+        root / "_0_Utils/vehicle_io.py",
+        *sorted((root / "_0_Utils/dyn_py").rglob("*.py")),
+        *sorted((root / "_0_Utils/kin_py").rglob("*.py")),
     ]
     for source in physics_inputs:
         physics_digest.update(source.relative_to(root).as_posix().encode("utf-8"))
         physics_digest.update(b"\0")
         physics_digest.update(source.read_bytes())
         physics_digest.update(b"\0")
+    vehicle_data = load_yaml(vehicle_path)
+    tire_root = tire_templates_root(vehicle_data)
+    tire_paths = {
+        tire_root / f"{tire_template_name(vehicle_data, vehicle_data[side])}.tir"
+        for side in ("front", "rear")
+    }
+    # Both the reduced model and envelope projection have consumed FourPost
+    # metrics. Track absence too: creating/removing a report changes fallback
+    # behavior. The projection also reads the repository baseline vehicle.
+    optional_inputs = [
+        root / "vehicle.yml",
+        root / "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv",
+        root / "_3_StandardSim/results/four_post_eval_report_metrics.csv",
+    ]
+    input_hashes = {}
+    for source in sorted(tire_paths) + optional_inputs:
+        key = source.relative_to(root).as_posix() if source.is_relative_to(root) else source.as_posix()
+        input_hashes[key] = (
+            hashlib.sha256(source.read_bytes()).hexdigest()
+            if source in tire_paths or source.is_file() else "missing"
+        )
     settings = {
         key: qss_config.get(key)
         for key in (
@@ -257,12 +284,13 @@ def _ggv_provenance(
         )
     }
     payload = {
-        "schema": "bobsim.ggv-provenance.v1",
+        "schema": "bobsim.ggv-provenance.v2",
         "model_dof": int(model_dof),
         "effective_drive_power_limit_w": float(effective_power_limit_w),
         "settings": settings,
         "vehicle_sha256": hashlib.sha256(vehicle_path.read_bytes()).hexdigest(),
         "physics_sha256": physics_digest.hexdigest(),
+        "input_sha256": input_hashes,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {**payload, "fingerprint": hashlib.sha256(encoded).hexdigest()}
