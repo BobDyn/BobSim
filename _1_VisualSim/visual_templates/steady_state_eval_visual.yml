@@ -1,17 +1,5 @@
-# STALE - kept for reference, not currently loadable.
-#
-# This template names signals (signals/vis...) that no model in the
-# pinned BobLib emits, and nothing in the repo writes the *_visual.npz
-# its old header pointed at. Opening it against a run produced today
-# fails with a list of missing signals.
-#
-# For a scene you can actually open, run:
-#   make visual-rig        (four-post rig, real geometry)
-#   make visual-demo       (synthetic, no simulation needed)
-#
-# Reviving this one means giving the VehicleSim maneuvers the treatment
-# _1_VisualSim/from_results.py gives the rig: a FRAME_MAP of MultiBody
-# frames plus a widened variable_filter. See _1_VisualSim/README.md.
+# STALE: names signals (signals/vis...) that no current BobLib model emits, so it does not load.
+# For a loadable scene, run make visual-rig, make visual-maneuver or make visual-demo.
 
 style:
   joints:
@@ -64,14 +52,8 @@ style:
 
 geometry:
 
-  # ============================================================
-  # POINTS (BASE + ENHANCED)
-  # ============================================================
   points:
 
-    # ========================
-    # FRONT LEFT (fl)
-    # ========================
     flLowerFore_i: [signals/visfrontaxleleftlowerfore_i1, signals/visfrontaxleleftlowerfore_i2, signals/visfrontaxleleftlowerfore_i3]
     flLowerAft_i:  [signals/visfrontaxleleftloweraft_i1,  signals/visfrontaxleleftloweraft_i2,  signals/visfrontaxleleftloweraft_i3]
     flLower_o:     [signals/visfrontaxleleftlower_o1,     signals/visfrontaxleleftlower_o2,     signals/visfrontaxleleftlower_o3]
@@ -86,7 +68,6 @@ geometry:
     flWheelCenter: [signals/visfrontaxleleftwheelcenter1, signals/visfrontaxleleftwheelcenter2, signals/visfrontaxleleftwheelcenter3]
     flCP: [signals/visfrontaxleleftcp1, signals/visfrontaxleleftcp2, signals/visfrontaxleleftcp3]
     
-    # --- enhanced
     flBellcrankPivot:   [signals/visfrontaxleleftbellcrankpivot1, signals/visfrontaxleleftbellcrankpivot2, signals/visfrontaxleleftbellcrankpivot3]
     flBellcrankPickup1: [signals/visfrontaxleleftbellcrankpickup11, signals/visfrontaxleleftbellcrankpickup12, signals/visfrontaxleleftbellcrankpickup13]
     flBellcrankPickup2: [signals/visfrontaxleleftbellcrankpickup21, signals/visfrontaxleleftbellcrankpickup22, signals/visfrontaxleleftbellcrankpickup23]
@@ -99,9 +80,6 @@ geometry:
     flArmEnd: [signals/visfrontaxleleftarmend1, signals/visfrontaxleleftarmend2, signals/visfrontaxleleftarmend3]
 
 
-    # ========================
-    # FRONT RIGHT (fr)
-    # ========================
     frLowerFore_i: [signals/visfrontaxlerightlowerfore_i1, signals/visfrontaxlerightlowerfore_i2, signals/visfrontaxlerightlowerfore_i3]
     frLowerAft_i:  [signals/visfrontaxlerightloweraft_i1,  signals/visfrontaxlerightloweraft_i2,  signals/visfrontaxlerightloweraft_i3]
     frLower_o:     [signals/visfrontaxlerightlower_o1,     signals/visfrontaxlerightlower_o2,     signals/visfrontaxlerightlower_o3]
@@ -128,9 +106,6 @@ geometry:
     frArmEnd: [signals/visfrontaxlerightarmend1, signals/visfrontaxlerightarmend2, signals/visfrontaxlerightarmend3]
 
 
-    # ========================
-    # REAR LEFT (rl)
-    # ========================
     rlLowerFore_i: [signals/visrearaxleleftlowerfore_i1, signals/visrearaxleleftlowerfore_i2, signals/visrearaxleleftlowerfore_i3]
     rlLowerAft_i:  [signals/visrearaxleleftloweraft_i1,  signals/visrearaxleleftloweraft_i2,  signals/visrearaxleleftloweraft_i3]
     rlLower_o:     [signals/visrearaxleleftlower_o1,     signals/visrearaxleleftlower_o2,     signals/visrearaxleleftlower_o3]
@@ -157,9 +132,6 @@ geometry:
     rlArmEnd: [signals/visrearaxleleftarmend1, signals/visrearaxleleftarmend2, signals/visrearaxleleftarmend3]
 
 
-    # ========================
-    # REAR RIGHT (rr)
-    # ========================
     rrLowerFore_i: [signals/visrearaxlerightlowerfore_i1, signals/visrearaxlerightlowerfore_i2, signals/visrearaxlerightlowerfore_i3]
     rrLowerAft_i:  [signals/visrearaxlerightloweraft_i1,  signals/visrearaxlerightloweraft_i2,  signals/visrearaxlerightloweraft_i3]
     rrLower_o:     [signals/visrearaxlerightlower_o1,     signals/visrearaxlerightlower_o2,     signals/visrearaxlerightlower_o3]
@@ -186,9 +158,6 @@ geometry:
     rrArmEnd: [signals/visrearaxlerightarmend1, signals/visrearaxlerightarmend2, signals/visrearaxlerightarmend3]
 
 
-  # ============================================================
-  # LINKS
-  # ============================================================
   links:
 
     lower:
@@ -277,9 +246,6 @@ geometry:
       
 
 
-  # ============================================================
-  # TIRES
-  # ============================================================
   tires:
 
     fl:
@@ -346,17 +312,11 @@ geometry:
         shaft_radius: 0.01
         tip_radius: 0.02
 
-# ============================================================
-# RENDER
-# ============================================================
 render:
   show_signals: true
   speed: 0.5
 
 
-# ============================================================
-# PLOTS
-# ============================================================
 plots:
   - name: Lateral Accel
     unit: m/s^2
@@ -369,9 +329,6 @@ plots:
     y: signals/isohandwheelangle
 
 
-# ============================================================
-# CAMERA
-# ============================================================
 camera:
   attach_to: rlWheelCenter
 

@@ -121,7 +121,6 @@ class DemoVehicle:
         self.speed = speed
         n = self.time.size
 
-        # -- driver input and body response --------------------------------
         step = _smooth_step(self.time, 1.5, 0.28)
         release = _smooth_step(self.time, 5.5, 0.28)
         self.steer = np.deg2rad(95.0) * (step - release)          # handwheel
@@ -146,7 +145,6 @@ class DemoVehicle:
         self.pitch = np.deg2rad(-0.10) * np.gradient(self.speed * np.ones(n), self.time)
         self.heave = -0.004 * np.abs(ay_lagged) + 0.002 * np.sin(2.4 * self.time)
 
-        # -- path ----------------------------------------------------------
         heading = self.yaw
         vx = self.speed * np.cos(heading)
         vy = self.speed * np.sin(heading)
@@ -159,10 +157,7 @@ class DemoVehicle:
         self.road_steer = road_steer
         self.R_body = _rot_z(self.yaw) @ _rot_y(self.pitch) @ _rot_x(self.roll)
 
-        # Per-corner wheel travel relative to the body. Heave, roll and pitch
-        # move each corner of the body; the wheel moves the opposite way, so
-        # the tire stays on the road. (It used to move with the body, which
-        # lifted the inside wheels clear of the ground mid-corner.)
+        # Wheel travel opposes body motion so the tire stays on the road.
         self.travel = {
             name: -(self.heave
                     + 0.5 * TRACK * side * np.sin(self.roll)
@@ -173,17 +168,14 @@ class DemoVehicle:
         def axle_share(fore: int) -> float:
             return FRONT_SHARE if fore > 0 else 1.0 - FRONT_SHARE
 
-        # Vertical load: static weight plus lateral load transfer onto the
-        # outside tires, which are the right-hand ones when accel_y > 0.
+        # The outside tires are the right-hand ones when accel_y > 0.
         transfer = MASS * self.accel_y * CG_HEIGHT / TRACK
         self.tire_load = {
             name: 0.5 * MASS * 9.81 * axle_share(fore) - side * axle_share(fore) * transfer
             for name, (fore, side) in CORNERS.items()
         }
 
-        # Lateral tire force, biased toward the more heavily loaded outside
-        # tires. Illustrative only. Summed over an axle it is that axle's share
-        # of MASS*accel_y, so the four corners really do hold the car up.
+        # Illustrative only. Summed over an axle, it is that axle's share of MASS*accel_y.
         total = MASS * self.accel_y
         self.tire_force_y = {
             name: total * 0.5 * axle_share(fore)
@@ -191,11 +183,8 @@ class DemoVehicle:
             for name, (fore, side) in CORNERS.items()
         }
 
-        # Longitudinal force: the speed is held constant, so each tire drags
-        # its own rolling resistance and the driven rear axle makes that back
-        # plus aerodynamic drag. Small next to the lateral force - which is the
-        # honest answer for a constant-speed step steer - but it tilts the
-        # friction circles off the pure-lateral axis.
+        # Speed is constant. Each tire drags its rolling resistance.
+        # The driven rear axle supplies that total plus aero drag.
         drag = 0.5 * AIR_DENSITY * DRAG_AREA * self.speed**2
         rolling = {name: ROLL_RESISTANCE * load for name, load in self.tire_load.items()}
         traction = drag + rolling["fl"] + rolling["fr"] + rolling["rl"] + rolling["rr"]
@@ -207,9 +196,7 @@ class DemoVehicle:
                 force_x = force_x + traction * self.tire_load[name] / rear_load
             self.tire_force_x[name] = force_x
 
-        # Inclination relative to the road, positive leaning out of the corner:
-        # body roll tilts every wheel outward and the suspension's camber gain
-        # claws it back on the loaded side, which is the point of camber gain.
+        # Inclination relative to the road. Positive leans out of the corner.
         self.camber = {
             name: (-side * self.roll
                    + np.deg2rad(CAMBER_STATIC)
@@ -217,7 +204,6 @@ class DemoVehicle:
             for name, (fore, side) in CORNERS.items()
         }
 
-    # -- geometry -----------------------------------------------------------
     def corner_points(self, name: str) -> dict[str, np.ndarray]:
         """Body-frame point trajectories for one corner, shape (N, 3) each."""
         fore, side = CORNERS[name]
@@ -240,8 +226,7 @@ class DemoVehicle:
             "ArbInboard": fixed(-0.24, 0.20, 0.30),
         }
 
-        # Outboard points ride with the upright: vertical travel plus a little
-        # camber gain about the contact patch, and steer for the front axle.
+        # Outboard points move with the upright: travel, camber gain and front steer.
         camber = np.deg2rad(-1.0) - np.deg2rad(14.0) * travel
         steer = self.road_steer if fore > 0 else np.zeros(n)
         R_upright = _rot_z(steer) @ _rot_x(side * camber)
@@ -265,8 +250,6 @@ class DemoVehicle:
         }
         points.update(inboard)
 
-        # Pushrod runs from the lower wishbone up to the bellcrank; the
-        # bellcrank rocks with travel and drives the shock.
         rocker = -2.2 * travel
         pivot = inboard["BellcrankPivot"]
         points["PushrodOutboard"] = outboard(-0.02, -0.05, -0.03)
@@ -299,10 +282,6 @@ class DemoVehicle:
     def to_world_dir(self, body_dirs: np.ndarray) -> np.ndarray:
         return np.einsum("nij,nj->ni", self.R_body, body_dirs)
 
-
-# ---------------------------------------------------------------------------
-# Signal + config assembly
-# ---------------------------------------------------------------------------
 
 LINK_GROUPS = {
     "lower": [("LowerFore_i", "Lower_o"), ("LowerAft_i", "Lower_o")],
@@ -492,8 +471,7 @@ def write(out_dir: Path = OUT_DIR, duration: float = 8.0) -> tuple[Path, Path]:
         handle.write(header)
         yaml.safe_dump(config, handle, sort_keys=False, default_flow_style=False)
 
-    # numpy's stub types the second positional as `allow_pickle`, so **kwargs
-    # of arrays does not typecheck even though it is the documented call.
+    # numpy's stub rejects **kwargs of arrays, which is the documented call.
     np.savez_compressed(data_path, **signals)  # type: ignore[arg-type]
     return config_path, data_path
 

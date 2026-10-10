@@ -17,8 +17,7 @@ import pytest
 import yaml
 
 if TYPE_CHECKING:
-    # `pd` below is bound by pytest.importorskip, which mypy sees as a value
-    # rather than a module, so annotations need the real module name.
+    # mypy reads `pd` from importorskip as a value, so annotations name the module.
     import pandas
 
 
@@ -26,9 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = ROOT / "_4_OptSim"
 ARCHITECTURE_CONFIG = OPTSIM_DIR / "StandardSens/configs/vehicle_architecture.yaml"
 
-# The OptSim workflows are invoked with _4_OptSim on the path (see the opt-*
-# make targets), so mirror that here rather than importing via the _4_OptSim
-# package prefix.
+# Import as the opt-* make targets do, with _4_OptSim on the path.
 if str(OPTSIM_DIR) not in sys.path:
     sys.path.insert(0, str(OPTSIM_DIR))
 
@@ -119,8 +116,8 @@ def test_checked_in_config_matches_regeneration(doe_config: Path) -> None:
     on_disk = yaml.safe_load(generate_configs.DOE_CONFIG.read_text())
     if on_disk == regenerated:
         pytest.skip(
-            f"{rel} has been regenerated but not committed; commit it so this "
-            "check can compare against HEAD again"
+            f"{rel} was regenerated but not committed. Commit it so that this "
+            "check can compare against HEAD again."
         )
 
     assert committed == regenerated, (
@@ -208,7 +205,7 @@ def test_scope_filters_variables(tmp_path: Path) -> None:
     assert [v["path"] for v in architecture["variables"]] == _expected_paths(
         "architecture"
     )
-    # The partition is the point: neither half may be the whole sweep.
+    # Neither half may be the whole sweep.
     total = len(_generate(tmp_path)["variables"])
     assert len(setup["variables"]) < total
     assert len(architecture["variables"]) < total
@@ -331,9 +328,7 @@ def test_generated_config_records_the_scope(tmp_path: Path) -> None:
     assert _generate(tmp_path, scope="setup")["scope"] == "setup"
     assert _generate(tmp_path, scope="architecture")["scope"] == "architecture"
 
-    # And the reverse lookup reads back what generation wrote. Deliberately
-    # via a freshly generated config, not the working copy: an override run
-    # (make opt-standard-setup) legitimately leaves a scoped config on disk.
+    # Use a fresh config. An override run can leave a scoped config on disk.
     _generate(tmp_path, scope="setup")
     assert search.load_sweep_scope(tmp_path / "_doe_config.yaml") == "setup"
     _generate(tmp_path)
@@ -402,9 +397,7 @@ def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path)
         _results(swept), claimed, legacy
     ) == search.SCOPE_UNKNOWN
 
-    # Column presence does not depend on row count, so a single-row table is
-    # flagged too. It used to be excluded, which left the missing parameters
-    # reported only by the second warning that has since been merged in here.
+    # A single-row table is flagged too. Column presence does not depend on row count.
     assert search._warn_if_results_scope_is_narrow(
         _results(swept, rows=1), claimed, restored
     ) == search.SCOPE_UNKNOWN
@@ -556,8 +549,7 @@ def test_small_doe_generates_variants(
     variants = sample(doe_config_path)
     assert len(variants) == samples + 1, "LHS returns the baseline plus N samples"
 
-    # Static balance free length needs FourPostEval motion ratios. Stub them so
-    # this stays a plumbing test rather than a simulation test.
+    # Stub the FourPostEval motion ratios so this test does not simulate.
     metrics_csv = tmp_path / "four_post_eval_report_metrics.csv"
     metrics_csv.write_text(
         "metric,value\n"

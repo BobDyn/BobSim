@@ -1,17 +1,5 @@
-# STALE - kept for reference, not currently loadable.
-#
-# This template names signals (signals/vis...) that no model in the
-# pinned BobLib emits, and nothing in the repo writes the *_visual.npz
-# its old header pointed at. Opening it against a run produced today
-# fails with a list of missing signals.
-#
-# For a scene you can actually open, run:
-#   make visual-rig        (four-post rig, real geometry)
-#   make visual-demo       (synthetic, no simulation needed)
-#
-# Reviving this one means giving the VehicleSim maneuvers the treatment
-# _1_VisualSim/from_results.py gives the rig: a FRAME_MAP of MultiBody
-# frames plus a widened variable_filter. See _1_VisualSim/README.md.
+# STALE: names signals (signals/vis...) that no current BobLib model emits, so it does not load.
+# For a loadable scene, run make visual-rig, make visual-maneuver or make visual-demo.
 
 style:
   joints:
@@ -40,14 +28,8 @@ style:
 
 geometry:
 
-  # ============================================================
-  # POINTS
-  # ============================================================
   points:
 
-    # ------------------------
-    # LEFT
-    # ------------------------
     leftLowerFore_i: [signals/visleftlowerfore_i1, signals/visleftlowerfore_i2, signals/visleftlowerfore_i3]
     leftLowerAft_i:  [signals/visleftloweraft_i1,  signals/visleftloweraft_i2,  signals/visleftloweraft_i3]
     leftLower_o:     [signals/visleftlower_o1,     signals/visleftlower_o2,     signals/visleftlower_o3]
@@ -61,7 +43,6 @@ geometry:
 
     leftWheelCenter: [signals/visleftwheelcenter1, signals/visleftwheelcenter2, signals/visleftwheelcenter3]
 
-    # --- bellcrank system
     leftBellcrankPivot:   [signals/visleftbellcrankpivot1, signals/visleftbellcrankpivot2, signals/visleftbellcrankpivot3]
     leftBellcrankPickup1: [signals/visleftbellcrankpickup11, signals/visleftbellcrankpickup12, signals/visleftbellcrankpickup13]
     leftBellcrankPickup2: [signals/visleftbellcrankpickup21, signals/visleftbellcrankpickup22, signals/visleftbellcrankpickup23]
@@ -74,9 +55,6 @@ geometry:
     leftArmEnd: [signals/visleftarmend1, signals/visleftarmend2, signals/visleftarmend3]
 
 
-    # ------------------------
-    # RIGHT
-    # ------------------------
     rightLowerFore_i: [signals/visrightlowerfore_i1, signals/visrightlowerfore_i2, signals/visrightlowerfore_i3]
     rightLowerAft_i:  [signals/visrightloweraft_i1,  signals/visrightloweraft_i2,  signals/visrightloweraft_i3]
     rightLower_o:     [signals/visrightlower_o1,     signals/visrightlower_o2,     signals/visrightlower_o3]
@@ -90,7 +68,6 @@ geometry:
 
     rightWheelCenter: [signals/visrightwheelcenter1, signals/visrightwheelcenter2, signals/visrightwheelcenter3]
 
-    # --- bellcrank system
     rightBellcrankPivot:   [signals/visrightbellcrankpivot1, signals/visrightbellcrankpivot2, signals/visrightbellcrankpivot3]
     rightBellcrankPickup1: [signals/visrightbellcrankpickup11, signals/visrightbellcrankpickup12, signals/visrightbellcrankpickup13]
     rightBellcrankPickup2: [signals/visrightbellcrankpickup21, signals/visrightbellcrankpickup22, signals/visrightbellcrankpickup23]
@@ -103,9 +80,6 @@ geometry:
     rightArmEnd: [signals/visrightarmend1, signals/visrightarmend2, signals/visrightarmend3]
 
 
-  # ============================================================
-  # LINKS
-  # ============================================================
   links:
 
     lower:
@@ -134,7 +108,6 @@ geometry:
       - [rightLower_o, rightWheelCenter]
       - [rightUpper_o, rightWheelCenter]
 
-    # --- bellcrank polygon
     bellcrank:
       - [leftBellcrankPivot, leftBellcrankPickup1]
       - [leftBellcrankPickup1, leftBellcrankPickup2]
@@ -162,9 +135,6 @@ geometry:
       - [rightArmEnd, rightBellcrankPickup3]
 
 
-  # ============================================================
-  # TIRES
-  # ============================================================
   tires:
 
     left:

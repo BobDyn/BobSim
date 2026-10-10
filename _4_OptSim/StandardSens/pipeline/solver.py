@@ -43,12 +43,9 @@ Variant = dict[str, float]
 Metrics = dict[str, float]
 Evaluator = Callable[[list[Variant]], list[Metrics]]
 
-# Pull toward the current car, as a weight on (change / range)^2: small enough not
-# to fight a reachable target, large enough to pick one answer when there are
-# fewer targets than knobs.
+# Weight on (change / range)^2. Picks one answer when there are fewer targets than knobs.
 REGULARIZATION = 0.01
-# Star step as a fraction of each knob's half-range. Wide steps keep the signal
-# well above simulation noise; the quadratic term absorbs the curvature.
+# Fraction of each knob's half-range. Wide steps keep the signal above simulation noise.
 STAR_STEP_FRACTION = 0.5
 MAX_VERIFICATIONS = 4
 # An even response has a mirror-image minimum, so one start can land on either.
@@ -248,16 +245,14 @@ def solve(
     rng = np.random.default_rng(0)
     ideal, _ = _solve_on_surrogate(problem, surrogate, rng, {})
 
-    # (worst miss in tolerances, setup, simulated metrics, what the surrogate expected).
-    # The first pass always simulates and always beats an infinite miss, so the
-    # placeholder never reaches the result.
+    # (worst miss in tolerances, setup, simulated metrics, surrogate prediction).
     best: tuple[float, np.ndarray, np.ndarray, np.ndarray] = (math.inf, ideal, ideal, ideal)
     seen: list[np.ndarray] = []
     anchor = (center, surrogate.f0)
     status = "best_effort"
     message = (
-        f"Still outside tolerance after {max_verifications} verification run(s); "
-        "this is the closest setup that was simulated."
+        f"Still outside tolerance after {max_verifications} verification run(s). "
+        "This is the closest setup that was simulated."
     )
 
     for _ in range(max_verifications):
@@ -286,8 +281,8 @@ def solve(
     if status != "converged" and at_bound:
         status = "unreachable"
         message = (
-            "These targets are outside what the knobs can reach within their "
-            f"ranges; limited by: {', '.join(at_bound)}. {message}"
+            "These targets are outside what the knobs can reach within their ranges. "
+            f"Knobs at a limit: {', '.join(at_bound)}. {message}"
         )
 
     return SolveResult(

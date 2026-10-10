@@ -25,10 +25,9 @@ class Node:
         self.position: MutableSequence[float] = deepcopy(list(position))
         self.initial_position: MutableSequence[float] = deepcopy(list(position))
 
-        # Track previous translation
+        # Last translation and rotation, read by listeners.
         self.translation: Union[None, Sequence[float]] = None
 
-        # Track previous rotation
         self.rotation_angle: Union[None, float] = None
         self.rotation_origin: Union[None, Node] = None
         self.rotation_direction: Union[None, Tuple[float, float, float]] = None
@@ -60,8 +59,6 @@ class Node:
         for node in self.child_nodes:
             node.reset()
         
-        # self.__update_listeners__()
-    
     def translate(self, translation: Union[np.ndarray, Sequence[float]]) -> None:
         """
         ## Translate

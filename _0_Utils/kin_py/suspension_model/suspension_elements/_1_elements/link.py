@@ -46,12 +46,6 @@ class Link:
         if "compliance" in kwargs:
             self.compliance = kwargs.pop("compliance")
 
-        # if ("compliance" in kwargs) ^ ("compliance_units" in kwargs):
-        #     raise Exception("Both compliance and compliance_units need to be specified in Link object")
-        # elif "compliance" in kwargs:
-        #     self.compliance = kwargs.pop("compliance")
-        #     self.compliance_unit = kwargs.pop("compliance_unit")
-
     def yz_intersection(self, link: "Link") -> Node:
         """
         ## y-z Intersection
@@ -95,8 +89,7 @@ class Link:
             warnings.warn("\nSingular Matrix Encountered | yz intersection assumed at infinity. This is not a critical error, but check results carefully.")
             y, z = np.inf, np.average([z_2, z_1])
 
-        # Calculate x-value
-        # I'll average between left and right halves for KinRC
+        # Average x of the two links, for the kinematic roll center.
         x = np.average([l_1o[0], l_2o[0]]).__float__()
 
         return Node(position=[x, y, z])
@@ -138,8 +131,7 @@ class Link:
             [-1 * m_2 * x_2 + z_2]
         ])
         
-        # Calculate y-value
-        # I'll average between front and rear halves for KinPC
+        # Average y of the two links, for the kinematic pitch center.
         y = np.average([l_1o[1], l_2o[1]])
 
         try:

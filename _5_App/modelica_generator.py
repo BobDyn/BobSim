@@ -1091,9 +1091,7 @@ def _format_call(call: ModelicaCall, indent: int) -> str:
     lines = [f"{call.type_name}(" if call.type_name else "("]
     for index, (name, value) in enumerate(assignments):
         suffix = "," if index < len(assignments) - 1 else ""
-        # +4, not +2: this is the indent BobLib's checked-in records already use.
-        # Emitting +2 made every regeneration rewrite files whose values had not
-        # changed, so the library showed hundreds of lines of pure whitespace diff.
+        # +4 matches the checked-in BobLib records, so regeneration gives no whitespace diff.
         lines.extend(_format_assignment(name, value, indent + 4, suffix))
     lines.append(f"{' ' * indent})")
     return "\n".join(lines)
@@ -1180,8 +1178,7 @@ def _pickup_order(
         raise ValueError(f"{path}: bellcrank axis has zero length")
     normal /= length
 
-    # Any reference not parallel to the axis gives a valid in-plane basis; the
-    # resulting angles are only ever compared with each other.
+    # Any non-parallel reference works. The angles are only compared with each other.
     reference = np.array([0.0, 0.0, 1.0])
     if abs(float(np.dot(reference, normal))) > 0.9:
         reference = np.array([1.0, 0.0, 0.0])

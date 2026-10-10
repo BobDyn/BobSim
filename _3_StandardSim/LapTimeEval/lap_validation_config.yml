@@ -24,8 +24,7 @@ ggv:
   max_abs_beta_rad: 0.25
   max_abs_steering_rad: 0.5
   enforce_tire_load_range: true
-  # Keep the routine all-DOF visual smoke pass fast. Study-grade GGV/lap
-  # configs enable the dense disconnected-branch audit.
+  # Off to keep the visual smoke pass fast.
   trim_multistart: false
 
 ymd:

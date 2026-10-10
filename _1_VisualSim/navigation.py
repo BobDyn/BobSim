@@ -88,9 +88,8 @@ def orbit(pose: CameraPose, d_azimuth: float, d_elevation: float) -> CameraPose:
 
     horizontal = offset[:2]
     if float(np.linalg.norm(horizontal)) < 1e-6 * radius:
-        # Looking straight down or up: azimuth is undefined, so take it from
-        # the screen's up direction. The camera sits "below" the top edge,
-        # which keeps the picture from spinning when the tilt starts.
+        # Azimuth is undefined looking straight down or up. Take it from screen
+        # up so the picture does not spin when the tilt starts.
         horizontal = -np.asarray(pose.up[:2], dtype=float)
         if float(np.linalg.norm(horizontal)) < 1e-9:
             horizontal = np.array([-1.0, 0.0])
@@ -165,8 +164,7 @@ def ground_plane_point(
     if abs(float(direction[2])) < 1e-9:
         return None
     along = (float(height) - float(origin[2])) / float(direction[2])
-    # A perspective ray starts at the eye and only goes forwards. A parallel
-    # one starts on the focal plane, and the plane may well be behind it.
+    # A parallel ray starts on the focal plane, so the ground may be behind it.
     if along <= 0.0 and not pose.parallel_projection:
         return None
     point = origin + along * direction
@@ -212,15 +210,6 @@ def recenter(pose: CameraPose, point: np.ndarray) -> CameraPose:
     shift = np.asarray(point, dtype=float) - pose.focal
     return replace(pose, position=pose.position + shift, focal=pose.focal + shift)
 
-
-# ---------------------------------------------------------------------------
-# Wheel input
-#
-# Scroll zooms, on every device. Qt reports a mouse wheel in whole notches and
-# a trackpad in fractions of one; both mean the same thing here, so nothing has
-# to work out which it was. Ctrl + scroll is how Windows and Linux deliver a
-# trackpad pinch, and it zooms too.
-# ---------------------------------------------------------------------------
 
 def wheel_zoom_factor(angle_dx: int, angle_dy: int, pixel_dx: int = 0, pixel_dy: int = 0) -> float:
     """Zoom factor for a wheel event, proportional to how far it scrolled.

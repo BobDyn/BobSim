@@ -22,15 +22,10 @@ import yaml
 
 from StandardSens.pipeline.standards import get_standard, run_standard
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
 DEFAULT_CONFIG = STANDARD_DIR / "configs/compiler_config.yaml"
 
-# Minimum rows expected in a valid metrics CSV (header + at least 1 metric row)
 MIN_RESULT_ROWS = 2
 
 
@@ -38,10 +33,6 @@ def load_config(config_path: Path = DEFAULT_CONFIG) -> dict:
     with open(config_path) as f:
         return yaml.safe_load(f)
 
-
-# ---------------------------------------------------------------------------
-# CSV validation
-# ---------------------------------------------------------------------------
 
 def _csv_is_valid(csv_path: Path) -> bool:
     """Return True if metrics CSV exists and has enough rows to be valid.
@@ -56,10 +47,6 @@ def _csv_is_valid(csv_path: Path) -> bool:
     except Exception:
         return False
 
-
-# ---------------------------------------------------------------------------
-# Single variant run
-# ---------------------------------------------------------------------------
 
 def run_variant(
         variant_dir: Path,
@@ -83,8 +70,7 @@ def run_variant(
     results_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Dispatch on the standard's name: running one standard's report against
-        # another's executable fails late and unhelpfully.
+        # Dispatch on name. A report run on another standard's executable fails late.
         metrics_csv = run_standard(
             get_standard(standard),
             variant_dir=variant_dir,
@@ -105,7 +91,7 @@ def run_variant(
 
 def _find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
     model = standard_cfg["model"]
-    short = model.split(".")[-1]        # SteadyStateEval
+    short = model.split(".")[-1]
     candidates = [
         build_dir / model,
         build_dir / f"{model}.exe",
@@ -123,20 +109,12 @@ def _write_error(variant_dir: Path, standard: str, message: str) -> None:
     log.write_text(message)
 
 
-# ---------------------------------------------------------------------------
-# Worker (top-level for pickling with ProcessPoolExecutor)
-# ---------------------------------------------------------------------------
-
 def _worker(args: tuple) -> tuple[str, str, bool]:
     """Unpack args and run one variant. Returns (variant_name, standard, success)."""
     variant_dir, standard, standard_cfg, timeout = args
     success = run_variant(variant_dir, standard, standard_cfg, timeout)
     return variant_dir.name, standard, success
 
-
-# ---------------------------------------------------------------------------
-# Run all variants
-# ---------------------------------------------------------------------------
 
 def run_all(
         population_dir: Path,
@@ -161,14 +139,12 @@ def run_all(
     total = len(variant_dirs)
     results: dict[str, list[Path]] = {s: [] for s in standards}
 
-    # Collect already-valid results
     for vdir in variant_dirs:
         for standard in standards:
             csv = vdir / "results" / standard / "metrics.csv"
             if _csv_is_valid(csv):
                 results[standard].append(csv)
 
-    # Build work list — skip variants with valid results
     work = [
         (variant_dir, standard, standard_cfg, timeout)
         for variant_dir in variant_dirs
@@ -207,10 +183,6 @@ def run_all(
 
     return results
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     population = OPTSIM_DIR / "Build/StandardSens/population"

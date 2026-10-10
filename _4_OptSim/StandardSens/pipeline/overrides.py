@@ -23,23 +23,14 @@ import xml.etree.ElementTree as ET
 
 from StandardSens.pipeline.generator import resolve_targets
 
-# The vehicle record instance at the top of the standard experiment models.
 VEHICLE_RECORD = "pVehicle"
 
-# Variables the model reads at initialisation, so an override reaches the physics.
-# Proven against BobLib v0.2.0-4-g2777aa5 by recompiling a variant that differed
-# only in these six and reproducing its metrics by override on the baseline
-# executable (understeer gradient to 2.5e-5 deg/g, roll gradient to 5e-6).
-#
-# Do NOT add a variable because its parameter says `isValueChangeable="true"`.
-# Static toe and camber say so, and overriding them does nothing: they build the
-# wheel's `toHub.R_rel` rotation matrix, which OpenModelica evaluates at compile
-# time. The override is accepted, every bound copy of the angle updates, and the
-# matrix the wheel uses stays put. Every mass and CG value fails the same way
-# through `combineMassRecords`. To vet a candidate, compile two variants that
-# differ only in it and diff their `*_init.xml`: a non-changeable parameter whose
-# `start` differs was evaluated at compile time and will not follow an override.
-# Re-check this list when the BobLib pin moves.
+# Variables read at initialisation, so an override reaches the physics.
+# isValueChangeable="true" is not enough. Toe, camber, mass and CG are evaluated
+# at compile time. To vet a candidate, compile two variants that differ only in
+# it and diff their *_init.xml. A changed non-changeable start value identifies
+# a compiled dependency. Compare override results with the separately compiled
+# variant. Re-check this list when the BobLib pin moves.
 RUNTIME_SAFE_PATHS = frozenset(
     {
         "front.stabar.rate_n_m_per_rad",
@@ -81,7 +72,7 @@ def load_init_parameters(init_xml: Path) -> dict[str, InitParameter]:
 def find_init_xml(build_dir: Path, exec_name: str) -> Path:
     init_xml = build_dir / f"{exec_name}_init.xml"
     if not init_xml.exists():
-        raise FileNotFoundError(f"No init XML at {init_xml}; that executable was never compiled.")
+        raise FileNotFoundError(f"No init XML at {init_xml}. That executable was never compiled.")
     return init_xml
 
 
@@ -112,8 +103,7 @@ def variant_overrides(
             if target.get("operation") == "scale":
                 problems.append(f"{name} (from {path}): scaled tables are compiled, not overridden")
             elif parameter is None or parameter.start is None:
-                # The runner looks names up by their start value, so a scalar
-                # without one is dropped there exactly as a missing name is.
+                # The runner drops a scalar with no start value.
                 problems.append(f"{name} (from {path}): not in the compiled model")
             elif not parameter.changeable:
                 problems.append(f"{name} (from {path}): fixed at compile time")

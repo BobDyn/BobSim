@@ -320,8 +320,7 @@ def test_openmodelica_auto_detection_uses_user_package_library(
 ) -> None:
     clear_openmodelica_settings(monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
-    # Path.home() reads USERPROFILE on Windows, HOME elsewhere; set both so the
-    # lookup stays inside tmp_path on every platform.
+    # Path.home() reads USERPROFILE on Windows and HOME elsewhere.
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     home = tmp_path / "OpenModelica"
     omc = home / "bin" / ("omc.exe" if app.platform.system() == "Windows" else "omc")

@@ -44,19 +44,15 @@ class Stabar:
                  bar_right_end: Node, 
                  torsional_stiffness: float) -> None:
 
-        # Torsion bar
         self.bar: Link = Link(inboard_node=bar_left_end, outboard_node=bar_right_end)
         self.torsional_stiffness: float = torsional_stiffness
 
-        # Arms
         self.left_arm: Link = Link(inboard_node=bar_left_end, outboard_node=left_arm_end)
         self.right_arm: Link = Link(inboard_node=bar_right_end, outboard_node=right_arm_end)
 
-        # Droplinks
         self.left_droplink: Link = Link(inboard_node=left_droplink_end, outboard_node=left_arm_end)
         self.right_droplink: Link = Link(inboard_node=right_droplink_end, outboard_node=right_arm_end)
 
-        # Rotations for tracking
         self.left_rotation: float = 0
         self.right_rotation: float = 0
 
@@ -95,7 +91,7 @@ class Stabar:
         rotation=x
         droplink = args[0]
 
-        # Calculating transformations manually for runtime. 
+        # Transform manually. Node.rotate() is slower.
         node = droplink.outboard_node
 
         rot = rotation_matrix(unit_vec=self.bar.direction, theta=rotation)

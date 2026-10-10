@@ -72,7 +72,7 @@ class TestWishbone(TestCase):
         wishbone = Wishbone(fore_link=fore_link, aft_link=aft_link)
         a, b, c, x_0, y_0, z_0 = wishbone.plane
 
-        # Check if planes are equivalent type shit
+        # Points on the plane give zero.
         point_1 = a * (1 - x_0) + b * (0 - y_0) + c * (0 - z_0)
         point_2 = a * (0 - x_0) + b * (1 - y_0) + c * (0 - z_0)
         point_3 = a * (0 - x_0) + b * (0 - y_0) + c * (0 - z_0)

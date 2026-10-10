@@ -31,10 +31,6 @@ STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
 
 
-# ---------------------------------------------------------------------------
-# Per-variant pipelined worker
-# ---------------------------------------------------------------------------
-
 def _build_and_run_worker(args: tuple) -> tuple[str, bool, str]:
     """Compile one variant then immediately run its simulation.
 
@@ -57,7 +53,6 @@ def _build_and_run_worker(args: tuple) -> tuple[str, bool, str]:
     overall_ok = True
 
     for standard, standard_cfg in standards.items():
-        # ── Compile ────────────────────────────────────────────────────────
         if _should_compile(variant_dir, standard, standard_cfg):
             ok = compile_variant(
                 variant_dir, standard, standard_cfg, boblib_path, template_path
@@ -69,7 +64,6 @@ def _build_and_run_worker(args: tuple) -> tuple[str, bool, str]:
         else:
             lines.append(f"  compile  {standard}: cached")
 
-        # ── Run sim immediately after compile ──────────────────────────────
         csv = variant_dir / "results" / standard / "metrics.csv"
         if _csv_is_valid(csv):
             lines.append(f"  simulate {standard}: cached")
@@ -81,10 +75,6 @@ def _build_and_run_worker(args: tuple) -> tuple[str, bool, str]:
 
     return variant_dir.name, overall_ok, "\n".join(lines)
 
-
-# ---------------------------------------------------------------------------
-# Pipelined build stage (replaces compile_all + run_all)
-# ---------------------------------------------------------------------------
 
 def build_all(
     population_dir: Path,
@@ -128,7 +118,6 @@ def build_all(
 
     total = len(variant_dirs)
 
-    # Determine which variants still have work to do (compile or sim outstanding)
     def _needs_work(vdir: Path) -> bool:
         for standard, standard_cfg in standards.items():
             if _should_compile(vdir, standard, standard_cfg):
@@ -172,7 +161,6 @@ def build_all(
             status = "ok" if success else "FAILED"
             if success:
                 n_ok += 1
-            # Print atomically — all output for this variant in one block
             print(f"[{completed:>{len(str(len(work_dirs)))}}/{len(work_dirs)}] {variant_name}  {status}")
             print(log)
 
@@ -189,10 +177,6 @@ def build_all(
         PIPELINE_TOOLING_INPUTS,
     )
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     population = OPTSIM_DIR / "Build/StandardSens/population"

@@ -29,10 +29,6 @@ import yaml
 
 from StandardSens.pipeline.sampler import sample
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
 DOE_CONFIG = STANDARD_DIR / "configs/_doe_config.yaml"
@@ -45,10 +41,6 @@ def load_aggregator_config(config_path: Path = AGGREGATOR_CONFIG) -> dict:
     with open(config_path) as f:
         return yaml.safe_load(f)
 
-
-# ---------------------------------------------------------------------------
-# Core
-# ---------------------------------------------------------------------------
 
 def _extract_metrics(
         csv_path: Path,
@@ -86,7 +78,7 @@ def aggregate(
     cfg = load_aggregator_config(aggregator_config)
     standards: dict[str, dict] = cfg["standards"]
 
-    # Reconstruct inputs — seed is fixed so this is deterministic
+    # The DOE seed is fixed, so this reproduces the inputs of each variant.
     variants = sample(doe_config)
 
     rows = []
@@ -141,10 +133,6 @@ def aggregate(
 
     return result
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     df = aggregate()

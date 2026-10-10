@@ -54,10 +54,6 @@ def _referenced_signals(cfg: dict[str, Any]) -> set[str]:
     return names
 
 
-# ---------------------------------------------------------------------------
-# Bundled templates and the demo generator - no PyVista required
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize("template", sorted(TEMPLATE_DIR.glob("*.yml")), ids=lambda p: p.stem)
 def test_template_is_structurally_valid(template: Path) -> None:
     """Every bundled template parses and its links resolve to declared points."""

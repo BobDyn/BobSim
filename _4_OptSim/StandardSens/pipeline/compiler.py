@@ -31,10 +31,6 @@ from StandardSens.pipeline._pipeline_hash import (
     variant_is_stale,
 )
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 STANDARD_DIR = Path(__file__).resolve().parents[1]
 OPTSIM_DIR = STANDARD_DIR.parent
 REPO_ROOT = OPTSIM_DIR.parent
@@ -51,9 +47,7 @@ DEFAULT_STEADY_STATE_CONFIG = (
 )
 DEFAULT_MODELICA_RUNNER = REPO_ROOT / "_3_StandardSim/_modelica_runner.py"
 
-# Tooling whose behaviour is baked into every compiled-and-simulated result. Each
-# pipeline-hash check passes this same tuple; a consumer that hashed a different
-# list would keep caches its neighbour had already declared stale.
+# Tooling baked into every result. Every pipeline-hash check must pass this same tuple.
 PIPELINE_TOOLING_INPUTS = (
     DEFAULT_REPORT_WRAPPER,
     STANDARD_DIR / "pipeline/standards.py",
@@ -68,10 +62,6 @@ PIPELINE_TOOLING_INPUTS = (
     REPO_ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv",
 )
 
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
 
 def load_compiler_config(config_path: Path = DEFAULT_COMPILER_CONFIG) -> dict:
     import yaml
@@ -123,10 +113,6 @@ def _build_model_options(standard: str, standard_cfg: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# build.mos generation
-# ---------------------------------------------------------------------------
-
 def _native_cflags() -> str:
     """clang on AArch64 (e.g. Apple Silicon) rejects -march=native, an
     x86-ism, and needs -mcpu=native instead."""
@@ -159,10 +145,6 @@ def generate_mos(
         cflags=_native_cflags(),
     )
 
-
-# ---------------------------------------------------------------------------
-# Single variant compilation
-# ---------------------------------------------------------------------------
 
 def compile_variant(
         variant_dir: Path,
@@ -212,7 +194,7 @@ def compile_variant(
         _write_error(variant_dir, standard, "omc not found on PATH")
         return False
 
-    # OMC exits 0 even on soft failures — verify executable actually exists
+    # OMC exits 0 even on soft failures.
     exe = _find_exe(build_dir, standard_cfg)
     if result.returncode != 0 or exe is None or not (build_dir / f"{model}_init.xml").is_file():
         if exe is not None:
@@ -221,7 +203,6 @@ def compile_variant(
         _write_error(variant_dir, standard, error_msg)
         return False
 
-    # Write variant hash after successful compile
     write_variant_hash(variant_dir)
 
     return True
@@ -239,7 +220,7 @@ def find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
     return None
 
 
-_find_exe = find_exe  # existing importers
+_find_exe = find_exe
 
 
 def _write_error(variant_dir: Path, standard: str, message: str) -> None:
@@ -261,10 +242,6 @@ def _should_compile(variant_dir: Path, standard: str, standard_cfg: dict) -> boo
     return False
 
 
-# ---------------------------------------------------------------------------
-# Parallel compilation worker
-# ---------------------------------------------------------------------------
-
 def _compile_worker(args: tuple) -> tuple[str, str, bool]:
     """Top-level function for ProcessPoolExecutor (must be picklable)."""
     variant_dir, standard, standard_cfg, boblib_path, template_path = args
@@ -273,10 +250,6 @@ def _compile_worker(args: tuple) -> tuple[str, str, bool]:
     )
     return str(variant_dir), standard, success
 
-
-# ---------------------------------------------------------------------------
-# Compile all variants
-# ---------------------------------------------------------------------------
 
 def compile_all(
         population_dir: Path,
@@ -302,7 +275,6 @@ def compile_all(
         standards = {name: standards[name] for name in only_standards}
     max_workers: int = cfg.get("max_workers", 2)
 
-    # Resolve boblib_path relative to the config file
     config_dir = compiler_config_path.resolve().parent
     boblib_path = (config_dir / cfg["boblib_path"]).resolve()
 
@@ -315,7 +287,6 @@ def compile_all(
     if not template_path.exists():
         raise FileNotFoundError(f"build_template.mos not found at {template_path}")
 
-    # Check pipeline hash — raises if inputs changed since last run
     check_pipeline_hash(
         population_dir,
         doe_config_path,
@@ -332,7 +303,6 @@ def compile_all(
     total = len(variant_dirs)
     results: dict[str, list[Path]] = {s: [] for s in standards}
 
-    # Skip already-compiled variants whose inputs haven't changed
     work_items = [
         (str(vdir), standard, standard_cfg, str(boblib_path), str(template_path))
         for vdir in variant_dirs
@@ -342,7 +312,6 @@ def compile_all(
 
     n_skipped = (total * len(standards)) - len(work_items)
 
-    # Collect already-compiled exes into results
     for vdir in variant_dirs:
         for standard, standard_cfg in standards.items():
             if not _should_compile(vdir, standard, standard_cfg):
@@ -379,7 +348,6 @@ def compile_all(
         n_fail = total - n_ok
         print(f"{standard}: {n_ok}/{total} compiled ok, {n_fail} failed")
 
-    # Write pipeline hash after successful compile run
     write_pipeline_hash(
         population_dir,
         doe_config_path,
@@ -391,10 +359,6 @@ def compile_all(
 
     return results
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     population = OPTSIM_DIR / "Build/StandardSens/population"

@@ -32,7 +32,7 @@ from StandardSens.pipeline.generate_configs import SWEEP_SCOPE_ALL, refresh_doe_
 from StandardSens.pipeline.generator import generate_variants
 from StandardSens.pipeline.orchestration import ARCHITECTURE_CONFIG, COMPILER_CONFIG, DOE_CONFIG
 
-# Every VehicleSim standard runs the executable the sweep builds for this one.
+# Every VehicleSim standard runs the executable built for this one.
 BUILD_STANDARD = "SteadyStateEval"
 
 Variant = dict[str, float]
@@ -73,7 +73,7 @@ class VariantStore:
         if self.was_reset:
             print(
                 f"Cache under {self.root.name}/ predates a change to BobLib, the vehicle, or "
-                "the simulation tooling; discarding it."
+                "the simulation tooling. Discarding it."
             )
             shutil.rmtree(self.variants_dir)
         index_path = self.variants_dir / "index.json"
@@ -106,8 +106,7 @@ class VariantStore:
     def _inputs_changed(self) -> bool:
         """Whether the inputs differ from the ones the compiled variants were built from."""
         try:
-            # The same call compile_all makes, so the two cannot disagree about
-            # what counts as stale.
+            # Same call as compile_all, so both agree on what is stale.
             check_pipeline_hash(
                 self.variants_dir,
                 self.doe_config_path,

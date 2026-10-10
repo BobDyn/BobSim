@@ -45,8 +45,7 @@ def run_report(
             merged.update({name: float(value) for name, value in init_parameters.items()})
             simulation["init_parameters"] = merged
         if isoline is not None:
-            # These move together: the cap and the exported-metric velocity must
-            # name the one isoline being run, or the report selects nothing.
+            # All four must name the same isoline, or the report selects nothing.
             sweep = config.setdefault("sweep", {})
             sweep["testVels"] = [isoline.velocity_mps]
             sweep["targetAys"] = list(isoline.target_ays)

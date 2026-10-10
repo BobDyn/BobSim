@@ -28,7 +28,7 @@ from StandardSens.pipeline.solver import Knob, SolveResult, solve
 from StandardSens.pipeline.steady_state_eval_report import Isoline
 
 CONFIG = Path(__file__).resolve().parent / "configs/solve_config.yaml"
-# The aggregated sweep table prefixes its columns; accept names copied from it.
+# Accept metric names copied from the aggregated sweep table.
 METRIC_PREFIX = "SteadyStateEval_"
 
 
@@ -77,10 +77,7 @@ def build_knobs(
     variables: dict[str, dict[str, Any]],
     baseline: dict[str, float],
 ) -> list[Knob]:
-    # Stricter than the sweep's scope rule on purpose: an untagged variable (the
-    # driver, the aero map) is swept in every scope, but it is a condition of the
-    # question here, never an answer. Misspelled tags never get this far: the
-    # evaluator's config generation validates every one.
+    # Only explicit `scope: setup`. Untagged variables are conditions, not knobs.
     architecture = yaml.safe_load(ARCHITECTURE_CONFIG.read_text())
     setup_paths = {
         v["path"] for v in architecture["sweep"]["variables"] if v.get("scope") == "setup"

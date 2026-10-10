@@ -1,11 +1,6 @@
 name: Regression Baseline
 
-# Deliberately manual. The full StandardSim baseline rebuilds and reruns every
-# study through OpenModelica, so it stays off the push/pull_request path; the
-# cheap provenance check in `make ci` is what flags a stale baseline on a PR.
-#
-# Results are uploaded for review rather than trusted on green: CONTRIBUTING.md
-# requires a human to read the regenerated reports before a baseline is updated.
+# Manual only because the full baseline is slow. A person reviews the uploaded reports (CONTRIBUTING.md).
 on:
   workflow_dispatch:
     inputs:
@@ -23,8 +18,7 @@ jobs:
   baseline:
     name: Full StandardSim baseline
     runs-on: ${{ inputs.runner }}
-    # A 16-core host runs this in 10-13 min. Smaller runners serialise the
-    # sweeps, so allow well beyond that before calling it hung.
+    # A 16-core host takes 10-13 min. Smaller runners take much longer.
     timeout-minutes: 180
 
     steps:
@@ -38,9 +32,7 @@ jobs:
       - name: Verify OpenModelica toolchain
         run: docker compose run --rm -T bobsim omc --version
 
-      # SteadyStateEval requests 8 workers against a 420 s per-case timeout, so a
-      # small runner can oversubscribe into timeouts that look like physics
-      # failures. Recorded here to make that diagnosable from the log.
+      # SteadyStateEval uses 8 workers. On small runners, case timeouts can look like physics failures.
       - name: Report available cores
         run: nproc
 

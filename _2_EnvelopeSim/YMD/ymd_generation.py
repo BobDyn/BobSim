@@ -71,36 +71,30 @@ class VehicleParams:
 
     front_static_frac: float  # fraction of static weight on front axle
 
-    # Front convention:
-    #   lltd = front lateral load transfer / total lateral load transfer
+    # Front share of lateral load transfer.
     lltd: float
 
-    # Steering
     # delta_roadwheel = delta_hwa / steering_ratio
     steering_ratio: float = 1.0
 
-    # Aero
     rho: float = 1.225  # kg/m^3
     cl_a: float = 0.0  # downforce coefficient times area, positive
     cd_a: float = 0.0  # drag coefficient times area
     aero_balance_front: float = 0.50
 
-    # Tire model from .tir
     fz_ref: float = 654.0
     fz_min_valid: float = 100.0
     fz_max_valid: float = 1091.0
 
-    # Lateral Magic Formula peak coefficients:
-    #   mu_y ~= abs(PDY1 + PDY2 * dfz)
+    # mu_y ~= abs(PDY1 + PDY2 * dfz)
     pdy1: float = -2.40275
     pdy2: float = 0.343535
 
-    # Lateral cornering stiffness coefficients:
-    #   C_alpha ~= abs(PKY1) * Fz0 * sin(2 atan(Fz / (PKY2 * Fz0)))
+    # C_alpha ~= abs(PKY1) * Fz0 * sin(2 atan(Fz / (PKY2 * Fz0)))
     pky1: float = -53.2421
     pky2: float = 2.38205
 
-    # Safety floor for extrapolated loads
+    # Floor for extrapolated loads.
     mu_min: float = 0.8
 
 
@@ -117,8 +111,7 @@ class YMDConfig:
     hwa_max_deg: float = 18.0
     hwa_points: int = 61
 
-    # Moment-method YMD default.
-    # Later this can become a solved steady-state yaw-rate / curvature condition.
+    # Moment method uses a fixed yaw rate.
     yaw_rate: float = 0.0  # rad/s
 
     max_iter: int = 50
@@ -266,10 +259,8 @@ def wheel_positions(vehicle: VehicleParams) -> tuple[FloatArray, FloatArray]:
     Wheel order:
         [FL, FR, RL, RR]
     """
-    # Distance from CG to front axle
     a = (1.0 - vehicle.front_static_frac) * vehicle.wheelbase
 
-    # Distance from CG to rear axle
     b = vehicle.front_static_frac * vehicle.wheelbase
 
     x = np.array([a, a, -b, -b], dtype=np.float64)
@@ -313,14 +304,12 @@ def wheel_loads(
     fz_front = vehicle.front_static_frac * weight + front_aero
     fz_rear = (1.0 - vehicle.front_static_frac) * weight + rear_aero
 
-    # Longitudinal load transfer.
     # ax > 0 transfers load rearward.
     d_fz_long = vehicle.mass * ax * vehicle.cg_height / vehicle.wheelbase
 
     fz_front -= d_fz_long
     fz_rear += d_fz_long
 
-    # Lateral load transfer.
     total_lat_transfer_moment = vehicle.mass * ay * vehicle.cg_height
 
     front_lat_transfer = vehicle.lltd * total_lat_transfer_moment / vehicle.track_front
@@ -379,7 +368,7 @@ def tire_slip_angles(
 
     velocity_angle = np.arctan2(vy, vx)
 
-    # This convention gives positive front lateral force for positive steer.
+    # Gives positive front Fy for positive steer.
     alpha = wheel_heading - velocity_angle
 
     return alpha
@@ -461,8 +450,7 @@ def ymd_point(
 
         fy_tire = saturated_lateral_force(vehicle, fz=fz, alpha=alpha)
 
-        # Rotate front tire forces into vehicle body frame.
-        # Rear tires have steer = 0.
+        # Rotate tire forces into the body frame.
         wheel_heading = np.array(
             [delta_roadwheel, delta_roadwheel, 0.0, 0.0],
             dtype=np.float64,
@@ -753,21 +741,12 @@ def plot_ymd(
 
     beta_deg = np.rad2deg(result.beta)
 
-    # NOTE:
-    # This variable is still named hwa in YMDResult for compatibility with the
-    # rest of the script, but with steering_ratio = 1.0 this is roadwheel angle.
+    # result.hwa is the roadwheel angle when steering_ratio = 1.0.
     delta_rw_deg = np.rad2deg(result.hwa)
 
-    # -------------------------------------------------------------------------
-    # Integer-degree isoline selection
-    # -------------------------------------------------------------------------
     beta_indices = selected_integer_degree_indices(beta_deg)
     delta_indices = selected_integer_degree_indices(delta_rw_deg)
 
-    # -------------------------------------------------------------------------
-    # Blue family: constant beta isolines
-    # Each row i sweeps delta_rw at fixed beta.
-    # -------------------------------------------------------------------------
     n_beta = max(1, len(beta_indices) - 1)
 
     for label_count, i in enumerate(beta_indices):
@@ -790,7 +769,6 @@ def plot_ymd(
             alpha=0.90,
         )
 
-        # Spread blue labels through the interior.
         frac = 0.16 + 0.68 * (label_count / n_beta)
 
         label_line(
@@ -803,10 +781,6 @@ def plot_ymd(
             fontsize=6.0,
         )
 
-    # -------------------------------------------------------------------------
-    # Red family: constant roadwheel-angle isolines
-    # Each column j sweeps beta at fixed delta_rw.
-    # -------------------------------------------------------------------------
     n_delta = max(1, len(delta_indices) - 1)
 
     for label_count, j in enumerate(delta_indices):
@@ -829,7 +803,7 @@ def plot_ymd(
             alpha=0.90,
         )
 
-        # Put red labels on an opposing band so they interleave with blue labels.
+        # Offset red labels so they interleave with blue labels.
         frac = 0.84 - 0.68 * (label_count / n_delta)
 
         label_line(
@@ -842,9 +816,6 @@ def plot_ymd(
             fontsize=6.0,
         )
 
-    # -------------------------------------------------------------------------
-    # Axes / styling
-    # -------------------------------------------------------------------------
     ax.axhline(0.0, linewidth=0.9, color="black", alpha=0.65)
     ax.axvline(0.0, linewidth=0.9, color="black", alpha=0.65)
 
@@ -862,7 +833,6 @@ def plot_ymd(
     ax.set_xlim(-1.10 * ay_abs, 1.10 * ay_abs)
     ax.set_ylim(-1.10 * mz_abs, 1.10 * mz_abs)
 
-    # Legend proxies
     blue_proxy, = ax.plot(
         [],
         [],
@@ -2357,7 +2327,6 @@ def plot_ymd_speed_sweep_3d(
 
         speed_grid = np.full_like(result.ay, speed, dtype=float)
 
-        # Blue family: constant beta lines
         beta_step = max(1, len(beta_deg) // 14)
 
         for i, _beta in enumerate(beta_deg):
@@ -2376,7 +2345,6 @@ def plot_ymd_speed_sweep_3d(
                     alpha=0.72,
                 )
 
-        # Red family: constant handwheel-angle lines
         hwa_step = max(1, len(hwa_deg) // 14)
 
         for j, _hwa in enumerate(hwa_deg):
@@ -2401,10 +2369,9 @@ def plot_ymd_speed_sweep_3d(
 
     ax.set_title("First-Principles Moment-Method YMD Speed Sweep")
 
-    # Good initial slide view.
     ax.view_init(elev=24, azim=-58)
 
-    # Manual visual scaling; do not use raw data ranges.
+    # Manual aspect. Raw data ranges distort the view.
     ax.set_box_aspect((1.25, 1.35, 1.0))
 
     blue_proxy, = ax.plot(
@@ -2544,9 +2511,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
     if not sweep.results:
         raise ValueError("No YMD sweep results provided.")
 
-    # -------------------------------------------------------------------------
-    # Collect all finite points for convex hull
-    # -------------------------------------------------------------------------
     point_blocks: list[FloatArray] = []
 
     for result in sweep.results:
@@ -2577,15 +2541,9 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     hull = ConvexHull(points_all)
 
-    # -------------------------------------------------------------------------
-    # Figure
-    # -------------------------------------------------------------------------
     fig = plt.figure(figsize=(12.0, 8.5))
     ax = fig.add_subplot(111, projection="3d")
 
-    # -------------------------------------------------------------------------
-    # Convex hull shell
-    # -------------------------------------------------------------------------
     hull_faces = [points_all[simplex] for simplex in hull.simplices]
 
     hull_collection = Poly3DCollection(
@@ -2598,9 +2556,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     ax.add_collection3d(hull_collection)
 
-    # -------------------------------------------------------------------------
-    # Select only interior beta/hwa slices
-    # -------------------------------------------------------------------------
     beta_vals = sweep.results[0].beta
     hwa_vals = sweep.results[0].hwa
 
@@ -2617,7 +2572,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
         if n <= 2:
             return np.arange(n, dtype=int)
 
-        # Use 15% to 85% range to avoid outermost envelope surfaces.
         lo = int(round(0.15 * (n - 1)))
         hi = int(round(0.85 * (n - 1)))
 
@@ -2628,9 +2582,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
 
     speeds = np.asarray([result.speed for result in sweep.results], dtype=float)
 
-    # -------------------------------------------------------------------------
-    # Blue surfaces: beta fixed, sweep hwa and speed
-    # -------------------------------------------------------------------------
     for beta_idx in beta_indices:
         ay_surface_list: list[FloatArray] = []
         mz_surface_list: list[FloatArray] = []
@@ -2676,9 +2627,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
                 cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
-    # -------------------------------------------------------------------------
-    # Red surfaces: hwa fixed, sweep beta and speed
-    # -------------------------------------------------------------------------
     for hwa_idx in hwa_indices:
         hwa_ay_surface_list: list[FloatArray] = []
         hwa_mz_surface_list: list[FloatArray] = []
@@ -2724,15 +2672,11 @@ def plot_ymd_speed_sweep_hull_surfaces(
                 cstride=max(1, ay_surface_arr.shape[1] // 8),
             )
 
-    # -------------------------------------------------------------------------
-    # Add a light outline of each speed slice for readability
-    # -------------------------------------------------------------------------
     for result in sweep.results:
         ay_g = result.ay / G
         mz = result.mz
         speed_grid = np.full_like(result.ay, result.speed, dtype=float)
 
-        # Only plot outer-ish beta/hwa lines, not the full carpet.
         for i in (0, len(result.beta) - 1):
             mask = np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
             if np.any(mask):
@@ -2757,9 +2701,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
                     alpha=0.45,
                 )
 
-    # -------------------------------------------------------------------------
-    # Axes / styling
-    # -------------------------------------------------------------------------
     ax.set_xlabel(r"Lateral Acceleration, $a_y$ ($g$)", labelpad=10)
     ax.set_ylabel(r"Yaw Moment, $M_z$ ($N m$)", labelpad=10)
     ax.set_zlabel(r"Speed, $V$ ($m/s$)", labelpad=10)
@@ -2779,7 +2720,6 @@ def plot_ymd_speed_sweep_hull_surfaces(
     ax.set_ylim(-1.08 * mz_abs, 1.08 * mz_abs)
     ax.set_zlim(np.min(speeds), np.max(speeds))
 
-    # Legend proxies.
     hull_proxy = mpatches.Patch(
         facecolor="lightgray",
         edgecolor="gray",
@@ -2873,9 +2813,6 @@ def main() -> None:
         f"{vehicle.fz_min_valid:.1f} to {vehicle.fz_max_valid:.1f} N"
     )
 
-    # -------------------------------------------------------------------------
-    # Single-speed YMD generation
-    # -------------------------------------------------------------------------
     config = config_to_ymd_config(ymd_report_config)
 
     reduced_model = Vehicle.from_yaml(vehicle_path).model(config.model_dof)
@@ -2908,9 +2845,6 @@ def main() -> None:
 
     summary, trim_rows = summarize_ymd(result)
 
-    # -------------------------------------------------------------------------
-    # YMD speed sweep
-    # -------------------------------------------------------------------------
     speed_sweep_cfg = ymd_report_config.get("speed_sweep") or {}
     speed_sweep = np.array(
         [float(v) for v in speed_sweep_cfg.get("speeds_mps", np.linspace(10.0, 25.0, 7))],

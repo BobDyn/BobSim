@@ -32,15 +32,6 @@ COMPILER_CONFIG = CONFIG_DIR / "compiler_config.yaml"
 
 SCOPE_ENV_VAR = "BOBSIM_DOE_SCOPE"
 
-# Sweep scopes. `all` is the default and sweeps every variable, so existing
-# invocations and the committed _doe_config.yaml are unaffected. The other two
-# split the study the 23-variable sweep conflates: setup knobs that can be
-# changed on the built car, versus architecture properties that cannot.
-#
-# The membership of each scope is declared per variable in
-# vehicle_architecture.yaml (`scope:`) and is deliberately *not* listed here —
-# the partition is a vehicle-dynamics judgement call, so it must be editable
-# without touching Python.
 SWEEP_SCOPE_ALL = "all"
 SWEEP_SCOPES = (SWEEP_SCOPE_ALL, "setup", "architecture")
 DEFAULT_SWEEP_SCOPE = SWEEP_SCOPE_ALL
@@ -107,9 +98,7 @@ def _variable_in_scope(spec: dict[str, Any], scope: str) -> bool:
     if declared is None:
         return True
 
-    # Validated even when the requested scope is `all`, so a misspelled tag
-    # fails on the default sweep that CI regenerates rather than lying dormant
-    # until someone asks for a scoped one.
+    # Validate even for scope `all`, so a misspelled tag fails on the default CI sweep.
     declared_scope = _validate_scope(
         str(declared), f"sweep variable {spec.get('path')!r} scope"
     )
@@ -139,7 +128,6 @@ def _find_standard_source(boblib_root: Path, model_name: str) -> Path:
             f"Could not locate a Modelica source file for {model_name!r} under {boblib_root}"
         )
     if len(matches) > 1:
-        # Prefer the shortest path if the same stem appears in multiple places.
         matches.sort(key=lambda p: len(p.as_posix()))
     return matches[0]
 
@@ -155,10 +143,7 @@ def _record_binding_present(boblib_root: Path, source_path: Path, record_name: s
     if any(re.search(pattern, text) for pattern in patterns):
         return True
 
-    # The public standard entrypoint can extend an architecture template that
-    # owns the concrete VehicleRecord redeclare. Search the package sources so
-    # this check still protects against mismatched active architectures without
-    # assuming the binding lives in the front-facing wrapper.
+    # The redeclare can live in an extended architecture template, so search all package sources.
     for mo_path in boblib_root.rglob("*.mo"):
         if mo_path == source_path:
             continue
@@ -267,8 +252,6 @@ def build_doe_config(
 
     samples = int(architecture_cfg.get("samples", 3))
 
-    # Environment overrides let a small run be requested without editing the
-    # checked-in architecture YAML (make opt-standard DOE_SAMPLES=3).
     method_override = _env_str("BOBSIM_DOE_METHOD")
     if method_override:
         sampling_cfg["method"] = method_override
@@ -287,10 +270,7 @@ def build_doe_config(
             "source": _relpath_posix(architecture_config_path, STANDARD_DIR),
         },
         "baseline_mo": _relpath_posix(record_path, DOE_CONFIG.parent),
-        # The resolved scope is recorded so a results table can be traced back
-        # to the sweep that produced it. Without it, restoring this generated
-        # file from git after a scoped run leaves the reverse lookup reporting
-        # every variable as swept when only a subset was.
+        # Lets the reverse lookup tell a scoped population from a full one.
         "scope": sweep_scope,
         "variables": variables,
         "sampling": sampling_cfg,

@@ -106,12 +106,10 @@ def test_import_replaces_only_the_rear_suspension() -> None:
     merged, report = import_shark(SHARK_FIXTURE)
     baseline = _baseline()
     assert report["axle"] == "rear"
-    # Front axle and non-suspension data are untouched.
     assert merged["front"] == baseline["front"]
     assert merged["sprung_mass"] == baseline["sprung_mass"]
     assert merged["aero"] == baseline["aero"]
     assert merged["powertrain"] == baseline["powertrain"]
-    # Rear hardpoints came from the SHARK file.
     assert merged["rear"]["suspension"]["upper_o_m"] == pytest.approx(
         [-1.578765381, 0.534915771, 0.252956787], abs=1e-6
     )
@@ -171,8 +169,6 @@ def test_reimport_judges_the_datum_against_orion_not_the_imported_car(tmp_path: 
     assert datum["dz_mm"] == pytest.approx(1.190, abs=1e-3)
     assert datum["baseline_implied_contact_patch_mm"] == pytest.approx(0.008, abs=1e-3)
 
-    # Without the guard the comparison degenerates: dz vanishes and both contact
-    # patches land on the same value, so the evidence says nothing.
     _third, degenerate = import_shark(SHARK_FIXTURE, baseline_path=variant)
     assert degenerate["datum"]["dz_mm"] == pytest.approx(0.0, abs=1e-5)
 
@@ -354,7 +350,7 @@ def test_editing_the_geometry_invalidates_the_datum_record(tmp_path: Path) -> No
     assert gate["valid"] is False
     assert "digest mismatch" in gate["reason"]
     assert gate["axles"]["rear"]["digest_matches"] is False
-    # The untouched axle is still vouched for; only the edited one goes stale.
+    # The untouched axle keeps its verdict. Only the edited axle goes stale.
     assert gate["axles"]["front"]["digest_matches"] is True
 
 

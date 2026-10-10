@@ -59,8 +59,7 @@ OUT_DIR = ROOT / "_3_StandardSim/generated_results"
 BASELINE_LABEL = "Orion"
 VARIANT_LABEL = "2027"
 
-# Validated categorical slots 1 and 2 (see dataviz palette).
-# node scripts/validate_palette.js "#2a78d6,#eb6834" --mode light -> ALL CHECKS PASS
+# Categorical slots 1 and 2 of the dataviz palette.
 COLOR_BASELINE = "#2a78d6"
 COLOR_VARIANT = "#eb6834"
 INK = "#1a1a19"
@@ -82,17 +81,12 @@ REPORT_RC = {
     "grid.alpha": 0.4,
 }
 
-# How much a curve must move before it is worth an engineer's attention, in the
-# curve's own units. Ranking on delta-over-baseline-range alone is unusable on a
-# rear axle, where caster and trail are nearly flat and a change of a hundredth of
-# a degree scores higher than a real camber change. These are the defaults; both
-# are overridable so a team can rank against its own build tolerances.
+# Minimum curve changes worth review, in curve units. They prevent nearly flat
+# curves from dominating the ranking. Override them to match build tolerances.
 DEFAULT_TOLERANCES = {"deg": 0.05, "mm": 0.5}
 HEADLINE_PANEL_LIMIT = 8
 
-# Rear "caster" is the registry's label for a steering-axis angle that no rear
-# corner steers about. Renaming it in the report avoids implying the rear wheels
-# are steered, without touching the shared registry the app also reads.
+# Rear corners do not steer, so the report relabels rear "caster". The shared registry stays unchanged.
 REAR_RELABEL = {
     "caster": "Kingpin side-view inclination",
 }
@@ -129,10 +123,6 @@ class StaleGeometryError(RuntimeError):
     """Raised when the built simulator does not match the current geometry."""
 
 
-# --------------------------------------------------------------------------
-# Kinematics (primary)
-# --------------------------------------------------------------------------
-
 
 def sweep_including_zero(reference: Sequence[float], points: int = 21) -> tuple[float, ...]:
     """Rebuild a sweep over the same range with the design position on a grid point.
@@ -155,8 +145,7 @@ def sweep_including_zero(reference: Sequence[float], points: int = 21) -> tuple[
 
 BUMP_SWEEP_M = sweep_including_zero(DEFAULT_SWEEP_M)
 ROLL_SWEEP_DEG = sweep_including_zero(DEFAULT_ROLL_DEG)
-# Front-axle only, already zero-centered on a grid point, so no sweep_including_zero
-# treatment is needed.
+# Front axle only. Already zero-centered on a grid point.
 STEER_SWEEP_M = DEFAULT_STEER_M
 
 
@@ -226,7 +215,7 @@ def _delta_score(
     if peak <= 1e-9:
         ratio = 0.0
     elif span <= 1e-9:
-        ratio = float("inf")  # flat baseline; any movement at all is notable
+        ratio = float("inf")  # flat baseline
     else:
         ratio = peak / span
     return {"peak": peak, "span": span, "ratio": ratio}
@@ -279,10 +268,6 @@ def curve_metrics(
     rows.sort(key=lambda row: (row["withheld"], -row["significance"]))
     return rows
 
-
-# --------------------------------------------------------------------------
-# Figure helpers
-# --------------------------------------------------------------------------
 
 
 def _style_axis(ax: Any, xlabel: str, ylabel: str, title: str) -> None:
@@ -499,8 +484,7 @@ def build_report(
             details += [f"  - {curve_id}" for curve_id in sorted(withheld)]
         _text_page(pdf, "Run Notes", details, warn=bool(withheld))
 
-        # Summary table: design-position values and working-range slopes. Paginated
-        # because 26 curves across two axles is 52 rows, which does not fit a page.
+        # Paginated because the table has too many rows for one page.
         summary_rows = [
             (
                 row["label"], row["axle"],
@@ -551,7 +535,7 @@ def build_report(
             for meta in KINEMATIC_CURVE_META
             if meta["id"] not in withheld
             for axle in ("front", "rear")
-            # Steer sweep is front-axle only; a rear panel would just be empty.
+            # Steer sweep is front-axle only.
             if not (axle == "rear" and meta["id"].startswith("steer_"))
         ]
         for start in range(0, len(appendix), 6):
@@ -579,10 +563,6 @@ def build_report(
 
     return out_path
 
-
-# --------------------------------------------------------------------------
-# Markdown summary
-# --------------------------------------------------------------------------
 
 
 def write_summary_md(
@@ -666,10 +646,6 @@ def write_summary_md(
     return path
 
 
-# --------------------------------------------------------------------------
-# Four-post (opt-in, secondary)
-# --------------------------------------------------------------------------
-
 
 def four_post_signature(vehicle_path: Path) -> tuple[str, dict[str, Any]]:
     """Regenerate the stack and return the four-post content signature."""
@@ -746,8 +722,7 @@ def build_four_post() -> None:
             text=True,
         )
     except OSError as exc:
-        # A missing or unlaunchable `make` is a refusal, not a crash: the caller
-        # relies on StaleGeometryError to trigger restoration and a clean exit.
+        # Raise StaleGeometryError, not a crash. The caller relies on it for restore and a clean exit.
         raise StaleGeometryError(
             f"Could not launch `make standard-build-four-post`: {exc}. "
             "The four-post build could not be proven, so nothing is reported."
@@ -828,8 +803,7 @@ def invalidate_build_artifacts() -> list[str]:
 
 BOBLIB_PACKAGE = ROOT / "_0_Utils/external/BobLib/BobLib"
 
-# Everywhere the generator writes inside BobLib. Directories are snapshotted whole
-# so that files it *creates* are caught, not just ones it edits.
+# Generated areas inside BobLib. Whole directories are snapshotted to catch created files.
 BOBLIB_GENERATED_DIRS = (
     "Records/VehicleDefn",
     "Experiments/Standards/Templates/Vehicle",
@@ -908,9 +882,7 @@ def pristine_boblib() -> Iterator[dict[str, Any]]:
     and a KeyboardInterrupt alike.
     """
     snapshot = _boblib_snapshot()
-    # Yielded so the caller can report what actually happened. The check has to be
-    # made against the snapshot taken *before* the run; comparing the tree against
-    # a snapshot of itself afterwards is vacuously clean and proves nothing.
+    # Compare against the snapshot taken before the run.
     outcome: dict[str, Any] = {"restored": [], "leftovers": []}
     try:
         yield outcome
@@ -989,19 +961,14 @@ def run_four_post(vehicle_path: Path, label: str, *, skip_build: bool) -> dict[s
         config = fp.load_config(fp.DEFAULT_CONFIG_PATH)
         report_cfg = config.setdefault("report", {})
         report_cfg["enabled"] = False
-        # Keep the overlay's metrics out of the canonical four-post CSV: that file is
-        # the repo's regression baseline, and it is also read back to seed spring free
-        # lengths, so sharing it would let one car's results leak into the other's.
+        # Separate CSV: the canonical one is the regression baseline and seeds spring free lengths.
         slug = "baseline" if label == BASELINE_LABEL else "variant"
         report_cfg["metrics_csv_path"] = str(OUT_DIR / f"shark_overlay_metrics_{slug}.csv")
         result = fp.FourPostEvalSim(config).run()
         return {"summary": result["summary"], "series": result["series"]}
 
 
-# These are jacking-geometry percentages: the share of load transfer reacted
-# through the links rather than the springs. They are not roll stiffness and not a
-# total anti-roll figure, and the labels say so because "anti-roll %" invites
-# exactly that misreading when an ARB is in play.
+# Jacking-geometry percentages: load transfer reacted through the links. Not roll stiffness.
 SCALAR_METRICS = (
     ("avg_anti_dive_pct", "Front anti-dive geometry (%)"),
     ("avg_anti_squat_pct", "Rear anti-squat geometry (%)"),
@@ -1011,11 +978,8 @@ SCALAR_METRICS = (
 
 _MISSING = object()
 
-# Actuation entries that carry force or compliance rather than hardpoint geometry.
-# A difference in any of these changes four-post forces independently of the
-# hardpoints, so it confounds a geometry comparison.
-# Spring and damper entries can be transplanted wholesale, because they are rates
-# rather than positions and carry no dependence on where the rocker sits.
+# Force or compliance entries. A difference confounds a geometry comparison.
+# Spring and damper entries are rates, so they transplant whole.
 SHOCK_FORCE_PATHS: tuple[tuple[str, ...], ...] = (
     ("shock", "spring_table"),
     ("shock", "damper_table"),
@@ -1219,10 +1183,6 @@ def four_post_section(
     return {"lines": lines, "rows": rows, "confounded": bool(confounds), "mode": mode}
 
 
-# --------------------------------------------------------------------------
-# Entry point
-# --------------------------------------------------------------------------
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -1289,8 +1249,7 @@ def main(argv: list[str] | None = None) -> int:
         merged, report = import_shark(
             args.shark,
             baseline_path=import_baseline,
-            # Always judge the datum against Orion, never against a car already built
-            # from a SHARK file, which would compare the export to itself.
+            # Judge the datum against Orion, not a SHARK-built car.
             datum_baseline_path=baseline_path,
             keep_stabar=args.keep_arb,
             vehicle_name=VARIANT_LABEL,
@@ -1306,10 +1265,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No variant vehicle at {variant_path}. Pass --shark to create it.", file=sys.stderr)
         return 1
 
-    # One gate for every z-dependent output, evaluated against the file on disk
-    # rather than against this invocation, so it survives a run that does not
-    # re-import. It fails closed: missing, unresolved for any imported axle, or
-    # digest-mismatched all withhold.
+    # One gate for all z-dependent outputs, read from the file on disk. It fails closed.
     gate = datum_gate(variant_path)
     if not gate["valid"]:
         withheld = frozenset(Z_DEPENDENT_CURVE_IDS)
@@ -1345,8 +1301,7 @@ def main(argv: list[str] | None = None) -> int:
 
     four_post: dict[str, Any] | None = None
     if args.four_post:
-        # Checked before the build, not after: the failure is a property of the host
-        # and there is no point spending a Modelica compile to discover it.
+        # Check before the build. The failure is a host property.
         try:
             assert_four_post_is_runnable_here()
         except StaleGeometryError as exc:
@@ -1381,8 +1336,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        # Jacking geometry is measured against the contact patch, so it moves with
-        # the datum exactly as the roll-centre curves do and takes the same gate.
+        # Jacking geometry uses the contact patch, so it takes the datum gate.
         four_post = four_post_section(
             runs, differences=differences, mode=args.actuation,
             unheld=unheld, gated=not gate["valid"],

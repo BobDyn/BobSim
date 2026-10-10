@@ -30,7 +30,6 @@ mpl.rcParams.update({
 })
 
 
-# Unified VehicleModel exposes scalar outputs directly.
 TransientEval_SIGNALS = [
     "handwheelAngle",
     "leftSteerAngle",
@@ -46,8 +45,7 @@ TransientEval_SIGNALS = [
 ]
 
 
-# These are Python/report metadata fields.
-# They should NOT all be sent to Modelica as overrides.
+# Report metadata. These keys do not go to Modelica as overrides.
 CASE_METADATA_KEYS = [
     "mode",
     "useMode",
@@ -86,14 +84,10 @@ class TransientEvalSim:
 
         sim_cfg = config.get("simulation", {})
 
-        # Fallback only. Individual cases should set their own stopTime.
+        # Fallback. Cases set their own stopTime.
         self.stop_time = float(
             sim_cfg.get("stop_time", self._default_stop_time(config))
         )
-
-    # ============================================================
-    # HELPERS
-    # ============================================================
 
     @staticmethod
     def _direction_sign(direction: str) -> int:
@@ -295,8 +289,7 @@ class TransientEvalSim:
 
     @staticmethod
     def _step_stop_time(step_time: float) -> float:
-        # Fallback stop time. VehicleModel useMode=2 may terminate earlier
-        # using its internal QSS detector.
+        # Fallback. useMode=2 may terminate earlier on its QSS detector.
         return step_time + 5.0
 
     @staticmethod
@@ -305,8 +298,7 @@ class TransientEvalSim:
         freq_hz: float,
         n_cycles: int,
     ) -> float:
-        # Keep the requested nCycles of useful sine data, then add a tiny tail
-        # so DASKR does not end exactly on the final sine event.
+        # A small tail keeps DASKR from ending exactly on the final sine event.
         return step_time + n_cycles / freq_hz + CONTINUOUS_SINE_STOP_MARGIN_S
 
     @staticmethod
@@ -709,10 +701,6 @@ class TransientEvalSim:
 
         return summary, plot_series
 
-    # ============================================================
-    # CASE GENERATION
-    # ============================================================
-
     def build_cases(self):
         test = self.config["test"]
 
@@ -725,12 +713,7 @@ class TransientEvalSim:
         cases = []
         metadata = []
 
-        # --------------------------------------------------------
-        # STEP / FINITE-RATE STEP
-        #
-        # VehicleModel:
-        #   useMode = 2 -> ramp/step steer + closed-loop velocity
-        # --------------------------------------------------------
+        # Step steer: useMode = 2, ramp/step steer with closed-loop speed.
         if test.get("run_step", False):
             step_steer_deg_values = self._as_list(
                 test.get(
@@ -793,12 +776,7 @@ class TransientEvalSim:
                         cases.append(case)
                         metadata.append(meta)
 
-                # --------------------------------------------------------
-                # CONTINUOUS SINE
-                #
-                # VehicleModel:
-                #   useMode = 1 -> open-loop sine steer + closed-loop speed
-                # --------------------------------------------------------
+                # Continuous sine: useMode = 1, open-loop sine steer with closed-loop speed.
                 if test.get("run_continuous_sine", True):
                     for f in test["sweep_freq_hz"]:
                         for amp in test["sweep_amp_deg"]:
@@ -880,10 +858,6 @@ class TransientEvalSim:
             "steerStart": step_time,
         }
 
-    # ============================================================
-    # RUN
-    # ============================================================
-
     def run(self):
         cases, metadata = self.build_cases()
 
@@ -897,10 +871,6 @@ class TransientEvalSim:
         results = self._attach_case_metadata(results, metadata)
 
         return self.summarize(results)
-
-    # ============================================================
-    # CASE SELECTION
-    # ============================================================
 
     def _is_representative_step(self, r) -> bool:
         test = self.config["test"]
@@ -953,10 +923,6 @@ class TransientEvalSim:
             and self._close(r.get("steerAmp", np.nan), target_sign * target_amp)
         )
 
-    # ============================================================
-    # SIGNAL ACCESS
-    # ============================================================
-
     @staticmethod
     def _signal(r, key):
         """
@@ -975,10 +941,6 @@ class TransientEvalSim:
         raise KeyError(
             f"Missing signal '{key}' in result. Available keys: {sorted(r.keys())}"
         )
-
-    # ============================================================
-    # METRICS CSV
-    # ============================================================
 
     def write_metrics_csv(self, metrics) -> Path:
         """
@@ -1017,10 +979,6 @@ class TransientEvalSim:
             writer.writerows(metrics)
 
         return output_path
-
-    # ============================================================
-    # SUMMARY
-    # ============================================================
 
     def summarize(self, results):
         successful_results = [r for r in results if "time" in r]
@@ -1102,11 +1060,6 @@ class TransientEvalSim:
             "n_velocity_groups": len(velocity_summaries),
         })
 
-        # --------------------------------------------------------
-        # CSV metric rows.
-        #
-        # Add/remove/reorder exported metrics here.
-        # --------------------------------------------------------
         metrics = [
             {
                 "standard": "TransientEval",
@@ -1157,7 +1110,6 @@ class TransientEvalSim:
                 "description": "Number of velocity isolines included in the TransientEval run",
             },
 
-            # Step response metrics.
             {
                 "standard": "TransientEval",
                 "group": "step",
@@ -1343,7 +1295,6 @@ class TransientEvalSim:
                 "description": "Yaw velocity overshoot in representative step steer response",
             },
 
-            # Frequency response metrics.
             {
                 "standard": "TransientEval",
                 "group": "frequency",
@@ -1623,10 +1574,6 @@ class TransientEvalSim:
             "metrics_csv_path": metrics_csv_path,
             "series": series,
         }
-
-    # ============================================================
-    # CONTINUOUS METRICS
-    # ============================================================
 
     def _continuous_metrics(self, r):
         t = np.array(r["time"], dtype=float)

@@ -198,9 +198,8 @@ def _solve_trim(
 
     lower_array = np.asarray(lower, dtype=float)
     upper_array = np.asarray(upper, dtype=float)
-    # Kinematic steering is only an initial estimate. Tight corners at low speed
-    # can put that estimate beyond the physical roadwheel bound even though the
-    # correct outcome is simply an infeasible trim, not an optimizer exception.
+    # The kinematic steer guess can exceed the roadwheel bound in tight, slow
+    # corners. That must give an infeasible trim, not an optimizer exception.
     bounded_guess = np.clip(np.asarray(guess, dtype=float), lower_array, upper_array)
     solution = least_squares(  # type: ignore[operator]
         residual,

@@ -59,8 +59,9 @@ Output: `generated_results/` (CSVs, PDFs)
 - **`StandardSens/`**: sweep StandardSim studies over parameter ranges, solve for a
   setup from target metrics (`solve_setup.py`), and compare named vehicles across
   standard sims (`trade_study.py`). `pipeline/standards.py` is the registry of
-  VehicleSim standards one compiled vehicle can serve; `pipeline/variants.py` is the
-  content-addressed cache of compiled vehicles the solver and trade study share.
+  VehicleSim standards that one compiled vehicle can serve. `pipeline/variants.py`
+  is the content-addressed cache of compiled vehicles. The solver and the trade
+  study share it.
 - **`EnvelopeSens/`**: sweep envelope outputs (same ranges)
 - **`_shared/`**: console progress, tornado-plot rendering
 

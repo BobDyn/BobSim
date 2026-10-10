@@ -25,7 +25,7 @@ from _0_Utils.vehicle_io import load_yaml, repo_root
 
 MM_PER_M = 1000.0
 
-# Points a double-wishbone corner must provide before we will emit geometry.
+# Required for any double-wishbone corner.
 REQUIRED_POINTS = (
     "Lower wishbone front pivot",
     "Lower wishbone rear pivot",
@@ -38,7 +38,7 @@ REQUIRED_POINTS = (
     "Wheel centre point",
 )
 
-# Additional points required for a pushrod/bellcrank corner.
+# Also required for a pushrod/bellcrank corner.
 BELLCRANK_POINTS = (
     "Push rod wishbone end",
     "Push rod rocker end",
@@ -48,7 +48,7 @@ BELLCRANK_POINTS = (
     "Rocker axis 2nd point",
 )
 
-# Straight hardpoint mapping: vehicle.yml key -> SHARK point name.
+# vehicle.yml key -> SHARK point name.
 SUSPENSION_POINT_MAP = {
     "lower_fore_i_m": "Lower wishbone front pivot",
     "lower_aft_i_m": "Lower wishbone rear pivot",
@@ -220,10 +220,7 @@ def verify_shared_frame(points: dict[str, Any], vehicle: dict[str, Any], axle: s
 # A contact patch this close to z = 0 is taken as sitting on the ground plane.
 GROUND_PLANE_TOLERANCE_MM = 0.05
 
-# Curves whose value depends on where the vertical datum sits. While the datum is
-# unresolved these are computed but withheld from shareable output. A rigid z
-# translation leaves angles and lengths alone, so the rest of the deck is safe;
-# these are the ones that move with the datum, plus the two the caller called out.
+# Curves that move with the vertical datum. They are withheld while it is unresolved.
 Z_DEPENDENT_CURVE_IDS = frozenset(
     {
         "bump_rc_z_mm", "roll_rc_z_mm",
@@ -336,8 +333,7 @@ def _rod_attachment(points: dict[str, Any]) -> str:
     return "lower" if to_lower <= to_upper else "upper"
 
 
-# A carried-over stabar pickup may sit no further from the pivot than this multiple
-# of the largest SHARK-defined arm before we treat the rocker as incoherent.
+# Max carried stabar arm, as a multiple of the largest SHARK-defined arm.
 STABAR_ARM_RATIO_LIMIT = 2.0
 
 
@@ -440,10 +436,8 @@ def build_axle_block(
     pickups["rod"] = _to_m(points["Push rod rocker end"])
     pickups["shock"] = _to_m(points["Damper to rocker point"])
 
-    # SHARK carries no anti-roll bar pickups, and the ARB takes no part in the
-    # kinematic solve (CornerKinematics reads suspension/steering/wheel only), so
-    # dropping it is the default. --keep-arb exists for the opt-in four-post run,
-    # which is the only path where the bar changes a number.
+    # SHARK has no ARB pickups and the kinematic solve ignores the ARB, so drop it
+    # by default. --keep-arb is for the four-post run.
     if keep_stabar:
         if "stabar" in actuation:
             _check_carried_stabar_is_coherent(bellcrank)

@@ -51,7 +51,6 @@ def _boblib_sha(boblib_path: Path) -> str:
             return result.stdout.strip()
     except Exception:
         pass
-    # Fallback: hash package.mo directly if git unavailable
     pkg = boblib_path if boblib_path.is_file() else boblib_path / "package.mo"
     if pkg.exists():
         return _hash_file(pkg)
@@ -168,10 +167,6 @@ def check_pipeline_hash(
             "  - BobLib commit and working-tree Modelica sources\n"
         )
 
-
-# ---------------------------------------------------------------------------
-# Variant hash
-# ---------------------------------------------------------------------------
 
 def write_variant_hash(variant_dir: Path) -> str:
     """Hash variant.mo and write to variant_XXXX/.variant.hash."""

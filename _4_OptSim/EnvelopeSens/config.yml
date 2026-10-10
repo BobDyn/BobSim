@@ -8,9 +8,6 @@ sampling:
   intervals: 4
 
 variables:
-  # -------------------------------------------------------------------------
-  # Mass properties
-  # -------------------------------------------------------------------------
   - path: sprung_mass.mass_kg
     label: sprung mass
     range: [144.576, 176.704]
@@ -43,9 +40,6 @@ variables:
     label: rear unsprung mass
     range: [5.881760576, 8.822640864]
 
-  # -------------------------------------------------------------------------
-  # Load transfer proxy
-  # -------------------------------------------------------------------------
   - path: front.stabar.rate_n_m_per_rad
     label: front anti-roll bar rate
     range: [205.376938, 295.74279]
@@ -56,9 +50,6 @@ variables:
     range: [360.052058, 961.495352]
     values: [360.052058, 447.762538, 748.484186, 961.495352]
 
-  # -------------------------------------------------------------------------
-  # Aero envelope controls
-  # -------------------------------------------------------------------------
   - path: aero.downforce_scale
     label: aero downforce scale
     baseline: 1.0
@@ -73,9 +64,6 @@ variables:
     label: aero front balance
     range: [0.45, 0.75]
 
-  # -------------------------------------------------------------------------
-  # Tire envelope controls
-  # -------------------------------------------------------------------------
   - path: tire.mu_scale
     label: tire peak grip scale
     baseline: 1.0
@@ -91,9 +79,6 @@ variables:
     baseline: 1.0
     range: [0.8, 1.2]
 
-  # -------------------------------------------------------------------------
-  # Longitudinal envelope controls
-  # -------------------------------------------------------------------------
   - path: power.max_drive_power_kw
     label: max drive power
     baseline: 80.0
@@ -104,9 +89,6 @@ variables:
     baseline: 0.84
     range: [0.78, 0.90]
 
-  # -------------------------------------------------------------------------
-  # Architecture-level geometry controls
-  # -------------------------------------------------------------------------
   - path: geometry.wheelbase_scale
     label: wheelbase scale
     baseline: 1.0

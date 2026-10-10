@@ -4,7 +4,7 @@ simulation:
   build_dir: _3_StandardSim/BuildBobLib/FourPostSim
   exec_name: BobLib.Experiments.Standards.FourPostSim
   solver: dassl
-  # Optional OpenModelica output/integration step size.
+  # Output and integration step size.
   stepSize: 0.5
   output_format: csv
   log_level: LOG_STATS,LOG_SOLVER,LOG_INIT,LOG_STDOUT,LOG_ASSERT
@@ -50,7 +50,6 @@ report:
   output_path: _3_StandardSim/generated_results/four_post_eval_report.pdf
   metrics_csv_path: _3_StandardSim/generated_results/four_post_eval_report_metrics.csv
   raw_time_series_appendix: false
-  # Optional per-metric unit overrides for the Metrics Summary page.
   summary_units:
     camber_gain_heave_rad_per_m:
       unit: "deg/mm"
@@ -152,10 +151,6 @@ report:
 
 plots:
 
-  # ============================================================
-  # HEAVE SWEEP
-  # ============================================================
-
   camber_heave:
     layout: quad
     title: "Camber vs Heave"
@@ -227,19 +222,13 @@ plots:
           title: "Front",
           x: { key: fr_jacking_vs_heave_x, scale: 1000, label: "Heave (mm)" },
           y: { key: fr_anti_vs_heave, label: "Geometric Anti-Dive (%)" },
-          # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/L$)" }
         }
 
       - {
           title: "Rear",
           x: { key: rr_jacking_vs_heave_x, scale: 1000, label: "Heave (mm)" },
           y: { key: rr_anti_vs_heave, label: "Geometric Anti-Squat (%)" },
-          # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/L$)" }
         }
-
-  # ============================================================
-  # ROLL SWEEP
-  # ============================================================
 
   camber_roll:
     layout: quad
@@ -311,14 +300,12 @@ plots:
           title: "Front",
           x: { key: fr_jacking_vs_roll_x, scale: 57.2958, label: "Roll (deg)" },
           y: { key: fr_anti_vs_roll, label: "Geometric Anti-Roll (%)" },
-          # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/T$)" }
         }
 
       - {
           title: "Rear",
           x: { key: rr_jacking_vs_roll_x, scale: 57.2958, label: "Roll (deg)" },
           y: { key: rr_anti_vs_roll, label: "Geometric Anti-Roll (%)" },
-          # reference: { type: horizontal, y: 100.0, label: "100% Anti ($h_{cg}/T$)" }
         }
 
   fbrc_roll:
@@ -327,15 +314,6 @@ plots:
     subplots:
       - { title: "Front", x: { key: fr_fbrc_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_fbrc_height_vs_roll, scale: 1000.0, label: "FBRC-equivalent height (mm)" } }
       - { title: "Rear", x: { key: rr_fbrc_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_fbrc_height_vs_roll, scale: 1000.0, label: "FBRC-equivalent height (mm)" } }
-
-  # contact_patch_force_roll:
-  #   layout: quad
-  #   title: "Contact Patch Fz vs Roll"
-  #   subplots:
-  #     - { title: "Front Left",  x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_l_fz_vs_roll, label: "Fz (N)" } }
-  #     - { title: "Front Right", x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: fr_r_fz_vs_roll, label: "Fz (N)" } }
-  #     - { title: "Rear Left",   x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_l_fz_vs_roll, label: "Fz (N)" } }
-  #     - { title: "Rear Right",  x: { key: roll, scale: 57.2958, label: "Roll (deg)" }, y: { key: rr_r_fz_vs_roll, label: "Fz (N)" } }
 
   lltd_roll:
     layout: single

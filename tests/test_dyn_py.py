@@ -221,8 +221,7 @@ def test_dyn_py_applies_aero_at_projected_cop(parameters):
     np.testing.assert_allclose(force, drag_force + downforce_force)
     np.testing.assert_allclose(moment, expected_moment)
 
-    # The CoP representation must preserve the original BobLib convention:
-    # force at aero_ref_m plus the tabulated free pitch moment at that point.
+    # Match BobLib: force at aero_ref_m plus the tabulated free pitch moment there.
     free_moment = np.array([0.0, float(projection.summary["my_nm"]), 0.0])
     source_wrench_moment = np.cross(
         parameters.aero_drag_application_m,

@@ -4,7 +4,6 @@ from _0_Utils.kin_py.suspension_model.suspension_elements._2_elements.tire impor
 from _0_Utils.kin_py.suspension_model.suspension_elements._1_elements.link import Link
 from _0_Utils.kin_py.misc_math import rotation_matrix
 
-# from scipy.interpolate import CubicSpline
 from scipy.optimize import fsolve # type: ignore
 from typing import Sequence
 import numpy as np
@@ -48,15 +47,13 @@ class QuarterCar:
         self.tie_rod = tie_rod
         self.push_pull_rod = push_pull_rod
 
-        # Define fixed geometry with Links
         self.LCA_to_UCA = Link(inboard_node=lower_wishbone.fore_link.outboard_node, outboard_node=upper_wishbone.fore_link.outboard_node)
         self.LCA_to_tire = Link(inboard_node=lower_wishbone.fore_link.outboard_node, outboard_node=self.tire.contact_patch)
 
-        # Save relative coordinates for fixed geometry (relative to outboard pickup on lower wishbone)
+        # Upright points in the LCA-to-UCA link frame, relative to the LCA outboard pickup.
         self.tie_rod_wrt_LCA = self.LCA_to_UCA.link_centered_coords(node=self.tie_rod.outboard_node)
         self.tire_wrt_LCA = self.LCA_to_UCA.link_centered_coords(node=self.tire.contact_patch)
 
-        # Save jounce and rack conditions
         self.wheel_jounce: float = 0
         self.rack_displacement: float = 0
     
@@ -97,23 +94,20 @@ class QuarterCar:
         self._update_geometry()
     
     def _update_geometry(self) -> None:
-        # Update rack here so it's only updated once
+        # Set the rack before the solve so it updates only once.
         self.tie_rod.inboard_node.position[1] = self.rack_displacement
         upper_rot, lower_rot, wheel_angle = fsolve(func=self._geometry_resid_func, x0=[0, 0, 0])
         
-        # Rotate wishbone
         self.upper_wishbone.rotate(angle=upper_rot)
         self.lower_wishbone.rotate(angle=lower_rot)
 
-        # Rotate wheel
         ang_x, ang_y = self.LCA_to_UCA.rotation_angles
         x_rot = rotation_matrix(unit_vec=[1, 0, 0], theta=-1 * ang_x)
         y_rot = rotation_matrix(unit_vec=[0, 1, 0], theta=ang_y)
 
-        # Calculate contact patch location under jounce condition
         self.tire.contact_patch.position = np.matmul(x_rot, np.matmul(y_rot, self.tire_wrt_LCA)) + self.lower_wishbone.fore_link.outboard_node.position
 
-        # Update tie rod pickup consistent with upright (length is now preserved)
+        # Move the tie rod pickup with the upright. This preserves tie rod length.
         self.tie_rod.outboard_node.position = np.matmul(x_rot, np.matmul(y_rot, self.tie_rod_wrt_LCA)) + self.lower_wishbone.fore_link.outboard_node.position
 
         self.tire.contact_patch.rotate(origin=self.lower_wishbone.fore_link.outboard_node,
@@ -145,8 +139,7 @@ class QuarterCar:
         lower_wishbone_rot = x[1]
         wheel_angle = x[2]
 
-        # Apply wishbone rotations. The Node.rotate() method updates the entire system of links, so we'll do this manually.
-        # Doing this is about four times quicker.
+        # Rotate manually. Node.rotate() updates the full link system and is about 4x slower.
         upper_rot = rotation_matrix(unit_vec=self.upper_wishbone.direction, theta=upper_wishbone_rot)
         lower_rot = rotation_matrix(unit_vec=self.lower_wishbone.direction, theta=lower_wishbone_rot)
         
@@ -160,18 +153,16 @@ class QuarterCar:
         lower_node.position = [float(x) for x in np.matmul(lower_rot, np.array(lower_node.initial_position) - np.array(lower_ref.initial_position)) \
                                + np.array(lower_ref.initial_position)]
 
-        # Rotation angles
         ang_x, ang_y = self.LCA_to_UCA.rotation_angles
         x_rot = rotation_matrix(unit_vec=[1, 0, 0], theta=-1 * ang_x)
         y_rot = rotation_matrix(unit_vec=[0, 1, 0], theta=ang_y)
 
-        # Calculate contact patch location under jounce condition
         self.tire.contact_patch.position = np.matmul(x_rot, np.matmul(y_rot, self.tire_wrt_LCA)) + self.lower_wishbone.fore_link.outboard_node.position
 
-        # Update tie rod pickup consistent with upright (length is NOT preserved)
+        # Move the tie rod pickup with the upright. This does not preserve tie rod length.
         self.tie_rod.outboard_node.position = np.matmul(x_rot, np.matmul(y_rot, self.tie_rod_wrt_LCA)) + self.lower_wishbone.fore_link.outboard_node.position
 
-        # Rotate contact_patch and outboard tie_rod pickup position. Doing this manually as well for runtime.
+        # Rotate manually for runtime.
 
         wheel_rot = rotation_matrix(unit_vec=self.LCA_to_UCA.direction, theta=wheel_angle)
 
@@ -184,10 +175,9 @@ class QuarterCar:
         tie_node.position = [float(x) for x in np.matmul(wheel_rot, np.array(tie_node.position) - np.array(kingpin_ref.position)) \
                              + np.array(kingpin_ref.position)]
 
-        # Save steered angle
         self.tire.steered_angle = wheel_angle
 
-        # Geometry constraints (kingpin, tie_rod, contact patch)
+        # Residuals: kingpin length, tie rod length, contact patch height.
         kingpin_residual = self.LCA_to_UCA.length - self.LCA_to_UCA.initial_length
         tie_rod_residual = self.tie_rod.length - self.tie_rod.initial_length
         jounce_residual = self.tire.contact_patch[2] - self.wheel_jounce

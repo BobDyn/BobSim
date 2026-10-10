@@ -90,13 +90,10 @@ def nearest_root(func: Callable, x0: float, bounds: Tuple[float, float], tol: fl
     args : Sequence, optional
         Args to func, by default []
     """
-    # Solution value
     soln = x0
 
-    # Optimization parameters
     residual: float = func(soln, args)
 
-    # Steps
     step_range = bounds[1] - bounds[0]
     step = step_range / 10
 
@@ -113,7 +110,6 @@ def nearest_root(func: Callable, x0: float, bounds: Tuple[float, float], tol: fl
         soln += step
         residual = func(soln, args)
 
-    # Initial points of interest
     x_low = soln - step
     x_high = soln
 
@@ -155,15 +151,12 @@ def directional_root(func: Callable, x0: float, bounds: Tuple[float, float], tol
     args : Sequence, optional
         Args to func, by default []
     """
-    # This method is typically used when the solution value is small. The semi-linear approach has advantages because of this.
+    # Intended for roots near zero.
 
-    # Solution value
     soln = min([abs(x) for x in bounds])
 
-    # Steps
     step_size = abs(bounds[1] - bounds[0]) / 10 * np.sign(np.average(bounds))
 
-    # Optimization parameters
     residual: float = func(soln, args)
 
     while abs(residual) > tol:

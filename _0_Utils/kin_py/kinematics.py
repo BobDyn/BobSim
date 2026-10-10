@@ -82,10 +82,7 @@ KINEMATIC_CURVE_META = [
         "roll_rc_z_mm", "Roll RC z-Migration", "mm", "roll_deg", "Roll", "deg", "RC z-Position",
         "Plot26",
     ),
-    # Front-view instant centres and roll-centre height/migration are solved in
-    # curve_values() but were dropped by this registry, so nothing downstream could
-    # plot them. Side-view instant centres stay unpublished on purpose - see the
-    # explicit exclusion in tests/test_kinematics.py.
+    # Side-view instant centres stay unpublished on purpose. See tests/test_kinematics.py.
     _curve_meta(
         "bump_front_ic_y_mm", "Bump Front-View IC y", "mm", "jounce_mm", "Jounce", "mm",
         "Front-View IC y", "Plot31",
@@ -126,8 +123,7 @@ KINEMATIC_CURVE_META = [
         "roll_rc_migration_mm", "Roll RC Migration", "mm", "roll_deg", "Roll", "deg",
         "RC Migration", "Plot48",
     ),
-    # Through-steer, front axle only: swept via rack_displacement_m, plotted against
-    # the *solved* road-wheel steer angle rather than the commanded rack travel.
+    # Front axle only. Swept by rack_displacement_m and plotted against the solved road-wheel steer angle.
     _curve_meta(
         "steer_camber_deg", "Steer Camber", "deg", "steer_deg", "Steer", "deg", "Camber", "Plot51",
     ),
@@ -425,8 +421,8 @@ class CornerKinematics:
         initial_radial = initial.wheel_center - initial.contact_patch
         initial_forward = initial.tire_front - initial.wheel_center
         initial_kingpin_ground = self.kingpin_ground_intersection(initial)
-        # Camber uses the vehicle convention: inward wheel tilt is negative.
-        # Legacy simulation_toolkit `gamma` was inclination, with the opposite sign on the left side.
+        # Camber sign: inward wheel tilt is negative.
+        # simulation_toolkit `gamma` is inclination, with the opposite sign on the left side.
         camber_deg = math.degrees(math.atan2(float(radial[1]), float(radial[2])))
         toe_deg = math.degrees(math.atan2(float(forward[1]), float(forward[0])))
         caster_deg = self.caster_deg(point_set)
@@ -692,9 +688,7 @@ def kinematic_curves_payload(
     roll_deg: list[float] | tuple[float, ...] | None = None,
     steer_m: list[float] | tuple[float, ...] | None = None,
 ) -> dict[str, Any]:
-    # roll_deg is overridable for the same reason sweep_m is: neither default
-    # samples zero, so a caller reporting design-position values has to supply its
-    # own grid rather than interpolate one.
+    # Neither default grid samples zero. For design-position values, supply a grid that does.
     sweep = _clean_sweep(sweep_m)
     roll = tuple(float(value) for value in roll_deg) if roll_deg else DEFAULT_ROLL_DEG
     steer = tuple(float(value) for value in steer_m) if steer_m else DEFAULT_STEER_M
@@ -718,8 +712,7 @@ def kinematic_curves_payload(
         payload["warnings"].append("Install NumPy and SciPy to enable live kinematics curves.")
         return payload
 
-    # Steer sweep is front-axle only: no known chassis in the registry rear-steers,
-    # and a rear steer curve would just be a flat line reporting nothing.
+    # No chassis in the registry has rear steer.
     for axle, axle_steer in (("front", steer), ("rear", ())):
         try:
             solver = CornerKinematics.from_vehicle(vehicle, axle)

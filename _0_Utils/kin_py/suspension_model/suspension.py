@@ -424,7 +424,7 @@ class Suspension:
         float
             Caster of given tire in degrees
         """
-        # Equation of ground plane where y = contact_patch[0]
+        # Ground normal and kingpin, projected onto the x-z plane.
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
         cp_3 = np.array(CP_3.position)
@@ -472,7 +472,7 @@ class Suspension:
         float
             Kingpin inclination of given tire in degrees
         """
-        # Equation of ground plane where x = contact_patch[0]
+        # Ground normal and kingpin, projected onto the y-z plane.
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
         cp_3 = np.array(CP_3.position)
@@ -520,7 +520,6 @@ class Suspension:
         float
             Scrub radius of given tire in meters
         """
-        # Define ground plane
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
         cp_3 = np.array(CP_3.position)
@@ -528,19 +527,18 @@ class Suspension:
         ground_normal = np.cross((cp_2 - cp_1), (cp_3 - cp_1))
         p_0 = cp_1
 
-        # Kingpin
         UCA_outboard = np.array(quarter_car.upper_wishbone.fore_link.outboard_node.position)
         LCA_outboard = np.array(quarter_car.lower_wishbone.fore_link.outboard_node.position)
 
         v = LCA_outboard - UCA_outboard
         p_1 = UCA_outboard
 
-        # Intersection parameter value
+        # Kingpin intersection with the ground plane.
         t = -1 * np.dot((p_1 - p_0), ground_normal) / (np.dot(v, ground_normal))
 
         intersection_pt = p_1 + np.array(v) * t
 
-        # Calculate scrub magnitude
+        # Scrub is measured in the y-z plane.
         cp = quarter_car.tire.contact_patch
         cp_proj = [cp[1], cp[2]]
         inter_proj = [intersection_pt[1], intersection_pt[2]]
@@ -573,9 +571,8 @@ class Suspension:
         Returns
         -------
         float
-            Mechanical trail of given tire in degrees
+            Mechanical trail of given tire in meters
         """
-        # Define ground plane
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
         cp_3 = np.array(CP_3.position)
@@ -583,19 +580,18 @@ class Suspension:
         ground_normal = np.cross((cp_2 - cp_1), (cp_3 - cp_1))
         p_0 = cp_1
 
-        # Kingpin
         UCA_outboard = np.array(quarter_car.upper_wishbone.fore_link.outboard_node.position)
         LCA_outboard = np.array(quarter_car.lower_wishbone.fore_link.outboard_node.position)
 
         v = LCA_outboard - UCA_outboard
         p_1 = UCA_outboard
 
-        # Intersection parameter value
+        # Kingpin intersection with the ground plane.
         t = -1 * np.dot((p_1 - p_0), ground_normal) / (np.dot(v, ground_normal))
 
         intersection_pt = p_1 + np.array(v) * t
 
-        # Calculate magnitude
+        # Trail is measured along x.
         cp = quarter_car.tire.contact_patch
         cp_proj = [cp[0], cp[2]]
         inter_proj = [intersection_pt[0], intersection_pt[2]]
@@ -757,7 +753,6 @@ class Suspension:
         FR_cp = np.array(self.FR_quarter_car.tire.contact_patch.position)
         RL_cp = np.array(self.RL_quarter_car.tire.contact_patch.position)
 
-        # Define planes
         FL_FR = FR_cp - FL_cp
         FL_RL = RL_cp - FL_cp
 
@@ -767,7 +762,6 @@ class Suspension:
         if abs(normal_1 / np.linalg.norm(normal_1)).all() == normal_2.all():
             return node
 
-        # Rotation calcs
         rotation_axis = np.cross(normal_1, normal_2) / np.linalg.norm(np.cross(normal_1, normal_2))
         angle_mag = np.arccos(abs(np.dot(normal_1, normal_2)) / (np.linalg.norm(normal_1) * np.linalg.norm(normal_2)))
         trans_mat = np.array(rotation_matrix(unit_vec=rotation_axis, theta=-1 * angle_mag))
@@ -776,7 +770,7 @@ class Suspension:
         FL_cp_trans = trans_mat @ FL_cp
         FR_cp_trans = trans_mat @ FR_cp
 
-        # Align axes
+        # Origin at the FL contact patch in x and z, and at track center in y.
         if align_axes:
             x_offset = FL_cp_trans[0]
             y_offset = (FL_cp_trans[1] + FR_cp_trans[1]) / 2
@@ -892,7 +886,7 @@ class Suspension:
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
 
-        # The order of args matters. You should rotate CCW about Z to get from (CP_2 - CP_1) to (CP_3 - CP_1) 
+        # Argument order sets the normal sign. (CP_2 - CP_1) must turn CCW about Z to reach (CP_3 - CP_1).
         return self._gamma_calculation(CP_1=FR_cp, CP_2=RL_cp, CP_3=RR_cp, tire=self.FL_quarter_car.tire)
 
     @property
@@ -917,7 +911,7 @@ class Suspension:
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
 
-        # The order of args matters. You should rotate CCW about Z to get from (CP_2 - CP_1) to (CP_3 - CP_1)
+        # Argument order sets the normal sign. (CP_2 - CP_1) must turn CCW about Z to reach (CP_3 - CP_1).
         return self._gamma_calculation(CP_1=FL_cp, CP_2=RL_cp, CP_3=RR_cp, tire=self.FR_quarter_car.tire)
 
     @property
@@ -942,7 +936,7 @@ class Suspension:
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
 
-        # The order of args matters. You should rotate CCW about Z to get from (CP_2 - CP_1) to (CP_3 - CP_1)
+        # Argument order sets the normal sign. (CP_2 - CP_1) must turn CCW about Z to reach (CP_3 - CP_1).
         return self._gamma_calculation(CP_1=FL_cp, CP_2=FR_cp, CP_3=RR_cp, tire=self.RL_quarter_car.tire)
 
     @property
@@ -2068,10 +2062,10 @@ class Suspension:
     def left_PC(self) -> Tuple[float, float, float]:
         """
         ## Left PC
-        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
-        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Left kinematic pitch center
+        Pitch-center approximation at the mean of the four contact patches
 
         Parameters
         ----------
@@ -2080,7 +2074,7 @@ class Suspension:
         Returns
         -------
         Tuple[float, float, float]
-            Calculates position vector of left kinematic pitch center
+            Mean contact patch position in meters
         """
         FL_cp = self._sprung_to_global(self.FL_quarter_car.tire.contact_patch)
         RL_cp = self._sprung_to_global(self.RL_quarter_car.tire.contact_patch)
@@ -2088,10 +2082,6 @@ class Suspension:
         front_link = Link(inboard_node=Node(position=self.FL_SVIC), outboard_node=FL_cp)
         rear_link = Link(inboard_node=Node(position=self.RL_SVIC), outboard_node=RL_cp)
 
-        # pc_node = front_link.xz_intersection(link=rear_link)
-    
-        # return pc_node.position
-    
         avg_cp = (self.FL_quarter_car.tire.contact_patch + \
                   self.FR_quarter_car.tire.contact_patch + \
                   self.RL_quarter_car.tire.contact_patch + \
@@ -2103,10 +2093,10 @@ class Suspension:
     def right_PC(self) -> Tuple[float, float, float]:
         """
         ## Right PC
-        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
-        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Right kinematic pitch center
+        Pitch-center approximation at the mean of the four contact patches
 
         Parameters
         ----------
@@ -2115,17 +2105,13 @@ class Suspension:
         Returns
         -------
         Tuple[float, float, float]
-            Calculates position vector of right kinematic pitch center
+            Mean contact patch position in meters
         """
         FR_cp = self._sprung_to_global(self.FR_quarter_car.tire.contact_patch)
         RR_cp = self._sprung_to_global(self.RR_quarter_car.tire.contact_patch)
 
         front_link = Link(inboard_node=Node(position=self.FR_SVIC), outboard_node=FR_cp)
         rear_link = Link(inboard_node=Node(position=self.RR_SVIC), outboard_node=RR_cp)
-
-        # pc_node = front_link.xz_intersection(link=rear_link)
-
-        # return pc_node.position
 
         avg_cp = (self.FL_quarter_car.tire.contact_patch + \
                   self.FR_quarter_car.tire.contact_patch + \
@@ -2153,15 +2139,12 @@ class Suspension:
             motion ratio of the front-left spring
         """
 
-        # Apply small displacement
         self.FL_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.FL_quarter_car.push_pull_rod.spring.length
 
-        # Must displace by 0.002 to reach 0.001 relative to the original state
         self.FL_quarter_car._jounce_persistent(jounce=0.002)
         spring_length_2 = self.FL_quarter_car.push_pull_rod.spring.length
 
-        # Return corner to original state (-0.001)
         self.FL_quarter_car._jounce_persistent(jounce=-0.001)
 
         try:
@@ -2188,15 +2171,12 @@ class Suspension:
             Motion ratio of the front-right spring
         """
 
-        # Apply small displacement
         self.FR_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.FR_quarter_car.push_pull_rod.spring.length
 
-        # Must displace by 0.002 to reach 0.001 relative to the original state
         self.FR_quarter_car._jounce_persistent(jounce=0.002)
         spring_length_2 = self.FR_quarter_car.push_pull_rod.spring.length
 
-        # Return corner to original state (-0.001)
         self.FR_quarter_car._jounce_persistent(jounce=-0.001)
 
         try:
@@ -2223,15 +2203,12 @@ class Suspension:
             Motion ratio of the rear-left spring
         """
 
-        # Apply small displacement
         self.RL_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.RL_quarter_car.push_pull_rod.spring.length
 
-        # Must displace by 0.002 to reach 0.001 relative to the original state
         self.RL_quarter_car._jounce_persistent(jounce=0.002)
         spring_length_2 = self.RL_quarter_car.push_pull_rod.spring.length
 
-        # Return corner to original state (-0.001)
         self.RL_quarter_car._jounce_persistent(jounce=-0.001)
 
         try:
@@ -2246,7 +2223,7 @@ class Suspension:
         ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
         ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Motion ratio of the rear-right spring, defined disp(wheel)/disp(stabar arm)
+        Motion ratio of the rear-right spring, defined disp(wheel)/disp(spring)
 
         Parameters
         ----------
@@ -2258,15 +2235,12 @@ class Suspension:
             Motion ratio of the rear-right spring
         """
 
-        # Apply small displacement
         self.RR_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.RR_quarter_car.push_pull_rod.spring.length
 
-        # Must displace by 0.002 to reach 0.001 relative to the original state
         self.RR_quarter_car._jounce_persistent(jounce=0.002)
         spring_length_2 = self.RR_quarter_car.push_pull_rod.spring.length
 
-        # Return corner to original state (-0.001)
         self.RR_quarter_car._jounce_persistent(jounce=-0.001)
 
         try:
@@ -2295,14 +2269,12 @@ class Suspension:
         """
         
         if self.sus_data.Fr_stabar:
-            # Make copies
             self_copy_1 = deepcopy(self)
             self_copy_2 = deepcopy(self)
 
             Fr_stabar_1 = cast(Stabar, self_copy_1.sus_data.Fr_stabar)
             Fr_stabar_2 = cast(Stabar, self_copy_2.sus_data.Fr_stabar)
 
-            # Apply small rotation
             self_copy_1.roll(roll=-0.001, update_state=False)
             stabar_rot_1 = Fr_stabar_1.rotation * 180 / np.pi
 
@@ -2311,18 +2283,15 @@ class Suspension:
 
             angle_mr = abs((0.002) / (stabar_rot_2 - stabar_rot_1))
 
-            # Make new copies for jounce
             self_copy_1 = deepcopy(self)
             self_copy_2 = deepcopy(self)
 
             Fr_stabar_1 = cast(Stabar, self_copy_1.sus_data.Fr_stabar)
             Fr_stabar_2 = cast(Stabar, self_copy_2.sus_data.Fr_stabar)
 
-            # Apply small displacement
             self_copy_1.RL_quarter_car._jounce_persistent(jounce=-0.001)
             stabar_arm_pos_1 = Fr_stabar_1.left_arm.outboard_node[2]
 
-            # Must displace by 0.002 to reach 0.001 relative to the original state
             self_copy_2.RL_quarter_car._jounce_persistent(jounce=0.001)
             stabar_arm_pos_2 = Fr_stabar_2.left_arm.outboard_node[2]
 
@@ -2352,14 +2321,12 @@ class Suspension:
             Motion ratios of the rear anti-roll bar, in the form [roll/ang, disp(wheel)/disp(stabar arm)]
         """
         if self.sus_data.Rr_stabar:
-            # Make copies
             self_copy_1 = deepcopy(self)
             self_copy_2 = deepcopy(self)
 
             Rr_stabar_1 = cast(Stabar, self_copy_1.sus_data.Rr_stabar)
             Rr_stabar_2 = cast(Stabar, self_copy_2.sus_data.Rr_stabar)
 
-            # Apply small rotation
             self_copy_1.roll(roll=-0.001, update_state=False)
             stabar_rot_1 = Rr_stabar_1.rotation * 180 / np.pi
 
@@ -2370,18 +2337,15 @@ class Suspension:
                 angle_mr = abs((0.002) / (stabar_rot_2 - stabar_rot_1))
             except:
                 angle_mr = 0.4
-            # Make new copies for jounce
             self_copy_1 = deepcopy(self)
             self_copy_2 = deepcopy(self)
 
             Rr_stabar_1 = cast(Stabar, self_copy_1.sus_data.Rr_stabar)
             Rr_stabar_2 = cast(Stabar, self_copy_2.sus_data.Rr_stabar)
 
-            # Apply small displacement
             self_copy_1.RL_quarter_car._jounce_persistent(jounce=-0.001)
             stabar_arm_pos_1 = Rr_stabar_1.left_arm.outboard_node[2]
 
-            # Must displace by 0.002 to reach 0.001 relative to the original state
             self_copy_2.RL_quarter_car._jounce_persistent(jounce=0.001)
             stabar_arm_pos_2 = Rr_stabar_2.left_arm.outboard_node[2]
 

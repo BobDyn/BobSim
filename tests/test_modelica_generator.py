@@ -140,8 +140,7 @@ def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> Non
             bellcrank["pickups_m"], bellcrank["pivot_m"], bellcrank["axis"], axle
         ) == want
 
-    # The two axles disagree, which is the proof that the shared order list -
-    # identical for both - cannot be the source.
+    # The axles differ, so one shared order list cannot be the source.
     assert vehicle["front"]["actuation"]["bellcrank"]["order"] == \
         vehicle["rear"]["actuation"]["bellcrank"]["order"]
     assert expected["front"] != expected["rear"]

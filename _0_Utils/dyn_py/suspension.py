@@ -18,7 +18,7 @@ from _0_Utils.dyn_py.kinematics import (
 )
 
 
-# Backward-compatible name used by the first reduced-order implementation.
+# Old name kept for existing callers.
 DoubleWishboneGeometry = DoubleWishboneKinematicLookup
 
 

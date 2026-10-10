@@ -46,7 +46,6 @@ class ModelInputs:
 @dataclass(frozen=True)
 class ModelOutput:
     """One evaluation of a reduced-order vehicle model."""
-
     derivative: FloatArray
     generalized_acceleration: FloatArray
     body_force_n: FloatArray
@@ -180,9 +179,8 @@ class VehicleDynamicsSystem(ABC):
         slip_denominator = np.maximum(np.abs(wheel_longitudinal_speed), 1.0)
         slip_ratios = (radii * wheel_speeds - wheel_longitudinal_speed) / slip_denominator
 
-        # 6/10DOF have massless algebraic uprights, so their tire normal load is
-        # suspension force plus geometric instant-link force. Close that small
-        # load-dependent tire/link loop before assembling chassis forces.
+        # 6/10DOF uprights are massless, so tire load depends on tire force
+        # through the instant links. Iterate to close that loop.
         for _iteration in range(self._force_path_iterations):
             fx_tire, fy_tire = self._tire_forces(
                 normal_loads,
@@ -216,8 +214,7 @@ class VehicleDynamicsSystem(ABC):
                 break
             normal_loads = closed_loads
 
-        # Recompute once at the final closed load so output forces are mutually
-        # consistent even when the fixed-point loop reaches its iteration cap.
+        # Recompute at the final load so forces stay consistent if the loop hits its cap.
         fx_tire, fy_tire = self._tire_forces(
             normal_loads,
             slip_angles,
@@ -467,7 +464,6 @@ class VehicleDynamicsSystem(ABC):
 
     def _body_translational_masses(self, body_mass: float) -> FloatArray:
         """Effective masses for body-frame x/y/z translation."""
-
         return np.full(3, body_mass, dtype=float)
 
     def _gravity_force_body(
@@ -476,7 +472,6 @@ class VehicleDynamicsSystem(ABC):
         body_mass: float,
     ) -> FloatArray:
         """Gravity projected into the body equations."""
-
         return rotation.T @ np.array([0.0, 0.0, -body_mass * G])
 
     def _forces_transmitted_to_body(
@@ -517,9 +512,8 @@ class VehicleDynamicsSystem(ABC):
         downforce_force = np.array([0.0, 0.0, -downforce], dtype=float)
         force = drag_force + downforce_force
 
-        # Apply vertical aero force at the projected center of pressure. Drag
-        # remains at the CFD reference point because the tabulated free pitch
-        # moment was absorbed only into the downforce CoP transformation.
+        # Drag stays at the CFD reference point. Only the downforce CoP absorbs
+        # the tabulated free pitch moment.
         moment = np.cross(
             np.asarray(self.parameters.aero_cop_m, dtype=float),
             downforce_force,
@@ -655,8 +649,7 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
             [front_aero / 2.0, front_aero / 2.0, rear_aero / 2.0, rear_aero / 2.0]
         )
 
-        # Any aero roll moment (principally lateral drag at aero_ref_m) follows
-        # the same elastic roll-stiffness distribution as tire-force transfer.
+        # Aero roll moment uses the same roll-stiffness split as tire-force transfer.
         front_share = self._front_roll_stiffness_fraction()
         loads += self._roll_moment_load_transfer(
             float(aero_moment[0]),
@@ -682,17 +675,14 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         rear_x = float(np.mean(positions[2:, 0]))
         wheelbase = front_x - rear_x
 
-        # r x F gives My = z*Fx at the road plane. The vertical axle
-        # reactions must supply the equal-and-opposite pitch moment.
+        # r x F gives My = z*Fx. Axle vertical reactions balance it.
         horizontal_pitch_moment = float(np.sum(positions[:, 2] * fx_body))
         front_delta = horizontal_pitch_moment / wheelbase
         pitch_transfer = np.array(
             [front_delta / 2.0, front_delta / 2.0, -front_delta / 2.0, -front_delta / 2.0]
         )
 
-        # Tire lateral force supplies Mx = -z*Fy. Elastic roll stiffness
-        # determines how much of the balancing vertical reaction occurs at
-        # each axle.
+        # Tire lateral force gives Mx = -z*Fy. Roll stiffness splits the reaction by axle.
         horizontal_roll_moment = float(np.sum(-positions[:, 2] * fy_body))
         roll_transfer = self._roll_moment_load_transfer(
             horizontal_roll_moment,
@@ -1167,7 +1157,7 @@ class VehicleModel14DOF(VehicleModel10DOF):
         return np.concatenate((body_rate, velocities[6:10], velocities[10:14]))
 
 
-# Backward-compatible public type used by the existing envelope integrations.
+# Alias kept for existing envelope callers.
 ReducedVehicleModel = VehicleDynamicsSystem
 
 

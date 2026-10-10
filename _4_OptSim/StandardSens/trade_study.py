@@ -40,8 +40,7 @@ from StandardSens.pipeline.standards import (
 from StandardSens.pipeline.variants import VariantStore, split_cpus
 
 DEFAULT_STUDY = Path(__file__).resolve().parent / "configs/trade_study.yaml"
-# One store for every study: the baseline, and any candidate two studies share,
-# is compiled and simulated once.
+# One store for every study, so shared candidates are compiled once.
 TRADE_DIR = STANDARD_BUILD_DIR / "trade"
 RUN_TIMEOUT_S = 3600
 
@@ -52,7 +51,7 @@ def load_candidates(study: dict[str, Any], variables: dict[str, dict[str, Any]])
     candidates: dict[str, Variant] = {}
     for name, changes in (study.get("candidates") or {}).items():
         if name == trade.BASELINE:
-            raise ValueError(f"{trade.BASELINE!r} is always included; name your candidate something else")
+            raise ValueError(f"{trade.BASELINE!r} is always included. Give your candidate a different name.")
         if not changes:
             raise ValueError(f"Candidate {name!r} changes nothing, so it is the baseline")
         unknown = sorted(set(changes) - set(variables))

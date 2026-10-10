@@ -80,9 +80,7 @@ STUDY_CONFIGS = {
     "transient": "_3_StandardSim/TransientEval/transient_eval_config.yml",
 }
 
-# Only sections that can move a simulated number. `execution` (worker counts),
-# `report`, and `plots` are deliberately excluded so cosmetic edits and
-# parallelism tuning do not invalidate a baseline that is still valid.
+# Only sections that can move a simulated number.
 RESULT_AFFECTING_SECTIONS = ("simulation", "sweep", "fit")
 
 BOBLIB_SUBMODULE = "_0_Utils/external/BobLib"
@@ -552,9 +550,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
     reason="set BOBSIM_BASELINE_REGRESSION=1 to compare against the default vehicle baseline",
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
-    # Every metric is checked before failing: this test is gated behind a ~12 min
-    # simulation refresh, so aborting on the first mismatch would leak one drifted
-    # metric per run.
+    # Check every metric before failing, because a refresh takes about 12 min.
     failures: list[str] = []
 
     for metric, spec in _metric_baselines(workflow_data.spec).items():

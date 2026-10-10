@@ -103,8 +103,7 @@ def test_one_value_fans_out_to_every_target_with_its_scale(init_parameters) -> N
     ("path", "reason"),
     [
         ("typo", "not in the compiled model"),
-        # The runner keys its lookup on the start value, so it would drop this
-        # one exactly as it drops a name that does not exist.
+        # The runner keys its lookup on the start value, so it drops this name silently.
         ("no_start", "not in the compiled model"),
         ("frozen", "fixed at compile time"),
         ("aero.load_scale", "scaled tables are compiled"),

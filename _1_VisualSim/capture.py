@@ -38,8 +38,7 @@ from _1_VisualSim.from_results import (
 
 RESULTS_DIR = Path("_1_VisualSim/results")
 
-#: VehicleSim nests the rig's axles here; the converter detects it on its own,
-#: but the filter has to name it before the run.
+#: The variable filter must name the axle prefix before the run.
 VEHICLE_PREFIX = "chassis.detailedChassis."
 
 
@@ -48,22 +47,20 @@ class Evaluation:
     """What a capture needs to know about one StandardSim evaluation."""
 
     config: Path
-    module: str       # the sim module, which also owns the signal list below
-    signals: str      # the signals the evaluation reads back from its own CSV
+    module: str
+    signals: str      # name of the signal list attribute in `module`
     prefix: str       # where the axles sit in the model
-    step_size: float  # output step: fine enough to watch, coarse enough to keep
+    step_size: float  # s
 
 
 EVALUATIONS: dict[str, Evaluation] = {
-    # The rig's KnC config samples at 0.5 s - four frames a pose, far too
-    # coarse to watch.
+    # The KnC config samples at 0.5 s, which is too coarse to watch.
     "four_post": Evaluation(
         Path("_3_StandardSim/FourPostEval/four_post_eval_config.yml"),
         "_3_StandardSim.FourPostEval.four_post_eval_sim", "FOUR_POST_EVAL_SIGNALS",
         prefix="", step_size=0.02,
     ),
-    # VehicleSim's own output step is 2 ms; 10 ms is plenty for playback and
-    # keeps each case's CSV a few MB.
+    # 10 ms keeps each case CSV to a few MB.
     "transient": Evaluation(
         Path("_3_StandardSim/TransientEval/transient_eval_config.yml"),
         "_3_StandardSim.TransientEval.transient_eval_sim", "TransientEval_SIGNALS",
@@ -95,21 +92,18 @@ def write_config(out_path: Path, evaluation: str = "four_post") -> Path:
         config: dict[str, Any] = yaml.safe_load(handle)
 
     simulation = config.setdefault("simulation", {})
-    # Union, not replacement: the evaluation reads its own signals back from
-    # the same CSV and raises if they are missing.
+    # Keep the evaluation's own signals. It reads them back from this CSV.
     simulation["variable_filter"] = variable_filter(
         extra=eval_signals(evaluation), prefix=spec.prefix
     )
     simulation["stepSize"] = spec.step_size
-    # VehicleSim's axles are protected components, and OpenModelica leaves
-    # protected variables out of the result however the filter matches them.
+    # The axles are protected components. OpenModelica omits protected variables without this flag.
     extra_args = [str(arg) for arg in simulation.get("extra_args") or []]
     if "-emit_protected" not in extra_args:
         extra_args.append("-emit_protected")
     simulation["extra_args"] = extra_args
 
-    # Keep the capture's own report and metrics out of generated_results/: the
-    # regression checks and the DOE read the evaluation's real ones from there.
+    # Regression checks and the DOE read generated_results/, so write elsewhere.
     report = config.setdefault("report", {})
     report["enabled"] = False
     report["output_path"] = (RESULTS_DIR / f"{evaluation}_capture_report.pdf").as_posix()

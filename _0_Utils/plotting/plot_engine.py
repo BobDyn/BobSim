@@ -80,13 +80,11 @@ class PlotEngine:
             layout_name = p_cfg.get("layout", "single")
             layout = LAYOUT_REGISTRY[layout_name]()
 
-            # 🔥 CASE 1: multi-plot layout (dual/quad)
             if "subplots" in p_cfg:
 
-                plotter = SignalPlot()  # always signal for now
+                plotter = SignalPlot()
                 fig = layout.render(plotter, result, p_cfg)
 
-            # 🔥 CASE 2: single plot
             else:
 
                 plot_type = p_cfg.get("type", "signal")

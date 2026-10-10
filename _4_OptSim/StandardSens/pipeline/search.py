@@ -32,9 +32,7 @@ OPTSIM_DIR = STANDARD_DIR.parent
 DEFAULT_PARQUET = OPTSIM_DIR / "Build/StandardSens/standard_sensitivity_results.parquet"
 DEFAULT_DOE_CONFIG = STANDARD_DIR / "configs/_doe_config.yaml"
 
-# Used only when the DOE config cannot be read. Keeping this in sync by hand is
-# what caused swept parameters to go missing from the results, so prefer the
-# config-derived list below.
+# Used only when the DOE config cannot be read.
 FALLBACK_INPUT_PARAMS = [
     "front.stabar.rate_n_m_per_rad",
     "rear.stabar.rate_n_m_per_rad",
@@ -67,8 +65,7 @@ def load_input_params(doe_config_path: Path = DEFAULT_DOE_CONFIG) -> list[str]:
     return paths or list(FALLBACK_INPUT_PARAMS)
 
 
-# Returned instead of a scope name when the population is demonstrably narrower
-# than the config, but the config no longer says which scope produced it.
+# The population is narrower than the config, but the config does not name the scope.
 SCOPE_UNKNOWN = "unknown"
 
 
@@ -87,16 +84,8 @@ def load_sweep_scope(doe_config_path: Path = DEFAULT_DOE_CONFIG) -> str | None:
     return str(scope) if scope else None
 
 
-# ---------------------------------------------------------------------------
-# Honesty guards
-#
-# The reverse lookup is a nearest-neighbour query over a finite population, not
-# an optimizer. Each guard below turns a silent, plausible-looking answer into a
-# stated limitation. None of them change the returned result.
-# ---------------------------------------------------------------------------
+# The warnings below do not change the returned result.
 
-# Below this many rows a 23-parameter sweep cannot support a meaningful
-# nearest-neighbour answer, let alone the response surfaces fitted from it.
 MIN_USEFUL_POPULATION = 10
 
 
@@ -258,10 +247,6 @@ def _warn_if_results_are_stale(results_path: Path, doe_config_path: Path) -> boo
     return True
 
 
-# ---------------------------------------------------------------------------
-# Search
-# ---------------------------------------------------------------------------
-
 def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
            top: int = 1, doe_config_path: Path = DEFAULT_DOE_CONFIG) -> pd.DataFrame:
     """Find the nearest variants to the target metric values.
@@ -288,7 +273,6 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
             f"Results not found at {parquet_path} or {csv_path}. Has the pipeline run?"
         )
 
-    # Validate requested metrics exist
     missing = [m for m in targets if m not in df.columns]
     if missing:
         raise ValueError(
@@ -299,14 +283,11 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
     metric_cols = list(targets.keys())
     target_vals = np.array([targets[m] for m in metric_cols])
 
-    # Normalize each dimension by its range so no single metric dominates
+    # Normalise by range so no single metric dominates.
     metric_data = df[metric_cols].values
     ranges = metric_data.max(axis=0) - metric_data.min(axis=0)
-    ranges[ranges == 0] = 1.0  # avoid divide by zero for constant columns
+    ranges[ranges == 0] = 1.0
 
-    # A nearest-neighbour lookup cannot extrapolate. If a target sits outside the
-    # sampled spread it silently returns the closest edge variant, which reads as
-    # an answer. Say so instead, in units of the population's own spread.
     _warn_targets_outside_population(targets, df, ranges)
     _warn_population_too_small(df, input_params)
     _warn_if_results_scope_is_narrow(df, input_params, doe_config_path)
@@ -314,17 +295,13 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
     metric_data_norm = metric_data / ranges
     target_norm = target_vals / ranges
 
-    # Build KDTree and query
     tree = KDTree(metric_data_norm)
     distances, indices = tree.query(target_norm, k=min(top, len(df)))
 
-    # Ensure distances and indices are always 1D arrays for consistent handling.
     distances_arr = np.atleast_1d(distances)
     indices_arr = np.atleast_1d(indices).astype(int)
 
-    # Parameters the config names but the table lacks are reported by
-    # _warn_if_results_scope_is_narrow above, which also explains why they are
-    # missing. Warning about them again here would double up on one condition.
+    # _warn_if_results_scope_is_narrow already reports missing parameters.
     input_cols = [col for col in input_params if col in df.columns]
 
     results = df.iloc[indices_arr][["variant"] + input_cols + metric_cols].copy()
@@ -333,10 +310,6 @@ def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
     return results.reset_index(drop=True)
 
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -402,10 +375,6 @@ def _print_results(results: pd.DataFrame, targets: dict[str, float]) -> None:
             print(f"    {metric:<35} {row[metric]:.6f}  (target: {targets[metric]})")
         print()
 
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     args = _parse_args()

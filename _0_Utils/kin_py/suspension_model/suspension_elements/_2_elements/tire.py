@@ -25,7 +25,7 @@ class Tire:
         self.static_toe: float = static_toe
         self.static_gamma: float = static_gamma
 
-        # This only works for Z-up SAE J670 coords
+        # Valid only for SAE J670 Z-up axes.
         x_rot = np.array(rotation_matrix(unit_vec=[1, 0, 0], theta=static_gamma * np.pi / 180))
         z_rot = np.array(rotation_matrix(unit_vec=[0, 0, 1], theta=static_toe * np.pi / 180))
         

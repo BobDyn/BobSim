@@ -36,7 +36,7 @@ ConfigEdit = Callable[[dict[str, Any]], None]
 @dataclass(frozen=True)
 class Standard:
     name: str
-    package: str  # directory under _3_StandardSim, also the python package
+    package: str  # directory under _3_StandardSim
     stem: str  # "<stem>_sim.py", "<stem>_config.yml", "<stem>_report.pdf"
 
     @property
@@ -109,14 +109,12 @@ def write_config(
     simulation["build_dir"] = str(build_dir)
     simulation["exec_name"] = exec_name
 
-    # Otherwise execution settings stay exactly as the standard's config has them.
     if max_workers is not None:
         execution = config.setdefault("execution", {})
         execution["parallel"] = True
         execution["max_workers"] = int(max_workers)
 
-    # The metrics CSV path is derived from output_path whether or not the PDF is
-    # rendered, so anchoring it to the variant keeps both beside its results.
+    # The metrics CSV path comes from output_path even when the PDF is not rendered.
     results_dir = variant_dir / "results" / standard.name
     report = config.setdefault("report", {})
     report["enabled"] = render_report
@@ -168,8 +166,7 @@ def run_standard(
     if not metrics_csv.exists():
         raise FileNotFoundError(f"{standard.name} produced no metrics CSV: {metrics_csv}")
 
-    # A stable name beside the report-style one, which is what the sweep's
-    # batch runner and aggregator look for.
+    # The batch runner and aggregator look for metrics.csv.
     canonical = metrics_csv.with_name("metrics.csv")
     shutil.copyfile(metrics_csv, canonical)
     return canonical

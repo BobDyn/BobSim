@@ -20,7 +20,6 @@ class TripleLayout:
             has_data = False
             group_colors = {}
 
-            # Empty data
             if not series:
                 ax.text(0.5, 0.5, "No Data",
                         ha="center", va="center", fontsize=10)

@@ -33,15 +33,10 @@ from _1_VisualSim.from_results import (
 from tests.test_visual_templates import _referenced_signals
 
 
-# ---------------------------------------------------------------------------
-# Frame map
-# ---------------------------------------------------------------------------
-
 def test_frame_map_covers_every_corner_uniquely() -> None:
     paths = frame_paths()
     assert len(paths) == len(CORNERS) * len(FRAME_MAP)
-    # A copy-paste slip in the templates would alias two hardpoints onto one
-    # frame and silently collapse part of the linkage.
+    # A copy-paste slip in the templates would put two hardpoints on one frame.
     assert len(set(paths.values())) == len(paths)
 
 
@@ -75,10 +70,6 @@ def test_variable_filter_asks_for_every_tire_force_under_the_prefix() -> None:
         assert re.escape(column) in pattern
     assert re.escape(prefix + "frAxleDW.leftTire.Fy") in pattern
 
-
-# ---------------------------------------------------------------------------
-# Rigid refit
-# ---------------------------------------------------------------------------
 
 def test_kabsch_recovers_a_known_rigid_transform() -> None:
     reference = np.array([[0.0, 0.5, 0.1], [0.0, 0.5, 0.3], [0.1, 0.5, 0.2]])
@@ -115,10 +106,6 @@ def test_kabsch_is_exact_for_a_point_off_the_fitted_triad() -> None:
     R, t = _kabsch(reference, current)
     assert np.allclose(R[0] @ other + t[0], other @ R_true.T + t_true, atol=1e-9)
 
-
-# ---------------------------------------------------------------------------
-# End-to-end conversion against a synthetic result CSV
-# ---------------------------------------------------------------------------
 
 def _write_result_csv(
     path: Path,
@@ -183,8 +170,6 @@ def test_convert_writes_a_scene_the_template_fully_describes(tmp_path: Path) -> 
     with np.load(npz_path) as raw:
         stored = set(raw.files)
 
-    # The generated pair must be self-consistent: this is the whole point of
-    # emitting the template and the data together.
     assert not _referenced_signals(cfg) - stored
     assert not summary["missing"]
     assert summary["points"] == len(CORNERS) * len(FRAME_MAP)
@@ -209,7 +194,6 @@ def test_convert_refits_the_points_alias_elimination_removes(tmp_path: Path) -> 
         # The rig's ground plane is z = 0, so every contact patch sits on it.
         patch_z = raw["pos/fl_ContactPatch_z"]
         assert np.allclose(patch_z, 0.0)
-        # And the wheel centre must sit above it, near the tire radius.
         assert np.all(raw["pos/fl_WheelCenter_z"] > 0.1)
 
 
@@ -350,8 +334,7 @@ def test_capture_config_keeps_the_evaluations_own_signals(
     prefix = capture.EVALUATIONS[evaluation].prefix
     assert re.escape(prefix + "frAxleDW.leftWishboneUprightLoop.") in pattern
 
-    # Regression: VehicleSim's axle frames are protected, so without this flag
-    # the run silently wrote only the evaluation's own 17 columns.
+    # Regression: without this flag, the run leaves out VehicleSim's protected axle frames.
     assert "-emit_protected" in cfg["simulation"]["extra_args"]
     # A capture must never overwrite the metrics the regression checks read.
     for key in ("output_path", "metrics_csv_path"):
@@ -387,5 +370,4 @@ def test_vehicle_yaml_supplies_mirrored_reference_hardpoints() -> None:
     assert references["fl"]["Lower_o"][1] == pytest.approx(
         -references["fr"]["Lower_o"][1]
     )
-    # Front and rear are different corners of the car.
     assert references["fl"]["Lower_o"][0] != references["rl"]["Lower_o"][0]

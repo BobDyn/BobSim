@@ -36,10 +36,6 @@ from typing import Any, Iterable
 import numpy as np
 import yaml
 
-# ---------------------------------------------------------------------------
-# Model geometry map
-# ---------------------------------------------------------------------------
-
 CORNERS: dict[str, tuple[str, str]] = {
     "fl": ("frAxleDW", "left"),
     "fr": ("frAxleDW", "right"),
@@ -76,7 +72,6 @@ FRAME_MAP: dict[str, str] = {
 #: The frame whose orientation gives each wheel's spin axis and heading.
 WHEEL_FRAME = "{axle}.to{Side}WheelCenter.frame_b"
 
-#: Link groups, as pairs of hardpoint names within one corner.
 LINK_GROUPS: dict[str, list[tuple[str, str]]] = {
     "lower": [("LowerFore_i", "Lower_o"), ("LowerAft_i", "Lower_o")],
     "upper": [("UpperFore_i", "Upper_o"), ("UpperAft_i", "Upper_o")],
@@ -97,7 +92,6 @@ LINK_GROUPS: dict[str, list[tuple[str, str]]] = {
             ("ArmEnd", "DroplinkUpper")],
 }
 
-#: Cross-car links, as (corner, point) pairs.
 AXLE_LINKS: list[tuple[tuple[str, str], tuple[str, str]]] = [
     (("fl", "LowerFore_i"), ("fr", "LowerFore_i")),
     (("rl", "LowerFore_i"), ("rr", "LowerFore_i")),
@@ -129,7 +123,7 @@ STYLE: dict[str, Any] = {
     },
 }
 
-#: Scalar signals worth plotting when the run happens to contain them.
+#: Plotted when the run contains them.
 PREFERRED_PLOTS: list[tuple[str, str]] = [
     ("Heave (m)", "frKnC.heave"),
     ("Roll (rad)", "frKnC.roll"),
@@ -144,8 +138,7 @@ PREFERRED_PLOTS: list[tuple[str, str]] = [
 
 TIRE_DEFAULTS = {"radius": 0.2045, "width": 0.1778}
 
-#: A frame every BobLib double-wishbone car has. The rig names it at the top
-#: level; VehicleSim nests the same axle under ``chassis.detailedChassis.``.
+#: A frame every BobLib double-wishbone car has. Its prefix locates the axles.
 ANCHOR_FRAME = "frAxleDW.leftWishboneUprightLoop.lowerFrame_o.r_0[1]"
 
 #: Per-tire vertical load: the rig's KnC channels, or VehicleSim's.
@@ -156,8 +149,7 @@ LOAD_SIGNALS: dict[str, tuple[str, ...]] = {
     "rr": ("rrKnC.rightFz", "Fz_RR"),
 }
 
-#: Each corner's MF5.2 tire, and the state the friction circles read from it.
-#: The rig's tires carry no road forces, so only driving runs have these.
+#: Only driving runs have tire forces. The rig's tires carry no road forces.
 TIRE_COMPONENT = "{axle}.{side}Tire"
 TIRE_STATE = ("Fx", "Fy", "Fz", "gamma")
 
@@ -168,7 +160,7 @@ def default_vehicle_yaml() -> Path:
     return Path(vehicle_yaml_path())
 
 
-#: The three outboard points that pin the upright, and what they let us derive.
+#: Three outboard points that fix the upright pose.
 UPRIGHT_TRIAD = ("Lower_o", "Upper_o", "Tie_o")
 DERIVED_FROM_UPRIGHT = ("WheelCenter", "ContactPatch")
 
@@ -176,10 +168,6 @@ DERIVED_FROM_UPRIGHT = ("WheelCenter", "ContactPatch")
 class ResultMappingError(RuntimeError):
     """Raised when a result file does not carry the expected geometry."""
 
-
-# ---------------------------------------------------------------------------
-# Names
-# ---------------------------------------------------------------------------
 
 def _frame(template: str, axle: str, side: str) -> str:
     return template.format(axle=axle, side=side, Side=side.capitalize())
@@ -239,10 +227,6 @@ def variable_filter(extra: Iterable[str] = (), prefix: str = "") -> str:
 def signal_name(corner: str, point: str, axis: str) -> str:
     return f"pos/{corner}_{point}_{axis}"
 
-
-# ---------------------------------------------------------------------------
-# Reading
-# ---------------------------------------------------------------------------
 
 def read_result_csv(path: Path) -> dict[str, np.ndarray]:
     """Load an OpenModelica CSV result into ``{name: array}``."""
@@ -326,10 +310,6 @@ def _matrix(columns: dict[str, np.ndarray], frame: str) -> np.ndarray | None:
         [np.stack([columns[k] for k in row], axis=1) for row in keys], axis=1
     )
 
-
-# ---------------------------------------------------------------------------
-# Conversion
-# ---------------------------------------------------------------------------
 
 def convert(
     result_csv: Path,
@@ -541,7 +521,7 @@ def _derive_upright_points(
 
         for point, world in (
             ("WheelCenter", wheel_centre),
-            # The road is z = 0 on the rig and in VehicleSim, so the patch sits below.
+            # The road is z = 0.
             ("ContactPatch", None if wheel_centre is None
              else wheel_centre * np.array([1.0, 1.0, 0.0])),
         ):
@@ -556,7 +536,7 @@ def _derive_upright_points(
             points_cfg[name] = cols
             derived.append(name)
 
-        # Wheel axes ride with the upright: +x forward, +y toward the car's left.
+        # +x forward, +y toward the car's left.
         for axis_key, unit in (("ex", np.array([1.0, 0.0, 0.0])),
                                ("ey", np.array([0.0, 1.0, 0.0]))):
             vec = np.einsum("nij,j->ni", R, unit)
@@ -592,8 +572,7 @@ def _build_tires(
                     "width": float(width),
                 }
             continue
-        # Modelica resolves R as body-from-world, so its rows are the body axes
-        # expressed in world coordinates.
+        # R is body-from-world, so its rows are the body axes in world coordinates.
         ex, ey = R[:, 0, :], R[:, 1, :]
         cols: dict[str, list[str]] = {"x": [], "y": []}
         for axis_key, vec in (("ex", ex), ("ey", ey)):
@@ -652,7 +631,7 @@ def _build_ground(
         ground["loads"] = {"radius": 0.22, "corners": corners}
 
     patches = [f"{c}_ContactPatch" for c in CORNERS if f"{c}_ContactPatch" in points_cfg]
-    # The rig holds the car in place, where a trail would only be a dot.
+    # The rig holds the car in place.
     moved = any(
         float(np.ptp(signals[points_cfg[p][axis]])) > 1.0 for p in patches for axis in (0, 1)
     )
@@ -677,10 +656,6 @@ def _build_camera(points_cfg: dict[str, list[str]]) -> dict[str, Any]:
         "camera_offsets": {"back": 4.0, "height": 1.8},
     }
 
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def print_summary(npz_path: Path, template_path: Path, summary: dict[str, Any]) -> None:
     """What a conversion wrote, and how to open it."""

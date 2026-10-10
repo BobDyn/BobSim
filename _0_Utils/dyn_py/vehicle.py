@@ -127,7 +127,6 @@ class Vehicle:
 
     def initial_state(self, dof: DOFModel, speed_mps: float = 0.0) -> FloatArray:
         """Construct a correctly initialized state for one fidelity."""
-
         return self.model(dof).initial_state(speed_mps)
 
     def evaluate(
@@ -137,7 +136,6 @@ class Vehicle:
         inputs: ModelInputs = ModelInputs(),
     ) -> ModelOutput:
         """Evaluate forces and derivatives for one fidelity."""
-
         return self.model(dof).evaluate(state, inputs)
 
     def simulate(

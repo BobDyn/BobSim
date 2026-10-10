@@ -44,8 +44,7 @@ class SteadyStateEvaluator:
     """Callable mapping a batch of variants to their SteadyStateEval metrics."""
 
     def __init__(self, *, isoline: Isoline, cpus: int) -> None:
-        # Longest cases first: they are the high-a_y ones, and queued last they
-        # all land in the final wave and set its length.
+        # Longest (high a_y) cases first, so they do not all land in the final wave.
         self.isoline = Isoline(
             float(isoline.velocity_mps), tuple(sorted(map(float, isoline.target_ays), reverse=True))
         )
@@ -67,7 +66,7 @@ class SteadyStateEvaluator:
         if pending:
             compiled = [compiled_part(v, self.baseline) for v in pending]
             self.store.ensure_compiled(compiled)
-            for vehicle in compiled:  # parse each init XML once, before the threads race to
+            for vehicle in compiled:  # parse each init XML once, before the threads start
                 self._init_parameters(self.store.build_dir(vehicle))
 
             concurrent, workers = split_cpus(len(pending), self.cpus)
@@ -104,7 +103,7 @@ class SteadyStateEvaluator:
             ),
             isoline=self.isoline,
             max_workers=workers,
-            render_report=False,  # the solver reads the metrics CSV, never the PDF
+            render_report=False,
         )
 
     def _init_parameters(self, build_dir: Path) -> dict[str, ov.InitParameter]:
