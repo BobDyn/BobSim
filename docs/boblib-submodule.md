@@ -108,18 +108,3 @@ problem. Only create a branch there if you are actually developing BobLib.
 - Generated vehicle records under `Records/VehicleDefn/` are written by
   `_5_App/modelica_generator.py`. Hand-edits there get overwritten on the next
   generate — change `vehicle.yml` or the generator instead.
-
-## Preserving a calibrated start
-
-Generation retains an existing `pQSSInitialization` record and its VehicleSim
-wiring only when all generated physical record parameters match. Changes to
-mass, suspension, tires, aero, or powertrain invalidate that solved pose; the
-write then fails before changing any files. Status includes `initialization_error`.
-The current YAML and pinned BobLib record differ in aero and VCU inputs, so this
-check deliberately prevents transplanting the pinned pose onto the YAML car.
-
-Recalibrate the record in BobLib for the intended setup, or explicitly select
-`modelica_initialization: legacy` in the vehicle YAML to use BobLib's uncalibrated
-settling start. Review settling and rerun the Modelica baseline before trusting
-that choice. A retained QSS pose also retains BobLib's warning when the requested
-initial speed differs from its reference velocity.
