@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass
+from functools import lru_cache
 import math
 from typing import Any, Literal, Mapping, Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from scipy.optimize import root_scalar
 
 from engines.kinpy.kinematics import CornerKinematics, CornerPointSet
 
@@ -126,9 +128,13 @@ class VehicleKinematics(Protocol):
     @property
     def mode(self) -> KinematicsMode: ...
 
-    def at(self, jounce_m: ArrayLike) -> VehicleKinematicState: ...
+    def at(self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0) -> VehicleKinematicState: ...
 
-    def instant_links_at(self, jounce_m: ArrayLike) -> DoubleWishboneInstantLinks: ...
+    def rack_from_steering(self, steering_rad: float) -> float: ...
+
+    def instant_links_at(
+        self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0,
+    ) -> DoubleWishboneInstantLinks: ...
 
 
 @dataclass(frozen=True)
@@ -177,6 +183,7 @@ class DoubleWishboneKinematicLookup:
 
     front: AxleKinematicLookup
     rear: AxleKinematicLookup
+    nonlinear: NonlinearDoubleWishboneKinematics
     mode: KinematicsMode = "lookup"
 
     @classmethod
@@ -195,9 +202,26 @@ class DoubleWishboneKinematicLookup:
         return cls(
             front=_derive_axle_lookup(vehicle, "front", grid),
             rear=_derive_axle_lookup(vehicle, "rear", grid),
+            nonlinear=NonlinearDoubleWishboneKinematics(vehicle),
         )
 
-    def at(self, jounce_m: ArrayLike) -> VehicleKinematicState:
+    def at(self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0) -> VehicleKinematicState:
+        """Evaluate corner geometry at individual travel and shared front rack input.
+
+        Parameters
+        ----------
+        jounce_m : ArrayLike
+            Corner travel ordered FL, FR, RL, RR, in meters.
+        rack_displacement_m : float
+            Front rack displacement along the vehicle lateral axis, in meters.
+
+        Returns
+        -------
+        VehicleKinematicState
+            Wheel poses and contact-patch tangents at fixed rack displacement.
+        """
+        if rack_displacement_m != 0.0:
+            return self.nonlinear.at(jounce_m, rack_displacement_m)
         jounce = _validate_jounce(jounce_m)
         return _assemble_vehicle_state(
             jounce,
@@ -207,8 +231,25 @@ class DoubleWishboneKinematicLookup:
             self.rear.at(float(jounce[3])),
         )
 
-    def instant_links_at(self, jounce_m: ArrayLike) -> DoubleWishboneInstantLinks:
-        return self.at(jounce_m).instant_links
+    def rack_from_steering(self, steering_rad: float) -> float:
+        """Convert nominal mean front-wheel steer using the KinPy assembly.
+
+        Parameters
+        ----------
+        steering_rad : float
+            Mean front-wheel heading at zero jounce, in radians.
+
+        Returns
+        -------
+        float
+            Lateral rack displacement in meters.
+        """
+        return self.nonlinear.rack_from_steering(steering_rad)
+
+    def instant_links_at(
+        self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0,
+    ) -> DoubleWishboneInstantLinks:
+        return self.at(jounce_m, rack_displacement_m).instant_links
 
 
 class NonlinearDoubleWishboneKinematics:
@@ -235,24 +276,80 @@ class NonlinearDoubleWishboneKinematics:
         self.rear = CornerKinematics.from_vehicle(data, "rear")
         self.derivative_step_m = float(derivative_step_m)
 
-    def at(self, jounce_m: ArrayLike) -> VehicleKinematicState:
+    def at(self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0) -> VehicleKinematicState:
+        """Evaluate corner geometry at individual travel and shared front rack input.
+
+        Parameters
+        ----------
+        jounce_m : ArrayLike
+            Corner travel ordered FL, FR, RL, RR, in meters.
+        rack_displacement_m : float
+            Front rack displacement along the vehicle lateral axis, in meters.
+
+        Returns
+        -------
+        VehicleKinematicState
+            Wheel poses and contact-patch tangents at fixed rack displacement.
+        """
+        if not math.isfinite(rack_displacement_m):
+            raise ValueError("Rack displacement must be finite.")
         jounce = _validate_jounce(jounce_m)
         return _assemble_vehicle_state(
             jounce,
-            self._solve(self.front, float(jounce[0])),
-            self._solve(self.front, float(jounce[1])),
-            self._solve(self.rear, float(jounce[2])),
-            self._solve(self.rear, float(jounce[3])),
+            self._solve("front", float(jounce[0]), rack_displacement_m),
+            self._solve("front", float(jounce[1]), -rack_displacement_m),
+            self._solve("rear", float(jounce[2])),
+            self._solve("rear", float(jounce[3])),
         )
 
-    def instant_links_at(self, jounce_m: ArrayLike) -> DoubleWishboneInstantLinks:
-        return self.at(jounce_m).instant_links
+    @lru_cache(maxsize=512)
+    def rack_from_steering(self, steering_rad: float) -> float:
+        """Convert nominal mean front-wheel steer to rack displacement.
 
-    def _solve(self, corner: CornerKinematics, jounce_m: float) -> AxleKinematicState:
+        Parameters
+        ----------
+        steering_rad : float
+            Mean front-wheel heading at zero jounce, in radians.
+
+        Returns
+        -------
+        float
+            Lateral rack displacement in meters.
+        """
+        if not math.isfinite(steering_rad):
+            raise ValueError("Steering angle must be finite.")
+        if steering_rad == 0.0:
+            return 0.0
+
+        def residual(rack: float) -> float:
+            headings = []
+            for sign in (1.0, -1.0):
+                _, points, _ = self.front.solve_jounce(
+                    0.0, np.zeros(3), rack_displacement_m=sign * rack,
+                )
+                forward = np.asarray(points.tire_front) - np.asarray(points.wheel_center)
+                headings.append(sign * math.atan2(float(forward[1]), float(forward[0])))
+            return float(np.mean(headings)) - steering_rad
+
+        result = root_scalar(residual, x0=0.0, x1=1e-4, xtol=1e-11)
+        if not result.converged or abs(residual(result.root)) > 1e-8:
+            raise ValueError("Could not solve rack displacement for requested steering.")
+        return float(result.root)
+
+    def instant_links_at(
+        self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0,
+    ) -> DoubleWishboneInstantLinks:
+        return self.at(jounce_m, rack_displacement_m).instant_links
+
+    @lru_cache(maxsize=512)
+    def _solve(
+        self, axle: Literal["front", "rear"], jounce_m: float, rack_displacement_m: float = 0.0,
+    ) -> AxleKinematicState:
+        corner = self.front if axle == "front" else self.rear
         step = self.derivative_step_m
-        solution, points, _ = corner.solve_jounce(jounce_m, np.zeros(3))
-        _, below, _ = corner.solve_jounce(jounce_m - step, solution)
-        _, above, _ = corner.solve_jounce(jounce_m + step, solution)
+        _, points, _ = corner.solve_jounce(jounce_m, np.zeros(3), rack_displacement_m=rack_displacement_m)
+        _, below, _ = corner.solve_jounce(jounce_m - step, np.zeros(3), rack_displacement_m=rack_displacement_m)
+        _, above, _ = corner.solve_jounce(jounce_m + step, np.zeros(3), rack_displacement_m=rack_displacement_m)
         tangent = (
             np.asarray(above.contact_patch, dtype=float)
             - np.asarray(below.contact_patch, dtype=float)

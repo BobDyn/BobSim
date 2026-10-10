@@ -585,11 +585,7 @@ def _trim_is_racing_feasible(
         # Kinematic-wheel models have no wheel-spin residual. Reject a trim when
         # combined-slip saturation moved Fx away from the applied torque. Otherwise
         # the boundary can bypass the fixed brake/drive split.
-        steering = float(trim.inputs.steering_rad)
-        wheel_steering = (
-            np.array([steering, steering, 0.0, 0.0])
-            + np.asarray(trim.output.toe_rad, dtype=float)
-        )
+        wheel_steering = np.asarray(trim.output.toe_rad, dtype=float)
         body_forces = np.asarray(trim.output.wheel_forces_body_n, dtype=float)
         tire_fx = (
             body_forces[:, 0] * np.cos(wheel_steering)

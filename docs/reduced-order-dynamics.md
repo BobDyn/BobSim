@@ -91,8 +91,12 @@ The dynamic system receives suspension hardpoints, not hand-entered curves,
 instant centers, or jacking coefficients. The KinPy `CornerKinematics` adapter uses the original
 `QuarterCar` constraint solver to derive contact-patch
 and wheel-center migration; camber, toe, caster, KPI, trail, and scrub; and the
-contact-patch tangent across wheel travel. At the current corner jounce,
-`dyn_py` consumes one four-corner kinematic state. The reciprocal instantaneous
+contact-patch tangent across wheel travel. At each corner's current jounce and
+the commanded rack displacement, DynPy consumes one four-corner kinematic state. Steering headings are taken from the solved wheel
+poses, including the linkage's Ackermann behavior. The existing `steering_rad`
+input specifies mean front-wheel heading at nominal ride height and is converted
+to rack travel through KinPy. `ModelInputs.rack_displacement_m` supplies rack
+travel directly when provided. The reciprocal instantaneous
 links remain:
 
 ```text
@@ -115,8 +119,10 @@ boundary; longitudinal coefficients retain their axle sign.
 
 Two interchangeable backends are available:
 
-- `lookup` (default) solves the hardpoints once at vehicle load, then uses
-  interpolation during QSS and ODE evaluations;
+- `lookup` (default) interpolates precomputed jounce curves at zero rack travel.
+  At nonzero rack travel it uses direct KinPy solves for the coupled pose and
+  its contact-patch derivative. Steered evaluations therefore cost the same as
+  the nonlinear backend.
 - `nonlinear` solves each corner and the centered contact-patch derivative
   inside every force evaluation. It is intended for short correlation runs and
   as the accuracy reference for choosing a lookup grid.
@@ -131,9 +137,8 @@ make reduced-eval REDUCED_KINEMATICS=nonlinear
 On the default vehicle, the 49-point lookup built in about 0.67 s and differed
 from off-grid nonlinear solutions by at most 2.25 micrometers at the contact
 patch, 0.00014 degrees camber, 0.00010 degrees toe, and `4.6e-6` in an
-instant-link coefficient. A 14DOF force evaluation took about 1.5 ms with the
-lookup and 165 ms with in-loop solves on the development machine. Grid density
-has negligible interpolation-time cost, so 49 points remains the default.
+instant-link coefficient. These errors describe the zero-rack lookup. Steered
+evaluations now use direct solves with both backends. The zero-rack lookup retains 49 points.
 
 Spring/damper and stabilizer-bar forces remain a separate elastic path. Spring
 and damper tables are projected through the nominal geometry-derived motion
@@ -262,10 +267,9 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
 
 ## Current reduction limits
 
-- The current map is one-dimensional in jounce. It captures fixed-rack bump
-  steer, but commanded roadwheel steer is added afterward; rack travel,
-  Ackermann, and steer-dependent camber/caster/trail require a future 2D
-  jounce-by-rack map.
+- The fast lookup remains one-dimensional in jounce. Steered poses use direct
+  KinPy solves. Left and right corners have independent travel, but their
+  hardpoints still come from mirrored axle geometry.
 - Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.

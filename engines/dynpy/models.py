@@ -35,12 +35,28 @@ DOFModel = Literal[3, 6, 10, 14]
 
 @dataclass(frozen=True)
 class ModelInputs:
-    """Driver and road inputs, ordered FL, FR, RL, RR where applicable."""
+    """Driver and road inputs, ordered FL, FR, RL, RR where applicable.
+
+    Parameters
+    ----------
+    steering_rad : float
+        Mean front-wheel heading at nominal ride height, in radians. KinPy
+        converts it to rack travel before solving the current corner poses.
+    wheel_torques_nm : tuple[float, float, float, float]
+        Applied wheel torques in newton meters.
+    road_heights_m : tuple[float, float, float, float]
+        Road heights in meters.
+    road_vertical_speeds_mps : tuple[float, float, float, float]
+        Road vertical speeds in meters per second.
+    rack_displacement_m : float or None
+        Explicit front rack displacement in meters. Overrides steering_rad.
+    """
 
     steering_rad: float = 0.0
     wheel_torques_nm: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     road_heights_m: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     road_vertical_speeds_mps: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    rack_displacement_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -141,7 +157,11 @@ class VehicleDynamicsSystem(ABC):
             rotation,
             inputs,
         )
-        kinematics = self.parameters.kinematics.at(vertical.jounce_m)
+        evaluator = self.parameters.kinematics
+        rack = inputs.rack_displacement_m
+        if rack is None:
+            rack = evaluator.rack_from_steering(inputs.steering_rad)
+        kinematics = evaluator.at(vertical.jounce_m, rack)
         corner_positions = (
             self.parameters.corner_positions + kinematics.contact_patch_offsets_m
         )
@@ -154,10 +174,7 @@ class VehicleDynamicsSystem(ABC):
         )
         corner_velocities = rigid_corner_velocities + articulation_velocities
 
-        steering = np.array(
-            [inputs.steering_rad, inputs.steering_rad, 0.0, 0.0],
-            dtype=float,
-        ) + kinematics.toe_rad
+        steering = kinematics.toe_rad
         cos_delta = np.cos(steering)
         sin_delta = np.sin(steering)
         wheel_longitudinal_speed = (
