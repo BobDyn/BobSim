@@ -45,12 +45,6 @@ source of truth for the layout:
 - `user_data/workspaces/vehicles` — per-vehicle generated configs and results
 - `user_data/cache/modelica` — cached Modelica builds
 
-Automatic review packages capture vehicle YAML and the resolved workflow config
-before the first action. Relocatable StandardSim configs use the active copy,
-with seed-only mode respected. Snapshots and vehicle labels come from those
-captured contents, even if the files change before packaging. Manual saves
-capture current inputs at archive time; manifests distinguish these two phases.
-
 Shipped, read-only assets stay in the repo: `static/` (UI) and
 `sim_configs/_defaults/` (stock run configs).
 
