@@ -1,4 +1,10 @@
-"""BobVis camera navigation checks. Numpy only, so these run in CI."""
+"""BobVis camera navigation checks.
+
+:mod:`_1_VisualSim.navigation` is numpy only, so unlike ``test_visual_scene.py``
+these run everywhere, CI included. They pin the properties that make a gesture
+feel right or wrong: what stays fixed on screen, what never flips, and where a
+double-click lands when there is no geometry under it.
+"""
 
 from __future__ import annotations
 
@@ -201,7 +207,7 @@ def test_ground_point_gives_up_on_the_sky() -> None:
 
 
 def test_ground_point_gives_up_near_the_horizon() -> None:
-    """A grazing hit is far away. Recentring there would leave the car a speck."""
+    """A grazing hit is miles off; recentring there would leave the car a speck."""
     # Nearly level, so the top of the frame looks past the horizon.
     pose = _pose(position=(-6.0, -4.0, 1.2), focal=(4.0, 3.0, 1.2))
     distance = float(np.linalg.norm(pose.focal - pose.position))
@@ -223,7 +229,7 @@ def test_wheel_zoom_is_proportional_to_scroll_distance() -> None:
 
 
 def test_wheel_zoom_reads_pixel_deltas_when_that_is_all_there_is() -> None:
-    """macOS trackpads report pixels and no angle. They must still zoom."""
+    """macOS trackpads report pixels and no angle; they must still zoom."""
     assert wheel_zoom_factor(0, 0, pixel_dy=40) > 1.0
     assert wheel_zoom_factor(0, 0, pixel_dy=-40) < 1.0
     assert wheel_zoom_factor(0, 0) == pytest.approx(1.0)

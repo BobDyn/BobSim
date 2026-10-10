@@ -1,4 +1,9 @@
-"""Run SteadyStateEval with parameter overrides and an optional single isoline."""
+"""steady_state_eval_report.py — SteadyStateEval's own options on the standards runner.
+
+`standards.run_standard` runs any VehicleSim standard for a variant. This adds the
+two things only SteadyStateEval callers ask for: Modelica parameter overrides
+applied to every case, and a single isoline in place of the standard's four.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +33,9 @@ def run_report(
 ) -> Path:
     """Run SteadyStateEval for one variant and return its metrics CSV.
 
-    `init_parameters` are runtime overrides. `isoline` replaces the standard's test matrix.
+    `init_parameters` lets one compiled executable stand in for a vehicle it was
+    not compiled as. `isoline` swaps the standard's four-isoline matrix for one,
+    without touching the shared standard's own config or regression baselines.
     """
 
     def edit(config: dict[str, Any]) -> None:

@@ -69,7 +69,12 @@ def test_two_sided_geometry_is_refused_not_averaged() -> None:
 
 
 def test_z_datum_is_reported_unresolved_when_the_evidence_conflicts() -> None:
-    """The loaded radius and the wheel centre disagree, so z is not a ride height."""
+    """The file's own loaded radius contradicts its wheel centre.
+
+    Read as a shared ground-plane datum, the trailing scalar puts the baseline
+    contact patch on z = 0 but the SHARK one 1.198 mm above it. That is worse than
+    no evidence, so the importer must not take z raw and call it a ride height.
+    """
     points = parse_shark(SHARK_FIXTURE)
     datum = assess_z_datum(points, _baseline(), "rear")
     assert datum["status"] == "unresolved"
@@ -111,7 +116,13 @@ def test_import_replaces_only_the_rear_suspension() -> None:
 
 
 def test_front_import_merges_into_a_rear_imported_vehicle() -> None:
-    """The front file is the rear corner moved forward. The axles share a track width."""
+    """A later front file must merge in without re-running the rear.
+
+    Synthesised by translating the rear corner forward onto the front axle, which
+    lands within the frame tolerance because the two axles share a track width. That
+    is enough to exercise the merge path: the front block is rebuilt while the
+    already-imported rear survives byte-identical.
+    """
     rear_merged, _ = import_shark(SHARK_FIXTURE)
     wheelbase_mm = -rear_merged["rear"]["suspension"]["wheel_center_m"][0] * 1000.0
 
@@ -133,7 +144,13 @@ def test_front_import_merges_into_a_rear_imported_vehicle() -> None:
 
 
 def test_reimport_judges_the_datum_against_orion_not_the_imported_car(tmp_path: Path) -> None:
-    """Judge the datum against the baseline, or dz collapses to zero."""
+    """Re-importing must not compare the SHARK file against itself.
+
+    Merging a second axle uses the already-imported car as the merge target. If the
+    datum were judged against that same car, dz collapses to zero and the evidence
+    becomes self-referential - which can report a shared ground plane that was never
+    established and silently un-withhold the z-dependent curves.
+    """
     from _0_Utils.shark_import import write_vehicle
 
     first, first_report = import_shark(SHARK_FIXTURE)
@@ -157,7 +174,12 @@ def test_reimport_judges_the_datum_against_orion_not_the_imported_car(tmp_path: 
 
 
 def test_rod_attachment_is_derived_from_geometry() -> None:
-    """Assert on the reported change. The overlay pipeline swaps vehicle.yml in place."""
+    """This SHARK corner picks the pushrod up on the lower arm.
+
+    Asserted against the reported change rather than the live vehicle.yml: the
+    overlay pipeline swaps that file in place while it runs, so reading it here
+    makes the suite timing-dependent.
+    """
     from _0_Utils.shark_import import _rod_attachment
 
     points = parse_shark(SHARK_FIXTURE)
@@ -165,7 +187,12 @@ def test_rod_attachment_is_derived_from_geometry() -> None:
 
 
 def test_carrying_the_arb_onto_a_moved_bellcrank_is_refused() -> None:
-    """A transplanted ARB pickup compiles but fails to solve during the sweep."""
+    """The baseline ARB pickup is meaningless once the rocker pivot moves.
+
+    Only reachable via the opt-in --keep-arb path now, but still enforced there:
+    transplanting it compiles and then fails to solve part-way through the sweep,
+    so the importer must reject it up front rather than after a long build.
+    """
     with pytest.raises(SharkImportError, match="Cannot carry the baseline anti-roll bar"):
         import_shark(SHARK_FIXTURE, keep_stabar=True)
 
@@ -187,7 +214,11 @@ def test_coherent_stabar_pickup_is_accepted() -> None:
 
 
 def test_stabar_is_dropped_by_default() -> None:
-    """ARB takes no part in the kinematic solve."""
+    """ARB is out of scope: it takes no part in the kinematic solve.
+
+    Dropping it is the default so the ordinary import path never has to make a
+    judgement call about a bar the file does not define.
+    """
     dropped, _ = import_shark(SHARK_FIXTURE)
     assert "stabar" not in dropped["rear"]["actuation"]
     assert "stabar" not in dropped["rear"]["actuation"]["bellcrank"]["pickups_m"]
@@ -195,7 +226,11 @@ def test_stabar_is_dropped_by_default() -> None:
 
 
 def test_kinematic_solve_ignores_actuation_entirely() -> None:
-    """If the solver reads actuation, dropping the ARB by default changes results."""
+    """The claim that ARB is out of scope, asserted rather than assumed.
+
+    If the solver ever starts reading actuation, dropping the bar by default would
+    silently change kinematic results and this test should fail loudly.
+    """
     from _5_App.kinematics import CornerKinematics
 
     baseline = _baseline()
@@ -294,7 +329,11 @@ def test_datum_gate_opens_only_when_every_axle_is_resolved(tmp_path: Path) -> No
 
 
 def test_editing_the_geometry_invalidates_the_datum_record(tmp_path: Path) -> None:
-    """A hand-edit to wheel-centre z must not keep a verdict from the old geometry."""
+    """A hand-edit must not inherit a verdict passed on different geometry.
+
+    Nudging the wheel-centre z is the plausible edit here, because that is exactly
+    the quantity the datum question is about.
+    """
     from _0_Utils.shark_import import datum_gate, write_datum_sidecar, write_vehicle
 
     merged, _ = import_shark(SHARK_FIXTURE)

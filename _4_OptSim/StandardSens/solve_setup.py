@@ -2,6 +2,11 @@
 
     make opt-solve                      # targets from configs/solve_config.yaml
     make opt-solve TARGETS="understeer_gradient_deg_per_g=0.31 roll_gradient_deg_per_g=0.85"
+
+Where `opt-search` looks up the nearest vehicle in a finished sweep, this solves
+for the setup directly and simulates the answer before returning it. See
+`pipeline/solver.py` for the method and `pipeline/evaluator.py` for why most
+evaluations need no compile.
 """
 
 from __future__ import annotations
@@ -41,7 +46,12 @@ def parse_targets(pairs: list[str]) -> dict[str, float]:
 
 
 def select_targets(cli_pairs: list[str] | None, config: dict[str, Any]) -> dict[str, float]:
-    """Targets from the command line if given, otherwise from the config. They do not merge."""
+    """Targets from the command line if given, otherwise from the config.
+
+    The command line replaces the configured targets rather than merging with
+    them: a leftover configured metric would silently become part of a question
+    the caller thought they had fully stated.
+    """
     chosen = parse_targets(cli_pairs) if cli_pairs else (config.get("targets") or {})
     if not chosen:
         raise ValueError(

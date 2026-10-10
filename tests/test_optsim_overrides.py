@@ -1,6 +1,10 @@
-"""Map a DOE variable onto runtime overrides of a compiled executable.
+"""Mapping a DOE variable onto runtime overrides of a compiled executable.
 
-Override failures are silent, so a hand-written init XML checks the mapping.
+The runner drops any override name it cannot find without saying so, and
+OpenModelica accepts overrides of parameters it has already baked into the
+executable. Both failures are silent and both leave a knob at baseline while the
+solver believes it moved, so the mapping is checked here against a small
+hand-written init XML rather than trusted.
 """
 
 from __future__ import annotations

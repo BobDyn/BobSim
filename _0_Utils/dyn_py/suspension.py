@@ -1,6 +1,8 @@
 """Compatibility exports for suspension force transmission.
 
-Kinematic curves live in :mod:`_0_Utils.dyn_py.kinematics`.
+Kinematic curve construction is exposed by :mod:`_0_Utils.dyn_py.kinematics`.
+``dyn_py`` retains these names so existing reduced-order integrations do not
+need to know whether the active evaluator is interpolated or nonlinear.
 """
 
 from __future__ import annotations

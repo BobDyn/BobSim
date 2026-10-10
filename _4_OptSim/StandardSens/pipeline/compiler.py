@@ -1,4 +1,19 @@
-"""Generate build.mos per variant from configs/build_template.mos and compile it with OMC."""
+"""compiler.py — Generate build.mos per variant and compile via OMC.
+
+Reads standards and paths from configs/compiler_config.yaml.
+Uses configs/build_template.mos as the OMC script template.
+To add a new standard, add an entry in compiler_config.yaml — no Python changes needed.
+
+For each variant_XXXX/ in population/:
+  1. Skip if already compiled and inputs unchanged
+  2. Fill in build_template.mos and write to variant_XXXX/build_<standard>.mos
+  3. Run omc on it with build dir set to variant_XXXX/build/<standard>/
+  4. Verify executable exists (named after full model path)
+  5. Write compile_error_<standard>.log on failure
+
+Compilation runs in parallel across variants using ProcessPoolExecutor.
+max_workers is configurable in compiler_config.yaml.
+"""
 
 from __future__ import annotations
 
@@ -99,7 +114,8 @@ def _build_model_options(standard: str, standard_cfg: dict) -> dict:
 
 
 def _native_cflags() -> str:
-    """clang on AArch64 rejects the x86 flag -march=native. It needs -mcpu=native."""
+    """clang on AArch64 (e.g. Apple Silicon) rejects -march=native, an
+    x86-ism, and needs -mcpu=native instead."""
     if platform.machine().lower() in ("aarch64", "arm64"):
         return "-O3 -mcpu=native -mtune=native"
     return "-O3 -march=native -mtune=native"
@@ -137,7 +153,11 @@ def compile_variant(
         boblib_path: Path,
         template_path: Path = DEFAULT_MOS_TEMPLATE,
 ) -> bool:
-    """Compile one variant for one standard. Writes compile_error_<standard>.log on failure."""
+    """Compile one variant for one standard.
+
+    Returns True on success, False on failure.
+    Writes compile_error_<standard>.log on failure.
+    """
     variant_mo = variant_dir / "variant.mo"
     if not variant_mo.exists():
         _write_error(variant_dir, standard, "variant.mo not found")
@@ -189,7 +209,10 @@ def compile_variant(
 
 
 def find_exe(build_dir: Path, standard_cfg: dict) -> Path | None:
-    """Return the exe path if it exists. OMC names it after the full model path."""
+    """Return exe path if it exists.
+
+    OMC names the executable after the full model path, not just the leaf class.
+    """
     model = standard_cfg["model"]
     for candidate in [build_dir / model, build_dir / f"{model}.exe"]:
         if candidate.exists():
@@ -206,7 +229,11 @@ def _write_error(variant_dir: Path, standard: str, message: str) -> None:
 
 
 def _should_compile(variant_dir: Path, standard: str, standard_cfg: dict) -> bool:
-    """Return True if the exe is missing or variant.mo is stale."""
+    """Return True if this variant needs compilation.
+
+    Skip if exe exists AND variant.mo hasn't changed since last compile.
+    Recompile if exe is missing OR variant.mo is stale.
+    """
     exe = _find_exe(variant_dir / "build" / standard, standard_cfg)
     if exe is None:
         return True
@@ -216,7 +243,7 @@ def _should_compile(variant_dir: Path, standard: str, standard_cfg: dict) -> boo
 
 
 def _compile_worker(args: tuple) -> tuple[str, str, bool]:
-    """Top-level so ProcessPoolExecutor can pickle it."""
+    """Top-level function for ProcessPoolExecutor (must be picklable)."""
     variant_dir, standard, standard_cfg, boblib_path, template_path = args
     success = compile_variant(
         Path(variant_dir), standard, standard_cfg, Path(boblib_path), Path(template_path)
@@ -232,9 +259,15 @@ def compile_all(
         architecture_config_path: Path = DEFAULT_ARCHITECTURE_CONFIG,
         only_standards: Collection[str] | None = None,
 ) -> dict[str, list[Path]]:
-    """Compile all variants for the configured standards, or only `only_standards`.
+    """Compile all variants in population_dir for all standards in config.
 
-    Returns standard -> list of successful exe paths.
+    `only_standards` narrows that to the named ones, for callers that run several
+    standards against one executable and must not pay for a build per standard.
+
+    Skips variants that are already compiled and whose inputs haven't changed.
+    Runs variants in parallel using ProcessPoolExecutor.
+    Returns dict mapping standard -> list of successful exe paths.
+    Failed variants are logged and skipped.
     """
     cfg = load_compiler_config(compiler_config_path)
     standards: dict[str, dict] = cfg["standards"]

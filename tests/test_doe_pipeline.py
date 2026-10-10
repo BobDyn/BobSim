@@ -1,4 +1,10 @@
-"""DOE plumbing checks that run without OpenModelica."""
+"""DOE plumbing checks for the StandardSens sweep.
+
+These cover the pure-Python half of the pipeline — config generation, sampling
+the baseline BobLib record, and writing variant Modelica — so a broken DOE is
+caught without an OpenModelica toolchain. The compile/simulate stages are not
+exercised here.
+"""
 
 from __future__ import annotations
 
@@ -31,7 +37,13 @@ from StandardSens.pipeline import generate_configs, generator, search  # noqa: E
 
 
 def _localize(doe_config_path: Path) -> Path:
-    """Resolve the config's relative paths against the real configs/ directory."""
+    """Rewrite the config's relative paths as absolute ones.
+
+    `build_doe_config` always emits paths relative to the real configs/
+    directory, so a config generated into a tmp dir cannot resolve them. Tests
+    write outside the repo to avoid dirtying the checked-in config, so resolve
+    the references against their true base here.
+    """
     cfg = yaml.safe_load(doe_config_path.read_text())
     config_dir = generate_configs.DOE_CONFIG.parent
     cfg["baseline_mo"] = str((config_dir / cfg["baseline_mo"]).resolve())
@@ -70,7 +82,17 @@ def test_generated_config_uses_posix_separators(doe_config: Path) -> None:
 
 
 def test_checked_in_config_matches_regeneration(doe_config: Path) -> None:
-    """Compare the committed blob. A local DOE_* run rewrites the working copy."""
+    """The committed _doe_config.yaml should not drift from its source.
+
+    Compares the committed blob rather than the working copy, as a local run
+    with DOE_SAMPLES/DOE_METHOD/DOE_SCOPE legitimately rewrites the file on
+    disk. The blob is the reference precisely so that dirt does not fail this.
+
+    The one exception: when generation has gained output the committed blob does
+    not have yet, the blob is merely behind. That is distinguishable — the
+    working copy will match regeneration — and it is a commit away from fixed,
+    so it skips with that instruction instead of failing.
+    """
     import subprocess
 
     regenerated = yaml.safe_load(doe_config.read_text())
@@ -137,7 +159,11 @@ def _variable_paths(architecture_config_path: Path = ARCHITECTURE_CONFIG) -> dic
 
 
 def _expected_paths(scope: str) -> list[str]:
-    """Scope paths in YAML order, which grouping by scope does not keep."""
+    """The paths a given scope should select, in architecture-YAML order.
+
+    Filtering preserves file order, and untagged variables are interleaved
+    among the tagged ones, so grouping by scope would not reproduce it.
+    """
     raw = yaml.safe_load(ARCHITECTURE_CONFIG.read_text())["sweep"]["variables"]
     return [
         spec["path"]
@@ -256,7 +282,7 @@ def test_misspelled_variable_scope_fails_the_default_sweep(tmp_path: Path) -> No
 
 
 def test_scoped_generation_keeps_untagged_variables(tmp_path: Path) -> None:
-    """Remove a tag in a copy of the YAML. The variable must still be swept."""
+    """Strip a tag in a copy of the YAML; the variable must still be swept."""
     untagged: list[str] = []
 
     def untag(variables: list[dict]) -> None:
@@ -278,7 +304,11 @@ def test_scoped_generation_keeps_untagged_variables(tmp_path: Path) -> None:
 
 
 def test_reviewed_partition_sizes() -> None:
-    """Pin the partition that the vehicle-dynamics review approved."""
+    """Pin the partition the vehicle-dynamics review signed off on.
+
+    Retagging a variable is meant to be a one-line YAML edit, but it changes
+    what every scoped sweep covers, so it should not pass unnoticed.
+    """
     grouped = _variable_paths()
     assert len(grouped["setup"]) == 10
     assert len(grouped["architecture"]) == 9
@@ -348,7 +378,11 @@ def test_search_warns_when_the_population_scope_is_narrow(tmp_path: Path) -> Non
 
 
 def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path) -> None:
-    """The state after a scoped run when _doe_config.yaml is restored from git."""
+    """Restoring _doe_config.yaml from git after a scoped run looks like this.
+
+    The config claims 23 parameters; the population only ever varied the
+    scoped subset, and nothing in the table says so.
+    """
     swept = ["front.wheel.toe_deg", "rear.wheel.toe_deg"]
     claimed = swept + ["sprung_mass.mass_kg", "body.torsional_stiff_n_m_per_rad"]
 
@@ -372,7 +406,13 @@ def test_search_warns_when_the_table_is_narrower_than_the_config(tmp_path: Path)
 def test_scope_warning_is_the_only_one_and_names_the_missing_params(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One warning, and it names the specific missing parameters."""
+    """One condition, one warning, carrying both halves of what it replaced.
+
+    A narrower-than-config table used to print twice: a scope explanation here
+    and a separate list of unreportable parameters further down in search().
+    A reviewer reads the pair as a bug, so they are one warning now — which
+    still has to name the specific parameters.
+    """
     swept = ["front.wheel.toe_deg", "rear.wheel.toe_deg"]
     absent = ["sprung_mass.mass_kg", "body.torsional_stiff_n_m_per_rad"]
     claimed = swept + absent
@@ -425,7 +465,11 @@ def _population(values: list[float]) -> pandas.DataFrame:
 
 
 def test_search_warns_when_target_is_outside_the_population() -> None:
-    """Regression: a 0.05 target over samples in [0.278, 0.331] was reported as met."""
+    """An unreachable target must not be reported as if it were met.
+
+    Guards the real case that prompted this: understeer gradient sampled over
+    [0.278, 0.331] answering a target of 0.05 with a bare distance of 4.35.
+    """
     df = _population([0.278154, 0.295, 0.310, 0.330610])
     ranges = np.array([df["metric"].max() - df["metric"].min()])
 
@@ -535,7 +579,11 @@ def test_small_doe_generates_variants(
 
 
 def test_build_template_renders(tmp_path: Path) -> None:
-    """Literal Modelica braces must be escaped as `{{...}}` for str.format."""
+    """The .mos template is filled with str.format.
+
+    Literal Modelica braces such as the MSL version list `{"4.1.0"}` must be
+    escaped as `{{...}}` or format() reads them as replacement fields.
+    """
     from StandardSens.pipeline import compiler
 
     rendered = compiler.generate_mos(

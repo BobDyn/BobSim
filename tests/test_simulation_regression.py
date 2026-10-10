@@ -457,7 +457,11 @@ def test_transient_regression_metrics_remain_physically_consistent(
 
 
 def test_baseline_provenance_matches_simulation_inputs() -> None:
-    """Fail fast when the baseline no longer matches the current inputs."""
+    """Fail fast when the baseline no longer describes the current inputs.
+
+    Runs without OpenModelica so it gates every PR. The baseline previously went
+    stale for 79 commits because nothing tied it to the pin and configs it guards.
+    """
     baseline = _load_baseline()
     provenance = baseline.get("provenance")
     assert isinstance(provenance, dict), (

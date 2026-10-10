@@ -1,6 +1,14 @@
-"""Run each configured standard for all compiled variants.
+"""batch.py — Run each configured standard for all variants.
 
-On TACC, set batch.max_workers in compiler_config.yaml to the cores per node.
+For each variant_XXXX/build/<standard>/ that has a compiled executable:
+  1. Skip if metrics.csv already exists and is valid (correct row count)
+  2. Create variant_XXXX/results/<standard>/
+  3. Run the standard-sim wrapper against the variant executable
+  4. Verify the metrics CSV was produced and has expected rows
+  5. Write run_error_<standard>.log on failure and continue
+
+Parallelism: controlled by batch.max_workers in compiler_config.yaml.
+TACC: set max_workers to match your SLURM allocation's cores-per-node.
 """
 
 from __future__ import annotations
@@ -27,7 +35,10 @@ def load_config(config_path: Path = DEFAULT_CONFIG) -> dict:
 
 
 def _csv_is_valid(csv_path: Path) -> bool:
-    """Return True if the metrics CSV exists and is not a partial write."""
+    """Return True if metrics CSV exists and has enough rows to be valid.
+
+    Guards against partial writes from crashed simulations.
+    """
     if not csv_path.exists():
         return False
     try:
@@ -43,7 +54,11 @@ def run_variant(
         standard_cfg: dict,
         timeout: int,
 ) -> bool:
-    """Run one variant's report wrapper for one standard. Writes run_error_<standard>.log on failure."""
+    """Run one variant's report wrapper for one standard.
+
+    Returns True on success, False on failure.
+    Writes run_error_<standard>.log on failure.
+    """
     build_dir = variant_dir / "build" / standard
     exe = _find_exe(build_dir, standard_cfg)
 
@@ -95,7 +110,7 @@ def _write_error(variant_dir: Path, standard: str, message: str) -> None:
 
 
 def _worker(args: tuple) -> tuple[str, str, bool]:
-    """Returns (variant_name, standard, success)."""
+    """Unpack args and run one variant. Returns (variant_name, standard, success)."""
     variant_dir, standard, standard_cfg, timeout = args
     success = run_variant(variant_dir, standard, standard_cfg, timeout)
     return variant_dir.name, standard, success
@@ -105,7 +120,12 @@ def run_all(
         population_dir: Path,
         config_path: Path = DEFAULT_CONFIG,
 ) -> dict[str, list[Path]]:
-    """Run the report for all compiled variants. Returns standard -> metrics.csv paths."""
+    """Run the postprocessed report for all compiled variants.
+
+    Skips variants that already have valid metrics.csv files.
+    Returns dict mapping standard -> list of successful metrics.csv paths.
+    Failed variants are logged and skipped.
+    """
     cfg = load_config(config_path)
     standards: dict[str, dict] = cfg["standards"]
     batch_cfg: dict = cfg.get("batch", {})

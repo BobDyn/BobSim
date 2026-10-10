@@ -14,10 +14,18 @@ import numpy as np
 
 @dataclass
 class Suspension:
-    """Suspension kinematics and force-based properties.
+    """
+    ## Suspension Model
 
-    Conventions follow SAE J670, Z up.
-    Displacement order: heave (T), yaw (R), pitch (R), roll (R).
+    Designed to model kinematics and force-based properties
+
+    ###### Note, all conventions comply with SAE-J670 Z-up
+    ###### Standard order of displacement: heave (T) -> yaw (R) -> pitch (R) -> roll (R)
+
+    Parameters
+    ----------
+    sus_data : SuspensionData
+        Suspension parameter definition
     """
     sus_data: SuspensionData
 
@@ -143,7 +151,19 @@ class Suspension:
         self.inertia_tensor = self.sus_data.inertia_tensor
 
     def reset(self) -> None:
-        """Return the suspension to zero jounce."""
+        """
+        ## Reset
+
+        Resets state of suspension
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self.heave(heave=None)
         self.FL_quarter_car.wheel_jounce = 0
         self.FR_quarter_car.wheel_jounce = 0
@@ -153,7 +173,22 @@ class Suspension:
         self._update_state()
         
     def steer(self, hwa: float, update_state: bool = True) -> None:
-        """Steer the front axle. hwa is the handwheel angle in degrees."""
+        """
+        ## Steer
+
+        Steer front axle
+
+        Parameters
+        ----------
+        hwa : float
+            Handwheel angle in degrees
+        update_state : bool
+            Whether to update all variables for the new state
+
+        Returns
+        -------
+        None
+        """
         self.FL_quarter_car.steer(rack_displacement = hwa / 360 * self.sus_data.steering_ratio)
         self.FR_quarter_car.steer(rack_displacement = hwa / 360 * self.sus_data.steering_ratio)
 
@@ -161,7 +196,22 @@ class Suspension:
             self._update_state()
     
     def heave(self, heave: Union[None, float], update_state: bool = True) -> None:
-        """Jounce all wheels by heave meters. None returns all wheels to zero jounce."""
+        """
+        ## Heave
+
+        Jounces all wheels by the same amount
+
+        Parameters
+        ----------
+        heave : float
+            Vertical travel of contact patch in meters
+        update_state : bool
+            Whether to update all variables for the new state
+        
+        Returns
+        -------
+        None
+        """
         if heave == None:
             self.FL_quarter_car.jounce(jounce=0)
             self.FR_quarter_car.jounce(jounce=0)
@@ -177,7 +227,24 @@ class Suspension:
             self._update_state()
     
     def pitch(self, pitch: Union[None, float], n_steps: int = 1, update_state: bool = True) -> None:
-        """Pitch the vehicle to pitch degrees about the kinematic pitch center, in n_steps increments."""
+        """
+        ## Pitch
+
+        Pitches vehicle about kinematic pitch center
+
+        Parameters
+        ----------
+        pitch : float
+            Vehicle pitch in degrees
+        n_steps : int
+            Number of increments to reach desired pitch
+        update_state : bool
+            Whether to update all variables for the new state
+        
+        Returns
+        -------
+        None
+        """
         for i in range(n_steps):
             FL_cp = self.FL_quarter_car.tire.contact_patch
             FR_cp = self.FR_quarter_car.tire.contact_patch
@@ -210,7 +277,24 @@ class Suspension:
             self._update_state()
         
     def roll(self, roll: Union[None, float], n_steps: int = 1, update_state: bool = True) -> None:
-        """Roll the vehicle to roll degrees about the kinematic roll center, in n_steps increments."""
+        """
+        ## Roll
+
+        Rolls vehicle about kinematic roll center
+
+        Parameters
+        ----------
+        roll : float
+            Vehicle roll in degrees
+        n_steps : int
+            Number of increments to reach desired roll
+        update_state : bool
+            Whether to update all variables for the new state
+        
+        Returns
+        -------
+        None
+        """
         
         for i in range(n_steps):
             FL_cp = self.FL_quarter_car.tire.contact_patch
@@ -244,29 +328,101 @@ class Suspension:
             self._update_state()
 
     def FL_jounce(self, jounce: float) -> None:
-        """Jounce the front-left contact patch by jounce meters."""
+        """
+        ## Front-Left Jounce
+
+        Jounces front-left wheel
+
+        Parameters
+        ----------
+        jounce : float
+            Vertical travel of the front-left contact patch in meters
+
+        Returns
+        -------
+        None
+        """
         self.FL_quarter_car.jounce(jounce=jounce)
         self._update_state()
     
     def FR_jounce(self, jounce: float) -> None:
-        """Jounce the front-right contact patch by jounce meters."""
+        """
+        ## Front-Right Jounce
+
+        Jounces front-right wheel
+
+        Parameters
+        ----------
+        jounce : float
+            Vertical travel of the front-right contact patch in meters
+
+        Returns
+        -------
+        None
+        """
         self.FR_quarter_car.jounce(jounce=jounce)
         self._update_state()
     
     def RL_jounce(self, jounce: float) -> None:
-        """Jounce the rear-left contact patch by jounce meters."""
+        """
+        ## Rear-Left Jounce
+
+        Jounces rear-left wheel
+
+        Parameters
+        ----------
+        jounce : float
+            Vertical travel of the rear-left contact patch in meters
+
+        Returns
+        -------
+        None
+        """
         self.RL_quarter_car.jounce(jounce=jounce)
         self._update_state()
     
     def RR_jounce(self, jounce: float) -> None:
-        """Jounce the rear-right contact patch by jounce meters."""
+        """
+        ## Rear-Right Jounce
+
+        Jounces rear-right wheel
+
+        Parameters
+        ----------
+        jounce : float
+            Vertical travel of the rear-right contact patch in meters
+
+        Returns
+        -------
+        None
+        """
         self.RR_quarter_car.jounce(jounce=jounce)
         self._update_state()
 
     def _caster_calculation(self, CP_1: Node, CP_2: Node, CP_3: Node, quarter_car: QuarterCar):
-        """Caster of quarter_car in degrees.
+        """
+        ## Caster Calculation
 
-        CP_1, CP_2 and CP_3 are the other three contact patches. They define the ground plane.
+        Calculates caster
+
+        Parameters
+        ----------
+        CP_1 : Node
+            One contact patch, other than desired tire
+
+        CP_2 : Node
+            One contact patch, other than desired tire and CP_1
+        
+        CP_3 : Node
+            One contact patch, other than desired tire, CP_1, and CP_2
+
+        quarter_car : QuarterCar
+            QuarterCar with desired caster
+
+        Returns
+        -------
+        float
+            Caster of given tire in degrees
         """
         # Ground normal and kingpin, projected onto the x-z plane.
         cp_1 = np.array(CP_1.position)
@@ -292,9 +448,29 @@ class Suspension:
         return (90 - angle_mag * 180 / np.pi) * angle_dir
 
     def _kpi_calculation(self, CP_1: Node, CP_2: Node, CP_3: Node, quarter_car: QuarterCar):
-        """Kingpin inclination of quarter_car in degrees.
+        """
+        ## KPI Calculation
 
-        CP_1, CP_2 and CP_3 are the other three contact patches. They define the ground plane.
+        Calculates kingpin inclination
+
+        Parameters
+        ----------
+        CP_1 : Node
+            One contact patch, other than desired tire
+
+        CP_2 : Node
+            One contact patch, other than desired tire and CP_1
+        
+        CP_3 : Node
+            One contact patch, other than desired tire, CP_1, and CP_2
+
+        quarter_car : QuarterCar
+            QuarterCar with desired kpi
+
+        Returns
+        -------
+        float
+            Kingpin inclination of given tire in degrees
         """
         # Ground normal and kingpin, projected onto the y-z plane.
         cp_1 = np.array(CP_1.position)
@@ -320,9 +496,29 @@ class Suspension:
         return (90 - angle_mag * 180 / np.pi) * angle_dir * np.sign(quarter_car.tire.contact_patch[1])
 
     def _scrub_calculation(self, CP_1: Node, CP_2: Node, CP_3: Node, quarter_car: QuarterCar):
-        """Scrub radius of quarter_car in meters.
+        """
+        ## Scrub Calculation
 
-        CP_1, CP_2 and CP_3 are the other three contact patches. They define the ground plane.
+        Calculates scrub radius
+
+        Parameters
+        ----------
+        CP_1 : Node
+            One contact patch, other than desired tire
+
+        CP_2 : Node
+            One contact patch, other than desired tire and CP_1
+        
+        CP_3 : Node
+            One contact patch, other than desired tire, CP_1, and CP_2
+
+        quarter_car : QuarterCar
+            QuarterCar with desired scrub radius
+
+        Returns
+        -------
+        float
+            Scrub radius of given tire in meters
         """
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
@@ -353,9 +549,29 @@ class Suspension:
         return scrub_mag * scrub_dir * np.sign(cp[1])
 
     def _mech_trail_calculation(self, CP_1: Node, CP_2: Node, CP_3: Node, quarter_car: QuarterCar):
-        """Mechanical trail of quarter_car in meters.
+        """
+        ## Mech Trail Calculation
 
-        CP_1, CP_2 and CP_3 are the other three contact patches. They define the ground plane.
+        Calculates mechanical trail
+
+        Parameters
+        ----------
+        CP_1 : Node
+            One contact patch, other than desired tire
+
+        CP_2 : Node
+            One contact patch, other than desired tire and CP_1
+        
+        CP_3 : Node
+            One contact patch, other than desired tire, CP_1, and CP_2
+
+        quarter_car : QuarterCar
+            QuarterCar with desired mechanical trail
+
+        Returns
+        -------
+        float
+            Mechanical trail of given tire in meters
         """
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
@@ -386,9 +602,29 @@ class Suspension:
         return mech_trail_mag * mech_trail_dir
 
     def _gamma_calculation(self, CP_1: Node, CP_2: Node, CP_3: Node, tire: Tire) -> float:
-        """Inclination angle of tire in degrees.
+        """
+        ## Inclination Angle Calculation
 
-        CP_1, CP_2 and CP_3 are the other three contact patches. They define the ground plane.
+        Calculates tire inclination angle
+
+        Parameters
+        ----------
+        CP_1 : Node
+            One contact patch, other than desired tire
+
+        CP_2 : Node
+            One contact patch, other than desired tire and CP_1
+        
+        CP_3 : Node
+            One contact patch, other than desired tire, CP_1, and CP_2
+        
+        tire : Tire
+            Tire with desired inclination angle
+        
+        Returns
+        -------
+        float
+            Inclination angle of given tire in degrees
         """
         cp_1 = np.array(CP_1.position)
         cp_2 = np.array(CP_2.position)
@@ -415,6 +651,19 @@ class Suspension:
         return gamma_magnitude * gamma_dir * 180 / np.pi
 
     def _update_state(self) -> None:
+        """
+        ## Update State
+
+        Updates state dict
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
         self.state["veh_CG_x"] = self.veh_CG[0]
         self.state["veh_CG_y"] = self.veh_CG[1]
         self.state["veh_CG_z"] = self.veh_CG[2]
@@ -537,27 +786,102 @@ class Suspension:
     
     @property
     def FL_delta(self) -> float:
-        """Steered angle of the front-left tire in degrees, in tire axes (T)."""
+        """
+        ## Front-Left Steered Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Steered angle of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Steered angle of the front-left tire in degrees
+        """
         return self.FL_quarter_car.tire.delta * 180 / np.pi
 
     @property
     def FR_delta(self) -> float:
-        """Steered angle of the front-right tire in degrees, in tire axes (T)."""
+        """
+        ## Front-Right Steered Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Steered angle of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Steered angle of the front-right tire in degrees
+        """
         return self.FR_quarter_car.tire.delta * 180 / np.pi
 
     @property
     def RL_delta(self) -> float:
-        """Steered angle of the rear-left tire in degrees, in tire axes (T)."""
+        """
+        ## Rear-Left Steered Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Steered angle of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Steered angle of the rear-left tire in degrees
+        """
         return self.RL_quarter_car.tire.delta * 180 / np.pi
 
     @property
     def RR_delta(self) -> float:
-        """Steered angle of the rear-right tire in degrees, in tire axes (T)."""
+        """
+        ## Rear-Right Steered Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Steered angle of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Steered angle of the rear-right tire in degrees
+        """
         return self.RR_quarter_car.tire.delta * 180 / np.pi
 
     @property
     def FL_gamma(self) -> float:
-        """Inclination angle of the front-left tire in degrees, in tire axes (T)."""
+        """
+        ## Front-Left Inclination Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Inclination angle of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Inclination angle of front left tire in degrees
+        """
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -567,7 +891,22 @@ class Suspension:
 
     @property
     def FR_gamma(self) -> float:
-        """Inclination angle of the front-right tire in degrees, in tire axes (T)."""
+        """
+        ## Front-Right Inclination Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Inclination angle of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Inclination angle of front right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -577,7 +916,22 @@ class Suspension:
 
     @property
     def RL_gamma(self) -> float:
-        """Inclination angle of the rear-left tire in degrees, in tire axes (T)."""
+        """
+        ## Rear-Left Inclination Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Inclination angle of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Inclination angle of rear left tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -587,7 +941,22 @@ class Suspension:
 
     @property
     def RR_gamma(self) -> float:
-        """Inclination angle of the rear-right tire in degrees, in tire axes (T)."""
+        """
+        ## Rear-Right Inclination Angle
+        ##### Axis System: [X_{T}, Y_{T}, Z_{T}]
+        ##### Coordinate System: [x_{T}, y_{T}, z_{T}]
+
+        Inclination angle of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Inclination angle of rear right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
@@ -596,7 +965,22 @@ class Suspension:
 
     @property
     def FL_caster(self) -> float:
-        """Caster of the front-left tire in degrees, in earth axes (E)."""
+        """
+        ## Front-Left Caster
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Caster of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Caster of the front-left tire in degrees
+        """
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -605,7 +989,22 @@ class Suspension:
 
     @property
     def FR_caster(self) -> float:
-        """Caster of the front-right tire in degrees, in earth axes (E)."""
+        """
+        ## Front-Right Caster
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Caster of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Caster of the front-right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -614,7 +1013,22 @@ class Suspension:
 
     @property
     def RL_caster(self) -> float:
-        """Caster of the rear-left tire in degrees, in earth axes (E)."""
+        """
+        ## Rear-Left Caster
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Caster of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Caster of the rear-left tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -623,7 +1037,22 @@ class Suspension:
     
     @property
     def RR_caster(self) -> float:
-        """Caster of the rear-right tire in degrees, in earth axes (E)."""
+        """
+        ## Rear-Right Caster
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Caster of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Caster of the rear-right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
@@ -632,7 +1061,22 @@ class Suspension:
 
     @property
     def FL_kpi(self) -> float:
-        """Kingpin inclination of the front-left tire in degrees, in earth axes (E)."""
+        """
+        ## Front-Left KPI
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Kingpin inclination of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Kingpin inclination of the front-left tire in degrees
+        """
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -641,7 +1085,22 @@ class Suspension:
 
     @property
     def FR_kpi(self) -> float:
-        """Kingpin inclination of the front-right tire in degrees, in earth axes (E)."""
+        """
+        ## Front-Right KPI
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Kingpin inclination of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Kingpin inclination of the front-right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -650,7 +1109,22 @@ class Suspension:
 
     @property
     def RL_kpi(self) -> float:
-        """Kingpin inclination of the rear-left tire in degrees, in earth axes (E)."""
+        """
+        ## Rear-Left KPI
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Kingpin inclination of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Kingpin inclination of the rear-left tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -659,7 +1133,22 @@ class Suspension:
     
     @property
     def RR_kpi(self) -> float:
-        """Kingpin inclination of the rear-right tire in degrees, in earth axes (E)."""
+        """
+        ## Rear-Right KPI
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Kingpin inclination of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Kingpin inclination of the rear-right tire in degrees
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
@@ -668,7 +1157,22 @@ class Suspension:
 
     @property
     def FL_scrub(self) -> float:
-        """Scrub radius of the front-left tire in meters, in vehicle axes (V)."""
+        """
+        ## Front-Left Scrub
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Scrub radius of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Scrub radius of the front-left tire
+        """
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -677,7 +1181,22 @@ class Suspension:
 
     @property
     def FR_scrub(self) -> float:
-        """Scrub radius of the front-right tire in meters, in vehicle axes (V)."""
+        """
+        ## Front-Right Scrub
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Scrub radius of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Scrub radius of the front-right tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -686,7 +1205,22 @@ class Suspension:
 
     @property
     def RL_scrub(self) -> float:
-        """Scrub radius of the rear-left tire in meters, in vehicle axes (V)."""
+        """
+        ## Rear-Left Scrub
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Scrub radius of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Scrub radius of the rear-left tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -695,7 +1229,22 @@ class Suspension:
     
     @property
     def RR_scrub(self) -> float:
-        """Scrub radius of the rear-right tire in meters, in vehicle axes (V)."""
+        """
+        ## Rear-Right Scrub
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Scrub radius of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Scrub radius of the rear-right tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
@@ -704,7 +1253,22 @@ class Suspension:
     
     @property
     def FL_mech_trail(self) -> float:
-        """Mechanical trail of the front-left tire in meters, in vehicle axes (V)."""
+        """
+        ## Front-Left Mech Trail
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Mechanical trail of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Mechanical trail of the front-left tire
+        """
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -713,7 +1277,22 @@ class Suspension:
 
     @property
     def FR_mech_trail(self) -> float:
-        """Mechanical trail of the front-right tire in meters, in vehicle axes (V)."""
+        """
+        ## Front-Right Mech Trail
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Mechanical trail of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Mechanical trail of the front-right tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -722,7 +1301,22 @@ class Suspension:
 
     @property
     def RL_mech_trail(self) -> float:
-        """Mechanical trail of the rear-left tire in meters, in vehicle axes (V)."""
+        """
+        ## Rear-Left Mech Trail
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Mechanical trail of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Mechanical trail of the rear-left tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RR_cp = self.RR_quarter_car.tire.contact_patch
@@ -731,7 +1325,22 @@ class Suspension:
     
     @property
     def RR_mech_trail(self) -> float:
-        """Mechanical trail of the rear-right tire in meters, in vehicle axes (V)."""
+        """
+        ## Rear-Right Mech Trail
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Mechanical trail of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Mechanical trail of the rear-right tire
+        """
         FL_cp = self.FL_quarter_car.tire.contact_patch
         FR_cp = self.FR_quarter_car.tire.contact_patch
         RL_cp = self.RL_quarter_car.tire.contact_patch
@@ -740,7 +1349,22 @@ class Suspension:
     
     @property
     def veh_CG(self) -> Tuple[float, float, float]:
-        """Vehicle CG position, in earth axes (E)."""
+        """
+        ## Vehicle CG
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Vehicle CG position
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Vehicle CG position
+        """
         
         global_veh_CG = self._sprung_to_global(node=self.sus_data.CG_node)
         
@@ -748,7 +1372,22 @@ class Suspension:
 
     @property
     def FL_cp(self) -> Tuple[float, float, float]:
-        """Front-left contact patch position, in earth axes (E)."""
+        """
+        ## FL Contact Patch
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Front left contact patch coordinates
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front left contact patch coordinates
+        """
 
         global_FL_cp = self._sprung_to_global(node=self.FL_quarter_car.tire.contact_patch)
         
@@ -756,7 +1395,22 @@ class Suspension:
 
     @property
     def FR_cp(self) -> Tuple[float, float, float]:
-        """Front-right contact patch position, in earth axes (E)."""
+        """
+        ## FR Contact Patch
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Front right contact patch coordinates
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front right contact patch coordinates
+        """
 
         global_FR_cp = self._sprung_to_global(node=self.FR_quarter_car.tire.contact_patch)
 
@@ -764,7 +1418,22 @@ class Suspension:
 
     @property
     def RL_cp(self) -> Tuple[float, float, float]:
-        """Rear-left contact patch position, in earth axes (E)."""
+        """
+        ## RL Contact Patch
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Rear left contact patch coordinates
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Rear left contact patch coordinates
+        """
 
         global_RL_cp = self._sprung_to_global(node=self.RL_quarter_car.tire.contact_patch)
 
@@ -772,7 +1441,22 @@ class Suspension:
 
     @property
     def RR_cp(self) -> Tuple[float, float, float]:
-        """Rear-right contact patch position, in earth axes (E)."""
+        """
+        ## RR Contact Patch
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Rear right contact patch coordinates
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Rear right contact patch coordinates
+        """
 
         global_RR_cp = self._sprung_to_global(node=self.RR_quarter_car.tire.contact_patch)
 
@@ -780,31 +1464,106 @@ class Suspension:
 
     @property
     def FL_wheel_jounce(self) -> float:
-        """Jounce of the front-left wheel in meters, in earth axes (E)."""
+        """
+        ## FL Jounce
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Jounce of the front left wheel in meters
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Jounce of the front left wheel in meters
+        """
 
         return self.FL_quarter_car.wheel_jounce
 
     @property
     def FR_wheel_jounce(self) -> float:
-        """Jounce of the front-right wheel in meters, in earth axes (E)."""
+        """
+        ## FR Jounce
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Jounce of the front right wheel in meters
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Jounce of the front right wheel in meters
+        """
 
         return self.FR_quarter_car.wheel_jounce
 
     @property
     def RL_wheel_jounce(self) -> float:
-        """Jounce of the rear-left wheel in meters, in earth axes (E)."""
+        """
+        ## RL Jounce
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Jounce of the rear left wheel in meters
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Jounce of the rear left wheel in meters
+        """
 
         return self.RL_quarter_car.wheel_jounce
     
     @property
     def RR_wheel_jounce(self) -> float:
-        """Jounce of the rear-right wheel in meters, in earth axes (E)."""
+        """
+        ## RR Jounce
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+        
+        Jounce of the rear right wheel in meters
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Jounce of the rear right wheel in meters
+        """
 
         return self.RR_quarter_car.wheel_jounce
 
     @property
     def FL_FVIC(self) -> Tuple[float, float, float]:
-        """Front-view instant center of the front-left tire, in earth axes (E)."""
+        """
+        ## Front-Left FVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Front-view instant center location of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front-view instant center location of the front-left tire
+        """
         upper_wishbone = self.FL_quarter_car.upper_wishbone
         lower_wishbone = self.FL_quarter_car.lower_wishbone
 
@@ -826,7 +1585,22 @@ class Suspension:
 
     @property
     def FR_FVIC(self) -> Tuple[float, float, float]:
-        """Front-view instant center of the front-right tire, in earth axes (E)."""
+        """
+        ## Front-Right FVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Front-view instant center of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front-view instant center of the front-right tire
+        """
         upper_wishbone = self.FR_quarter_car.upper_wishbone
         lower_wishbone = self.FR_quarter_car.lower_wishbone
 
@@ -848,7 +1622,22 @@ class Suspension:
     
     @property
     def RL_FVIC(self) -> Tuple[float, float, float]:
-        """Front-view instant center of the rear-left tire, in earth axes (E)."""
+        """
+        ## Rear-Left FVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Front-view instant center of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front-view instant center of the rear-left tire
+        """
         upper_wishbone = self.RL_quarter_car.upper_wishbone
         lower_wishbone = self.RL_quarter_car.lower_wishbone
 
@@ -870,7 +1659,22 @@ class Suspension:
 
     @property
     def RR_FVIC(self) -> Tuple[float, float, float]:
-        """Front-view instant center of the rear-right tire, in earth axes (E)."""
+        """
+        ## Rear-Right FVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Front-view instant center of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Front-view instant center of the rear-right tire
+        """
         upper_wishbone = self.RR_quarter_car.upper_wishbone
         lower_wishbone = self.RR_quarter_car.lower_wishbone
 
@@ -892,7 +1696,22 @@ class Suspension:
     
     @property
     def FL_SVIC(self) -> Tuple[float, float, float]:
-        """Side-view instant center of the front-left tire, in earth axes (E)."""
+        """
+        ## Front-Left SVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Side-view instant center of the front-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Side-view instant center of the front-left tire
+        """
         upper_wishbone = self.FL_quarter_car.upper_wishbone
         lower_wishbone = self.FL_quarter_car.lower_wishbone
 
@@ -921,7 +1740,22 @@ class Suspension:
 
     @property
     def FR_SVIC(self) -> Tuple[float, float, float]:
-        """Side-view instant center of the front-right tire, in earth axes (E)."""
+        """
+        ## Front-Right SVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Side-view instant center of the front-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Side-view instant center of the front-right tire
+        """
         upper_wishbone = self.FR_quarter_car.upper_wishbone
         lower_wishbone = self.FR_quarter_car.lower_wishbone
 
@@ -950,7 +1784,22 @@ class Suspension:
     
     @property
     def RL_SVIC(self) -> Tuple[float, float, float]:
-        """Side-view instant center of the rear-left tire, in earth axes (E)."""
+        """
+        ## Rear-Left SVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Side-view instant center of the rear-left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Side-view instant center of the rear-left tire
+        """
         upper_wishbone = self.RL_quarter_car.upper_wishbone
         lower_wishbone = self.RL_quarter_car.lower_wishbone
 
@@ -979,7 +1828,22 @@ class Suspension:
 
     @property
     def RR_SVIC(self) -> Tuple[float, float, float]:
-        """Side-view instant center of the rear-right tire, in earth axes (E)."""
+        """
+        ## Rear-Right SVIC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Side-view instant center of the rear-right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Side-view instant center of the rear-right tire
+        """
         upper_wishbone = self.RR_quarter_car.upper_wishbone
         lower_wishbone = self.RR_quarter_car.lower_wishbone
 
@@ -1008,9 +1872,19 @@ class Suspension:
     
     @property
     def FL_N_lines(self) -> Tuple[Link, Link]:
-        """Newton lines (lines of action) of the front-left tire.
+        """
+        ## Front Left N-Lines
 
-        Returns (FVIC N-line, SVIC N-line) as Links.
+        Newton lines (lines of action) for front left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[Link, Link]
+            Tuple containing links which represent the FVIC and SVIC N-lines, respectively
         """
         FL_tire = self.FL_quarter_car.tire
         FL_cp_pos = np.array(self._sprung_to_global(node=FL_tire.contact_patch).position)
@@ -1031,9 +1905,19 @@ class Suspension:
 
     @property
     def FR_N_lines(self) -> Tuple[Link, Link]:
-        """Newton lines (lines of action) of the front-right tire.
+        """
+        ## Front Right N-Lines
 
-        Returns (FVIC N-line, SVIC N-line) as Links.
+        Newton lines (lines of action) for front right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[Link, Link]
+            Tuple containing links which represent the FVIC and SVIC N-lines, respectively
         """
         FR_tire = self.FR_quarter_car.tire
         FR_cp_pos = np.array(self._sprung_to_global(node=FR_tire.contact_patch).position)
@@ -1054,9 +1938,19 @@ class Suspension:
 
     @property
     def RL_N_lines(self) -> Tuple[Link, Link]:
-        """Newton lines (lines of action) of the rear-left tire.
+        """
+        ## Rear Left N-Lines
 
-        Returns (FVIC N-line, SVIC N-line) as Links.
+        Newton lines (lines of action) for rear left tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[Link, Link]
+            Tuple containing links which represent the FVIC and SVIC N-lines, respectively
         """
         RL_tire = self.RL_quarter_car.tire
         RL_cp_pos = np.array(self._sprung_to_global(node=RL_tire.contact_patch).position)
@@ -1077,9 +1971,19 @@ class Suspension:
 
     @property
     def RR_N_lines(self) -> Tuple[Link, Link]:
-        """Newton lines (lines of action) of the rear-right tire.
+        """
+        ## Rear right N-Lines
 
-        Returns (FVIC N-line, SVIC N-line) as Links.
+        Newton lines (lines of action) for rear right tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[Link, Link]
+            Tuple containing links which represent the FVIC and SVIC N-lines, respectively
         """
         RR_tire = self.RR_quarter_car.tire
         RR_cp_pos = np.array(self._sprung_to_global(node=RR_tire.contact_patch).position)
@@ -1100,7 +2004,22 @@ class Suspension:
     
     @property
     def Fr_RC(self) -> Tuple[float, float, float]:
-        """Roll center of the front axle, in earth axes (E)."""
+        """
+        ## Front RC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Roll center of the front axle
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Calculates position vector of front roll center
+        """
         FL_cp = self._sprung_to_global(self.FL_quarter_car.tire.contact_patch)
         FR_cp = self._sprung_to_global(self.FR_quarter_car.tire.contact_patch)
 
@@ -1113,7 +2032,22 @@ class Suspension:
 
     @property
     def Rr_RC(self) -> Tuple[float, float, float]:
-        """Roll center of the rear axle, in earth axes (E)."""
+        """
+        ## Rear RC
+        ##### Axis System: [X_{E}, Y_{E}, Z_{E}]
+        ##### Coordinate System: [x_{E}, y_{E}, z_{E}]
+
+        Roll center of the rear axle
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Calculates position vector of rear roll center
+        """
         RL_cp = self._sprung_to_global(self.RL_quarter_car.tire.contact_patch)
         RR_cp = self._sprung_to_global(self.RR_quarter_car.tire.contact_patch)
 
@@ -1126,9 +2060,21 @@ class Suspension:
     
     @property
     def left_PC(self) -> Tuple[float, float, float]:
-        """Left pitch center, in earth axes (E).
+        """
+        ## Left PC
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Returns the mean of the four contact patch positions.
+        Pitch-center approximation at the mean of the four contact patches
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Mean contact patch position in meters
         """
         FL_cp = self._sprung_to_global(self.FL_quarter_car.tire.contact_patch)
         RL_cp = self._sprung_to_global(self.RL_quarter_car.tire.contact_patch)
@@ -1145,9 +2091,21 @@ class Suspension:
 
     @property
     def right_PC(self) -> Tuple[float, float, float]:
-        """Right pitch center, in earth axes (E).
+        """
+        ## Right PC
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Returns the mean of the four contact patch positions.
+        Pitch-center approximation at the mean of the four contact patches
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float, float]
+            Mean contact patch position in meters
         """
         FR_cp = self._sprung_to_global(self.FR_quarter_car.tire.contact_patch)
         RR_cp = self._sprung_to_global(self.RR_quarter_car.tire.contact_patch)
@@ -1164,7 +2122,22 @@ class Suspension:
 
     @property
     def FL_bump_spring_MR(self) -> float:
-        """Motion ratio of the front-left spring, disp(wheel)/disp(spring), in vehicle axes (V)."""
+        """
+        ## Front-Left Bump Spring MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Motion ratio of the front-left spring, defined disp(wheel)/disp(spring)
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            motion ratio of the front-left spring
+        """
 
         self.FL_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.FL_quarter_car.push_pull_rod.spring.length
@@ -1181,7 +2154,22 @@ class Suspension:
         
     @property
     def FR_bump_spring_MR(self) -> float:
-        """Motion ratio of the front-right spring, disp(wheel)/disp(spring), in vehicle axes (V)."""
+        """
+        ## Front-Right Bump Spring MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Motion ratio of the front-right spring, defined disp(wheel)/disp(spring)
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Motion ratio of the front-right spring
+        """
 
         self.FR_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.FR_quarter_car.push_pull_rod.spring.length
@@ -1198,7 +2186,22 @@ class Suspension:
         
     @property
     def RL_bump_spring_MR(self) -> float:
-        """Motion ratio of the rear-left spring, disp(wheel)/disp(spring), in vehicle axes (V)."""
+        """
+        ## Rear-Left Bump Spring MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Motion ratio of the rear-left spring, defined disp(wheel)/disp(spring)
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Motion ratio of the rear-left spring
+        """
 
         self.RL_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.RL_quarter_car.push_pull_rod.spring.length
@@ -1215,7 +2218,22 @@ class Suspension:
         
     @property
     def RR_bump_spring_MR(self) -> float:
-        """Motion ratio of the rear-right spring, disp(wheel)/disp(spring), in vehicle axes (V)."""
+        """
+        ## Rear-Right Bump Spring MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
+
+        Motion ratio of the rear-right spring, defined disp(wheel)/disp(spring)
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Motion ratio of the rear-right spring
+        """
 
         self.RR_quarter_car._jounce_persistent(jounce=-0.001)
         spring_length_1 = self.RR_quarter_car.push_pull_rod.spring.length
@@ -1233,9 +2251,21 @@ class Suspension:
     
     @property
     def Fr_stabar_MR(self) -> Tuple[float, float]:
-        """Motion ratios of the front anti-roll bar, in vehicle axes (V).
+        """
+        ## Front Stabar MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Returns (roll/ang(stabar arm), disp(wheel)/disp(stabar arm)).
+        Motion ratios of the front anti-roll bar, defined [roll/ang(stabar arm), disp(wheel)/disp(stabar arm)]
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float]
+            Motion ratios of the front anti-roll bar, in the form [roll/ang, disp(wheel)/disp(stabar arm)]
         """
         
         if self.sus_data.Fr_stabar:
@@ -1274,9 +2304,21 @@ class Suspension:
 
     @property
     def Rr_stabar_MR(self) -> Tuple[float, float]:
-        """Motion ratios of the rear anti-roll bar, in vehicle axes (V).
+        """
+        ## Rear Stabar MR
+        ##### Axis System: [X_{V}, Y_{V}, Z_{V}]
+        ##### Coordinate System: [x_{V}, y_{V}, z_{V}]
 
-        Returns (roll/ang(stabar arm), disp(wheel)/disp(stabar arm)).
+        Motion ratios of the rear anti-roll bar, defined [roll/ang(stabar arm), disp(wheel)/disp(stabar arm)]
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Tuple[float, float]
+            Motion ratios of the rear anti-roll bar, in the form [roll/ang, disp(wheel)/disp(stabar arm)]
         """
         if self.sus_data.Rr_stabar:
             self_copy_1 = deepcopy(self)

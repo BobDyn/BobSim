@@ -1,4 +1,4 @@
-"""Write one variant.mo for each sampled variant dict."""
+"""generator.py — Take sampled variant dicts and write one variant.mo each."""
 
 import csv
 import math
@@ -42,7 +42,7 @@ def _load_metrics_csv(path: Path | None = None) -> dict[str, float]:
 
 
 def read_metrics_csv(path: Path) -> dict[str, float]:
-    """Read a report's `metric,value` CSV. A value that does not parse becomes NaN."""
+    """Read a report's `metric,value` CSV; anything unparsable becomes NaN."""
     metrics: dict[str, float] = {}
     with path.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
@@ -214,7 +214,10 @@ def substitute_variable(
     value: float,
     context: dict[str, Any] | None = None,
 ) -> str:
-    """Patch a variable into the record text using the DOE spec."""
+    """Patch a variable using the extended DOE spec.
+
+    Falls back to the original scalar block/param behavior for old configs.
+    """
     for target, target_value in resolve_targets(spec, value, context):
         if "targets" in spec and target.get("operation") == "scale":
             text = scale_value(text, target, target_value)
@@ -230,7 +233,10 @@ def resolve_targets(
 ) -> list[tuple[dict, float]]:
     """Return every (target spec, Modelica-side value) a swept value fans out to.
 
-    variant.mo generation and runtime overrides both use this, so they cannot disagree.
+    One `vehicle.yml` value can drive several record parameters — a spring rate
+    sets both the spring table and the free length that holds ride height. This
+    is the single place that mapping is computed, so writing a variant.mo and
+    overriding a compiled executable cannot disagree about what a value means.
     """
     if "targets" not in spec:
         return [(spec, value * float(spec.get("scale", 1.0)))]
@@ -255,7 +261,7 @@ def resolve_targets(
 
 
 def build_context(cfg: dict, config_path: Path) -> dict[str, Any]:
-    """Load the vehicle and the FourPost motion ratios for target resolution."""
+    """Load what target resolution needs: the vehicle and the FourPost ratios."""
     template_path = (config_path.parents[1] / cfg["architecture"]["template"]).resolve()
     return {
         "vehicle": load_config(template_path),

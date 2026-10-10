@@ -38,6 +38,9 @@ above. Keep the set small; a stale doc is worse than no doc.
 
 ## Repo rules
 
+- **Use NumPy-style docstrings.** Keep the existing headings and the Parameters,
+  Returns, and related sections where applicable. Preserve this structure during
+  comment cleanup.
 - **Layers are numbered `_0_` … `_5_`.** `_0_Utils` is shared foundation;
   `_5_App` is the browser entry point. Lower layers must not import from higher
   ones. Reuse `_0_Utils/plotting` and `_0_Utils/reporting` rather than calling

@@ -1,12 +1,21 @@
 """Drive a geometry capture run and turn it into a BobVis scene.
 
-A normal evaluation result has no geometry. This module writes a copy of an
-evaluation config that also emits the suspension frames, then converts the result.
-The simulation runs in the container, between the two subcommands:
+A normal evaluation keeps only the scalar signals its metrics need, so its
+result CSV has no geometry in it and cannot feed the viewer. This module writes
+a one-off copy of an evaluation's config that additionally asks OpenModelica
+for the suspension frames (see :mod:`_1_VisualSim.from_results`), then converts
+the result the run produces.
+
+The simulation itself has to happen inside the container, so ``make
+visual-capture`` sandwiches it between the two subcommands here:
 
     python -m _1_VisualSim.capture config  <config.yml> --eval transient  # host
     <run the evaluation with that config>                                 # container
     python -m _1_VisualSim.capture convert <config.yml>                   # host
+
+Runs with the base requirements: it imports the evaluation modules for their
+signal lists, and nothing here renders anything. The app's Replay tab draws
+whatever this writes into _1_VisualSim/results/.
 """
 
 from __future__ import annotations
@@ -131,9 +140,10 @@ def result_csv(config_path: Path) -> Path:
 
 
 def metrics_csv(config_path: Path) -> Path | None:
-    """The newest metrics CSV the capture run wrote, if any.
+    """The metrics CSV the capture run wrote, if it wrote one.
 
-    Some evaluations use ``report.metrics_csv_path``, others ``<report stem>_metrics.csv``.
+    Evaluations disagree on the name: some honour ``report.metrics_csv_path``,
+    others derive ``<report stem>_metrics.csv``. Take the newest that exists.
     """
     with open(config_path, "r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle) or {}

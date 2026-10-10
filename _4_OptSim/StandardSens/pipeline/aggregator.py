@@ -1,6 +1,22 @@
-"""Collect batch results into one Parquet table.
+"""aggregator.py — Collect batch results into a single Parquet dataset.
 
-Metric columns are prefixed with the standard name, e.g. SteadyStateEval_ay_min.
+For each variant and each standard:
+  - Input parameters are reconstructed from sampler (seed is fixed in _doe_config.yaml)
+  - Output metrics are extracted from results/<standard>/metrics.csv
+
+Extraction strategy:
+  - Read the report-style metrics CSV written by the standard wrapper
+  - Pull the requested metric rows into the parquet table
+
+Metric columns are prefixed with the standard name e.g. SteadyStateEval_ay_min
+so multiple standards can coexist in the same parquet table.
+
+Output: _4_OptSim/Build/StandardSens/standard_sensitivity_results.parquet
+  Columns: [variant, <input params>, <standard_metric>, ...]
+
+To add a metric:   add one line under the standard in aggregator_config.yaml
+To add a standard: add a new block in aggregator_config.yaml
+Nothing else changes.
 """
 
 from __future__ import annotations
@@ -55,7 +71,10 @@ def aggregate(
         aggregator_config: Path = AGGREGATOR_CONFIG,
         output_path: Path = OUTPUT_PATH,
 ) -> pd.DataFrame:
-    """Aggregate all variant results into one Parquet table and return it."""
+    """Aggregate all variant results into a single Parquet table.
+
+    Returns the full DataFrame.
+    """
     cfg = load_aggregator_config(aggregator_config)
     standards: dict[str, dict] = cfg["standards"]
 

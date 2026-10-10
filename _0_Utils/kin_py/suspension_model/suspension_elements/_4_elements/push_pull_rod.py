@@ -8,9 +8,24 @@ import numpy as np
 
 
 class PushPullRod:
-    """Push/pull rod, with an optional bellcrank and inboard rod.
+    """
+    ## Push/Pull Rod
 
-    Share nodes between connected elements. Give both inboard_rod and bellcrank, or neither.
+    Push/pull rod object
+
+    Parameters
+    ----------
+    outboard_rod : Link
+        Link representing push or pull rod. If connecting to bellcrank, share Node across Link and Bellcrank.
+
+    spring : Spring
+        Spring attached to rigid Link. Share Node between Link and Spring
+        
+    inboard_rod : Union[Link, None], optional
+        Link representing rod from bellcrank to Spring -> frame, by default None
+
+    bellcrank : Union[Bellcrank, None], optional
+        Bellcrank connecting outboard_rod to inboard_rod, by default None. Share Nodes with connecting elements.
     """
     """
     **kwargs : dict[str, Union[str, Link, str]]

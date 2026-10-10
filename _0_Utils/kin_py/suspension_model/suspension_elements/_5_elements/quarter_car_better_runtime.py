@@ -10,7 +10,29 @@ import numpy as np
 
 
 class QuarterCar:
-    """Full corner: wishbones, tie rod, push/pull rod and tire."""
+    """
+    ## Quarter Car
+
+    Full corner assembly
+    - Includes wishbones, tie rod, and push/pull rod
+
+    Parameters
+    ----------
+    tire : Tire
+        Tire object
+
+    lower_wishbone : Wishbone
+        Lower wishbone object
+
+    upper_wishbone : Wishbone
+        Upper wishbone object
+
+    tie_rod : Link
+        Link object representing tie rod
+        
+    push_pull_rod : PushPullRod
+        PushPullRod object representing push or pull rod
+    """
     def __init__(
             self,
             tire: Tire,
@@ -36,12 +58,38 @@ class QuarterCar:
         self.rack_displacement: float = 0
     
     def jounce(self, jounce: float) -> None:
-        """Solve the corner geometry for a contact patch travel of jounce meters from the initial state."""
+        """
+        ## Jounce
+
+        Updates double wishbone geometry for given vertical travel of the contact patch (jounce)
+
+        Parameters
+        ----------
+        jounce : float, optional
+            Vertical travel of the contact patch in meters
+                
+        Returns
+        -------
+        None
+        """
         self.wheel_jounce = jounce
         self._update_geometry()
     
     def steer(self, rack_displacement: float) -> None:
-        """Steer the corner by a lateral rack translation."""
+        """
+        ## Steer
+
+        Steers quarter car
+
+        Parameters
+        ----------
+        steer : float
+            Lateral rack translation
+        
+        Returns
+        -------
+        None
+        """
         self.rack_displacement = rack_displacement
         self._update_geometry()
     
@@ -72,7 +120,21 @@ class QuarterCar:
                                           angle=wheel_angle)
 
     def _geometry_resid_func(self, x: Sequence[float]) -> Sequence[float]:
-        """Geometry residuals. x is [lower_wishbone_rot, upper_wishbone_rot, wheel_angle]."""
+        """
+        ## Geometry Residual Function
+
+        Residual function for goemetry convergence
+
+        Parameters
+        ----------
+        x : Sequence[float]
+            Solution Guess, in the form: [lower_wishbone_rot, upper_wishbone_rot, wheel_angle]
+
+        Returns
+        -------
+        Sequence[float]
+            Residuals
+        """
         upper_wishbone_rot = x[0]
         lower_wishbone_rot = x[1]
         wheel_angle = x[2]

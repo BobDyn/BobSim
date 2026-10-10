@@ -13,7 +13,16 @@ from typing import Union
 import yaml
 
 class SuspensionData:
-    """Build the suspension from a vehicle definition yaml."""
+    """
+    ## Suspension Assembler
+
+    Assembles suspension from vehicle definition yaml
+
+    Parameters
+    ----------
+    path : str
+        File path to vehicle definition yaml
+    """
     def __init__(self, path: str):
         with open(path) as f:
             try:

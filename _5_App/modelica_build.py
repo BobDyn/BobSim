@@ -218,9 +218,11 @@ def _modelica_build_archive_dir(target: BuildTargetSpec, signature: str) -> Path
 
 
 def _staging_dir(parent: Path, name: str, kind: str) -> Path:
-    """Temporary sibling directory, renamed into place when complete.
+    """Short-lived sibling directory, renamed into place once it is complete.
 
-    The name is truncated to stay under the Windows 260-character path limit.
+    Only the random suffix has to be unique, so the source name is truncated.
+    Embedding a full build signature here pushed generated Modelica paths past
+    the Windows 260-character limit and broke the copy.
     """
     return parent / f".{name[:8]}.{kind}-{uuid.uuid4().hex[:8]}"
 

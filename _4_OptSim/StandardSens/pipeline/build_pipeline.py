@@ -1,4 +1,10 @@
-"""Compile and then run each variant as one unit of work."""
+"""build_pipeline.py — Pipelined compile → run per variant.
+
+Each variant is compiled and its simulation is run in one atomic unit of work.
+Workers return a log buffer rather than printing directly so output is printed
+atomically per variant, preventing interleaved terminal noise when running
+multiple workers in parallel.
+"""
 
 from __future__ import annotations
 
@@ -26,9 +32,10 @@ OPTSIM_DIR = STANDARD_DIR.parent
 
 
 def _build_and_run_worker(args: tuple) -> tuple[str, bool, str]:
-    """Compile one variant, then run it. Returns (variant_name, overall_success, log_lines).
+    """Compile one variant then immediately run its simulation.
 
-    Workers do not print, so parallel output does not interleave.
+    Returns (variant_name, overall_success, log_lines).
+    Workers never print — caller prints the log atomically.
     """
     (
         variant_dir_str,
@@ -76,7 +83,13 @@ def build_all(
     doe_config_path: Path = DEFAULT_DOE_CONFIG,
     architecture_config_path: Path = DEFAULT_ARCHITECTURE_CONFIG,
 ) -> None:
-    """Compile and run every variant that is not already cached."""
+    """Compile + run every variant in one pipelined pass.
+
+    - Compiles each variant then immediately runs its simulation.
+    - max_workers controls parallelism across variants (from compiler_config.yaml).
+    - Output is buffered per variant and printed atomically — no interleaving.
+    - Skips variants that are already compiled and simulated.
+    """
     cfg = load_compiler_config(compiler_config_path)
     standards: dict[str, dict] = cfg["standards"]
     max_workers: int = cfg.get("max_workers", 2)

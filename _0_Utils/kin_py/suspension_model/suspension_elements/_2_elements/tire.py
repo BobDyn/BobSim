@@ -40,21 +40,74 @@ class Tire:
         
     @property
     def delta(self) -> float:
-        """Steered angle in radians, including static toe."""
+        """
+        ## Tire Steered Angle
+
+        Calculates tire steered angle in radians
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Tire steered angle in radians
+        """
         return self.steered_angle + self.static_toe
 
     @property
     def gamma(self):
-        """Inclination angle in radians. Not implemented."""
+        """
+        ## Tire Inclination Angle
+
+        Calculates tire inclination angle in radians
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Tire inclination angle in radians
+        """
         pass
     
     @property
     def center(self):
+        """
+        ## Tire Center
+
+        Calculates the centroid of the tire
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        Sequence[float]
+            Centroid of the tire
+        """
         return self.center_node.position
 
     @property
     def direction(self):
-        """Normal to the tire midplane (the tire spin axis). Not normalized."""
+        """
+        ## Tire Direction
+
+        Calculates unit vector acting through primary axis of tire (treated as a cylinder geometrically)
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        float
+            Tire direction unit vector
+        """
         pt_1 = np.array(self.contact_patch.position)
         pt_2 = np.array(self.center_node.position)
         pt_3 = np.array(self.front_node.position)

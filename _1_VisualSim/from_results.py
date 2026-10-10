@@ -1,9 +1,26 @@
 """Turn a BobLib simulation result into a BobVis scene.
 
-:func:`variable_filter` asks OpenModelica for the hardpoint frames in
-:data:`FRAME_MAP`. :func:`convert` writes the ``*_visual.npz`` and its template
-together so they cannot drift. Frame paths are BobLib component paths, and a
-BobLib revision may rename them.
+The visual templates in ``visual_templates/`` expect a ``*_visual.npz`` of
+hardpoint positions. Nothing in the repo produced one: the evaluations write a
+Modelica result CSV, and their ``variable_filter`` keeps only scalar KnC and
+handling metrics, so the geometry never leaves the solver. The bundled
+templates name signals (``signals/visfrontaxleleft…``) that no current model
+emits, which is why they cannot be opened against a real run.
+
+This module closes that gap from the BobSim side, without touching BobLib:
+
+* :data:`FRAME_MAP` names the MultiBody frame behind each suspension hardpoint,
+  so :func:`variable_filter` can ask OpenModelica for exactly those and nothing
+  else - 200-odd columns rather than 39,000;
+* :func:`convert` reads the resulting CSV and writes both the ``*_visual.npz``
+  and a matching visual template, so the pair is generated together and cannot
+  drift.
+
+    make visual-capture          # run the rig with geometry on, then convert
+
+Frame paths are BobLib component paths, and a BobLib revision may rename them.
+Every lookup is checked and reported by name rather than failing deep inside
+the conversion.
 """
 
 from __future__ import annotations
@@ -190,7 +207,11 @@ def detect_prefix(names: Iterable[str]) -> str:
 
 
 def variable_filter(extra: Iterable[str] = (), prefix: str = "") -> str:
-    """An OpenModelica ``variableFilter`` for the columns BobVis reads."""
+    """An OpenModelica ``variableFilter`` selecting time, geometry and metrics.
+
+    Whole-model output is 39k variables and gigabytes of CSV. This asks for the
+    few hundred columns BobVis actually reads.
+    """
     parts = ["time"]
     for path in sorted(set(frame_paths(prefix).values())):
         parts.append(re.escape(path) + r"\.r_0\[[123]\]")
@@ -237,7 +258,8 @@ def _vector(columns: dict[str, np.ndarray], frame: str, what: str) -> np.ndarray
 def _kabsch(reference: np.ndarray, current: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Best-fit rigid transform taking ``reference`` (3,3) onto ``current`` (N,3,3).
 
-    Returns ``(R, t)`` with shapes ``(N,3,3)`` and ``(N,3)``.
+    Returns ``(R, t)`` with shapes ``(N,3,3)`` and ``(N,3)``. Exact, not
+    approximate, for three points on a rigid body.
     """
     ref_c = reference - reference.mean(axis=0)
     cur_mean = current.mean(axis=1)
@@ -257,7 +279,8 @@ def _kabsch(reference: np.ndarray, current: np.ndarray) -> tuple[np.ndarray, np.
 def _upright_hardpoints(vehicle_yaml: Path) -> dict[str, dict[str, np.ndarray]]:
     """Reference outboard hardpoints per corner, from ``vehicle.yml``.
 
-    Right corners mirror the left, as in BobLib (``Vector.mirrorXZ``).
+    Right-hand corners mirror the left about the car's centreline, which is how
+    the BobLib axle records are built (``Vector.mirrorXZ``).
     """
     with open(vehicle_yaml, "r", encoding="utf-8") as handle:
         vehicle = yaml.safe_load(handle)
@@ -299,7 +322,9 @@ def convert(
 ) -> tuple[Path, Path, dict[str, Any]]:
     """Write ``npz_path`` and ``template_path`` from a Modelica result CSV.
 
-    Returns the two paths and a summary.
+    ``metrics_csv``, when it exists, is recorded in the template so the viewer
+    can show the run's metrics beside it. Returns the two paths plus a small
+    summary for the caller to print.
     """
     vehicle_yaml = vehicle_yaml or default_vehicle_yaml()
     columns = read_result_csv(result_csv)
@@ -422,8 +447,10 @@ def _build_tire_forces(
 ) -> tuple[dict[str, Any], list[str]]:
     """Per-tire forces plus each axle's friction model, for the friction circles.
 
-    ``Fz`` falls back to the ground-layer load channel. Returns the template
-    block and any warnings.
+    Needs ``Fx`` and ``Fy`` from the tire itself. ``Fz`` falls back to the load
+    channel the ground layer uses, and camber to zero when the run dropped it.
+    Returns the template block (empty when the run has no tire forces, as on
+    the rig) and any warnings worth printing.
     """
     paths = tire_state_paths(prefix)
     corners: dict[str, Any] = {}
@@ -463,7 +490,12 @@ def _derive_upright_points(
 ) -> list[str]:
     """Rebuild wheel centres, contact patches and wheel axes from the uprights.
 
-    OpenModelica alias elimination drops the wheel-centre frames and contact-patch Z.
+    OpenModelica's alias elimination drops variables it can prove redundant,
+    and the wheel-centre frames and contact-patch Z go with them - they are
+    rigidly tied to points that survive. Rather than recompiling the model
+    without that optimisation, refit the upright: three surviving outboard
+    points fix its pose exactly, so every other point on it follows, as does
+    the wheel's spin axis.
     """
     references = _upright_hardpoints(vehicle_yaml)
     derived: list[str] = []
@@ -585,7 +617,7 @@ def _build_ground(
     points_cfg: dict[str, list[str]],
     signals: dict[str, np.ndarray],
 ) -> dict[str, Any]:
-    """Load footprints where the run kept per-tire Fz. Tracks when the car moves."""
+    """Load footprints wherever the run kept per-tire Fz; tracks once the car moves."""
     ground: dict[str, Any] = {}
 
     corners: dict[str, Any] = {}
@@ -626,6 +658,7 @@ def _build_camera(points_cfg: dict[str, list[str]]) -> dict[str, Any]:
 
 
 def print_summary(npz_path: Path, template_path: Path, summary: dict[str, Any]) -> None:
+    """What a conversion wrote, and how to open it."""
     print(f"[bobvis] data     {npz_path}")
     print(f"[bobvis] template {template_path}")
     print(f"[bobvis] {summary['samples']} samples, {summary['points']} points, "

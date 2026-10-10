@@ -303,7 +303,17 @@ class TransientEvalSim:
 
     @staticmethod
     def _attach_case_metadata(results, metadata):
-        """Reattach report metadata to results. The runner does not keep it."""
+        """
+        ModelicaRunner returns signal data, but may not preserve case metadata.
+
+        The summary code needs mode/frequency/amplitude information, so we
+        reattach the non-Modelica case metadata here.
+
+        IMPORTANT:
+        `metadata` is intentionally separate from the runner-facing `cases`.
+        The runner-facing cases should contain only actual VehicleModel
+        override parameters plus runner-special keys like stopTime.
+        """
         if len(results) != len(metadata):
             raise RuntimeError(
                 f"Result/metadata count mismatch: got {len(results)} results "
@@ -819,10 +829,28 @@ class TransientEvalSim:
         return cases, metadata
 
     def _base_case(self, use_mode, test_vel, step_time):
-        """Build the runner-facing case dictionary.
+        """
+        Build the runner-facing case dictionary.
 
-        The runner writes these keys as overrides, so include only real VehicleModel
-        parameters. targetVel maps to initialVel in ModelicaRunner.
+        IMPORTANT:
+        This dictionary is passed to ModelicaRunner, and ModelicaRunner appears
+        to push most case keys into the -override string. Therefore, this must
+        contain only real VehicleModel parameters, plus runner-special keys
+        added later such as stopTime.
+
+        Do NOT include report metadata here:
+          mode
+          testVel
+          stepTime
+          sinusoidal
+          steerStep
+          directionSign
+          nCycles
+          etc.
+
+        targetVel is BobSim shorthand. ModelicaRunner maps it to VehicleSim's
+        changeable initialVel parameter so chassis, driveline, and VCU target
+        speed are initialized together.
         """
         return {
             "useMode": use_mode,
@@ -897,7 +925,12 @@ class TransientEvalSim:
 
     @staticmethod
     def _signal(r, key):
-        """Read a scalar output. Falls back to legacy iso.* keys."""
+        """
+        New VehicleModel exposes scalar outputs directly, e.g. accY.
+
+        This helper also supports legacy iso.* keys if an older result sneaks
+        through, which makes the transition less brittle.
+        """
         if key in r:
             return np.array(r[key], dtype=float)
 
@@ -910,7 +943,12 @@ class TransientEvalSim:
         )
 
     def write_metrics_csv(self, metrics) -> Path:
-        """Write the report-level metric rows to a CSV beside the PDF report."""
+        """
+        Write one TransientEval metrics CSV beside the PDF report.
+
+        This intentionally exports only report-level metric rows, not time
+        histories and not raw case data.
+        """
         report_cfg = self.config.get("report", {})
 
         report_path = Path(

@@ -1,11 +1,21 @@
 """Overlay a SHARK-imported car against the Orion baseline on the kinematic curves.
 
-The kinematic overlay reads only `suspension`, `steering` and `wheel`, so it needs
-no Modelica build. The four-post sim (`--four-post`) is experimental: its actuation
-data lives outside BobSim, so an ARB or damper change can mix with a hardpoint change.
+The primary product is a *kinematics* overlay: every curve in the app's
+`KINEMATIC_CURVE_META` registry, solved straight from the hardpoints, for both
+axles and both sweeps. No Modelica build is needed, because the kinematic solver
+reads only `suspension`, `steering` and `wheel` - the anti-roll bar, bellcrank and
+dampers take no part in it.
 
-The baseline `vehicle.yml` is never written. The imported car is per-run output at
-`--variant`.
+The four-post force sim remains available behind `--four-post`. It is secondary and
+experimental: it depends on actuation data that this workflow maintains outside
+BobSim, so its numbers can conflate a hardpoint change with an ARB or damper change.
+
+Baseline is `vehicle.yml` (Orion) and is never written to. The imported car is
+per-run output: point `--shark` at any .shk and it is rebuilt at `--variant`
+(`vehicle_2027.yml` by default, gitignored). Importing a second axle merges into
+whatever is already there, so a later front file lands beside an imported rear
+without re-running it, but nothing about that file is expected to survive the next
+import of a different .shk.
 """
 
 from __future__ import annotations
@@ -100,7 +110,12 @@ def display_label(meta: dict[str, str], axle: str) -> str:
 
 
 def display_y_label(meta: dict[str, str], axle: str) -> str:
-    """Axis label, relabelled on the same terms as `display_label`."""
+    """Axis label, relabelled on the same terms as the title.
+
+    Shares `_rear_relabel` with `display_label` so the two cannot drift: a plot
+    titled "Kingpin side-view inclination" whose y axis reads "Caster" is worse
+    than not renaming at all.
+    """
     return _rear_relabel(meta, axle) or meta["y_label"]
 
 
@@ -112,7 +127,12 @@ class StaleGeometryError(RuntimeError):
 def sweep_including_zero(reference: Sequence[float], points: int = 21) -> tuple[float, ...]:
     """Rebuild a sweep over the same range with the design position on a grid point.
 
-    An odd point count puts the midpoint on zero. It is snapped to 0.0 against float error.
+    The app defaults span the range in an even number of steps, so zero falls
+    between samples: the bump grid's nearest point is 2.1 mm of jounce. Any
+    "value at design position" taken from that grid is an extrapolation, which is
+    the one number a suspension engineer is most likely to read off directly. An
+    odd count puts the midpoint exactly on zero, and it is snapped to a hard 0.0 so
+    float accumulation cannot leave it at 1e-18.
     """
     low, high = min(reference), max(reference)
     if points % 2 == 0:
@@ -130,7 +150,12 @@ STEER_SWEEP_M = DEFAULT_STEER_M
 
 
 def kinematic_payload(vehicle_path: Path) -> dict[str, Any]:
-    """Solve the registry curve deck over the app's ranges, sampling zero."""
+    """Solve the full registry curve deck over the app's ranges, sampling zero.
+
+    Ranges match the app registry defaults so the curves stay comparable to the
+    app's kinematics view; only the point count differs, to put the design
+    position on a sample rather than between two.
+    """
     vehicle = load_yaml(vehicle_path)
     return kinematic_curves_payload(vehicle, BUMP_SWEEP_M, ROLL_SWEEP_DEG, STEER_SWEEP_M)
 
@@ -175,7 +200,11 @@ def _delta_score(
 ) -> dict[str, float] | None:
     """Peak divergence between two curves, in curve units and relative to range.
 
-    The ratio makes units comparable. It is meaningless on a flat baseline.
+    Both are reported because neither is sufficient alone. The absolute peak is the
+    engineering quantity, but degrees and millimetres cannot be ranked against each
+    other; the ratio makes them comparable. The ratio alone is misleading on a rear
+    axle, where the baseline caster/trail/scrub curves are nearly flat and any change
+    divides by ~zero into a meaningless four-digit percentage.
     """
     pairs = [(b, v) for b, v in zip(base, variant) if b is not None and v is not None]
     if len(pairs) < 2:
@@ -199,7 +228,11 @@ def curve_metrics(
 ) -> list[dict[str, Any]]:
     """Per (curve, axle): design-position values, working slopes, and significance.
 
-    Significance is `peak delta / engineering tolerance`.
+    Significance is `peak delta / engineering tolerance` - how many times the
+    change exceeds what the team calls negligible in that unit. That is a
+    judgement an engineer can argue with, unlike delta-over-baseline-range, which
+    reports a flat rear caster curve moving by a hundredth of a degree as a larger
+    finding than a real camber change.
     """
     rows: list[dict[str, Any]] = []
     for meta in KINEMATIC_CURVE_META:
@@ -615,6 +648,7 @@ def write_summary_md(
 
 
 def four_post_signature(vehicle_path: Path) -> tuple[str, dict[str, Any]]:
+    """Regenerate the stack and return the four-post content signature."""
     generate_modelica_stack(vehicle_path, root=ROOT)
     status = modelica_stack_status_payload(vehicle_path, ROOT)
     if status["state"] != "written":
@@ -645,9 +679,12 @@ def write_stamp(signature: str, vehicle_name: str) -> None:
 
 
 def host_can_run(exe: Path) -> bool:
-    """Whether this host can execute the compiled simulator.
+    """Whether this host can execute the compiled simulator at all.
 
-    The container build produces an ELF binary that a Windows host cannot exec.
+    The Modelica build runs inside the Linux container, so on a Windows host it
+    produces an ELF binary the host cannot exec. Left undetected that surfaces
+    several layers down as `OSError: [WinError 193] %1 is not a valid Win32
+    application`, from inside the eval runner, long after the expensive build.
     """
     try:
         magic = exe.open("rb").read(4)
@@ -720,9 +757,12 @@ def assert_binary_is_executable_here(label: str) -> None:
 
 
 def assert_binary_consumed_geometry(status: dict[str, Any], label: str) -> None:
-    """Prove the executable is newer than the geometry it claims to model.
+    """Prove the executable was produced *after* the geometry it claims to model.
 
-    Compare timestamps. A missing makefile dependency lets `make` succeed without a recompile.
+    Deliberately independent of the makefile: if a dependency is ever missing
+    again, `make` reports success without recompiling, and stamping the new
+    signature onto that untouched binary would launder stale geometry into a
+    report that looks clean. Compare timestamps instead of trusting the build.
     """
     exe = four_post_executable()
     if exe is None:
@@ -742,7 +782,14 @@ def assert_binary_consumed_geometry(status: dict[str, Any], label: str) -> None:
 
 
 def invalidate_build_artifacts() -> list[str]:
-    """Drop the stamp and the compiled simulator to force a rebuild."""
+    """Drop the stamp and the compiled simulator.
+
+    Regenerating the records is not enough on its own: the executable on disk was
+    compiled from whichever car ran last, and the stamp asserts it matches. Leaving
+    either behind lets a later run pair the restored vehicle.yml with hardpoints
+    that are no longer in it. Removing both forces a rebuild, which is the only
+    state in which the pairing is provable.
+    """
     removed: list[str] = []
     if GEOMETRY_STAMP.is_file():
         GEOMETRY_STAMP.unlink()
@@ -817,10 +864,22 @@ def _files_not_in(snapshot: dict[Path, bytes]) -> list[Path]:
 
 @contextlib.contextmanager
 def pristine_boblib() -> Iterator[dict[str, Any]]:
-    """Leave BobLib byte-for-byte as it was found.
+    """Leave BobLib exactly as it was found, whatever happened inside.
 
-    A comparison creates variant classes and package.order entries in BobLib.
-    Regenerating the baseline does not remove them. Runs in a finally block.
+    BobLib is a black box: BobSim generates into it to build, but nothing of ours
+    belongs there afterwards. A comparison writes the variant's record, template
+    and experiment classes, and adds them to the package.order indexes - so
+    without this the library is left carrying a car it does not own, and the next
+    unrelated build can compile the imported geometry while vehicle.yml says Orion.
+
+    Regenerating the baseline is not sufficient and was the earlier mistake: it
+    rewrites the records the baseline owns but leaves the variant's *created*
+    classes and their package.order entries in place. Restoring the snapshot byte
+    for byte is the only version of this with a checkable end state, namely that
+    the submodule is clean.
+
+    Runs in a finally, so it covers a raised StaleGeometryError, a failed build,
+    and a KeyboardInterrupt alike.
     """
     snapshot = _boblib_snapshot()
     # Compare against the snapshot taken before the run.
@@ -836,6 +895,7 @@ def pristine_boblib() -> Iterator[dict[str, Any]]:
 
 
 def modelica_state_report(outcome: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Describe the post-run state, for verification and for tests."""
     outcome = outcome or {}
     return {
         "boblib_leftovers": list(outcome.get("leftovers", [])),
@@ -849,7 +909,13 @@ def modelica_state_report(outcome: dict[str, Any] | None = None) -> dict[str, An
 def installed_vehicle(source: Path) -> Iterator[Path]:
     """Temporarily install `source` as the repo vehicle.yml, always restoring it.
 
-    A leftover backup means a killed run. Refuse instead of overwriting the baseline.
+    The four-post stack reads the repo vehicle.yml by construction, so the opt-in
+    sim path has to swap it. vehicle.yml is restored in a finally block; the
+    kinematics path never touches it at all.
+
+    A leftover backup means a previous run was killed between the swap and the
+    restore, so the vehicle.yml on disk is whatever that run installed rather than
+    the baseline. Refuse instead of overwriting the good copy with the bad one.
     """
     backup = VEHICLE_YAML.with_suffix(".yml.overlay-backup")
     if backup.exists():
@@ -954,6 +1020,12 @@ def _shown(value: Any) -> str:
 
 
 def actuation_differences(baseline_path: Path, variant_path: Path) -> list[dict[str, Any]]:
+    """Report every actuation difference between the two cars, classified.
+
+    A four-post delta is only a geometry result if the force elements match. This
+    surfaces the ones that do not, so a confounded number is never presented as a
+    clean one.
+    """
     base = load_yaml(baseline_path)
     var = load_yaml(variant_path)
     found: list[dict[str, Any]] = []
@@ -1000,10 +1072,16 @@ def actuation_differences(baseline_path: Path, variant_path: Path) -> list[dict[
 def hold_baseline_actuation(
     baseline_path: Path, variant_path: Path, out_path: Path
 ) -> tuple[Path, list[str]]:
-    """Write a variant with the baseline's force elements and its own geometry.
+    """Write a variant carrying the baseline's force elements, keeping its geometry.
 
-    Returns the path and the elements that could not be held. An ARB pickup is in
-    the baseline rocker frame, so a moved pivot blocks the transplant.
+    This is the "geometry-only, baseline actuation held constant" mode: springs,
+    dampers and the anti-roll bar come from the baseline so a four-post delta is
+    attributable to hardpoints, while the actuation *geometry* the SHARK file
+    genuinely defines is kept.
+
+    Returns the written path and a list of what could not be held, which is not
+    always empty: an ARB pickup is defined in the baseline rocker's local frame, so
+    if the import moved the pivot the bar cannot be transplanted onto it.
     """
     base = load_yaml(baseline_path)
     var = copy.deepcopy(load_yaml(variant_path))

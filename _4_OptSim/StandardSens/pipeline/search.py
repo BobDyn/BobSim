@@ -1,7 +1,19 @@
-"""Reverse lookup: nearest sampled variant to target metrics, via a KDTree.
-
+"""search.py — Reverse lookup: target metrics → suspension parameters.
+ 
+Loads the aggregated Parquet table, builds a KDTree over the requested
+metric columns, and returns the nearest variant's suspension parameters.
+ 
 Usage:
-    python search.py --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 --top 3
+    python search.py --metrics \\
+        SteadyStateEval_understeer_gradient_deg_per_g=0.05 \\
+        SteadyStateEval_peak_handwheel_torque_Nm=12
+
+    python search.py \\
+        --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 \\
+        SteadyStateEval_peak_handwheel_torque_Nm=12 \\
+        --parquet _4_OptSim/Build/StandardSens/standard_sensitivity_results.parquet \\
+        --top 3
+ 
 """
 
 from __future__ import annotations
@@ -33,7 +45,12 @@ FALLBACK_INPUT_PARAMS = [
 
 
 def load_input_params(doe_config_path: Path = DEFAULT_DOE_CONFIG) -> list[str]:
-    """Return the swept `vehicle.yml` paths, in DOE config order."""
+    """Return the swept `vehicle.yml` paths, in DOE config order.
+
+    The aggregator keys each result row by these same paths, so deriving the
+    list here keeps the reverse lookup reporting every parameter the sweep
+    actually varied.
+    """
     try:
         with open(doe_config_path) as handle:
             cfg = yaml.safe_load(handle) or {}
@@ -53,7 +70,11 @@ SCOPE_UNKNOWN = "unknown"
 
 
 def load_sweep_scope(doe_config_path: Path = DEFAULT_DOE_CONFIG) -> str | None:
-    """Return the DOE config scope. None means the config has no `scope` key."""
+    """Return the scope the DOE config was generated at.
+
+    None means the config predates the `scope` key, not that the sweep was
+    unrestricted — an old config cannot tell us either way.
+    """
     try:
         with open(doe_config_path) as handle:
             cfg = yaml.safe_load(handle) or {}
@@ -71,7 +92,11 @@ MIN_USEFUL_POPULATION = 10
 def _warn_targets_outside_population(
     targets: dict[str, float], df: pd.DataFrame, ranges: np.ndarray
 ) -> list[str]:
-    """Warn for each target outside its column's sampled spread. Return those metric names."""
+    """Warn for each target that lies outside its column's sampled spread.
+
+    Returns the metric names that were out of range, so callers can test this
+    without parsing stderr.
+    """
     outside: list[str] = []
     for position, (metric, target) in enumerate(targets.items()):
         column = df[metric]
@@ -117,11 +142,24 @@ def _warn_if_results_scope_is_narrow(
 ) -> str | None:
     """Warn when the answer rests on a scope-restricted population.
 
-    Case 1: the config names a scope other than `all`.
-    Case 2: the table lacks parameters the config lists. The table records no
-    scope, so this case returns SCOPE_UNKNOWN.
+    Two ways that happens, both of which otherwise read as a complete answer:
 
-    Returns the scope warned about, SCOPE_UNKNOWN, or None.
+    1. The config names a scope other than `all`, so whole families of
+       parameters were pinned at baseline and were never free variables.
+    2. The config names `all` (or predates scopes) but the table is missing
+       parameters the config lists. That is what restoring _doe_config.yaml
+       from git after a scoped run looks like: the config claims every
+       parameter, the population only covers some.
+
+    Case 2 is inferred from the table's columns, not from recorded provenance —
+    the aggregated table carries no scope of its own — so it can detect a
+    narrower population but cannot name the scope that produced it.
+
+    Either way, parameters the config names but the table lacks cannot be
+    reported, so this names them here. That used to be a second warning printed
+    further down; one condition should not produce two warnings.
+
+    Returns the scope warned about, SCOPE_UNKNOWN for case 2, or None.
     """
     scope = load_sweep_scope(doe_config_path)
     missing = [param for param in input_params if param not in df.columns]
@@ -177,7 +215,12 @@ def _warn_if_results_scope_is_narrow(
 
 
 def _warn_if_results_are_stale(results_path: Path, doe_config_path: Path) -> bool:
-    """Warn when inputs were modified after the results table was written."""
+    """Warn when inputs were modified after the results table was written.
+
+    The existing missing-column check only fires when a swept parameter vanishes.
+    A config edit that keeps the same parameter names, or a change to the vehicle
+    baseline or compiler settings, leaves a stale table looking perfectly valid.
+    """
     if not results_path.exists():
         return False
     results_mtime = results_path.stat().st_mtime
@@ -206,7 +249,17 @@ def _warn_if_results_are_stale(results_path: Path, doe_config_path: Path) -> boo
 
 def search(targets: dict[str, float], parquet_path: Path = DEFAULT_PARQUET,
            top: int = 1, doe_config_path: Path = DEFAULT_DOE_CONFIG) -> pd.DataFrame:
-    """Return the `top` nearest variants: inputs, metrics, and normalised distance."""
+    """Find the nearest variants to the target metric values.
+
+    Args:
+        targets:         dict of metric_name -> target_value
+        parquet_path:    path to the aggregated StandardSens parquet
+        top:             number of nearest variants to return
+        doe_config_path: DOE config used to identify the swept input columns
+
+    Returns:
+        DataFrame with top nearest variants — input params + metrics + distance
+    """
     input_params = load_input_params(doe_config_path)
     csv_path = parquet_path.with_suffix(".csv")
     if parquet_path.exists():

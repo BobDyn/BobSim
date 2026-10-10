@@ -7,10 +7,33 @@ import numpy as np
 
 
 class Stabar:
-    """Stabar (anti-roll bar).
+    """
+    ## Stabar
 
-    Arm ends are the lever ends farthest from the torsion bar axis.
-    Left is positive y and right is negative y. Droplink ends mount to the rest of the car.
+    Stabar object
+
+    Parameters
+    ----------
+    left_arm_end : Node
+        End (farthest radially from the axis of the torsion bar) of stabar lever in positive y
+
+    right_arm_end : Node
+        End (farthest radially from the axis of the torsion bar) of stabar lever in negative y
+
+    left_droplink_end : Node
+        Droplink mounting point to rest of car in positive y
+
+    right_droplink_end : Node
+        Droplink mounting point to rest of car in negative y
+
+    bar_left_end : Node
+        End of torsion bar in positive y
+    
+    bar_right_end : Node
+        End of torsion bar in negative y
+
+    torsional_stiffness : float
+        Torsional stiffness of entire stabar
     """
     def __init__(self, 
                  left_arm_end: Node, 
@@ -34,12 +57,34 @@ class Stabar:
         self.right_rotation: float = 0
 
     def update(self) -> None:
-        """Solve the arm rotations that keep the droplink lengths constant."""
+        """
+        ## Update
+
+        Updates Stabar to match initial geometry
+
+        """
         self.left_rotation = nearest_root(func=self._droplink_eqn, x0=0, bounds=(-np.pi/2, np.pi/2), tol=1e-10, args=[self.left_droplink])
         self.right_rotation = nearest_root(func=self._droplink_eqn, x0=0, bounds=(-np.pi/2, np.pi/2), tol=1e-10, args=[self.right_droplink])
 
     def _droplink_eqn(self, x: float, args: Tuple[Link]) -> float:
-        """Droplink length residual. x is the rotation in radians and args is [droplink]."""
+        """
+        ## Droplink Equation
+
+        Residual function for droplink length convergence
+
+        Parameters
+        ----------
+        x : float
+            Angle of rotation in radians
+
+        args : Tuple[Link]
+            Arguments in the form: [Droplink Link]
+
+        Returns
+        -------
+        float
+            Convergence criteria
+        """
         rotation=x
         droplink = args[0]
 
@@ -51,9 +96,28 @@ class Stabar:
 
     @property
     def rotation(self) -> float:
-        """Angular deformation of the stabar in radians."""
+        """
+        ## Rotation
+
+        Angualar deformation of stabar
+
+        Returns
+        -------
+        float
+            Angular deformation of stabar
+        """
         return self.left_rotation - self.right_rotation
     
     @property
     def torque(self) -> float:
+        """
+        ## Torque
+
+        Torque reacted by stabar
+
+        Returns
+        -------
+        float
+            Torque reacted by stabar
+        """
         return abs(self.torsional_stiffness * self.rotation)

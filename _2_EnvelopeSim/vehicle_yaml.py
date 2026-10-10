@@ -1,6 +1,10 @@
 """Project vehicle.yml into the simplified EnvelopeSim vehicle models.
 
-Kinematics, compliance, damping, and transient effects are not carried through.
+The EnvelopeSim generators are intentionally lower fidelity than the full
+Modelica vehicle. This module keeps that reduction explicit: mass, CG,
+wheelbase/track, static load split, effective roll-stiffness lateral load
+transfer split, nominal aero, and tire peak coefficients are carried through;
+kinematics, compliance, damping, and transient effects are not.
 """
 
 from __future__ import annotations

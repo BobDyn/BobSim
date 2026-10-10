@@ -1,8 +1,17 @@
-"""Apply a knob to a compiled executable with `-override`, where that is safe.
+"""overrides.py — Apply a knob to an already-compiled executable, where that is safe.
 
-OpenModelica accepts overrides of parameters it evaluated at compile time, and the
-runner drops names it cannot find in the init XML. Both failures are silent, so
-this module allow-lists safe variables and checks every name against the XML.
+A compile is most of a variant's wall time and the model's equations never
+change between variants, so re-pointing one executable with `-override` is far
+cheaper than recompiling. It is only correct for some parameters, and the
+incorrect cases fail without a sound. This module owns both halves of that: which
+variables are safe, and what their override names are.
+
+Two silent failures are guarded here:
+
+- OpenModelica accepts an override of a parameter it has already evaluated into
+  the executable. `RUNTIME_SAFE_PATHS` is the allow-list that keeps those out.
+- The runner drops any override name it cannot find in the init XML. Every name
+  is checked against the same XML before it is handed over.
 """
 
 from __future__ import annotations
@@ -68,7 +77,7 @@ def find_init_xml(build_dir: Path, exec_name: str) -> Path:
 
 
 def override_name(target: dict[str, Any]) -> str:
-    """Name a target's root parameter. DOE indices are 0-based. Modelica indices are 1-based."""
+    """Name a target's root parameter; DOE indices are 0-based, Modelica's 1-based."""
     name = f"{VEHICLE_RECORD}.{target['block']}.{target['param']}"
     if "index" in target:
         name += "[" + ",".join(str(int(i) + 1) for i in target["index"]) + "]"

@@ -758,7 +758,12 @@ class RampSteerEvalSim:
         return grouped_series
 
     def write_metrics_csv(self, metrics: list[dict[str, Any]]) -> Path:
-        """Write the report-level metric rows to a CSV beside the PDF report."""
+        """
+        Write one RampSteerEval metrics CSV beside the PDF report.
+
+        This intentionally exports only the report-level metric rows, not
+        sweep data and not raw case data.
+        """
         report_cfg = self.config.get("report", {})
 
         report_path = Path(

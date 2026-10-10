@@ -1,4 +1,14 @@
-"""Visual template and demo-scene checks that need no rendering stack."""
+"""Visual template and demo-scene checks that need no rendering stack.
+
+These import only numpy and yaml, so they run everywhere - including CI and the
+Docker image, where BobVis's PyQt6/VTK dependencies are deliberately absent.
+The tests that exercise ``SimData`` and the exporter live in
+``test_visual_scene.py`` and skip without PyVista.
+
+What is worth protecting here is the layer where the viewer used to go wrong:
+whether a visual template's names actually resolve against the data it is
+paired with.
+"""
 
 from __future__ import annotations
 
@@ -15,9 +25,10 @@ TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "_1_VisualSim" / "visual_te
 
 
 def _referenced_signals(cfg: dict[str, Any]) -> set[str]:
-    """Every signal name a visual config expects, read from the YAML.
+    """Every signal name a visual config expects, read straight from the YAML.
 
-    Independent of ``SimData.required_signals`` so that the two must agree.
+    Deliberately independent of ``SimData.required_signals`` so the two have to
+    agree; this is the copy that can run without PyVista installed.
     """
     geometry = cfg.get("geometry") or {}
     names: set[str] = set()

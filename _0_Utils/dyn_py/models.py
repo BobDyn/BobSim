@@ -1,12 +1,19 @@
 """Nested reduced-order vehicle models.
 
-:class:`VehicleDynamicsSystem` holds the force assembly shared by all fidelities.
-Each subclass adds physics to its parent::
+Read this file in two parts:
 
-    VehicleModel3DOF   planar body motion
-      -> VehicleModel6DOF   + heave, roll, pitch, suspension
-        -> VehicleModel10DOF  + four rotating wheels
-          -> VehicleModel14DOF  + four unsprung vertical masses
+1. :class:`VehicleDynamicsSystem` owns the force-assembly pipeline shared by every
+   fidelity (contact-patch velocity, tires, aero, Newton-Euler equations).
+2. The four concrete classes near the bottom explicitly declare their state
+   vectors and the equations released at that fidelity::
+
+       VehicleModel3DOF   planar body motion
+         -> VehicleModel6DOF   + heave, roll, pitch, suspension
+           -> VehicleModel10DOF  + four rotating wheels
+             -> VehicleModel14DOF  + four unsprung vertical masses
+
+The inheritance is intentional: each higher-fidelity model adds physics to the
+previous one instead of duplicating a second force implementation.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ class ModelInputs:
 
 @dataclass(frozen=True)
 class ModelOutput:
+    """One evaluation of a reduced-order vehicle model."""
     derivative: FloatArray
     generalized_acceleration: FloatArray
     body_force_n: FloatArray
@@ -455,6 +463,7 @@ class VehicleDynamicsSystem(ABC):
         return self.parameters.mass_kg, self.parameters.inertia
 
     def _body_translational_masses(self, body_mass: float) -> FloatArray:
+        """Effective masses for body-frame x/y/z translation."""
         return np.full(3, body_mass, dtype=float)
 
     def _gravity_force_body(
@@ -462,6 +471,7 @@ class VehicleDynamicsSystem(ABC):
         rotation: FloatArray,
         body_mass: float,
     ) -> FloatArray:
+        """Gravity projected into the body equations."""
         return rotation.T @ np.array([0.0, 0.0, -body_mass * G])
 
     def _forces_transmitted_to_body(

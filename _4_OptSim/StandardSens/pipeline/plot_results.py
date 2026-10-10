@@ -1,4 +1,8 @@
-"""Plot swept inputs (parallel coordinates) and main metrics from a DOE table to a PDF.
+"""plot_results.py — Quick visualizations for DOE output tables.
+
+Generates a compact PDF with:
+  - a parallel-coordinates view of swept inputs
+  - a metric dashboard for the main report outputs
 
 Usage:
     python plot_results.py

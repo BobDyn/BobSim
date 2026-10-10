@@ -1,13 +1,32 @@
-"""Solve for the setup that hits target metrics.
+"""solver.py — Solve for the setup that hits target metrics.
 
-Bounded least squares on a quadratic surrogate fitted to a star design (2n + 1
-runs). Each proposed setup is simulated and fed back with a secant update:
+The sweep-and-search route samples the whole parameter space and returns the
+nearest sample. Its cost grows exponentially with the number of parameters and
+its answer can only ever be a point that happened to be sampled. This module
+treats the same question as what it is, a small bounded least-squares problem:
 
     min_x  sum_i ((f_i(x) - target_i) / tol_i)^2
          + reg * sum_j ((x_j - baseline_j) / span_j)^2      lower <= x <= upper
 
-The star uses central steps because toe acts through an even function, so its
-slope at zero toe is zero. The evaluator is injected so tests need no simulator.
+`f` is a full vehicle simulation, so evaluations are what cost money. The plan
+spends them where they buy the most:
+
+1. A star design — the centre plus one step each way per knob, 2n + 1 runs. Cost
+   is linear in the number of knobs, not exponential.
+2. A separable quadratic fitted through the star: slope and curvature per knob.
+   Central steps matter. Static toe acts through an even function, so its slope
+   at zero toe is exactly zero and a one-sided gradient would conclude toe does
+   nothing.
+3. The inverse is solved on that surrogate, which costs milliseconds.
+4. The proposed setup is then simulated. If it misses, a secant update folds
+   the miss back into the surrogate and the solve repeats. No answer is
+   returned unverified.
+
+The regulariser picks the smallest change from the current car when there are
+fewer targets than knobs, so an under-determined question still has one answer.
+
+Nothing here touches the filesystem or a simulator. The evaluator is injected,
+which is what lets the numerics be tested without OpenModelica.
 """
 
 from __future__ import annotations
@@ -35,7 +54,7 @@ _RANDOM_STARTS = 8
 
 @dataclass(frozen=True)
 class Knob:
-    """A setup parameter someone can actually turn."""
+    """One decision variable: a setup parameter someone can actually turn."""
 
     path: str
     lower: float
@@ -127,7 +146,9 @@ class _Problem:
         return np.concatenate([fit, pull])
 
     def same_setup(self, a: np.ndarray, b: np.ndarray) -> bool:
-        """Compare as a fraction of each knob's range, because knob units differ widely."""
+        """Compared as a fraction of each knob's range: a bounded solve reaches a
+        limit only to within float noise, which on a 20 kN/m spring rate dwarfs
+        any absolute tolerance that would suit a toe angle."""
         return bool(np.all(np.abs(a - b) / self.span < 1e-6))
 
     def at_bound(self, x: np.ndarray) -> list[str]:
@@ -142,7 +163,10 @@ def star_design(
 ) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     """Return (centre, steps, points): the centre then a -/+ pair per knob.
 
-    The centre is the baseline, moved inward so both steps stay inside the bounds.
+    The centre is the baseline, pulled inward just far enough that both steps
+    stay inside the bounds. A baseline sitting on a bound — zero camber on a
+    [-2, 0] range — would otherwise leave no room for the step that measures
+    curvature.
     """
     if not 0.0 < step_fraction <= 1.0:
         raise ValueError("step_fraction must be in (0, 1]")
@@ -161,7 +185,11 @@ def star_design(
 
 
 def fit_surrogate(center: np.ndarray, steps: np.ndarray, responses: np.ndarray) -> Surrogate:
-    """Fit slope and curvature per knob. `responses` rows are in `star_design` order."""
+    """Fit slope and curvature per knob from star responses.
+
+    `responses` has one row per star point, in `star_design` order, and one
+    column per metric. Central differences make the fit exact at every point.
+    """
     n = len(steps)
     if responses.shape[0] != 2 * n + 1:
         raise ValueError(f"expected {2 * n + 1} star responses, got {responses.shape[0]}")
@@ -284,7 +312,10 @@ def _secant_update(
 ) -> None:
     """Fold one verification miss back into the surrogate (Broyden's update).
 
-    The correction is measured in range-normalised coordinates because knob units differ.
+    The gradient is corrected so the model reproduces the change observed
+    between the last two simulated points, then the surface is pinned to the
+    newest one. "Smallest correction" is measured in range-normalised
+    coordinates, because the knobs are in different units.
     """
     (x_prev, y_prev), (x_now, y_now) = previous, current
     step = x_now - x_prev
@@ -316,7 +347,12 @@ def _metric_row(metrics: Metrics, names: list[str], variant: Variant) -> list[fl
 def _propose(
     problem: _Problem, surrogate: Surrogate, rng: np.random.Generator, snap_discrete: bool
 ) -> np.ndarray:
-    """Best setup on the surrogate, restricted to parts that exist."""
+    """Best setup on the surrogate, restricted to parts that exist.
+
+    Every combination of available part sizes is tried with the continuous knobs
+    re-solved around it. That is exact on the surrogate, and cheap: two bars of
+    four sizes each is sixteen millisecond solves.
+    """
     discrete = [j for j, k in enumerate(problem.knobs) if k.values] if snap_discrete else []
     candidates = (
         _solve_on_surrogate(problem, surrogate, rng, dict(zip(discrete, combination, strict=True)))
@@ -331,7 +367,11 @@ def _solve_on_surrogate(
     rng: np.random.Generator,
     fixed: dict[int, float],
 ) -> tuple[np.ndarray, float]:
-    """Bounded least squares on the surrogate with some knobs pinned. Returns (x, cost)."""
+    """Bounded least squares on the surrogate with some knobs pinned; (x, cost).
+
+    Several starts are free at this cost, and the regulariser makes the minimum
+    nearer the baseline the cheaper of a mirror-image pair.
+    """
     free = [j for j in range(len(problem.knobs)) if j not in fixed]
     template = problem.baseline.copy()
     for j, value in fixed.items():

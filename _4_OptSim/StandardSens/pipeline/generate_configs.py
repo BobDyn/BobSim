@@ -1,6 +1,15 @@
-"""Generate _doe_config.yaml from vehicle_architecture.yaml.
+"""generate_configs.py — Materialize DOE configs from the selected vehicle architecture.
 
-Scope membership is declared per variable in the architecture YAML, not here.
+The vehicle architecture YAML is the source of truth for which baseline record,
+sampling controls, and sweepable parameter blocks should be used. This script
+writes the derived _doe_config.yaml so the rest of the DOE pipeline can stay simple.
+
+The sweep is also partitioned by *scope*: `setup` for knobs adjustable on the
+built car, `architecture` for properties fixed once it exists, and untagged for
+variables belonging to both or neither. Which variable belongs to which lives in
+the architecture YAML, never here. The resolved scope is written to
+_doe_config.yaml as a top-level `scope` key so downstream consumers — the
+reverse lookup in particular — can tell a scoped population from a full one.
 """
 
 from __future__ import annotations
@@ -29,7 +38,12 @@ DEFAULT_SWEEP_SCOPE = SWEEP_SCOPE_ALL
 
 
 def _relpath_posix(target: Path | str, start: Path | str) -> str:
-    """Relative path with forward slashes. _doe_config.yaml is also read in the Linux container."""
+    """Relative path with forward slashes, regardless of host OS.
+
+    `_doe_config.yaml` is checked in and is also consumed inside the Linux
+    build container, so native Windows separators must never reach it: a
+    backslash path is a single opaque filename on Linux, not a relative path.
+    """
     return Path(os.path.relpath(target, start)).as_posix()
 
 
@@ -49,7 +63,7 @@ def _env_int(name: str) -> int | None:
 
 
 def _validate_scope(raw: str, source: str) -> str:
-    """Normalise a sweep scope. Raise with the legal values if it is wrong."""
+    """Normalize a sweep scope, naming the legal values when it is wrong."""
     scope = raw.strip().lower()
     if scope not in SWEEP_SCOPES:
         raise ValueError(
@@ -59,7 +73,11 @@ def _validate_scope(raw: str, source: str) -> str:
 
 
 def _resolve_sweep_scope(scope: str | None = None) -> str:
-    """Pick the sweep scope: explicit argument, then env var, then the default."""
+    """Pick the sweep scope: explicit argument, then env var, then the default.
+
+    Same precedence as the sampling overrides — an explicit call wins over
+    BOBSIM_DOE_SCOPE, which wins over the checked-in behaviour of `all`.
+    """
     if scope is not None:
         return _validate_scope(scope, "sweep scope")
     raw = _env_str(SCOPE_ENV_VAR)
@@ -69,7 +87,13 @@ def _resolve_sweep_scope(scope: str | None = None) -> str:
 
 
 def _variable_in_scope(spec: dict[str, Any], scope: str) -> bool:
-    """Return True if the variable is in scope. A variable with no `scope:` key is in every scope."""
+    """Does this sweep variable belong to the requested scope?
+
+    A variable with no `scope:` key belongs to *every* scope. An untagged or
+    newly added entry is therefore never silently dropped from a scoped sweep:
+    the worst case is that it gets swept when it did not need to be, which is
+    visible in the results table, rather than missing from it, which is not.
+    """
     declared = spec.get("scope")
     if declared is None:
         return True
@@ -261,7 +285,11 @@ def refresh_doe_config(
     doe_config_path: Path = DOE_CONFIG,
     scope: str | None = None,
 ) -> dict[str, Any]:
-    """Generate the active DOE config. `scope` defaults to BOBSIM_DOE_SCOPE, then `all`."""
+    """Generate the active DOE config from the selected vehicle architecture.
+
+    `scope` restricts which sweep variables are written; it defaults to
+    BOBSIM_DOE_SCOPE, and to `all` when that is unset.
+    """
     architecture_cfg = load_yaml(architecture_config_path)
     template_ref = architecture_cfg.get("vehicle_template")
     if template_ref is None:

@@ -118,7 +118,13 @@ def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: P
 def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> None:
     """BobLib numbers pickups by position on the rocker, not by list order.
 
-    Expected values come from the record that BobLib ships.
+    Its annotation is the spec: "1 is the most counter-clockwise pickup about the
+    left bellcrank (generally with the lowest Z coordinate)". The baseline lists
+    ['rod', 'shock', 'stabar'] on both axles while the true arrangement is
+    stabar/rod/shock at the front and rod/shock/stabar at the rear - one list
+    cannot encode both, so list position was never a valid source.
+
+    Expected values are the ones BobLib ships in its own checked-in record.
     """
     from _0_Utils.vehicle_io import load_yaml, vehicle_yaml_path
     from _5_App.modelica_generator import _pickup_order

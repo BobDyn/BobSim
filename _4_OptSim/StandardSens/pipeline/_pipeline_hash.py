@@ -1,7 +1,19 @@
-"""Hash pipeline inputs to detect stale compiled artifacts.
+"""pipeline_hash.py — Track pipeline state to detect stale artifacts.
 
-population/.pipeline.hash covers the configs, tooling, and BobLib SHA.
-population/variant_XXXX/.variant.hash covers each variant.mo.
+Computes a hash of all inputs that affect compiled executables:
+  - StandardSens/configs/_doe_config.yaml
+  - StandardSens/configs/vehicle_architecture.yaml
+  - StandardSens/configs/compiler_config.yaml
+  - SteadyStateEval wrapper/config inputs
+  - BobLib submodule SHA   (upstream model changes)
+
+Stores the hash in population/.pipeline.hash on each fresh run.
+On subsequent runs, compares current hash to stored hash.
+If mismatch — raises loud error telling user to clean and rerun.
+
+Per-variant hashes:
+  - variant.mo             (generator output, one hash per variant)
+Stored in population/variant_XXXX/.variant.hash
 """
 
 from __future__ import annotations
@@ -27,7 +39,7 @@ def _hash_string(s: str) -> str:
 
 
 def _boblib_sha(boblib_path: Path) -> str:
-    """Return the BobLib submodule SHA, or a hash of package.mo if git is unavailable."""
+    """Get the git commit SHA of the BobLib submodule."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -165,7 +177,10 @@ def write_variant_hash(variant_dir: Path) -> str:
 
 
 def variant_is_stale(variant_dir: Path) -> bool:
-    """Return True if variant.mo changed since the last compile. False if there is no hash yet."""
+    """Return True if variant.mo has changed since last compile.
+
+    Returns False (not stale) if no hash file exists yet.
+    """
     hash_path = variant_dir / VARIANT_HASH_FILE
     if not hash_path.exists():
         return False

@@ -3,7 +3,16 @@
     make opt-trade                                   # configs/trade_study.yaml
     make opt-trade STUDY=path/to/another_study.yaml
 
-Every candidate is compiled, so any swept variable can change.
+OptSim asks three different questions of the same compiled vehicles:
+
+- `opt-standard` samples many vehicles to learn which parameters matter.
+- `opt-solve` inverts for the setup that hits target metrics.
+- `opt-trade`, this one, compares vehicles you name, on metrics you choose.
+
+Every candidate is compiled rather than overridden, so any swept variable is fair
+game — mass, CG and toe included — and SteadyStateEval, RampSteerEval and
+TransientEval all run against that one executable. See `pipeline/trade.py` for
+what the comparison insists on and why it offers no score.
 """
 
 from __future__ import annotations

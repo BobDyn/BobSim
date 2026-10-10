@@ -6,9 +6,33 @@ import warnings
 
 
 class Link:
-    """Link between two nodes, similar to a beam.
+    """
+    ## Link
 
-    The optional kwarg ``compliance`` sets the linear compliance.
+    Link object
+    - Similar to beam, defined by two nodes
+
+    Parameters
+    ----------
+    inboard : Node
+        Node representing inboard end of linkage
+
+    outboard : Node
+        Node representing outboard end of linkage
+        
+    **kwargs : dict[str, Union[float, int, str]]
+        Optional keyword arguments. The following keys are supported:
+
+            `compliance` : float
+                Linear compliance of Link, by default None
+
+            `compliance_unit` : str
+                Unit of Link compliance. Options include:
+                
+                `N/m`
+                `N/mm`
+                `lbf/in`
+                `lb/in`
     """
     def __init__(self, inboard_node: Node, outboard_node: Node, **kwargs) -> None:
         
@@ -23,7 +47,22 @@ class Link:
             self.compliance = kwargs.pop("compliance")
 
     def yz_intersection(self, link: "Link") -> Node:
-        """Intersection of self and link in the y-z plane. x is the mean of the two links."""
+        """
+        ## y-z Intersection
+
+        Calculates the intersection point between two links in the y-z plane
+
+        Parameters
+        ----------
+        link : Link
+            Second luinkage which intersects self in y-z
+
+        Returns
+        -------
+        Node
+            Node coincident with intersection
+            - Averages x between the two links
+        """
         l_1i = self.inboard_node
         l_1o = self.outboard_node
         m_1 = (l_1o - l_1i)[2] / (l_1o - l_1i)[1]
@@ -56,7 +95,22 @@ class Link:
         return Node(position=[x, y, z])
 
     def xz_intersection(self, link: "Link") -> Node:
-        """Intersection of self and link in the x-z plane. y is the mean of the two links."""
+        """
+        ## x-z Intersection
+
+        Calculates the intersection point between two links in the x-z plane
+
+        Parameters
+        ----------
+        link : Link
+            Second linkage which intersects self in x-z
+
+        Returns
+        -------
+        np.ndarray
+            Coordinates of intersection
+            - Averages y between the two links
+        """
         l_1i = self.inboard_node
         l_1o = self.outboard_node
         m_1 = (l_1o - l_1i)[2] / (l_1o - l_1i)[0]
@@ -91,7 +145,21 @@ class Link:
         return Node(position=coords)
 
     def link_centered_coords(self, node: Node) -> np.ndarray:
-        """Node coordinates in a frame with the Link as the z-axis."""
+        """
+        ## Link-Centered Coordinates
+
+        Calculates Node coordinates with Link treated as z-axis
+
+        Parameters
+        ----------
+        node : Node
+            Node to represent in Link reference frame
+
+        Returns
+        -------
+        Sequence[float]
+            Node coordinates in Link reference frame
+        """
         ang_x, ang_y = self.rotation_angles
         node_translated = node - self.inboard_node
 
@@ -103,9 +171,16 @@ class Link:
 
     @property
     def component_angles(self) -> Sequence[float]:
-        """Smallest angles [ang_x, ang_y] in radians between the ground plane and the Link projections.
+        """
+        ## Component Angles
 
-        For a kingpin Link these are KPI and caster.
+        Calculates the smallest angles between the ground plane and the projection of Link on the principal planes
+        - For a kingpin Link, this gives kpi and caster, respectively
+
+        Returns
+        -------
+        Sequence[float]
+            Sequence of angles in radians [ang_x, ang_y]
         """
         origin_transform = self.outboard_node - self.inboard_node
         ang_x = np.arctan(origin_transform[2] / origin_transform[1]).__float__()
@@ -115,7 +190,16 @@ class Link:
     
     @property
     def rotation_angles(self) -> Sequence[float]:
-        """Rotations about x and y in radians that align the Link with z."""
+        """
+        ## Rotation Angles
+
+        Calculates the rotations about x and y which result in a vector pointing strictly in z
+
+        Returns
+        -------
+        Sequence[float]
+            Sequence of rotations in radians [x_rotation, y_rotation]
+        """
         origin_transform = self.outboard_node - self.inboard_node
         ang_x = np.arctan(origin_transform[1] / origin_transform[2]).__float__()
         ang_y = np.sign(origin_transform[2]) * np.arcsin(origin_transform[0] / self.length).__float__()
@@ -124,20 +208,58 @@ class Link:
     
     @property
     def direction(self) -> Sequence[float]:
-        """Unit vector from the inboard node to the outboard node."""
+        """
+        ## Direction
+
+        Direction attribute of Link
+
+        Returns
+        -------
+        np.ndarray
+            Direction of Link
+        """
         return unit_vec(p1=self.inboard_node.position, p2=self.outboard_node.position)
 
     @property
     def center(self) -> Sequence[float]:
+        """
+        ## Center
+        
+        Center attribute of link
+
+        Returns
+        -------
+        np.ndarray
+            Center of link
+        """
         new_node = (self.inboard_node + self.outboard_node) / 2
 
         return new_node.position
     
     @property
     def radius(self) -> float:
-        """Fixed radius for a 5/8 in (0.015875 m) diameter link."""
+        """
+        ## Radius
+
+        Radius attribute of link
+
+        Returns
+        -------
+        float
+            Radius of link
+        """
         return 0.015875 / 2
 
     @property
     def length(self) -> float:
+        """
+        ## Length
+
+        Length of link
+
+        Returns
+        -------
+        float
+            Length of link
+        """
         return np.linalg.norm((self.outboard_node - self.inboard_node).position).__float__()

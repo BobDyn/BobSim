@@ -51,7 +51,12 @@ def test_delta_score_reports_absolute_and_relative() -> None:
 
 
 def test_a_missing_datum_record_withholds_rather_than_publishes(tmp_path: Path) -> None:
-    """An unknown vertical datum keeps the z-dependent curves withheld."""
+    """Absence of evidence must not read as evidence of a shared datum.
+
+    A vehicle with no sidecar - a fresh clone, a hand-written file - has an unknown
+    vertical datum, so the z-dependent curves stay withheld. Failing open here would
+    publish exactly the curves the datum question puts in doubt.
+    """
     from _0_Utils.shark_import import datum_gate, write_datum_sidecar
 
     bare = tmp_path / "vehicle_bare.yml"
@@ -119,7 +124,14 @@ def _dirty_boblib(pkg: Path) -> None:
 def test_boblib_is_left_pristine_however_the_run_ends(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boom: type[BaseException] | None
 ) -> None:
-    """No comparison may leave our files in BobLib, on success, error, or interrupt."""
+    """BobLib is a black box: nothing of ours may survive a comparison.
+
+    Covers the clean path, a raised error and an interrupt, because the failure
+    mode is identical in all three. Regenerating the baseline was not enough - it
+    rewrites what the baseline owns but leaves the variant's created classes and
+    their package.order entries behind, which is how the library ends up carrying
+    a car it does not own.
+    """
     pkg = _fake_boblib(tmp_path, monkeypatch)
     exe, stamp = _fake_build_dir(tmp_path, monkeypatch)
     before = {p: p.read_bytes() for p in pkg.rglob("*") if p.is_file()}
@@ -162,7 +174,12 @@ def test_artifacts_are_invalidated_even_if_the_boblib_restore_fails(
 def test_leftovers_are_judged_against_the_pre_run_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A snapshot taken after the run is always clean, so compare against the pre-run one."""
+    """The check must compare against the tree as it was *before* the run.
+
+    Comparing the tree against a snapshot of itself afterwards is vacuously clean:
+    it reports no leftovers no matter what the run created. That is how a report
+    can claim success while Generated_2027Record.mo is still sitting in the library.
+    """
     pkg = _fake_boblib(tmp_path, monkeypatch)
     _fake_build_dir(tmp_path, monkeypatch)
 
@@ -183,7 +200,12 @@ def test_leftovers_are_judged_against_the_pre_run_snapshot(
 def test_post_run_state_is_consistent_across_yaml_boblib_and_binary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Separate mechanisms restore the three, so assert them together."""
+    """After a comparison, all three must agree that the car is the baseline.
+
+    The three are restored by separate mechanisms - the YAML by one context
+    manager, BobLib by another, and the binary is just a file left on disk - so
+    the regression asserts them together rather than one at a time.
+    """
     pkg = _fake_boblib(tmp_path, monkeypatch)
     exe, stamp = _fake_build_dir(tmp_path, monkeypatch)
     before = {p: p.read_bytes() for p in pkg.rglob("*") if p.is_file()}
@@ -213,7 +235,12 @@ def test_post_run_state_is_consistent_across_yaml_boblib_and_binary(
 
 
 def test_foreign_binaries_are_detected_before_they_are_executed(tmp_path: Path) -> None:
-    """Detect an ELF binary on Windows before a full Modelica build runs."""
+    """An ELF simulator on a Windows host cannot be run, and saying so early matters.
+
+    The Modelica stack compiles inside the Linux container, so a Windows host gets a
+    binary it cannot exec. Undetected, that surfaces as WinError 193 from deep inside
+    the eval runner, after a full Modelica build has already been paid for.
+    """
     elf = tmp_path / "sim_elf"
     elf.write_bytes(b"\x7fELF" + b"\x00" * 60)
     pe = tmp_path / "sim_pe"
@@ -236,7 +263,7 @@ def test_build_failure_to_launch_is_a_refusal_not_a_crash(monkeypatch: pytest.Mo
 
 
 def test_actuation_differences_separate_force_changes_from_geometry(tmp_path: Path) -> None:
-    """A removed ARB is a confound. A moved rocker pivot is the change under test."""
+    """A removed ARB is a confound; a moved rocker pivot is the change under test."""
     import yaml
 
     base: dict[str, Any] = {"rear": {"actuation": {
@@ -266,7 +293,7 @@ def test_actuation_differences_separate_force_changes_from_geometry(tmp_path: Pa
 def test_geometry_only_mode_holds_force_elements_and_reports_what_it_cannot(
     tmp_path: Path,
 ) -> None:
-    """Springs are held. An ARB on a moved pivot is reported as unheld."""
+    """Springs are held; an ARB on a moved pivot is reported as unheld, not faked."""
     import yaml
 
     base: dict[str, Any] = {"rear": {"actuation": {
@@ -320,7 +347,7 @@ def test_four_post_section_gates_and_flags_confounds() -> None:
 
 
 def test_design_position_is_sampled_not_extrapolated() -> None:
-    """The app's even grid straddles zero. The report's grid lands on it."""
+    """The app's even grid straddles zero; the report's grid lands on it."""
     from _0_Utils.kin_py.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
 
     assert 0.0 not in DEFAULT_SWEEP_M and 0.0 not in DEFAULT_ROLL_DEG

@@ -1152,10 +1152,21 @@ def _format_number(value: float) -> str:
 def _pickup_order(
     pickups: Mapping[str, Any], pivot: Sequence[float], axis: Sequence[float], path: str
 ) -> dict[str, int]:
-    """Number the bellcrank pickups as the BobLib annotation defines them.
+    """Number the bellcrank pickups the way BobLib defines them.
 
-    Index 1 is the lowest-Z pickup. Indices go counter-clockwise about the left bellcrank.
-    Do not use `bellcrank.order`. It does not match the geometry on both axles.
+    BobLib's own annotation is the spec: "1 is the most counter-clockwise pickup
+    about the left bellcrank (generally with the lowest Z coordinate)". So the
+    index is a property of where the points sit on the rocker, not of the order
+    somebody happened to list them in.
+
+    Deriving it from `bellcrank.order` was wrong: that list reads
+    ['rod', 'shock', 'stabar'] on both axles of the baseline, while the true
+    ordering is stabar/rod/shock at the front and rod/shock/stabar at the rear.
+    One list cannot encode two different arrangements, so it never could have
+    been right for both.
+
+    Counter-clockwise is cyclic, so the lowest-Z pickup anchors index 1 - which
+    is what the parenthetical in the annotation is telling us.
     """
     for item in ("rod", "shock"):
         if item not in pickups:
@@ -1288,7 +1299,11 @@ def _ensure_package_order_entry(path: Path, entry: str) -> None:
 
 
 def _display_path(path: Path, repo_root: Path) -> str:
-    """Repo-relative path with forward slashes, used as a key by the API and UI."""
+    """Repo-relative path for API payloads and the browser UI.
+
+    Always forward-slashed: these strings are compared against and served as
+    repo-relative keys, so they must not vary with the host OS separator.
+    """
     try:
         return path.resolve().relative_to(repo_root).as_posix()
     except ValueError:

@@ -3,7 +3,23 @@ import numpy as np
 
 
 def unit_vec(p1: Union[np.ndarray, Sequence[float]], p2: Union[np.ndarray, Sequence[float]]) -> Sequence[float]:
-    """Unit vector from p1 to p2."""
+    """
+    ## Unit Vector Calculation
+
+    Calculates unit vector given two points
+
+    Parameters
+    ----------
+    p1 : Node
+        Starting point
+    p2 : Node
+        Ending point
+
+    Returns
+    -------
+    np.ndarray
+        Unit vector pointing from starting node to ending node
+    """
     p1 = np.array(p1)
     p2 = np.array(p2)
     vector_AB = p2 - p1
@@ -12,7 +28,23 @@ def unit_vec(p1: Union[np.ndarray, Sequence[float]], p2: Union[np.ndarray, Seque
     return [float(x) for x in vector_AB / vector_AB_mag]
 
 def rotation_matrix(unit_vec: Union[np.ndarray, Sequence[float], Tuple[float, float, float]], theta: float) -> Sequence[Sequence[float]]:
-    """Rotation matrix for theta radians about unit_vec."""
+    """
+    ## Rotation Matrix
+
+    Generates rotation matrix
+
+    Parameters
+    ----------
+    unit_vec : np.array
+        Unit vector along which to perform rotation
+    theta : float
+        Angle for desired rotation (in radians)
+
+    Returns
+    -------
+    Sequence[Sequence[float]]
+        Rotation matrix for desired angle about desired axis
+    """
     ux = unit_vec[0]
     uy = unit_vec[1]
     uz = unit_vec[2]
@@ -36,7 +68,28 @@ def rotation_matrix(unit_vec: Union[np.ndarray, Sequence[float], Tuple[float, fl
     return matrix
 
 def nearest_root(func: Callable, x0: float, bounds: Tuple[float, float], tol: float, args: Sequence = []):
-    """Find the root nearest x0. func has the form func(x, args)."""
+    """
+    ## Nearest Root
+
+    Finds the root nearerst an initial guess
+
+    Parameters
+    ----------
+    func : Callable
+        Optimization function. Follows the form: func(x: float, args: Sequence)
+
+    x0 : float
+        Initial guess
+
+    bounds : Tuple[float, float]
+        Bounds on solution inputs
+
+    tol : float
+        Tolerance on solution
+
+    args : Sequence, optional
+        Args to func, by default []
+    """
     soln = x0
 
     residual: float = func(soln, args)
@@ -76,9 +129,27 @@ def nearest_root(func: Callable, x0: float, bounds: Tuple[float, float], tol: fl
     return x_mid
 
 def directional_root(func: Callable, x0: float, bounds: Tuple[float, float], tol: float, args: Sequence = []):
-    """Find the first root in one direction, set by the sign of bounds.
+    """
+    ## Directional Root
 
-    bounds must be all negative or all positive. func has the form func(x, args).
+    Finds the first root in a single direction, specified by the sign of bounds
+
+    Parameters
+    ----------
+    func : Callable
+        Optimization function. Follows the form: func(x: float, args: Sequence)
+
+    x0 : float
+        Initial guess
+
+    bounds : Tuple[float, float]
+        Bounds on solution inputs (should be entirely negative or entirely positive)
+
+    tol : float
+        Tolerance on solution
+
+    args : Sequence, optional
+        Args to func, by default []
     """
     # Intended for roots near zero.
 

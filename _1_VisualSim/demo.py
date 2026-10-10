@@ -3,12 +3,19 @@
     python -m _1_VisualSim.demo            # writes config + signals, prints paths
     make visual-demo                       # write one into _1_VisualSim/results/
 
-The motion is a closed-form kinematic mock-up of a step steer, not physics.
-Nothing here feeds a result. It gives the viewer a scene on a machine with no OpenModelica build.
+The motion here is a kinematic mock-up of a step-steer manoeuvre - roll, heave,
+pitch and steer driven by closed-form functions, with double-wishbone corners
+articulated about their inboard pickups. It is not physics, and nothing here
+feeds a result. It exists so the viewer and the docs have
+something to run against on a machine with no OpenModelica build.
 
-The tire forces are grip-limited and come from the same lateral acceleration.
-So a reviewer can check the friction circles and the LLTD readout by hand.
-They use the same ``tire_forces`` config block as a real capture.
+The tire forces are a mock-up too, but a self-consistent one: the manoeuvre is
+grip-limited rather than kinematic, so the lateral acceleration saturates where
+the tires run out, and each corner's Fx/Fy/Fz/camber are derived from that same
+acceleration. The friction circles and the LLTD readout therefore show
+something a reviewer can check by hand, and they exercise the same
+``tire_forces`` config block a real capture writes (see
+:func:`_1_VisualSim.from_results._build_tire_forces`).
 """
 
 from __future__ import annotations

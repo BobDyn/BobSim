@@ -1,11 +1,16 @@
-"""Camera navigation for BobVis. Pure numpy, so CI can test it.
+"""Camera navigation for BobVis: how mouse and trackpad input moves the view.
 
-``_5_App/static/visual.js`` ports this module. ``tests/test_visual_camera_parity.py``
-keeps the two in agreement. This module is the reference because it has the tests.
+Pure numpy, so the arithmetic that decides whether a gesture feels right is
+testable in CI. The viewer itself is now ``_5_App/static/visual.js``, which
+ports this module constant for constant;
+``tests/test_visual_camera_parity.py`` holds the two to the same answers, and
+this side stays the reference because it is the one with tests.
 
 Conventions
-    Screen deltas are pixels: x right, y down. NDC run -1..1 with y up.
-    Drags move the scene with the cursor. Orbit is turntable style about world +Z.
+    Screen deltas are pixels: x right, y down. Normalised device coordinates
+    (NDC) run -1..1 with y up. Drags follow "grab" semantics: the scene moves
+    with the cursor, the camera the other way. Orbit is turntable style about
+    world +Z, so the horizon never rolls.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ GROUND_REACH = 20.0
 
 @dataclass(frozen=True)
 class CameraPose:
-    """Camera state in world coordinates."""
+    """The camera state navigation reads and writes, in world coordinates."""
 
     position: np.ndarray
     focal: np.ndarray
@@ -70,10 +75,11 @@ def _half_height(pose: CameraPose) -> float:
 
 
 def orbit(pose: CameraPose, d_azimuth: float, d_elevation: float) -> CameraPose:
-    """Turntable orbit about the focal point, in degrees.
+    """Turntable orbit about the focal point.
 
-    Positive ``d_azimuth`` is counter-clockwise about world +Z seen from above.
-    Positive ``d_elevation`` raises the camera.
+    ``d_azimuth`` swings the camera counter-clockwise about world +Z seen from
+    above; ``d_elevation`` raises it. Degrees. Distance and focal point are
+    kept, elevation stops just short of the poles, and roll is levelled out.
     """
     offset = pose.position - pose.focal
     radius = float(np.linalg.norm(offset))
@@ -103,7 +109,11 @@ def orbit(pose: CameraPose, d_azimuth: float, d_elevation: float) -> CameraPose:
 
 
 def pan(pose: CameraPose, dx_px: float, dy_px: float, viewport_height_px: float) -> CameraPose:
-    """Slide the camera in its view plane so the scene tracks the cursor at the focal plane."""
+    """Slide the camera in its view plane so the scene tracks the cursor.
+
+    Scaled at the focal plane: dragging the full viewport height moves the view
+    by exactly the height of what is visible there.
+    """
     _, right, up = camera_basis(pose)
     per_px = 2.0 * _half_height(pose) / max(float(viewport_height_px), 1.0)
     shift = (-float(dx_px) * right + float(dy_px) * up) * per_px
@@ -144,9 +154,11 @@ def cursor_ray(
 def ground_plane_point(
     pose: CameraPose, ndc_x: float, ndc_y: float, aspect: float, height: float = 0.0
 ) -> np.ndarray | None:
-    """Where the cursor ray meets the ground plane ``z = height``.
+    """Where the cursor ray meets the ground plane ``z = height``, or ``None``.
 
-    ``None`` when the ray misses the plane or hits beyond :data:`GROUND_REACH`.
+    ``None`` when the ray points away from the plane, or grazes it so close to
+    the horizon that the hit is a world away: recentring there would leave the
+    car a speck, so the caller falls back to something nearer.
     """
     origin, direction = cursor_ray(pose, ndc_x, ndc_y, aspect)
     if abs(float(direction[2])) < 1e-9:
@@ -167,7 +179,8 @@ def zoom_at(
 ) -> CameraPose:
     """Zoom by ``factor`` (>1 closer) toward the point under the cursor.
 
-    That point stays fixed on screen.
+    That point stays put on screen, the way maps and CAD tools zoom, and the
+    orbit centre follows it in. Never closer than :data:`MIN_DISTANCE`.
     """
     factor = float(factor)
     if factor <= 0.0 or abs(factor - 1.0) < 1e-12:
@@ -201,7 +214,7 @@ def recenter(pose: CameraPose, point: np.ndarray) -> CameraPose:
 def wheel_zoom_factor(angle_dx: int, angle_dy: int, pixel_dx: int = 0, pixel_dy: int = 0) -> float:
     """Zoom factor for a wheel event, proportional to how far it scrolled.
 
-    Mouse wheels and trackpads zoom the same distance per notch.
+    Ten tenth-of-a-notch trackpad events zoom exactly as far as one notch.
     """
     if angle_dy:
         notches = angle_dy / WHEEL_NOTCH

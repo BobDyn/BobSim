@@ -7,7 +7,17 @@ import numpy as np
 
 
 class Node:
-    """Point with a position, child nodes and listeners."""
+    """
+    ## Node
+
+    Node object
+    - Similar to node element
+
+    Parameters
+    ----------
+    Position : Sequence[float]
+        Position of Node
+    """
     def __init__(self, position: Union[np.ndarray, Sequence[float]]) -> None:
         self.listeners: MutableSequence[Updateable] = []
         self.child_nodes: MutableSequence[Node] = []
@@ -23,9 +33,20 @@ class Node:
         self.rotation_direction: Union[None, Tuple[float, float, float]] = None
 
     def reset(self) -> None:
-        """Reset Node and its children to the initial position.
+        """
+        ## Reset
 
-        Reset only before a translation or rotation.
+        Resets Node position to initial position
+
+        ###### Resets should only be performed before a translation or rotation
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        ----------
+        None
         """
         self.position = self.initial_position
         
@@ -39,7 +60,20 @@ class Node:
             node.reset()
         
     def translate(self, translation: Union[np.ndarray, Sequence[float]]) -> None:
-        """Translate Node and its children from the initial position."""
+        """
+        ## Translate
+
+        Translates Node
+
+        Parameters
+        ----------
+        translation : Sequence[float]
+            Translation to apply
+
+        Returns
+        ----------
+        None
+        """
         self.reset()
 
         self.position = [x + y for x, y in zip(self.position, translation)]
@@ -60,12 +94,37 @@ class Node:
                ang_x: Union[None, float] = None,
                ang_y: Union[None, float] = None,
                ang_z: Union[None, float] = None) -> None:
-        """Rotate Node in one of two modes:
+        """
+        ## Rotate
 
-        1. About the axis `direction` through `origin`, by `angle`.
-        2. By `ang_x`, `ang_y` and `ang_z` about global axes, with position as a vector from `origin`.
+        Rotates Node with following options:
+            
+        1. Rotates Node about a given axis coincident with origin (provide `origin`, `direction`, `angle`)
 
-        Angles are in radians. If `persistent` is False, rotate from the initial position.
+        2. Rotates Node by desired angles, treating position as a vector from origin to self (provide `origin`, `ang_x`, `ang_y`, `ang_z`)
+
+        Parameters
+        ----------
+        origin : Node
+            Node representing origin of rotation
+        
+        persistent : bool, optional
+            Whether to keep previous state of Node, by default False
+        
+        direction : Tuple[float, float, float]
+            Unit vector specifying axis of rotation
+        
+        angle : float
+            angle of rotation in radians
+        
+        ang_x : float
+            Rotation about global x in radians
+        
+        ang_y : float
+            Rotation about global y in radians
+
+        ang_z : float
+            Rotation about global z in radians
         """
         if not persistent:
             self.reset()
@@ -113,14 +172,47 @@ class Node:
         self.__update_listeners__()
     
     def add_child(self, node: "Node") -> None:
-        """Add a child node that moves with this Node."""
+        """
+        ## Add Child
+
+        Adds child node to self
+
+        Parameters
+        ----------
+        node : Node
+            Child node to add to self
+        """
         self.child_nodes.append(node)
     
     def add_listener(self, listener: Updateable) -> None:
-        """Add a listener. Each Node update calls listener.update()."""
+        """
+        ## Add Listener
+
+        Adds listener to self. Any time Node is updated, listener.update() is called
+
+        Parameters
+        ----------
+        node : Node
+            Listener to add to self
+        """
         self.listeners.append(listener)
     
     def __add__(self, node: "Node") -> "Node":
+        """
+        ## Overloaded Node Addition
+
+        Allows for direct addition of nodes
+
+        Parameters
+        ----------
+        node : Node
+            Node to add to desired Node
+
+        Returns
+        -------
+        Node
+            Node with position equal to the sum of self.position and node.position
+        """
         node_sum = [self.position[0] + node.position[0],
                     self.position[1] + node.position[1],
                     self.position[2] + node.position[2]]
@@ -128,6 +220,21 @@ class Node:
         return Node(position=node_sum)
 
     def __sub__(self, node: "Node") -> "Node":
+        """
+        ## Overloaded Node Subtraction
+
+        Allows for direct subtraction of nodes
+
+        Parameters
+        ----------
+        node : Node
+            Node to subtract from desired Node
+
+        Returns
+        -------
+        Node
+            Node with position equal to the difference of self.position and node.position
+        """
         node_sub = [self.position[0] - node.position[0],
                     self.position[1] - node.position[1],
                     self.position[2] - node.position[2]]
@@ -135,25 +242,82 @@ class Node:
         return Node(position=node_sub)
     
     def __mul__(self, num: float):
+        """
+        ## Overloaded Node Multiplication
+
+        Multiplies all entries by the specified value
+
+        Parameters
+        ----------
+        num : float
+            Number to multiply all entries by
+        """
         node_mul = [x * num for x in self.position]
 
         return Node(position=node_mul)
 
     def __truediv__(self, num: float):
+        """
+        ## Overloaded Node Division
+
+        Divides all entries by the specified value
+
+        Parameters
+        ----------
+        num : float
+            Number to divide all entries by
+        """
         node_div = [x / num for x in self.position]
 
         return Node(position=node_div)
     
     def __getitem__(self, index: int) -> float:
+        """
+        ## Node Indexing
+
+        Allows for node indexing, based on position array
+
+        Parameters
+        ----------
+        index : int
+            Position entry to extract
+
+        Returns
+        -------
+        float
+            Value corresponding to entry index
+        """
         value = self.position[index]
 
         return value
     
     def __setitem__(self, index: int, value: float) -> None:
+        """
+        ## Node Index Setting
+
+        Allows for setting node values, based on indexed position array
+
+        Parameters
+        ----------
+        index : int
+            Position entry to set
+
+        value : float
+            Value to set at position entry
+        """
         self.position[index] = value
         self.__update_listeners__()
     
     def __update_listeners__(self) -> None:
+        """
+        ## Update Children
+
+        Updates child Nodes
+
+        Parameters
+        ----------
+        None
+        """
         for listener in self.listeners:
             listener.update()
     

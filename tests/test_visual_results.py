@@ -1,4 +1,10 @@
-"""Checks for the result-CSV to BobVis-scene converter."""
+"""Checks for the result-CSV to BobVis-scene converter.
+
+No PyVista and no OpenModelica: the converter is plain numpy and PyYAML, and
+the parts worth protecting are the frame-name map (a BobLib rename silently
+empties the scene) and the upright refit that stands in for the wheel-centre
+frames OpenModelica's alias elimination removes.
+"""
 
 from __future__ import annotations
 
@@ -111,7 +117,11 @@ def _write_result_csv(
 ) -> None:
     """A CSV shaped like an OpenModelica result, carrying every mapped frame.
 
-    Contact-patch Z and the wheel-centre frames are left out, as alias elimination does.
+    Contact-patch Z and the wheel-centre frames are left out on purpose: that
+    is exactly what alias elimination does to a real run, and the converter is
+    expected to refit them. ``prefix`` nests the axles as VehicleSim does,
+    ``speed`` drives the car forward, ``loads`` names per-tire Fz columns, and
+    ``tire_forces`` adds each tire's own force state.
     """
     time = np.linspace(0.0, 1.0, samples)
     columns: dict[str, np.ndarray] = {"time": time}
@@ -196,7 +206,7 @@ def test_detect_prefix_finds_the_axles_wherever_the_model_nests_them() -> None:
 
 
 def test_convert_reads_a_driving_vehicle_result(tmp_path: Path) -> None:
-    """VehicleSim nests the axles and names loads Fz_*. The car moves, so it has tracks."""
+    """VehicleSim nests the axles and names loads Fz_*; the car moves, so tracks."""
     result = tmp_path / "VehicleSim_res.csv"
     vehicle_loads = tuple(names[1] for names in LOAD_SIGNALS.values())
     _write_result_csv(result, prefix="chassis.detailedChassis.", speed=20.0,
@@ -216,7 +226,7 @@ def test_convert_reads_a_driving_vehicle_result(tmp_path: Path) -> None:
 
 
 def test_convert_gives_the_rig_loads_but_no_tracks(tmp_path: Path) -> None:
-    """The rig holds the car in place, so a trail would be a dot."""
+    """The rig holds the car in place; a trail there would only be a dot."""
     result = tmp_path / "FourPostSim_res.csv"
     _write_result_csv(result, loads=tuple(names[0] for names in LOAD_SIGNALS.values()))
 

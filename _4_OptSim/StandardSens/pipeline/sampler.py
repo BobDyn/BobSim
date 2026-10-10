@@ -1,4 +1,4 @@
-"""Generate DOE variant dicts from the baseline record and DOE config."""
+"""sampler.py — Read baseline car + DOE config, generate DOE variant dicts."""
 
 from collections.abc import Iterable
 from itertools import product

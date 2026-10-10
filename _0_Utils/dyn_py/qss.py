@@ -56,8 +56,10 @@ def steady_state_residual(
 ) -> FloatArray:
     """Return all generalized accelerations constrained by QSS trim.
 
-    Do not add centripetal acceleration here. The body-frame ``omega x velocity``
-    term in the transient equations already includes it.
+    At constant body-frame velocities, suspension positions, unsprung positions,
+    and wheel speeds, every generalized acceleration is zero. Centripetal
+    acceleration is retained by the body-frame ``omega x velocity`` term in the
+    transient equations; it must not be manually added to this residual.
     """
 
     return model.evaluate(state, inputs).generalized_acceleration.copy()
@@ -74,7 +76,11 @@ def solve_steady_state(
     max_nfev: int = 400,
     tolerance: float = 1e-8,
 ) -> QSSResult:
-    """Solve a constant-speed, constant-radius QSS operating point."""
+    """Solve a constant-speed, constant-radius QSS operating point.
+
+    The unknown set grows with fidelity while the constraint is unchanged:
+    all generalized accelerations from the transient model are zero.
+    """
 
     return _solve_trim(
         model,
@@ -248,8 +254,9 @@ def solve_moment_state(
 ) -> QSSResult:
     """Solve vertical/longitudinal QSS while leaving lateral force and yaw moment free.
 
-    Used for yaw-moment diagrams. Sideslip and steer are inputs. Lateral
-    acceleration and yaw moment are outputs.
+    This is the operating condition needed by a yaw-moment diagram: sideslip
+    and steer are imposed, heave/roll/pitch and the rotating/unsprung states are
+    equilibrated, and lateral acceleration plus yaw moment are outputs.
     """
 
     if speed_mps <= 0.0:
