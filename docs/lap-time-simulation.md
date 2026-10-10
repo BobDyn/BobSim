@@ -20,11 +20,12 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 - Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
 **GGV behavior:**
-- If GGV CSV exists → uses it as-is (provenance must match `model_dof` when comparing fidelities)
-- If missing → generates from selected model
+- With generation enabled, an existing GGV CSV is reused only when its `.csv.metadata.json` fingerprint matches the selected model, vehicle, power cap, settings, tire contents, optional FourPost reports, and physics/projection code. Otherwise it is regenerated.
+- Creating or deleting an optional FourPost report also invalidates the cache.
+- With `generate_if_missing: false`, an existing CSV is explicitly reported as `supplied_unverified`; missing CSVs fail.
 - High-slip roots (sideslip > `max_abs_beta_rad`, steer > `max_abs_steering_rad`) are rejected; use EnvelopeSim YMD workflow for deliberate high-beta states
 - Paths can contain `{model_dof}` placeholder to prevent silent reuse across fidelities
-- Sidecar `summary.json` records provenance; cache mismatch regenerates
+- `summary.json` records the GGV provenance and whether the envelope was generated, verified from cache, or supplied unverified.
 
 **Power caps:**
 - Default endurance: 32 kW constant (energy-budget proxy, not thermal model)
