@@ -389,14 +389,11 @@ def test_camber_curves_modify_reduced_tire_capacity(parameters):
     zero_camber = np.zeros(4)
     high_camber = np.full(4, np.deg2rad(4.0))
 
-    assert np.all(
-        parameters.tire.mu_y(loads, high_camber)
-        < parameters.tire.mu_y(loads, zero_camber)
-    )
-    assert np.all(
-        parameters.tire.cornering_stiffness(loads, high_camber)
-        < parameters.tire.cornering_stiffness(loads, zero_camber)
-    )
+    alpha = np.linspace(0, .3, 301)[:, None]
+    straight = parameters.tire.forces(loads, alpha, 0, zero_camber)[1]
+    inclined = parameters.tire.forces(loads, alpha, 0, high_camber)[1]
+    assert np.all(inclined.max(axis=0) < straight.max(axis=0))
+    assert np.all(inclined[1] < straight[1])
 
 
 def test_14dof_instant_link_force_has_equal_and_opposite_unsprung_reaction(parameters):
@@ -709,3 +706,20 @@ def test_steered_contact_tangent_holds_rack_fixed(parameters):
         (above.contact_patch_offsets_m - below.contact_patch_offsets_m) / (2 * step),
         atol=1e-8,
     )
+
+
+@pytest.mark.parametrize('dof', [3, 6, 10, 14])
+def test_all_fidelities_use_mf52_forces(parameters, dof):
+    model = create_model(dof, parameters)
+    state = model.initial_state(12.0)
+    if dof >= 10:
+        state[-4:] *= 1.04
+    output = model.evaluate(state, ModelInputs(steering_rad=.04, wheel_torques_nm=(10., 10., 15., 15.)))
+    fx, fy = parameters.tire.forces(output.normal_loads_n, output.slip_angles_rad,
+                                    output.slip_ratios, output.camber_rad)
+    heading = output.toe_rad
+    expected = np.column_stack((fx*np.cos(heading)-fy*np.sin(heading),
+                                fx*np.sin(heading)+fy*np.cos(heading)))
+    np.testing.assert_allclose(output.wheel_forces_body_n[:, :2], expected, rtol=1e-12, atol=1e-10)
+    if dof < 10:
+        np.testing.assert_allclose(fx, np.array([10., 10., 15., 15.])/parameters.wheel_radius_m, atol=1e-7)

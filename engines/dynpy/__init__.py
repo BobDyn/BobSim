@@ -26,7 +26,6 @@ from engines.dynpy.parameters import (
     CORNERS,
     PowertrainLimits,
     ReducedVehicleParameters,
-    TireParameters,
     load_reduced_vehicle_parameters,
     project_powertrain_limits,
 )
@@ -43,6 +42,7 @@ from engines.dynpy.transient import (
     simulate_transient,
 )
 from engines.dynpy.vehicle import Vehicle
+from engines.dynpy.tire import MF52Tire
 
 __all__ = [
     "CORNERS",
@@ -52,7 +52,7 @@ __all__ = [
     "PowertrainLimits",
     "QSSResult",
     "ReducedVehicleParameters",
-    "TireParameters",
+    "MF52Tire",
     "TransientResult",
     "Vehicle",
     "VehicleDynamicsSystem",
