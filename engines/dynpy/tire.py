@@ -13,7 +13,7 @@ from scipy.optimize import brentq, minimize_scalar
 FloatArray = NDArray[np.float64]
 FORCE_COEFFICIENTS = tuple(
     """
-FNOMIN FZMIN FZMAX KPUMIN KPUMAX LFZO LGAX LGAY
+FNOMIN FZMIN FZMAX ALPMIN ALPMAX KPUMIN KPUMAX LFZO LGAX LGAY
 PCX1 PDX1 PDX2 PDX3 PKX1 PKX2 PKX3 PHX1 PHX2 PVX1 PVX2
 PEX1 PEX2 PEX3 PEX4 LCX LMUX LKX LHX LVX LEX LXAL
 PCY1 PDY1 PDY2 PDY3 PKY1 PKY2 PKY3 PHY1 PHY2 PHY3
@@ -59,6 +59,8 @@ class MF52Tire:
             raise ValueError("MF5.2 nominal load, load scale and load bounds must be positive.")
         if not p["KPUMIN"] < 0 < p["KPUMAX"]:
             raise ValueError("MF5.2 slip bounds must straddle zero.")
+        if not p["ALPMIN"] < 0 < p["ALPMAX"]:
+            raise ValueError("MF5.2 slip angle bounds must straddle zero.")
         if p["PKY2"] <= 0:
             raise ValueError("MF5.2 PKY2 must be positive.")
         object.__setattr__(self, "coefficients", MappingProxyType(p))
@@ -70,6 +72,29 @@ class MF52Tire:
     @property
     def fz_max_n(self) -> float:
         return self.coefficients["FZMAX"]
+
+    def slip_in_fit_range(self, alpha_rad: ArrayLike, kappa: ArrayLike) -> NDArray[np.bool_]:
+        """## Slip Validity
+
+        Parameters
+        ----------
+        alpha_rad : ArrayLike
+            Wheel-frame slip angle in radians.
+        kappa : ArrayLike
+            Longitudinal slip ratio.
+
+        Returns
+        -------
+        NDArray
+            Whether both slips lie within this tire's fitted bounds.
+        """
+        alpha, slip = np.broadcast_arrays(alpha_rad, kappa)
+        p = self.coefficients
+        return np.asarray(
+            (alpha >= p["ALPMIN"]) & (alpha <= p["ALPMAX"])
+            & (slip >= p["KPUMIN"]) & (slip <= p["KPUMAX"]),
+            dtype=bool,
+        )
 
     def slip_for_force(
         self,

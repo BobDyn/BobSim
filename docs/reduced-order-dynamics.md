@@ -188,7 +188,8 @@ equations and constrains selected generalized accelerations:
 The unknown set grows naturally with fidelity: body sideslip/steer/drive torque,
 then heave-roll-pitch, then four wheel slips, then four unsprung positions.
 
-Finite tire-fit bounds are validity constraints. GGV and YMD cells are rejected
+QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
+range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected
 when any normal load falls outside the active `.tir` file's `FZMIN`/`FZMAX`
 range; warning-only extrapolation is available only through an explicit config
 override. Study-grade GGV and lap configs enable a deterministic beta/steer

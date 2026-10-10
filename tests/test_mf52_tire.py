@@ -194,3 +194,13 @@ def test_moment_limits_and_velocity_broadcast(coefficients):
     result = no_grip.evaluate(650, .08, .02, .03, 12)
     assert np.isfinite(result).all()
     np.testing.assert_array_equal([result[0], result[1], result[4]], 0)
+
+
+def test_slip_fit_bounds_are_inclusive_and_tire_specific(coefficients):
+    tire = MF52Tire({**coefficients, "ALPMIN": -0.1, "ALPMAX": 0.2,
+                     "KPUMIN": -0.08, "KPUMAX": 0.12})
+    np.testing.assert_array_equal(
+        tire.slip_in_fit_range([-0.1, 0.2, -0.11, 0.21, 0, 0, np.nan],
+                               [-0.08, 0.12, 0, 0, -0.09, 0.13, 0]),
+        [True, True, False, False, False, False, False],
+    )

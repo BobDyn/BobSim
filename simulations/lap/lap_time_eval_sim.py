@@ -322,6 +322,10 @@ def _study_scope_summary(
         "validity_limits": {
             "tire_normal_load_min_n": [tire.fz_min_n for tire in parameters.tires],
             "tire_normal_load_max_n": [tire.fz_max_n for tire in parameters.tires],
+            "tire_slip_angle_min_rad": [tire.coefficients["ALPMIN"] for tire in parameters.tires],
+            "tire_slip_angle_max_rad": [tire.coefficients["ALPMAX"] for tire in parameters.tires],
+            "tire_slip_ratio_min": [tire.coefficients["KPUMIN"] for tire in parameters.tires],
+            "tire_slip_ratio_max": [tire.coefficients["KPUMAX"] for tire in parameters.tires],
             "tire_load_range_enforced": bool(
                 qss_config.get("enforce_tire_load_range", True)
             ),
