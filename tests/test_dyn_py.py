@@ -326,7 +326,7 @@ def test_qss_rotating_wheels_follow_vehicle_acceleration(parameters, dof, wheel_
     )
 
     assert result.success
-    expected = G / np.asarray(parameters.wheel_radius_m)
+    expected = G * np.cos(result.output.toe_rad) / np.asarray(parameters.wheel_radius_m)
     np.testing.assert_allclose(
         result.output.generalized_acceleration[wheel_slice],
         expected,

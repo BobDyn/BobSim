@@ -296,10 +296,10 @@ class NonlinearDoubleWishboneKinematics:
         jounce = _validate_jounce(jounce_m)
         return _assemble_vehicle_state(
             jounce,
-            self._solve(self.front, float(jounce[0]), rack_displacement_m),
-            self._solve(self.front, float(jounce[1]), -rack_displacement_m),
-            self._solve(self.rear, float(jounce[2])),
-            self._solve(self.rear, float(jounce[3])),
+            self._solve("front", float(jounce[0]), rack_displacement_m),
+            self._solve("front", float(jounce[1]), -rack_displacement_m),
+            self._solve("rear", float(jounce[2])),
+            self._solve("rear", float(jounce[3])),
         )
 
     @lru_cache(maxsize=512)
@@ -341,9 +341,11 @@ class NonlinearDoubleWishboneKinematics:
     ) -> DoubleWishboneInstantLinks:
         return self.at(jounce_m, rack_displacement_m).instant_links
 
+    @lru_cache(maxsize=512)
     def _solve(
-        self, corner: CornerKinematics, jounce_m: float, rack_displacement_m: float = 0.0,
+        self, axle: Literal["front", "rear"], jounce_m: float, rack_displacement_m: float = 0.0,
     ) -> AxleKinematicState:
+        corner = self.front if axle == "front" else self.rear
         step = self.derivative_step_m
         _, points, _ = corner.solve_jounce(jounce_m, np.zeros(3), rack_displacement_m=rack_displacement_m)
         _, below, _ = corner.solve_jounce(jounce_m - step, np.zeros(3), rack_displacement_m=rack_displacement_m)
