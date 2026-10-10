@@ -629,3 +629,20 @@ def test_optsim_entrypoints_import() -> None:
         importlib.import_module(module)
 
 
+
+
+def test_soft_compile_failure_cannot_reuse_old_variant(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from StandardSens.pipeline import compiler
+    (tmp_path / 'variant.mo').write_text('record Variant end Variant;')
+    build = tmp_path / 'build/SteadyStateEval'
+    build.mkdir(parents=True)
+    (build / 'VehicleSim').write_text('old executable')
+    (build / 'VehicleSim_init.xml').write_text('old init')
+    monkeypatch.setattr(compiler, '_build_model_options', lambda *args: {})
+    monkeypatch.setattr(compiler, 'generate_mos', lambda *args, **kwargs: '// simulated compiler')
+    monkeypatch.setattr(compiler.subprocess, 'run',
+                        lambda *args, **kwargs: SimpleNamespace(
+                            returncode=0, stdout='Error: translation failed', stderr=''))
+    assert not compiler.compile_variant(tmp_path, 'SteadyStateEval', {'model': 'VehicleSim'}, tmp_path / 'package.mo')
+    assert not (build / 'VehicleSim').exists()

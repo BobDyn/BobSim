@@ -379,11 +379,11 @@ GENERATED_TEMPLATES := \
 # an x86-ism, and needs -mcpu=native instead.
 $(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
 		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; omc $(WORKSPACE)/$(BUILD_VEHICLE_MOS) && test -f $(WORKSPACE)/$(VEHICLE_SIM_EXE)'
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"'
 
 $(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
 		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; omc $(WORKSPACE)/$(BUILD_FOUR_POST_MOS) && test -f $(WORKSPACE)/$(FOUR_POST_SIM_EXE)'
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"'
 
 # SHARK is optional: with it the file is imported into the tracked variant vehicle
 # first; without it the already-imported variant is overlaid as it stands.
