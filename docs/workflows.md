@@ -116,16 +116,13 @@ make opt-trade      # compare the vehicles named in configs/trade_study.yaml
 ```
 
 `opt-solve` and `opt-trade` cache compiled vehicles and results under
-`simulations/optimization/Build/StandardSens/{solve,trade}/`. They discard the cache when BobLib,
+`optimization/Build/StandardSens/{solve,trade}/`. They discard the cache when BobLib,
 the vehicle or the simulation tooling changes. So a rerun usually takes seconds.
 The first section of [doe-reverse-engineering.md](doe-reverse-engineering.md)
 says which `opt-*` tool answers which question.
 
-Note the `opt-*` targets set `PYTHONPATH=simulations/optimization:.` and invoke modules as
-`StandardSens.*` / `EnvelopeSens.*`, not `simulations.optimization.StandardSens.*`. If you run
-one by hand, replicate that or the imports of `_shared` will fail. `PYTHONPATH`
-uses the platform's separator. On Windows outside the container, it is
-`PYTHONPATH="simulations/optimization;."`.
+Optimization uses ordinary package imports. From the repo root, run modules
+such as `python -m optimization.response.solve_setup` without a custom `PYTHONPATH`.
 
 ## Visualizing a run
 

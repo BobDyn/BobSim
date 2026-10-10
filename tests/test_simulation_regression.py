@@ -74,10 +74,10 @@ def _workflow_specs(baseline: Mapping[str, Any]) -> Mapping[str, Mapping[str, An
 
 
 STUDY_CONFIGS = {
-    "four_post": "simulations/mbd/FourPostEval/four_post_eval_config.yml",
-    "ramp_steer": "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
-    "steady_state": "simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
-    "transient": "simulations/mbd/TransientEval/transient_eval_config.yml",
+    "four_post": "simulations/response/mbd/four_post/four_post_eval_config.yml",
+    "ramp_steer": "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
+    "steady_state": "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
+    "transient": "simulations/response/mbd/transient/transient_eval_config.yml",
 }
 
 # Only sections that can move a simulated number.
@@ -528,7 +528,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The pin is the only thing that overrides an active copy."""
-    relative = "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"
+    relative = "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     seed = tmp_path / relative
     seed.parent.mkdir(parents=True)
     seed.write_text("simulation: {solver: dassl}", encoding="utf-8")

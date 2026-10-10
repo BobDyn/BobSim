@@ -9,20 +9,13 @@ so, and that an under-determined question gets the nearest-to-baseline answer.
 from __future__ import annotations
 
 import math
-from pathlib import Path
-import sys
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-OPTSIM_DIR = ROOT / "simulations/optimization"
-if str(OPTSIM_DIR) not in sys.path:
-    sys.path.insert(0, str(OPTSIM_DIR))
 
 np = pytest.importorskip("numpy", reason="the solver works on numpy arrays")
 pytest.importorskip("scipy", reason="the solver uses scipy.optimize.least_squares")
 
-from StandardSens.pipeline import solver  # noqa: E402
+from optimization.response.pipeline import solver  # noqa: E402
 
 FRONT, REAR, TOE = "front.stabar", "rear.stabar", "front.toe"
 

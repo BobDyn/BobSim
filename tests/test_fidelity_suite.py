@@ -1,4 +1,4 @@
-from simulations.reduced.fidelity_suite import default_cases
+from simulations.response.reduced.fidelity_suite import default_cases
 
 
 def test_fidelity_suite_cases_target_added_physics():

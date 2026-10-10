@@ -198,7 +198,7 @@ boundary from a disconnected local trim branch. The routine all-DOF visual
 smoke config disables that expensive audit explicitly. Sideslip and roadwheel-
 steer bounds remain study assumptions and are written into lap summaries.
 
-Select the backend in `GGV/ggv_config.yml` or `YMD/ymd_config.yml`:
+Select the backend in `simulations/envelope/ggv/ggv_config.yml` or `simulations/envelope/ymd/ymd_config.yml`:
 
 ```yaml
 generation:

@@ -478,7 +478,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="ramp-steer",
         group="standard",
         label="RampSteerEval",
-        path="simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
+        path="simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
         workflow_id="ramp-steer",
         relocatable=True,
         fields=COMMON_SIM_FIELDS
@@ -535,7 +535,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="steady-state",
         group="standard",
         label="SteadyStateEval",
-        path="simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
+        path="simulations/response/mbd/steady_state/steady_state_eval_config.yml",
         workflow_id="steady-state",
         relocatable=True,
         fields=COMMON_SIM_FIELDS
@@ -586,7 +586,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="transient",
         group="standard",
         label="TransientEval",
-        path="simulations/mbd/TransientEval/transient_eval_config.yml",
+        path="simulations/response/mbd/transient/transient_eval_config.yml",
         workflow_id="transient",
         relocatable=True,
         fields=COMMON_SIM_FIELDS
@@ -605,7 +605,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="four-post",
         group="standard",
         label="FourPostEval",
-        path="simulations/mbd/FourPostEval/four_post_eval_config.yml",
+        path="simulations/response/mbd/four_post/four_post_eval_config.yml",
         workflow_id="four-post",
         relocatable=True,
         fields=COMMON_SIM_FIELDS
@@ -648,7 +648,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="ggv",
         group="envelope",
         label="GGV",
-        path="simulations/envelope/GGV/ggv_config.yml",
+        path="simulations/envelope/ggv/ggv_config.yml",
         workflow_id="ggv",
         fields=(
             _field("generation.model_dof", "Model DOF", kind="integer", group="Engine",
@@ -681,7 +681,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="ymd",
         group="envelope",
         label="YMD",
-        path="simulations/envelope/YMD/ymd_config.yml",
+        path="simulations/envelope/ymd/ymd_config.yml",
         workflow_id="ymd",
         fields=(
             _field("generation.model_dof", "Model DOF", kind="integer", group="Engine",
@@ -703,7 +703,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="vehicle-review",
         group="report",
         label="VehicleReview",
-        path="simulations/envelope/VehicleReview/vehicle_review_config.yml",
+        path="simulations/envelope/vehicle_review/vehicle_review_config.yml",
         workflow_id="vehicle-review",
         fields=(
             _field("report.brand", "Brand", kind="string", group="Report"),
@@ -720,7 +720,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="standard-sens",
         group="opt",
         label="StandardSens DOE",
-        path="simulations/optimization/StandardSens/configs/_doe_config.yaml",
+        path="optimization/response/configs/_doe_config.yaml",
         workflow_id="standard-sens",
         fields=(
             _field("architecture.vehicle", "Vehicle model", kind="string", group="Architecture"),
@@ -741,7 +741,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="standard-sens-compiler",
         group="opt",
         label="StandardSens Compiler",
-        path="simulations/optimization/StandardSens/configs/compiler_config.yaml",
+        path="optimization/response/configs/compiler_config.yaml",
         fields=(
             _field("max_workers", "Compiler workers", kind="integer", group="Compiler"),
             _field("batch.max_workers", "Batch workers", kind="integer", group="Batch"),
@@ -752,7 +752,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="standard-sens-architecture",
         group="opt",
         label="StandardSens Architecture",
-        path="simulations/optimization/StandardSens/configs/vehicle_architecture.yaml",
+        path="optimization/response/configs/vehicle_architecture.yaml",
         fields=(
             _field("sampling.method", "Sampling method", kind="string", group="Sampling"),
             _field("sampling.intervals", "Intervals", kind="integer", group="Sampling"),
@@ -764,7 +764,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         id="envelope-sens",
         group="opt",
         label="EnvelopeSens",
-        path="simulations/optimization/EnvelopeSens/config.yml",
+        path="optimization/envelope/config.yml",
         workflow_id="envelope-sens",
         fields=(
             _field(
@@ -790,73 +790,77 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
         "build-vehicle": ActionSpec(
             id="build-vehicle",
             label="Build VehicleSim",
-            argv=("omc", "simulations/mbd/build_vehicle_sim.mos"),
+            argv=("omc", "simulations/response/mbd/build_vehicle_sim.mos"),
             requires_external_toolchain=True,
         ),
         "build-four-post": ActionSpec(
             id="build-four-post",
             label="Build FourPostSim",
-            argv=("omc", "simulations/mbd/build_four_post_sim.mos"),
+            argv=("omc", "simulations/response/mbd/build_four_post_sim.mos"),
             requires_external_toolchain=True,
         ),
         "run-ramp-steer": ActionSpec(
             id="run-ramp-steer",
             label="Run RampSteerEval",
-            argv=_python_module_argv(python, python_module_arg, "simulations.mbd.RampSteerEval.ramp_steer_eval_sim"),
+            argv=_python_module_argv(
+                python, python_module_arg, "simulations.response.mbd.ramp_steer.ramp_steer_eval_sim"
+            ),
             requires_external_toolchain=True,
         ),
         "run-steady-state": ActionSpec(
             id="run-steady-state",
             label="Run SteadyStateEval",
             argv=_python_module_argv(
-                python, python_module_arg, "simulations.mbd.SteadyStateEval.steady_state_eval_sim"
+                python, python_module_arg, "simulations.response.mbd.steady_state.steady_state_eval_sim"
             ),
             requires_external_toolchain=True,
         ),
         "run-transient": ActionSpec(
             id="run-transient",
             label="Run TransientEval",
-            argv=_python_module_argv(python, python_module_arg, "simulations.mbd.TransientEval.transient_eval_sim"),
+            argv=_python_module_argv(
+                python, python_module_arg, "simulations.response.mbd.transient.transient_eval_sim"
+            ),
             requires_external_toolchain=True,
         ),
         "run-four-post": ActionSpec(
             id="run-four-post",
             label="Run FourPostEval",
-            argv=_python_module_argv(python, python_module_arg, "simulations.mbd.FourPostEval.four_post_eval_sim"),
+            argv=_python_module_argv(
+                python, python_module_arg, "simulations.response.mbd.four_post.four_post_eval_sim"
+            ),
             requires_external_toolchain=True,
         ),
         "run-ggv": ActionSpec(
             id="run-ggv",
             label="Run GGV",
-            argv=_python_module_argv(python, python_module_arg, "simulations.envelope.GGV.ggv_generation"),
+            argv=_python_module_argv(python, python_module_arg, "simulations.envelope.ggv.ggv_generation"),
             requires_external_toolchain=True,
         ),
         "run-ymd": ActionSpec(
             id="run-ymd",
             label="Run YMD",
-            argv=_python_module_argv(python, python_module_arg, "simulations.envelope.YMD.ymd_generation"),
+            argv=_python_module_argv(python, python_module_arg, "simulations.envelope.ymd.ymd_generation"),
             requires_external_toolchain=True,
         ),
         "run-review": ActionSpec(
             id="run-review",
             label="Run VehicleReview",
             argv=_python_module_argv(
-                python, python_module_arg, "simulations.envelope.VehicleReview.vehicle_review_sim"
+                python, python_module_arg, "simulations.envelope.vehicle_review.vehicle_review_sim"
             ),
             requires_external_toolchain=True,
         ),
         "run-opt-standard": ActionSpec(
             id="run-opt-standard",
             label="Run StandardSens",
-            argv=_python_module_argv(python, python_module_arg, "StandardSens.pre_screen_sensitivities"),
-            env={"PYTHONPATH": f"{root / 'simulations/optimization'}:{root}"},
+            argv=_python_module_argv(python, python_module_arg, "optimization.response.pre_screen_sensitivities"),
             requires_external_toolchain=True,
         ),
         "run-opt-envelope": ActionSpec(
             id="run-opt-envelope",
             label="Run EnvelopeSens",
-            argv=_python_module_argv(python, python_module_arg, "EnvelopeSens.sensitivities"),
-            env={"PYTHONPATH": f"{root / 'simulations/optimization'}:{root}"},
+            argv=_python_module_argv(python, python_module_arg, "optimization.envelope.sensitivities"),
             requires_external_toolchain=True,
         ),
     }
@@ -870,7 +874,7 @@ def build_modelica_build_targets() -> dict[str, BuildTargetSpec]:
             action_id="build-vehicle",
             build_dir="simulations/mbd/BuildBobLib/VehicleSim",
             exec_name="BobLib.Experiments.Standards.VehicleSim",
-            script="simulations/mbd/build_vehicle_sim.mos",
+            script="simulations/response/mbd/build_vehicle_sim.mos",
         ),
         "four_post": BuildTargetSpec(
             id="four_post",
@@ -878,7 +882,7 @@ def build_modelica_build_targets() -> dict[str, BuildTargetSpec]:
             action_id="build-four-post",
             build_dir="simulations/mbd/BuildBobLib/FourPostSim",
             exec_name="BobLib.Experiments.Standards.FourPostSim",
-            script="simulations/mbd/build_four_post_sim.mos",
+            script="simulations/response/mbd/build_four_post_sim.mos",
         ),
     }
 
@@ -895,7 +899,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="OpenModelica compiled executable",
             group="standard",
             label="RampSteerEval",
-            config="simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
+            config="simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
             actions=("build-vehicle", "run-ramp-steer"),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/ramp_steer_eval_report.pdf", "pdf"),
@@ -909,7 +913,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="OpenModelica compiled executable",
             group="standard",
             label="SteadyStateEval",
-            config="simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
+            config="simulations/response/mbd/steady_state/steady_state_eval_config.yml",
             actions=("build-vehicle", "run-steady-state"),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/steady_state_eval_report.pdf", "pdf"),
@@ -923,7 +927,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="OpenModelica compiled executable",
             group="standard",
             label="TransientEval",
-            config="simulations/mbd/TransientEval/transient_eval_config.yml",
+            config="simulations/response/mbd/transient/transient_eval_config.yml",
             actions=("build-vehicle", "run-transient"),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/transient_eval_report.pdf", "pdf"),
@@ -937,7 +941,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="OpenModelica compiled executable",
             group="standard",
             label="FourPostEval",
-            config="simulations/mbd/FourPostEval/four_post_eval_config.yml",
+            config="simulations/response/mbd/four_post/four_post_eval_config.yml",
             actions=("build-four-post", "run-four-post"),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/four_post_eval_report.pdf", "pdf"),
@@ -951,7 +955,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="Python",
             group="envelope",
             label="GGV",
-            config="simulations/envelope/GGV/ggv_config.yml",
+            config="simulations/envelope/ggv/ggv_config.yml",
             actions=("run-ggv",),
             outputs=(
                 OutputSpec("Report", "simulations/envelope/results/ggv_report.pdf", "pdf"),
@@ -966,7 +970,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="Python",
             group="envelope",
             label="YMD",
-            config="simulations/envelope/YMD/ymd_config.yml",
+            config="simulations/envelope/ymd/ymd_config.yml",
             actions=("run-ymd",),
             outputs=(
                 OutputSpec("Report", "simulations/envelope/results/ymd_report.pdf", "pdf"),
@@ -981,7 +985,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="Python report",
             group="report",
             label="VehicleReview",
-            config="simulations/envelope/VehicleReview/vehicle_review_config.yml",
+            config="simulations/envelope/vehicle_review/vehicle_review_config.yml",
             actions=("run-review",),
             outputs=(
                 OutputSpec("Report", "simulations/envelope/results/VehicleReview/vehicle_review_report.pdf", "pdf"),
@@ -997,7 +1001,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="OpenModelica compiled executable",
             group="opt",
             label="StandardSens",
-            config="simulations/optimization/StandardSens/configs/_doe_config.yaml",
+            config="optimization/response/configs/_doe_config.yaml",
             actions=("run-opt-standard",),
             outputs=(),
         ),
@@ -1008,7 +1012,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             runtime="Python",
             group="opt",
             label="EnvelopeSens",
-            config="simulations/optimization/EnvelopeSens/config.yml",
+            config="optimization/envelope/config.yml",
             actions=("run-opt-envelope",),
             outputs=(),
         ),

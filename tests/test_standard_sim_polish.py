@@ -11,7 +11,7 @@ import yaml
 
 from common.plotting.plot_types.signal_plot import SignalPlot
 from common.reporting.report_engine import _raw_time_series_frame
-from simulations.mbd.FourPostEval.four_post_eval_sim import (
+from simulations.response.mbd.four_post.four_post_eval_sim import (
     FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD,
     FOUR_POST_HEAVE_END_S,
     FOUR_POST_HEAVE_POSE_COUNT,
@@ -24,26 +24,26 @@ from simulations.mbd.FourPostEval.four_post_eval_sim import (
     FourPostEvalSim,
     _normalize_four_post_report_config,
 )
-from simulations.mbd._modelica_runner import ModelicaRunner
-from simulations.mbd.RampSteerEval.ramp_steer_eval_sim import RampSteerEvalSim
-from simulations.mbd.SteadyStateEval.steady_state_eval_sim import SteadyStateEvalSim
-from simulations.mbd.TransientEval.transient_eval_sim import TransientEvalSim
+from simulations.response.mbd._modelica_runner import ModelicaRunner
+from simulations.response.mbd.ramp_steer.ramp_steer_eval_sim import RampSteerEvalSim
+from simulations.response.mbd.steady_state.steady_state_eval_sim import SteadyStateEvalSim
+from simulations.response.mbd.transient.transient_eval_sim import TransientEvalSim
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VEHICLE_ENTRYPOINT = "BobLib.Experiments.Standards.VehicleSim"
 FOUR_POST_ENTRYPOINT = "BobLib.Experiments.Standards.FourPostSim"
 STANDARD_CONFIGS = (
-    Path("simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"),
-    Path("simulations/mbd/SteadyStateEval/steady_state_eval_config.yml"),
-    Path("simulations/mbd/TransientEval/transient_eval_config.yml"),
-    Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"),
+    Path("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"),
+    Path("simulations/response/mbd/steady_state/steady_state_eval_config.yml"),
+    Path("simulations/response/mbd/transient/transient_eval_config.yml"),
+    Path("simulations/response/mbd/four_post/four_post_eval_config.yml"),
 )
 STANDARD_ENTRYPOINTS = {
-    Path("simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"): VEHICLE_ENTRYPOINT,
-    Path("simulations/mbd/SteadyStateEval/steady_state_eval_config.yml"): VEHICLE_ENTRYPOINT,
-    Path("simulations/mbd/TransientEval/transient_eval_config.yml"): VEHICLE_ENTRYPOINT,
-    Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"): FOUR_POST_ENTRYPOINT,
+    Path("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"): VEHICLE_ENTRYPOINT,
+    Path("simulations/response/mbd/steady_state/steady_state_eval_config.yml"): VEHICLE_ENTRYPOINT,
+    Path("simulations/response/mbd/transient/transient_eval_config.yml"): VEHICLE_ENTRYPOINT,
+    Path("simulations/response/mbd/four_post/four_post_eval_config.yml"): FOUR_POST_ENTRYPOINT,
 }
 
 
@@ -201,15 +201,15 @@ def test_compose_services_match_workflow_language() -> None:
     assert isinstance(services, dict)
     assert set(services) == {"bobsim", "standard", "envelope", "opt", "app"}
     assert services["bobsim"]["working_dir"] == "/workspace"
-    assert services["standard"]["working_dir"] == "/workspace/simulations/mbd"
+    assert services["standard"]["working_dir"] == "/workspace/simulations/response/mbd"
     assert services["envelope"]["working_dir"] == "/workspace/simulations/envelope"
-    assert services["opt"]["working_dir"] == "/workspace/simulations/optimization"
+    assert services["opt"]["working_dir"] == "/workspace/optimization"
     assert services["app"]["working_dir"] == "/workspace"
     assert services["app"]["network_mode"] == "bridge"
 
 
 def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:
-    config = _load_yaml(Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"))
+    config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
 
     assert FOUR_POST_HEAVE_POSE_COUNT == 11
     assert FOUR_POST_STOP_TIME_S == 118.0
@@ -260,7 +260,7 @@ def test_four_post_model_tables_match_report_sampling_schedule() -> None:
 
 
 def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> None:
-    for rel_path in (Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"),):
+    for rel_path in (Path("simulations/response/mbd/four_post/four_post_eval_config.yml"),):
         config = _load_yaml(rel_path)
         assert config["report"]["raw_time_series_appendix"] is False
 
@@ -282,7 +282,7 @@ def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> N
 
 
 def test_four_post_defaults_fail_if_a_roll_pulse_unloads_a_contact_patch() -> None:
-    for rel_path in (Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"),):
+    for rel_path in (Path("simulations/response/mbd/four_post/four_post_eval_config.yml"),):
         config = _load_yaml(rel_path)
         assert config["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
         assert config["validation"]["min_contact_fz_n"] == pytest.approx(1.0)
@@ -340,7 +340,7 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
 def test_four_post_eval_passes_static_balanced_spring_free_lengths(
     tmp_path: Path,
 ) -> None:
-    config = _load_yaml(Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"))
+    config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
     metrics_path = tmp_path / "four_post_metrics.csv"
     metrics_path.write_text(
         "metric,value\nstatic_motion_ratio_front,1.0053063275855492\nstatic_motion_ratio_rear,1.2386785254222528\n",
@@ -381,7 +381,7 @@ def test_raw_time_series_appendix_filters_implausible_numeric_spikes(
 
 
 def test_standard_sens_spring_package_balances_free_length_from_rate() -> None:
-    config = _load_yaml(Path("simulations/optimization/StandardSens/configs/_doe_config.yaml"))
+    config = _load_yaml(Path("optimization/response/configs/_doe_config.yaml"))
     spring_variables = [
         variable
         for variable in config["variables"]
@@ -400,7 +400,7 @@ def test_standard_sens_spring_package_balances_free_length_from_rate() -> None:
 
 
 def test_transient_eval_generates_only_step_and_sine_modes() -> None:
-    config = _load_yaml(Path("simulations/mbd/TransientEval/transient_eval_config.yml"))
+    config = _load_yaml(Path("simulations/response/mbd/transient/transient_eval_config.yml"))
 
     sim = TransientEvalSim.__new__(TransientEvalSim)
     sim.config = config
@@ -414,7 +414,7 @@ def test_transient_eval_generates_only_step_and_sine_modes() -> None:
 
 
 def test_ramp_steer_eval_uses_open_loop_ramp_mode() -> None:
-    config = _load_yaml(Path("simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"))
+    config = _load_yaml(Path("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"))
 
     sim = RampSteerEvalSim.__new__(RampSteerEvalSim)
     sim.config = config
@@ -466,7 +466,7 @@ def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
 
 
 def test_steady_state_eval_uses_closed_loop_steady_mode() -> None:
-    config = _load_yaml(Path("simulations/mbd/SteadyStateEval/steady_state_eval_config.yml"))
+    config = _load_yaml(Path("simulations/response/mbd/steady_state/steady_state_eval_config.yml"))
 
     sim = SteadyStateEvalSim.__new__(SteadyStateEvalSim)
     sim.config = config

@@ -42,17 +42,17 @@ DATA_PATHS = (
     "simulations/lap/lap_time_eval_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",
-    "simulations/envelope/GGV/ggv_config.yml",
-    "simulations/envelope/YMD/ymd_config.yml",
-    "simulations/envelope/VehicleReview/vehicle_review_config.yml",
-    "simulations/mbd/build_vehicle_sim.mos",
-    "simulations/mbd/build_four_post_sim.mos",
-    "simulations/mbd/FourPostEval/four_post_eval_config.yml",
-    "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
-    "simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
-    "simulations/mbd/TransientEval/transient_eval_config.yml",
-    "simulations/optimization/EnvelopeSens/config.yml",
-    "simulations/optimization/StandardSens/configs",
+    "simulations/envelope/ggv/ggv_config.yml",
+    "simulations/envelope/ymd/ymd_config.yml",
+    "simulations/envelope/vehicle_review/vehicle_review_config.yml",
+    "simulations/response/mbd/build_vehicle_sim.mos",
+    "simulations/response/mbd/build_four_post_sim.mos",
+    "simulations/response/mbd/four_post/four_post_eval_config.yml",
+    "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
+    "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
+    "simulations/response/mbd/transient/transient_eval_config.yml",
+    "optimization/envelope/config.yml",
+    "optimization/response/configs",
     "app/static",
 )
 
@@ -62,6 +62,7 @@ MODULE_ROOTS = (
     "engines/dynpy",
     "visualization",
     "simulations",
+    "optimization",
     "app",
 )
 
@@ -329,12 +330,12 @@ def clean_generated_artifacts(include_deploy: bool = True) -> None:
         "simulations/mbd/BuildBobLib",
         "simulations/mbd/generated_results",
         "simulations/mbd/results",
-        "simulations/optimization/Build",
-        "simulations/optimization/StandardSens/results",
-        "simulations/optimization/EnvelopeSens/results",
-        "simulations/optimization/population",
-        "simulations/optimization/population_refined",
-        "simulations/optimization/results",
+        "optimization/Build",
+        "optimization/response/results",
+        "optimization/envelope/results",
+        "optimization/population",
+        "optimization/population_refined",
+        "optimization/results",
     ):
         _clean_directory_contents(ROOT / path)
 
@@ -357,12 +358,8 @@ def _module_name_from_path(path: Path) -> str | None:
     if path.is_relative_to(ROOT / "common" / "deploy"):
         return None
 
-    if ROOT / "simulations/optimization" in path.parents:
-        rel = path.relative_to(ROOT / "simulations/optimization")
-        parts = list(rel.with_suffix("").parts)
-    else:
-        rel = path.relative_to(ROOT)
-        parts = list(rel.with_suffix("").parts)
+    rel = path.relative_to(ROOT)
+    parts = list(rel.with_suffix("").parts)
 
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -450,8 +447,6 @@ def build_pyinstaller(mode: str, install_deps: bool, skip_conflict_check: bool) 
         str(work_root),
         "--paths",
         str(ROOT),
-        "--paths",
-        str(ROOT / "simulations/optimization"),
         "--windowed",
         "--icon",
         str(_icon_arg()),

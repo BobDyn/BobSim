@@ -43,6 +43,7 @@ above. Keep the set small; a stale doc is worse than no doc.
   comment cleanup.
 - **Keep engines separate from workflows.** `engines/kinpy`, `engines/dynpy`,
   and `engines/boblib` are sibling physics tools. `simulations/` contains workflows,
+  `optimization/` sweeps and solves across them,
   `common/` shared helpers, `visualization/` replay data, and `app/` the browser UI.
   Engines and common helpers must not import workflows or the app. Reuse
   `common/plotting` and `common/reporting` in studies.
@@ -85,7 +86,7 @@ above. Keep the set small; a stale doc is worse than no doc.
   through `combineMassRecords`. The parameter still reports
   `isValueChangeable="true"`, the override gives no warning, and the simulated
   car does not change. Only the variables in `RUNTIME_SAFE_PATHS`
-  (`simulations/optimization/StandardSens/pipeline/overrides.py`) are proven to follow an
+  (`optimization/response/pipeline/overrides.py`) are proven to follow an
   override. Compile every other variable. The runner also silently drops an
   override name that it cannot find in the init XML. Before you trust a new
   override, read the comment in that file on how to check one.
@@ -122,7 +123,7 @@ for 79 commits once already.
 
 `make opt-doe-smoke` checks the DOE pipeline (config generation, record
 sampling, variant writing) without an OpenModelica toolchain, so it runs on any
-machine. Use it after touching `simulations/optimization` or the BobLib records it reads.
+machine. Use it after touching `optimization` or the BobLib records it reads.
 
 Most targets shell out to `docker compose` unless you are already inside the
 container. `make app` also runs in a container, the `app` service, which has a

@@ -195,7 +195,7 @@ def _load_or_generate_ggv(
         )
 
     # This layer may compose EnvelopeSim and dyn_py; neither lower layer imports it.
-    from simulations.envelope.GGV.ggv_generation import GGVConfig, generate_ggv, save_ggv_csv
+    from simulations.envelope.ggv.ggv_generation import GGVConfig, generate_ggv, save_ggv_csv
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     ggv_vehicle = project_vehicle_yaml(load_vehicle_yaml(vehicle_path)).ggv
@@ -241,7 +241,7 @@ def _ggv_provenance(
     physics_digest = hashlib.sha256()
     physics_inputs = [
         Path(__file__),
-        root / "simulations/envelope/GGV/ggv_generation.py",
+        root / "simulations/envelope/ggv/ggv_generation.py",
         root / "simulations/envelope/vehicle_yaml.py",
         root / "common/vehicle_io.py",
         *sorted((root / "engines/dynpy").rglob("*.py")),

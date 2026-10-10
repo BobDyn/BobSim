@@ -46,8 +46,8 @@ RESULT_EXPLORER_ROOTS: tuple[Path, ...] = (
     Path("simulations/mbd/BuildBobLib"),
     Path("simulations/envelope/results"),
     Path("simulations/envelope/Build"),
-    Path("simulations/optimization/results"),
-    Path("simulations/optimization/Build"),
+    Path("optimization/results"),
+    Path("optimization/Build"),
     SAVED_RESULTS_ROOT,
     VEHICLE_WORKSPACE_ROOT,
 )
@@ -130,11 +130,11 @@ def _is_result_source_path(path: Path, *, roots: tuple[Path, ...] | None = None)
 def _result_source_group(rel_path: str) -> str:
     if rel_path.startswith(f"{VEHICLE_WORKSPACE_ROOT.as_posix()}/"):
         return "Vehicle"
-    if rel_path.startswith("simulations/mbd/"):
+    if rel_path.startswith("simulations/response/mbd/"):
         return "Simulation"
     if rel_path.startswith("simulations/envelope/"):
         return "Envelope"
-    if rel_path.startswith("simulations/optimization/"):
+    if rel_path.startswith("optimization/"):
         return "Optimization"
     if rel_path.startswith(f"{SAVED_RESULTS_ROOT.as_posix()}/"):
         return "Saved"
@@ -1380,7 +1380,7 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
     if workflow.engine.startswith("DynPy"):
         configs = [root / workflow.config] if workflow.config else []
         if workflow.id == "vehicle-review":
-            configs = [root / f"simulations/envelope/{name}/{name.lower()}_config.yml" for name in ("GGV", "YMD")]
+            configs = [root / f"simulations/envelope/{name}/{name}_config.yml" for name in ("ggv", "ymd")]
         for path in configs:
             if not path.is_file():
                 continue

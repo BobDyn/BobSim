@@ -1,19 +1,12 @@
 """Cache provenance independent of the compiler artifact regression tests."""
-import sys
 
 import pytest
 import yaml
 
-from common.vehicle_io import repo_root
-
-OPTSIM_DIR = repo_root() / "simulations/optimization"
-if str(OPTSIM_DIR) not in sys.path:
-    sys.path.insert(0, str(OPTSIM_DIR))
-
 
 @pytest.mark.parametrize('changed', ['baseline', 'vehicle', 'source', 'metrics', 'template'])
 def test_pipeline_hash_covers_referenced_inputs_and_dirty_boblib(tmp_path, monkeypatch, changed):
-    from StandardSens.pipeline import _pipeline_hash as hashes
+    from optimization.response.pipeline import _pipeline_hash as hashes
     monkeypatch.setattr(hashes, '_boblib_sha', lambda _path: 'unchanged-commit')
     config_dir = tmp_path / 'configs'
     config_dir.mkdir()
@@ -37,7 +30,7 @@ def test_pipeline_hash_covers_referenced_inputs_and_dirty_boblib(tmp_path, monke
 
 
 def test_variant_cache_checks_midrun_changes_even_for_existing_variants(tmp_path, monkeypatch):
-    from StandardSens.pipeline.variants import VariantStore, variant_key
+    from optimization.response.pipeline.variants import VariantStore, variant_key
     store = VariantStore.__new__(VariantStore)
     store.variants_dir = tmp_path
     store._index = {variant_key({}): 0}

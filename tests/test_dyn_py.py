@@ -26,12 +26,12 @@ from engines.dynpy.models import (
     VehicleModel14DOF,
 )
 from engines.dynpy.parameters import G
-from simulations.envelope.GGV.ggv_generation import (
+from simulations.envelope.ggv.ggv_generation import (
     _trim_is_racing_feasible,
     solve_ax_limit,
     solve_lateral_limit,
 )
-from simulations.envelope.YMD.ymd_generation import YMDConfig, ymd_point
+from simulations.envelope.ymd.ymd_generation import YMDConfig, ymd_point
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 from common.vehicle_io import load_yaml, vehicle_yaml_path
 
@@ -839,7 +839,7 @@ def test_qss_rejects_equilibrium_outside_tire_slip_fit(parameters, bounds):
 
 @pytest.mark.parametrize("first_failure", ["load_range", "geometry"])
 def test_racing_trim_retries_rejected_root(parameters, monkeypatch, first_failure):
-    from simulations.envelope.GGV import ggv_generation as ggv
+    from simulations.envelope.ggv import ggv_generation as ggv
 
     model = create_model(14, parameters)
     valid = solve_steady_state(model, speed_mps=12.0)

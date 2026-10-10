@@ -23,7 +23,8 @@ should start from [`AGENTS.md`](AGENTS.md).
 ## Repository Layout
 
 - `engines/`: sibling `kinpy`, `dynpy`, and `boblib` physics tools.
-- `simulations/`: MBD studies, reduced dynamics, envelopes, laps, and optimization.
+- `simulations/`: response studies, envelopes, and laps.
+- `optimization/`: sweeps, setup solving, and trade studies across simulations.
 - `common/`: vehicle I/O, templates, plotting, reporting, and packaging.
 - `visualization/`: replay data and scene capture.
 - `app/`: browser UI for vehicle setup, simulation, and results.

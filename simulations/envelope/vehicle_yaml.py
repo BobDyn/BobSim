@@ -18,8 +18,8 @@ from typing import Any
 
 import yaml
 
-from simulations.envelope.GGV.ggv_generation import VehicleParams as GGVVehicleParams
-from simulations.envelope.YMD.ymd_generation import VehicleParams as YMDVehicleParams
+from simulations.envelope.ggv.ggv_generation import VehicleParams as GGVVehicleParams
+from simulations.envelope.ymd.ymd_generation import VehicleParams as YMDVehicleParams
 from engines.dynpy.parameters import project_powertrain_limits
 
 

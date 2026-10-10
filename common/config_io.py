@@ -1,6 +1,6 @@
 """Shipped study configs, and the per-user copy the app edits.
 
-A study config under ``simulations/mbd/`` plays one role: it is the *seed*,
+A study config under ``simulations/response/mbd/`` plays one role: it is the *seed*,
 checked in, reviewed, and the thing a clean clone runs. What the app edits is a
 copy under ``app/user_data/config/active/``, which is runtime state and
 gitignored like everything else there.
@@ -13,7 +13,7 @@ copies that silently drifted from their sources.
 ``resolve`` keeps the CLI behaving exactly as it did: with no active copy it
 returns the seed, and once the app has written one, ``make standard-eval-*``
 picks up the same config the app is running. Only configs whose own values are
-repo-relative can move like this; ``simulations/envelope`` and ``simulations/optimization`` configs
+repo-relative can move like this; ``simulations/envelope`` and ``optimization`` configs
 resolve ``../`` paths against their own directory and stay where they are.
 """
 

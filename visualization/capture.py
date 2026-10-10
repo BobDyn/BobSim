@@ -56,24 +56,24 @@ class Evaluation:
 EVALUATIONS: dict[str, Evaluation] = {
     # The KnC config samples at 0.5 s, which is too coarse to watch.
     "four_post": Evaluation(
-        Path("simulations/mbd/FourPostEval/four_post_eval_config.yml"),
-        "simulations.mbd.FourPostEval.four_post_eval_sim", "FOUR_POST_EVAL_SIGNALS",
+        Path("simulations/response/mbd/four_post/four_post_eval_config.yml"),
+        "simulations.response.mbd.four_post.four_post_eval_sim", "FOUR_POST_EVAL_SIGNALS",
         prefix="", step_size=0.02,
     ),
     # 10 ms keeps each case CSV to a few MB.
     "transient": Evaluation(
-        Path("simulations/mbd/TransientEval/transient_eval_config.yml"),
-        "simulations.mbd.TransientEval.transient_eval_sim", "TransientEval_SIGNALS",
+        Path("simulations/response/mbd/transient/transient_eval_config.yml"),
+        "simulations.response.mbd.transient.transient_eval_sim", "TransientEval_SIGNALS",
         prefix=VEHICLE_PREFIX, step_size=0.01,
     ),
     "ramp_steer": Evaluation(
-        Path("simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"),
-        "simulations.mbd.RampSteerEval.ramp_steer_eval_sim", "RampSteerEval_SIGNALS",
+        Path("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"),
+        "simulations.response.mbd.ramp_steer.ramp_steer_eval_sim", "RampSteerEval_SIGNALS",
         prefix=VEHICLE_PREFIX, step_size=0.01,
     ),
     "steady_state": Evaluation(
-        Path("simulations/mbd/SteadyStateEval/steady_state_eval_config.yml"),
-        "simulations.mbd.SteadyStateEval.steady_state_eval_sim", "STEADY_STATE_EVAL_SIGNALS",
+        Path("simulations/response/mbd/steady_state/steady_state_eval_config.yml"),
+        "simulations.response.mbd.steady_state.steady_state_eval_sim", "STEADY_STATE_EVAL_SIGNALS",
         prefix=VEHICLE_PREFIX, step_size=0.01,
     ),
 }

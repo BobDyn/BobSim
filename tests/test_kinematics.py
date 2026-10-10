@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import yaml
 
-from simulations.mbd.FourPostEval import four_post_eval_sim as four_post_eval
+from simulations.response.mbd.four_post import four_post_eval_sim as four_post_eval
 from engines.kinpy import (
     KINEMATIC_CURVE_META,
     CornerKinematics,

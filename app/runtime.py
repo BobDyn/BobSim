@@ -31,17 +31,17 @@ APP_SEED_RUNTIME_PATHS = (
     "simulations/lap/lap_time_eval_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",
-    "simulations/envelope/GGV/ggv_config.yml",
-    "simulations/envelope/YMD/ymd_config.yml",
-    "simulations/envelope/VehicleReview/vehicle_review_config.yml",
-    "simulations/mbd/build_vehicle_sim.mos",
-    "simulations/mbd/build_four_post_sim.mos",
-    "simulations/mbd/FourPostEval/four_post_eval_config.yml",
-    "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
-    "simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
-    "simulations/mbd/TransientEval/transient_eval_config.yml",
-    "simulations/optimization/EnvelopeSens/config.yml",
-    "simulations/optimization/StandardSens/configs",
+    "simulations/envelope/ggv/ggv_config.yml",
+    "simulations/envelope/ymd/ymd_config.yml",
+    "simulations/envelope/vehicle_review/vehicle_review_config.yml",
+    "simulations/response/mbd/build_vehicle_sim.mos",
+    "simulations/response/mbd/build_four_post_sim.mos",
+    "simulations/response/mbd/four_post/four_post_eval_config.yml",
+    "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
+    "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
+    "simulations/response/mbd/transient/transient_eval_config.yml",
+    "optimization/envelope/config.yml",
+    "optimization/response/configs",
 )
 
 
@@ -76,12 +76,12 @@ APP_REFRESH_RUNTIME_PATHS = {
     "engines/boblib/BobLib",
     "common/plotting",
     "common/reporting",
-    "simulations/mbd/FourPostEval/four_post_eval_config.yml",
-    "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
-    "simulations/mbd/SteadyStateEval/steady_state_eval_config.yml",
-    "simulations/mbd/TransientEval/transient_eval_config.yml",
-    "simulations/mbd/build_vehicle_sim.mos",
-    "simulations/mbd/build_four_post_sim.mos",
+    "simulations/response/mbd/four_post/four_post_eval_config.yml",
+    "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
+    "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
+    "simulations/response/mbd/transient/transient_eval_config.yml",
+    "simulations/response/mbd/build_vehicle_sim.mos",
+    "simulations/response/mbd/build_four_post_sim.mos",
 }
 
 APP_MERGE_RUNTIME_DIRS = {
@@ -99,8 +99,8 @@ APP_RESET_ON_RUNTIME_SEED_CHANGE_PATHS = (
 )
 APP_MODELICA_BUILD_FINGERPRINT_PATHS = (
     "engines/boblib/BobLib",
-    "simulations/mbd/build_vehicle_sim.mos",
-    "simulations/mbd/build_four_post_sim.mos",
+    "simulations/response/mbd/build_vehicle_sim.mos",
+    "simulations/response/mbd/build_four_post_sim.mos",
 )
 RUNTIME_SEED_WARNINGS: list[str] = []
 WINDOWS_LOCKED_FILE_ERRORS = {5, 32, 33}
@@ -262,12 +262,12 @@ def _seed_runtime_root(
         "simulations/mbd/BuildBobLib",
         "simulations/mbd/generated_results",
         "simulations/mbd/results",
-        "simulations/optimization/Build",
-        "simulations/optimization/results",
-        "simulations/optimization/EnvelopeSens/results",
-        "simulations/optimization/StandardSens/results",
-        "simulations/optimization/population",
-        "simulations/optimization/population_refined",
+        "optimization/Build",
+        "optimization/results",
+        "optimization/envelope/results",
+        "optimization/response/results",
+        "optimization/population",
+        "optimization/population_refined",
         *(path.as_posix() for path in app_storage.USER_DATA_DIRS),
     )
     runtime_root.mkdir(parents=True, exist_ok=True)
