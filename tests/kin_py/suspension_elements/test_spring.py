@@ -1,5 +1,5 @@
-from _0_Utils.kin_py.suspension_model.suspension_elements._2_elements.spring import Spring
-from _0_Utils.kin_py.suspension_model.suspension_elements._1_elements.node import Node
+from engines.kinpy.suspension_model.suspension_elements._2_elements.spring import Spring
+from engines.kinpy.suspension_model.suspension_elements._1_elements.node import Node
 
 from unittest import TestCase
 

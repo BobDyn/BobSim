@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import yaml
 
-from _0_Utils.dyn_py import (
+from engines.dynpy import (
     ModelInputs,
     Vehicle,
     compare_transient_signals,
@@ -18,21 +18,21 @@ from _0_Utils.dyn_py import (
     solve_moment_state,
     solve_steady_state,
 )
-from _0_Utils.dyn_py.models import (
+from engines.dynpy.models import (
     VehicleModel3DOF,
     VehicleModel6DOF,
     VehicleModel10DOF,
     VehicleModel14DOF,
 )
-from _0_Utils.dyn_py.parameters import G
-from _2_EnvelopeSim.GGV.ggv_generation import (
+from engines.dynpy.parameters import G
+from simulations.envelope.GGV.ggv_generation import (
     _trim_is_racing_feasible,
     solve_ax_limit,
     solve_lateral_limit,
 )
-from _2_EnvelopeSim.YMD.ymd_generation import YMDConfig, ymd_point
-from _2_EnvelopeSim.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
-from _0_Utils.vehicle_io import load_yaml, vehicle_yaml_path
+from simulations.envelope.YMD.ymd_generation import YMDConfig, ymd_point
+from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
+from common.vehicle_io import load_yaml, vehicle_yaml_path
 
 
 @pytest.fixture(scope="module")
@@ -636,7 +636,7 @@ def test_ggv_and_ymd_backends_call_shared_qss_model(parameters, dof):
 
 
 def test_nominal_actuation_tracks_vehicle_springs_and_bars(tmp_path):
-    from _0_Utils.dyn_py.actuation import nominal_actuation_metrics
+    from engines.dynpy.actuation import nominal_actuation_metrics
     data = load_yaml(vehicle_yaml_path())
     vehicle = tmp_path / 'vehicle.yml'
     vehicle.write_text(yaml.safe_dump(data))
@@ -656,7 +656,7 @@ def test_nominal_actuation_tracks_vehicle_springs_and_bars(tmp_path):
 
 
 def test_reduced_projection_never_reads_global_four_post_report(monkeypatch):
-    import _0_Utils.dyn_py.parameters as projection
+    import engines.dynpy.parameters as projection
     monkeypatch.setattr(projection, '_load_metrics', lambda _path: pytest.fail('implicit report read'))
     projection.load_reduced_vehicle_parameters()
 

@@ -15,7 +15,7 @@ Reference for the `boblib.vehicle.v1` schema (`vehicle.yml`). Everything here wa
 
 ## Sign conventions
 
-- **Camber**: inward tilt is negative (`_5_App/kinematics.py`)
+- **Camber**: inward tilt is negative (`app/kinematics.py`)
 - **Toe**: `atan2(forward_y, forward_x)`. Toe-in on +Y (left) is positive.
 - **Roll**: sampled in radians from Modelica; four-post report scales to degrees by 57.2958.
 - **Heave**: negated from raw signal, so positive heave = chassis moves *up* relative to contacts.

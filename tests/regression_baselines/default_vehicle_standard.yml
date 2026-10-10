@@ -3,7 +3,7 @@ name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
   boblib_commit: e03da04243a8ee11c69180fd9f48bce51fe98524
-  simulation_inputs_digest: ccc6a32c8ff11bf9cf410b3ab6be4791c8aa2bd9d36e80ec1f8e74b47beb4e98
+  simulation_inputs_digest: a2cf83ddfe6b1db2371abfc81644b8bff4726d6a61ce6e713d26f8d26d7fa8c6
 refresh:
   make_targets:
   - standard-build
@@ -16,8 +16,8 @@ workflows:
   four_post:
     standard: FourPostEval
     artifacts:
-      metrics_csv: _3_StandardSim/results/four_post_eval_report_metrics.csv
-      report_pdf: _3_StandardSim/results/four_post_eval_report.pdf
+      metrics_csv: simulations/mbd/results/four_post_eval_report_metrics.csv
+      report_pdf: simulations/mbd/results/four_post_eval_report.pdf
       min_report_bytes: 10000
     metrics:
       static_balance_pass:
@@ -131,8 +131,8 @@ workflows:
   ramp_steer:
     standard: RampSteerEval
     artifacts:
-      metrics_csv: _3_StandardSim/results/ramp_steer_eval_report_metrics.csv
-      report_pdf: _3_StandardSim/results/ramp_steer_eval_report.pdf
+      metrics_csv: simulations/mbd/results/ramp_steer_eval_report_metrics.csv
+      report_pdf: simulations/mbd/results/ramp_steer_eval_report.pdf
       min_report_bytes: 10000
     metrics:
       n_cases:
@@ -213,8 +213,8 @@ workflows:
   steady_state:
     standard: SteadyStateEval
     artifacts:
-      metrics_csv: _3_StandardSim/results/steady_state_eval_report_metrics.csv
-      report_pdf: _3_StandardSim/results/steady_state_eval_report.pdf
+      metrics_csv: simulations/mbd/results/steady_state_eval_report_metrics.csv
+      report_pdf: simulations/mbd/results/steady_state_eval_report.pdf
       min_report_bytes: 10000
     metrics:
       n_cases:
@@ -302,8 +302,8 @@ workflows:
   transient:
     standard: TransientEval
     artifacts:
-      metrics_csv: _3_StandardSim/results/transient_eval_report_metrics.csv
-      report_pdf: _3_StandardSim/results/transient_eval_report.pdf
+      metrics_csv: simulations/mbd/results/transient_eval_report_metrics.csv
+      report_pdf: simulations/mbd/results/transient_eval_report.pdf
       min_report_bytes: 10000
     metrics:
       general.n_cases:

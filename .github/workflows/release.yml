@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r _0_Utils/deploy/requirements.txt
+          python -m pip install -r requirements.txt -r common/deploy/requirements.txt
 
       - name: Build and package BobSim
         shell: bash
@@ -56,16 +56,16 @@ jobs:
           if [ -n "$version" ]; then
             args+=(--version "$version")
           fi
-          python _0_Utils/deploy/deploy.py "${args[@]}"
+          python common/deploy/deploy.py "${args[@]}"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: BobSim-${{ matrix.name }}-${{ runner.arch }}
           path: |
-            _0_Utils/deploy/dist/releases/*.zip
-            _0_Utils/deploy/dist/releases/*.tar.gz
-            _0_Utils/deploy/dist/releases/*.sha256
+            common/deploy/dist/releases/*.zip
+            common/deploy/dist/releases/*.tar.gz
+            common/deploy/dist/releases/*.sha256
           if-no-files-found: error
 
   publish:

@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import yaml
 
-from _1_VisualSim import capture, from_results
-from _1_VisualSim.from_results import (
+from visualization import capture, from_results
+from visualization.from_results import (
     ANCHOR_FRAME,
     CORNERS,
     FRAME_MAP,
@@ -338,7 +338,7 @@ def test_capture_config_keeps_the_evaluations_own_signals(
     assert "-emit_protected" in cfg["simulation"]["extra_args"]
     # A capture must never overwrite the metrics the regression checks read.
     for key in ("output_path", "metrics_csv_path"):
-        assert cfg["report"][key].startswith("_1_VisualSim/results/")
+        assert cfg["report"][key].startswith("visualization/results/")
 
 
 def test_convert_rejects_a_result_with_no_geometry(tmp_path: Path) -> None:

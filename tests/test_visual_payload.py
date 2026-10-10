@@ -19,9 +19,9 @@ import numpy as np
 import pytest
 import yaml
 
-from _1_VisualSim import demo
-from _1_VisualSim.tire_state import MIN_LOAD_N, grip_usage
-from _5_App import visual
+from visualization import demo
+from visualization.tire_state import MIN_LOAD_N, grip_usage
+from app import visual
 
 
 @pytest.fixture(scope="module")

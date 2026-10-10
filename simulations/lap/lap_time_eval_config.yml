@@ -1,0 +1,44 @@
+schema: bobsim.lap-time.v1
+
+vehicle: vehicle.yml
+model_dof: 3  # Shared by GGV/QSS generation and the transient lap: 3, 6, 10, or 14
+
+event:
+  name: endurance
+  # Constant event power cap. No energy-state or thermal-derate model yet.
+  drive_power_limit_w: 32000
+
+track:
+  boundary_csv: simulations/lap/tracks/endurance_michigan_2019.csv
+  vehicle_width_m: 1.35
+  safety_margin_m: 0.15
+  sample_step_m: 1.0
+
+racing_line:
+  mode: minimum_time_qss  # centerline, minimum_curvature, minimum_time_qss
+  curvature_max_iterations: 20
+  lap_time_max_iterations: 15
+
+qss:
+  # Reuses EnvelopeSim output. If absent, generates a map from the dyn_py model.
+  ggv_csv: simulations/envelope/Build/GGV/ggv_dyn_py_{model_dof}dof_endurance_32kw.csv
+  generate_if_missing: true
+  max_speed_mps: null  # Optional lap speed cap
+  speeds_mps: [5.0, 10.0, 15.0, 20.0, 25.0]
+  ay_max_g: 4.0
+  ay_points: 21
+  ax_search_min_g: -3.2
+  ax_search_max_g: 2.8
+  max_abs_beta_rad: 0.25
+  max_abs_steering_rad: 0.5
+  ax_binary_iterations: 14
+  enforce_tire_load_range: true
+  trim_multistart: true
+
+transient:
+  sample_period_s: 0.02
+  lookahead_m: 5.0
+  steering_trim_step_m: 5.0
+
+output:
+  directory: simulations/lap/results

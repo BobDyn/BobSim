@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from _5_App import actions, data_services, execution, server
-from _5_App.contracts import ActionSpec, WorkflowSpec
-from _5_App.jobs import JobStore
+from app import actions, data_services, execution, server
+from app.contracts import ActionSpec, WorkflowSpec
+from app.jobs import JobStore
 
 
 def test_job_reserves_workspace_until_packaging_finishes(monkeypatch):

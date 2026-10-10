@@ -15,7 +15,7 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 ```
 
 **Config:**
-- Default: `_3_StandardSim/LapTimeEval/lap_time_eval_config.yml`
+- Default: `simulations/lap/lap_time_eval_config.yml`
 - Override: `make lap-eval LAP_CONFIG=path/to/config.yml`
 - Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
@@ -63,7 +63,7 @@ Legal vehicle-center interval = gate midline ± (half vehicle width + safety mar
 
 Periodic cubic splines → arc-length-sampled line with heading, curvature, segment length.
 
-**Default track:** `_3_StandardSim/LapTimeEval/tracks/endurance_michigan_2019.csv` (2019 FSAE Michigan; metres, provenance in `tracks/README.md`).
+**Default track:** `simulations/lap/tracks/endurance_michigan_2019.csv` (2019 FSAE Michigan; metres, provenance in `tracks/README.md`).
 
 **For acceptance tests:** `endurance_reference.csv` (synthetic 694 m course, fast for repeated 10/14DOF runs). Full 2 km course → `temp/lap_time_validation/reference_tracks/`. Both are rendered so real course is always visible as a system-level reference, not confused with test-only synthetic track.
 

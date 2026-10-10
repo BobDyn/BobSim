@@ -1,13 +1,13 @@
 # Reduced-order vehicle dynamics
 
-**TL;DR:** `_0_Utils/dyn_py` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
+**TL;DR:** `engines/dynpy` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
 
-BobSim also includes the original `_0_Utils/kin_py/` kinematics — used for detailed suspension-element workflows, independent and backward-compatible.
+BobSim also includes the original `engines/kinpy/` kinematics — used for detailed suspension-element workflows, independent and backward-compatible.
 
 ## Using the unified vehicle interface
 
 ```python
-from _0_Utils.dyn_py import Vehicle
+from engines.dynpy import Vehicle
 
 vehicle = Vehicle.from_yaml()
 wheel_state = vehicle.kinematics_at([0.01, -0.01, 0.0, 0.0])  # all four wheels
@@ -204,7 +204,7 @@ Compare common time histories with an existing OpenModelica result CSV:
 ```bash
 make reduced-eval \
   REDUCED_DOF=10 \
-  REDUCED_BOBLIB_CSV=_3_StandardSim/BuildBobLib/VehicleSim/results/run_.../BobLib.Experiments.Standards.VehicleSim_res.csv
+  REDUCED_BOBLIB_CSV=simulations/mbd/BuildBobLib/VehicleSim/results/run_.../BobLib.Experiments.Standards.VehicleSim_res.csv
 ```
 
 The comparison reports RMSE, range-normalized RMSE, maximum absolute error, and

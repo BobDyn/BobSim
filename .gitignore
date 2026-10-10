@@ -53,21 +53,21 @@ Thumbs.db
 # Project-generated outputs
 /temp/
 /results/
-_1_VisualSim/results/**
-!_1_VisualSim/results/
-!_1_VisualSim/results/.gitkeep
+visualization/results/**
+!visualization/results/
+!visualization/results/.gitkeep
 
-_2_EnvelopeSim/results/**
-!_2_EnvelopeSim/results/
-!_2_EnvelopeSim/results/.gitkeep
-_3_StandardSim/Build/
-_3_StandardSim/BuildBobLib/
-_3_StandardSim/generated_results/**
-!_3_StandardSim/generated_results/
-!_3_StandardSim/generated_results/.gitkeep
-_3_StandardSim/results/**
-!_3_StandardSim/results/
-!_3_StandardSim/results/.gitkeep
+simulations/envelope/results/**
+!simulations/envelope/results/
+!simulations/envelope/results/.gitkeep
+simulations/mbd/Build/
+simulations/mbd/BuildBobLib/
+simulations/mbd/generated_results/**
+!simulations/mbd/generated_results/
+!simulations/mbd/generated_results/.gitkeep
+simulations/mbd/results/**
+!simulations/mbd/results/
+!simulations/mbd/results/.gitkeep
 
 # Transient copy of vehicle.yml taken while the opt-in four-post run swaps it in
 # place. Normally removed on the way out; a leftover means a run was interrupted
@@ -87,26 +87,26 @@ vehicle_2027.yml
 # a tracked file confidently describing geometry that no longer exists. The
 # overlay treats a missing record as unknown and withholds, so absence is safe.
 *.datum.json
-_4_OptSim/Build/
-_4_OptSim/results/**
-!_4_OptSim/results/
-!_4_OptSim/results/.gitkeep
-_4_OptSim/population/
-_4_OptSim/population_refined/
-_4_OptSim/StandardSens/results/
-_4_OptSim/EnvelopeSens/results/
-_5_App/user_data/**
-!_5_App/user_data/
-!_5_App/user_data/**/
-!_5_App/user_data/.gitkeep
-!_5_App/user_data/**/.gitkeep
-_0_Utils/deploy/assets/
-_0_Utils/deploy/build/
-_0_Utils/deploy/dist/
+simulations/optimization/Build/
+simulations/optimization/results/**
+!simulations/optimization/results/
+!simulations/optimization/results/.gitkeep
+simulations/optimization/population/
+simulations/optimization/population_refined/
+simulations/optimization/StandardSens/results/
+simulations/optimization/EnvelopeSens/results/
+app/user_data/**
+!app/user_data/
+!app/user_data/**/
+!app/user_data/.gitkeep
+!app/user_data/**/.gitkeep
+common/deploy/assets/
+common/deploy/build/
+common/deploy/dist/
 
 # BobLib is tracked as a git submodule (gitlink mode 160000);
 # keep this path visible even if future broad rules are added.
-!_0_Utils/external/BobLib/
+!engines/boblib/
 
 # Keep directory placeholders when needed
 !DOE/.gitkeep
@@ -118,3 +118,6 @@ _0_Utils/deploy/dist/
 *.mp4
 
 *.claude/
+
+simulations/lap/results/
+simulations/reduced/results/
