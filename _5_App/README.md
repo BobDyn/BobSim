@@ -32,13 +32,6 @@ tokens in `static/styles.css` and the `canvasPalette()` values in `static/app.js
 are two halves of one palette — change both together or the plots drift from the
 shell.
 
-The app runs one job at a time against its shared active workspace. Input edits
-and other mutating requests return HTTP 409 while that job runs or packages
-outputs. This guard covers one app server process; do not run an external CLI
-study against the same workspace concurrently. Automatic archives include only
-fresh reports and raw runs bearing the job ID. Legacy raw runs without ownership
-metadata are omitted rather than attributed by timestamp.
-
 ## Where data lives
 
 Mutable app data is under `_5_App/user_data` in development, and under the
@@ -77,7 +70,6 @@ shell, setup menus, job launch, output preview, and logs.
 - `data_services.py`: app data layer for configs, vehicle libraries, result
   archives, processing workflows, and CSV result exploration.
 - `jobs.py`: thread-safe job log/state store.
-- `execution.py`: exclusive access to the active workspace during jobs and edits.
 - `http_utils.py`: small HTTP parsing helpers.
 - `storage.py`: canonical folder layout for shipped app assets and mutable user
   data.
