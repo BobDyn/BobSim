@@ -190,6 +190,11 @@ def compile_variant(
     mos_path = variant_dir / f"build_{standard}.mos"
     mos_path.write_text(mos_content)
 
+    # Remove the old runnable pair before invoking OMC: soft failures can exit 0.
+    model = standard_cfg["model"]
+    for name in (model, f"{model}.exe", f"{model}_init.xml"):
+        (build_dir / name).unlink(missing_ok=True)
+
     try:
         result = subprocess.run(
             ["omc", str(mos_path)],
@@ -203,7 +208,9 @@ def compile_variant(
 
     # OMC exits 0 even on soft failures — verify executable actually exists
     exe = _find_exe(build_dir, standard_cfg)
-    if exe is None:
+    if result.returncode != 0 or exe is None or not (build_dir / f"{model}_init.xml").is_file():
+        if exe is not None:
+            exe.unlink()
         error_msg = (result.stdout + "\n" + result.stderr).strip()
         _write_error(variant_dir, standard, error_msg)
         return False
