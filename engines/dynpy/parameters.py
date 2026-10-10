@@ -19,6 +19,7 @@ from common.vehicle_io import (
     vehicle_yaml_path,
 )
 from engines.dynpy.actuation import nominal_actuation_metrics
+from engines.dynpy.tire import FORCE_COEFFICIENTS, MF52Tire
 from engines.kinpy import (
     KinematicsMode,
     VehicleKinematics,
@@ -29,80 +30,6 @@ from engines.kinpy import (
 G = 9.80665
 CORNERS = ("FL", "FR", "RL", "RR")
 FloatArray = NDArray[np.float64]
-
-
-@dataclass(frozen=True)
-class TireParameters:
-    """Small, smooth combined-slip tire projection from an MF-Tyre file."""
-
-    fz_ref_n: float
-    fz_min_n: float
-    fz_max_n: float
-    pdx1: float
-    pdx2: float
-    pdy1: float
-    pdy2: float
-    pdy3: float
-    pkx1: float
-    pkx2: float
-    pkx3: float
-    pky1: float
-    pky2: float
-    pky3: float
-    pvy3: float
-    pvy4: float
-    mu_floor: float = 0.8
-
-    def mu_x(self, fz_n: FloatArray) -> FloatArray:
-        fz = np.maximum(np.asarray(fz_n, dtype=float), 1.0)
-        dfz = (fz - self.fz_ref_n) / self.fz_ref_n
-        return np.maximum(self.pdx1 + self.pdx2 * dfz, self.mu_floor)
-
-    def mu_y(self, fz_n: FloatArray, camber_rad: FloatArray | None = None) -> FloatArray:
-        fz = np.maximum(np.asarray(fz_n, dtype=float), 1.0)
-        dfz = (fz - self.fz_ref_n) / self.fz_ref_n
-        camber = (
-            np.zeros_like(fz)
-            if camber_rad is None
-            else np.asarray(camber_rad, dtype=float)
-        )
-        camber_scale = np.maximum(1.0 - self.pdy3 * camber**2, 0.0)
-        return np.maximum(
-            np.abs(self.pdy1 + self.pdy2 * dfz) * camber_scale,
-            self.mu_floor,
-        )
-
-    def longitudinal_stiffness(self, fz_n: FloatArray) -> FloatArray:
-        fz = np.maximum(np.asarray(fz_n, dtype=float), 1.0)
-        dfz = (fz - self.fz_ref_n) / self.fz_ref_n
-        scale = np.exp(self.pkx3 * dfz)
-        return np.maximum(fz * (self.pkx1 + self.pkx2 * dfz) * scale, 1.0)
-
-    def cornering_stiffness(
-        self,
-        fz_n: FloatArray,
-        camber_rad: FloatArray | None = None,
-    ) -> FloatArray:
-        fz = np.maximum(np.asarray(fz_n, dtype=float), 1.0)
-        camber = (
-            np.zeros_like(fz)
-            if camber_rad is None
-            else np.asarray(camber_rad, dtype=float)
-        )
-        denominator = max(abs(self.pky2) * self.fz_ref_n, 1.0)
-        stiffness = abs(self.pky1) * self.fz_ref_n * np.sin(
-            2.0 * np.arctan(fz / denominator)
-        )
-        stiffness *= np.maximum(1.0 - self.pky3 * np.abs(camber), 0.0)
-        return np.maximum(stiffness, 1.0)
-
-    def camber_thrust(self, fz_n: FloatArray, camber_rad: FloatArray) -> FloatArray:
-        """Return the camber-only MF lateral-force shift."""
-
-        fz = np.maximum(np.asarray(fz_n, dtype=float), 1.0)
-        camber = np.asarray(camber_rad, dtype=float)
-        dfz = (fz - self.fz_ref_n) / self.fz_ref_n
-        return fz * (self.pvy3 + self.pvy4 * dfz) * camber
 
 
 @dataclass(frozen=True)
@@ -140,7 +67,7 @@ class ReducedVehicleParameters:
     kinematics: VehicleKinematics
     tire_vertical_stiffness_n_per_m: tuple[float, float, float, float]
     tire_vertical_damping_n_s_per_m: tuple[float, float, float, float]
-    tire: TireParameters
+    tire: MF52Tire
     rho_air_kg_m3: float
     cl_area_m2: float
     cd_area_m2: float
@@ -259,24 +186,7 @@ def load_reduced_vehicle_parameters(
     tire_name = tire_template_name(data, data["front"])
     tire_path = tire_templates_root(data) / f"{tire_name}.tir"
     tire_values = parse_tir(tire_path)
-    tire = TireParameters(
-        fz_ref_n=_tir_float(tire_values, "FNOMIN"),
-        fz_min_n=_tir_float(tire_values, "FZMIN"),
-        fz_max_n=_tir_float(tire_values, "FZMAX"),
-        pdx1=_tir_float(tire_values, "PDX1"),
-        pdx2=_tir_float(tire_values, "PDX2"),
-        pdy1=_tir_float(tire_values, "PDY1"),
-        pdy2=_tir_float(tire_values, "PDY2"),
-        pdy3=_tir_float(tire_values, "PDY3"),
-        pkx1=_tir_float(tire_values, "PKX1"),
-        pkx2=_tir_float(tire_values, "PKX2"),
-        pkx3=_tir_float(tire_values, "PKX3"),
-        pky1=_tir_float(tire_values, "PKY1"),
-        pky2=_tir_float(tire_values, "PKY2"),
-        pky3=_tir_float(tire_values, "PKY3"),
-        pvy3=_tir_float(tire_values, "PVY3"),
-        pvy4=_tir_float(tire_values, "PVY4"),
-    )
+    tire = MF52Tire({key: _tir_float(tire_values, key) for key in FORCE_COEFFICIENTS})
 
     cl_area, cd_area, aero_balance, aero_cop, aero_drag_application = _project_aero(
         data,

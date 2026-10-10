@@ -140,3 +140,26 @@ def test_boblib_force_parity(coefficients, tmp_path, perturbed):
     expected = np.loadtxt(tmp_path / "forces.csv", delimiter=",")
     actual = np.column_stack(MF52Tire(coefficients).forces(*points.T))
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-8)
+
+
+def test_algebraic_slip_matches_combined_force_and_rejects_excess(coefficients):
+    tire = MF52Tire(coefficients)
+    loads = np.array([300.0, 600.0, 900.0, 1200.0])
+    alpha = np.array([-0.08, 0.04, 0.09, -0.03])
+    gamma = np.array([-0.04, 0.02, 0.03, -0.01])
+    demand = np.array([-150.0, 250.0, -300.0, 500.0])
+    slip = tire.slip_for_force(loads, alpha, gamma, demand)
+    actual = tire.forces(loads, alpha, slip, gamma)[0]
+    np.testing.assert_allclose(actual, demand, atol=1e-7)
+    assert np.all(np.sign(slip) == np.sign(demand))
+    for direction in [-1, 1]:
+        saturated = tire.slip_for_force(loads, alpha, gamma, direction * 1e6)
+        force = direction * tire.forces(loads, alpha, saturated, gamma)[0]
+        for offset in [-1e-4, 1e-4]:
+            neighbor = (
+                direction
+                * tire.forces(
+                    loads, alpha, np.clip(saturated + offset, coefficients["KPUMIN"], coefficients["KPUMAX"]), gamma
+                )[0]
+            )
+            assert np.all(force >= neighbor)

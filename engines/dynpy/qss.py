@@ -230,7 +230,8 @@ def _solve_trim(
         )
     physical_norm = float(np.linalg.norm(physical_residual))
     return QSSResult(
-        success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5),
+        success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
+                     and _wheel_force_balance_valid(model, inputs, output)),
         message=str(solution.message),
         residual_norm=physical_norm,
         state=state,
@@ -322,7 +323,8 @@ def solve_moment_state(
     output = model.evaluate(state, inputs)
     physical_residual = output.generalized_acceleration[indices]
     return QSSResult(
-        success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5),
+        success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
+                     and _wheel_force_balance_valid(model, inputs, output)),
         message=str(solution.message),
         residual_norm=float(np.linalg.norm(physical_residual)),
         state=state,
@@ -466,3 +468,15 @@ def _moment_state_residual_indices(model: ReducedVehicleModel) -> FloatArray:
     elif model.dof == 14:
         indices.extend((6, 7, 8, 9, 10, 11, 12, 13))
     return np.asarray(indices, dtype=int)
+
+
+def _wheel_force_balance_valid(
+    model: ReducedVehicleModel, inputs: ModelInputs, output: ModelOutput,
+) -> bool:
+    if model.dof >= 10:
+        return True
+    headings = output.toe_rad
+    forces = output.wheel_forces_body_n
+    actual = forces[:, 0]*np.cos(headings)+forces[:, 1]*np.sin(headings)
+    requested = np.asarray(inputs.wheel_torques_nm)/np.asarray(model.parameters.wheel_radius_m)
+    return bool(np.allclose(actual, requested, rtol=2e-3, atol=1.0))

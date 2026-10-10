@@ -199,7 +199,7 @@ class VehicleDynamicsSystem(ABC):
         # 6/10DOF uprights are massless, so tire load depends on tire force
         # through the instant links. Iterate to close that loop.
         for _iteration in range(self._force_path_iterations):
-            fx_tire, fy_tire = self._tire_forces(
+            fx_tire, fy_tire, slip_ratios = self._tire_forces(
                 normal_loads,
                 slip_angles,
                 slip_ratios,
@@ -232,7 +232,7 @@ class VehicleDynamicsSystem(ABC):
             normal_loads = closed_loads
 
         # Recompute at the final load so forces stay consistent if the loop hits its cap.
-        fx_tire, fy_tire = self._tire_forces(
+        fx_tire, fy_tire, slip_ratios = self._tire_forces(
             normal_loads,
             slip_angles,
             slip_ratios,
@@ -342,16 +342,6 @@ class VehicleDynamicsSystem(ABC):
         del velocities
         return wheel_longitudinal_speed / np.asarray(self.parameters.wheel_radius_m)
 
-    @abstractmethod
-    def _longitudinal_tire_force(
-        self,
-        normal_loads: FloatArray,
-        slip_ratios: FloatArray,
-        force_capacity: FloatArray,
-        inputs: ModelInputs,
-    ) -> FloatArray:
-        """Resolve longitudinal force using this fidelity's wheel model."""
-
     def _tire_forces(
         self,
         normal_loads: FloatArray,
@@ -359,29 +349,35 @@ class VehicleDynamicsSystem(ABC):
         slip_ratios: FloatArray,
         camber_rad: FloatArray,
         inputs: ModelInputs,
-    ) -> tuple[FloatArray, FloatArray]:
-        """Evaluate smooth combined-slip forces in each steered wheel frame."""
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        """## Tire Forces
 
+        Evaluate the same MF5.2 curves for every model fidelity.
+
+        Parameters
+        ----------
+        normal_loads : NDArray
+            Corner loads in newtons, ordered FL, FR, RL, RR.
+        slip_angles : NDArray
+            Wheel-frame slip angles in radians.
+        slip_ratios : NDArray
+            Slips from wheel rotation for 10 and 14 DOF.
+        camber_rad : NDArray
+            Corner inclination angles in radians.
+        inputs : ModelInputs
+            Applied wheel torques for the algebraic 3 and 6 DOF wheels.
+
+        Returns
+        -------
+        tuple[NDArray, NDArray, NDArray]
+            Longitudinal forces, lateral forces and evaluated slip ratios.
+        """
         tire = self.parameters.tire
-        fx_capacity = tire.mu_x(normal_loads) * normal_loads
-        fy_capacity = tire.mu_y(normal_loads, camber_rad) * normal_loads
-        fy_tire = fy_capacity * np.tanh(
-            tire.cornering_stiffness(normal_loads, camber_rad) * slip_angles
-            / np.maximum(fy_capacity, 1.0)
-        )
-        fy_tire += tire.camber_thrust(normal_loads, camber_rad)
-        fx_tire = self._longitudinal_tire_force(
-            normal_loads,
-            slip_ratios,
-            fx_capacity,
-            inputs,
-        )
-        usage = np.sqrt(
-            (fx_tire / np.maximum(fx_capacity, 1.0)) ** 2
-            + (fy_tire / np.maximum(fy_capacity, 1.0)) ** 2
-        )
-        combined_scale = np.maximum(usage, 1.0)
-        return fx_tire / combined_scale, fy_tire / combined_scale
+        if self.dof < 10:
+            requested_fx = np.asarray(inputs.wheel_torques_nm) / np.asarray(self.parameters.wheel_radius_m)
+            slip_ratios = tire.slip_for_force(normal_loads, slip_angles, camber_rad, requested_fx)
+        fx, fy = tire.forces(normal_loads, slip_angles, slip_ratios, camber_rad)
+        return fx, fy, slip_ratios
 
     def _geometric_vertical_forces(
         self,
@@ -627,19 +623,6 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         )
         return body_coordinates, body_velocities
 
-    def _longitudinal_tire_force(
-        self,
-        normal_loads: FloatArray,
-        slip_ratios: FloatArray,
-        force_capacity: FloatArray,
-        inputs: ModelInputs,
-    ) -> FloatArray:
-        """Use Fx = torque/radius, limited by the tire's available friction."""
-
-        del normal_loads, slip_ratios
-        torque = np.asarray(inputs.wheel_torques_nm, dtype=float)
-        radii = np.asarray(self.parameters.wheel_radius_m, dtype=float)
-        return np.clip(torque / radii, -force_capacity, force_capacity)
 
     def _vertical_forces(
         self,
@@ -940,20 +923,6 @@ class VehicleModel10DOF(VehicleModel6DOF):
         del wheel_longitudinal_speed
         return velocities[6:10]
 
-    def _longitudinal_tire_force(
-        self,
-        normal_loads: FloatArray,
-        slip_ratios: FloatArray,
-        force_capacity: FloatArray,
-        inputs: ModelInputs,
-    ) -> FloatArray:
-        """Use longitudinal stiffness and slip ratio with smooth saturation."""
-
-        del inputs
-        stiffness = self.parameters.tire.longitudinal_stiffness(normal_loads)
-        return force_capacity * np.tanh(
-            stiffness * slip_ratios / np.maximum(force_capacity, 1.0)
-        )
 
     def _generalized_acceleration(
         self,
