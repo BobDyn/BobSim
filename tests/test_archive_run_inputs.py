@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from _0_Utils import config_io
-from _5_App import app, actions
-from _5_App.jobs import JobStore
+from common import config_io
+from app import app, actions
+from app.jobs import JobStore
 
 
 @pytest.fixture

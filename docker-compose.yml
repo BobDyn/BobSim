@@ -15,15 +15,15 @@ services:
 
   standard:
     <<: *bobsim-base
-    working_dir: /workspace/_3_StandardSim
+    working_dir: /workspace/simulations/mbd
 
   envelope:
     <<: *bobsim-base
-    working_dir: /workspace/_2_EnvelopeSim
+    working_dir: /workspace/simulations/envelope
 
   opt:
     <<: *bobsim-base
-    working_dir: /workspace/_4_OptSim
+    working_dir: /workspace/simulations/optimization
 
   app:
     <<: *bobsim-base

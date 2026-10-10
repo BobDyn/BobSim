@@ -1,0 +1,13 @@
+boblib_path: ../../../../engines/boblib/BobLib/package.mo
+
+# Each worker runs its own OMC process. OMC is already multithreaded, so keep this low.
+max_workers: 8
+
+standards:
+  SteadyStateEval:
+    model: BobLib.Experiments.Standards.VehicleSim
+    # Simulation settings: simulations/mbd/SteadyStateEval/steady_state_eval_config.yml
+
+batch:
+  max_workers: 1
+  timeout: 500

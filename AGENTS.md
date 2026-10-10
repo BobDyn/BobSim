@@ -15,10 +15,10 @@ Don't read the whole folder. Route by task:
 | Reduced 3/6/10/14DOF dynamics, QSS envelopes, BobLib correlation | [`docs/reduced-order-dynamics.md`](docs/reduced-order-dynamics.md) |
 | QSS racing lines, speed profiles, and transient laps | [`docs/lap-time-simulation.md`](docs/lap-time-simulation.md) |
 | Modelica missing, build fails, BobLib edits | [`docs/boblib-submodule.md`](docs/boblib-submodule.md) |
-| Touching `_5_App/` | [`_5_App/README.md`](_5_App/README.md) — module-by-module ownership |
-| Touching `_1_VisualSim/` or the app's Replay tab | [`_1_VisualSim/README.md`](_1_VisualSim/README.md) — BobVis: capture, templates, and the browser viewer |
+| Touching `app/` | [`app/README.md`](app/README.md) — module-by-module ownership |
+| Touching `visualization/` or the app's Replay tab | [`visualization/README.md`](visualization/README.md) — BobVis: capture, templates, and the browser viewer |
 | Touching physics / regression baselines | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
-| Editing Modelica models | `_0_Utils/external/BobLib/AGENTS.md` (package boundary rules) |
+| Editing Modelica models | `engines/boblib/AGENTS.md` (package boundary rules) |
 | Reading/writing `vehicle.yml` geometry, importing SHARK data | [`docs/conventions.md`](docs/conventions.md) |
 | Doing a repeated multi-step task by hand (SHARK import, baseline refresh) | [`skills/README.md`](skills/README.md) |
 
@@ -41,22 +41,23 @@ above. Keep the set small; a stale doc is worse than no doc.
 - **Use NumPy-style docstrings.** Keep the existing headings and the Parameters,
   Returns, and related sections where applicable. Preserve this structure during
   comment cleanup.
-- **Layers are numbered `_0_` … `_5_`.** `_0_Utils` is shared foundation;
-  `_5_App` is the browser entry point. Lower layers must not import from higher
-  ones. Reuse `_0_Utils/plotting` and `_0_Utils/reporting` rather than calling
-  matplotlib or building PDFs directly in a study.
+- **Keep engines separate from workflows.** `engines/kinpy`, `engines/dynpy`,
+  and `engines/boblib` are sibling physics tools. `simulations/` contains workflows,
+  `common/` shared helpers, `visualization/` replay data, and `app/` the browser UI.
+  Engines and common helpers must not import workflows or the app. Reuse
+  `common/plotting` and `common/reporting` in studies.
 - **Never commit generated content.** `Build/`, `BuildBobLib/`, `results/`,
-  `generated_results/`, `population/`, `_5_App/user_data/`, and deploy outputs
+  `generated_results/`, `population/`, `app/user_data/`, and deploy outputs
   (`.exe`, `.app`, `.zip`, `.tar.gz`) are runtime artifacts. They are gitignored;
   keep it that way.
 - **Never hand-edit generated Modelica records.** `BobLib/Records/VehicleDefn/*.mo`
-  are written by `_5_App/modelica_generator.py`. Change `vehicle.yml` or the
+  are written by `app/modelica_generator.py`. Change `vehicle.yml` or the
   generator.
 - **`vehicle.yml` and the BobLib record can drift.** BobSim's Python workflows
   read `vehicle.yml`; the Modelica entry points read checked-in BobLib records.
   If simulated numbers disagree with `vehicle.yml`, suspect an unregenerated
   record before suspecting physics.
-- **Use `_0_Utils/vehicle_io.py` for paths** (`repo_root()`, `vehicle_yaml_path()`)
+- **Use `common/vehicle_io.py` for paths** (`repo_root()`, `vehicle_yaml_path()`)
   instead of new `Path(__file__).parents[n]` chains.
 - **BobLib changes are a separate repo.** They need a PR in `BobDyn/BobLib` plus
   a pin bump here — not an edit committed from inside the submodule directory.
@@ -73,7 +74,7 @@ above. Keep the set small; a stale doc is worse than no doc.
 - **Z-dependent outputs can be silently withheld, not wrong.** After a SHARK
   import, roll-centre height/migration and four-post jacking metrics may come
   back empty rather than incorrect if the vertical datum couldn't be verified
-  (`_0_Utils/shark_import.py:datum_gate`). Don't treat missing z-metrics as a
+  (`common/shark_import.py:datum_gate`). Don't treat missing z-metrics as a
   bug before checking the datum sidecar — see
   [`docs/conventions.md`](docs/conventions.md#vertical-datum-z) and
   [`skills/shark-import/SKILL.md`](skills/shark-import/SKILL.md).
@@ -84,7 +85,7 @@ above. Keep the set small; a stale doc is worse than no doc.
   through `combineMassRecords`. The parameter still reports
   `isValueChangeable="true"`, the override gives no warning, and the simulated
   car does not change. Only the variables in `RUNTIME_SAFE_PATHS`
-  (`_4_OptSim/StandardSens/pipeline/overrides.py`) are proven to follow an
+  (`simulations/optimization/StandardSens/pipeline/overrides.py`) are proven to follow an
   override. Compile every other variable. The runner also silently drops an
   override name that it cannot find in the init XML. Before you trust a new
   override, read the comment in that file on how to check one.
@@ -121,7 +122,7 @@ for 79 commits once already.
 
 `make opt-doe-smoke` checks the DOE pipeline (config generation, record
 sampling, variant writing) without an OpenModelica toolchain, so it runs on any
-machine. Use it after touching `_4_OptSim` or the BobLib records it reads.
+machine. Use it after touching `simulations/optimization` or the BobLib records it reads.
 
 Most targets shell out to `docker compose` unless you are already inside the
 container. `make app` also runs in a container, the `app` service, which has a

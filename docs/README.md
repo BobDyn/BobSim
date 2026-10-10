@@ -8,7 +8,7 @@ Read in this order:
 
 | Doc | Read it when |
 | --- | --- |
-| [architecture.md](architecture.md) | You need the `_0_` … `_5_` layer map and how data flows between them. Start here. |
+| [architecture.md](architecture.md) | You need the engine and workflow layout and how data flows between them. Start here. |
 | [simulation-entrypoints.md](simulation-entrypoints.md) | You need to understand the fidelity levels and use cases of VehicleSim, EnvelopeSim, StandardSim, and FourPostSim — or you're publishing results and need to specify which workflow was used. |
 | [workflows.md](workflows.md) | You want to *run* something: app, standard studies, envelopes, sensitivities, tests. |
 | [doe-reverse-engineering.md](doe-reverse-engineering.md) | You are doing OptSim work: sweeping parameters (`make opt-standard`), solving for the setup that hits target metrics (`make opt-solve`), or comparing named vehicles across standard sims (`make opt-trade`). It opens with which of the three to reach for. |
@@ -17,13 +17,13 @@ Read in this order:
 | [lap-time-simulation.md](lap-time-simulation.md) | You are optimizing a QSS racing line/speed profile or running the same lap as a forward transient. |
 | [boblib-submodule.md](boblib-submodule.md) | Modelica models are missing, builds fail with "file not found", or you touched BobLib. |
 | [conventions.md](conventions.md) | You're reading or writing `vehicle.yml` geometry, or importing external suspension data (e.g. SHARK) — axis/sign conventions, hardpoint naming, and the vertical-datum rules. |
-| [../_1_VisualSim/README.md](../_1_VisualSim/README.md) | You want to watch a run back in 3D — capturing a scene with `make visual-rig`, and the app's Replay tab that draws it. |
+| [../visualization/README.md](../visualization/README.md) | You want to watch a run back in 3D — capturing a scene with `make visual-rig`, and the app's Replay tab that draws it. |
 | [../skills/README.md](../skills/README.md) | You're doing a repeated multi-step task by hand: SHARK import + datum verification, or a regression baseline refresh. |
 
 ## Conventions used in these docs
 
 - Paths are relative to the repo root.
-- Numbered top-level directories (`_0_Utils` … `_5_App`) are pipeline *layers*,
+- Numbered top-level directories (`common` … `app`) are pipeline *layers*,
   not an import ordering. See [architecture.md](architecture.md).
 - Anything under a `Build/`, `results/`, `generated_results/`, `population/`, or
   `user_data/` directory is generated runtime content and is gitignored. Never

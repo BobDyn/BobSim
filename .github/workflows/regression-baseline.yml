@@ -45,7 +45,7 @@ jobs:
         with:
           name: standard-sim-reports
           path: |
-            _3_StandardSim/generated_results/*_report_metrics.csv
-            _3_StandardSim/generated_results/*_report.pdf
+            simulations/mbd/generated_results/*_report_metrics.csv
+            simulations/mbd/generated_results/*_report.pdf
           if-no-files-found: warn
           retention-days: 30

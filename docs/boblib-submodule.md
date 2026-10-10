@@ -1,7 +1,7 @@
 # The BobLib submodule
 
 ```
-path: _0_Utils/external/BobLib
+path: engines/boblib
 url:  https://github.com/BobDyn/BobLib.git
 ```
 
@@ -28,9 +28,9 @@ Read the status prefix carefully:
 A `+` does *not* tell you which direction the drift goes. Check explicitly:
 
 ```bash
-PINNED=$(git ls-tree HEAD _0_Utils/external/BobLib | awk '{print $3}')
-git -C _0_Utils/external/BobLib log --oneline $PINNED..HEAD   # your local extra commits
-git -C _0_Utils/external/BobLib log --oneline HEAD..$PINNED   # commits you are missing
+PINNED=$(git ls-tree HEAD engines/boblib | awk '{print $3}')
+git -C engines/boblib log --oneline $PINNED..HEAD   # your local extra commits
+git -C engines/boblib log --oneline HEAD..$PINNED   # commits you are missing
 ```
 
 - Only the **second** command prints output → you are behind. Run `make init`.
@@ -44,7 +44,7 @@ After a correct checkout the submodule contains a **nested** `BobLib/` package
 directory:
 
 ```
-_0_Utils/external/BobLib/          # the git repo
+engines/boblib/          # the git repo
 ├── AGENTS.md                      # BobLib's own agent notes — read it before editing models
 ├── BobLib/                        # the Modelica package
 │   ├── package.mo
@@ -59,7 +59,7 @@ The double `BobLib/BobLib/` is correct and load-bearing. `conftest.py` sets
 `BOBLIB_PACKAGE_ROOT` to the inner directory, and the makefile derives
 `BOBLIB_PACKAGE_PATH` from it.
 
-**Diagnostic:** if `_0_Utils/external/BobLib/` has `Vehicle/`, `Standards/`, and
+**Diagnostic:** if `engines/boblib/` has `Vehicle/`, `Standards/`, and
 `Resources/` at its *top* level with no nested `BobLib/`, you are on a pre-0.1.1
 checkout. The build targets will fail looking for
 `BobLib/BobLib/Experiments/Standards/VehicleSim.mo`. Fix with `make init`.
@@ -73,9 +73,9 @@ reference the flat paths.
 ## Bumping the pin
 
 ```bash
-git -C _0_Utils/external/BobLib fetch origin
-git -C _0_Utils/external/BobLib checkout <commit-or-tag>
-git add _0_Utils/external/BobLib
+git -C engines/boblib fetch origin
+git -C engines/boblib checkout <commit-or-tag>
+git add engines/boblib
 git commit -m "Bump BobLib to <version>"
 ```
 
@@ -94,7 +94,7 @@ A BobLib bump can change physics. `make test` alone will not catch it.
 
 ## Detached HEAD is normal
 
-Submodules check out a specific commit, so `git -C _0_Utils/external/BobLib
+Submodules check out a specific commit, so `git -C engines/boblib
 branch --show-current` printing nothing (HEAD detached) is expected, not a
 problem. Only create a branch there if you are actually developing BobLib.
 
@@ -102,9 +102,9 @@ problem. Only create a branch there if you are actually developing BobLib.
 
 - BobLib is a separate repository with its own CI, tests, and release process.
   Changes there need a PR in `BobDyn/BobLib`, not in BobSim.
-- Read `_0_Utils/external/BobLib/AGENTS.md` first. It documents package boundary
+- Read `engines/boblib/AGENTS.md` first. It documents package boundary
   rules (VehicleInterfaces contract layer, where physics/templates/utilities
   belong, records mirroring subsystem packages) that are easy to violate.
 - Generated vehicle records under `Records/VehicleDefn/` are written by
-  `_5_App/modelica_generator.py`. Hand-edits there get overwritten on the next
+  `app/modelica_generator.py`. Hand-edits there get overwritten on the next
   generate — change `vehicle.yml` or the generator instead.

@@ -19,9 +19,9 @@ import numpy as np
 import pytest
 import yaml
 
-from _1_VisualSim import demo
+from visualization import demo
 
-TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "_1_VisualSim" / "visual_templates"
+TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "visualization" / "visual_templates"
 
 
 def _referenced_signals(cfg: dict[str, Any]) -> set[str]:
@@ -105,13 +105,13 @@ def test_demo_scene_signals_cover_its_config() -> None:
 def test_desktop_bundle_keeps_the_rendering_stacks_out() -> None:
     """BobVis draws in the browser now; no Qt or VTK may return to the bundle.
 
-    This used to assert the opposite -- that every _1_VisualSim module was
+    This used to assert the opposite -- that every visualization module was
     excluded -- because the viewer was a second desktop app. The app imports
-    _1_VisualSim now, so what needs guarding is the heavy stack it replaced:
+    visualization now, so what needs guarding is the heavy stack it replaced:
     nothing pulls it in today, which is precisely when a stray import would go
     unnoticed until someone downloaded a 120 MB executable.
     """
-    from _0_Utils.deploy.deploy import EXCLUDED_MODULES
+    from common.deploy.deploy import EXCLUDED_MODULES
 
     for heavy in ("PyQt5", "PyQt6", "PySide2", "PySide6", "pyvista", "pyvistaqt", "vtk"):
         assert heavy in EXCLUDED_MODULES, f"{heavy} must stay out of the app bundle"
@@ -119,7 +119,7 @@ def test_desktop_bundle_keeps_the_rendering_stacks_out() -> None:
     package = TEMPLATE_DIR.parent
     source = chr(10).join(
         path.read_text(encoding="utf-8")
-        for path in [*package.glob("*.py"), *(package.parent / "_5_App").glob("visual*.py")]
+        for path in [*package.glob("*.py"), *(package.parent / "app").glob("visual*.py")]
     )
     for heavy in ("import pyvista", "import vtk", "from PyQt6", "import pyvistaqt"):
         assert heavy not in source, f"{heavy} is back in the Replay pipeline"

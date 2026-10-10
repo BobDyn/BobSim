@@ -63,6 +63,6 @@ getErrorString();\n' > /tmp/setup.mos \
     && rm /tmp/setup.mos
 
 RUN git config --global --add safe.directory /workspace \
-    && git config --global --add safe.directory /workspace/_0_Utils/external/BobLib
+    && git config --global --add safe.directory /workspace/engines/boblib
 
 CMD ["/bin/bash"]

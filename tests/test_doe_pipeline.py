@@ -22,10 +22,10 @@ if TYPE_CHECKING:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OPTSIM_DIR = ROOT / "_4_OptSim"
+OPTSIM_DIR = ROOT / "simulations/optimization"
 ARCHITECTURE_CONFIG = OPTSIM_DIR / "StandardSens/configs/vehicle_architecture.yaml"
 
-# Import as the opt-* make targets do, with _4_OptSim on the path.
+# Import as the opt-* make targets do, with simulations/optimization on the path.
 if str(OPTSIM_DIR) not in sys.path:
     sys.path.insert(0, str(OPTSIM_DIR))
 
@@ -511,10 +511,10 @@ def test_search_warns_when_results_predate_their_inputs(tmp_path: Path) -> None:
 def test_four_post_metrics_resolve_to_generated_results() -> None:
     """FourPostEval writes to generated_results/; the DOE must look there."""
     primary = generator.FOUR_POST_METRICS_CANDIDATES[0]
-    assert primary.parts[-3:-1] == ("_3_StandardSim", "generated_results")
+    assert primary.parts[-4:-1] == ("simulations", "mbd", "generated_results")
 
     report_cfg = yaml.safe_load(
-        (ROOT / "_3_StandardSim/FourPostEval/four_post_eval_config.yml").read_text()
+        (ROOT / "simulations/mbd/FourPostEval/four_post_eval_config.yml").read_text()
     )["report"]
     assert Path(report_cfg["metrics_csv_path"]) == primary.relative_to(ROOT)
 

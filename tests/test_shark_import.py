@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from _0_Utils.shark_import import (
+from common.shark_import import (
     SharkImportError,
     assess_z_datum,
     build_axle_block,
@@ -15,7 +15,7 @@ from _0_Utils.shark_import import (
     parse_shark,
     verify_shared_frame,
 )
-from _0_Utils.vehicle_io import load_yaml, repo_root
+from common.vehicle_io import load_yaml, repo_root
 
 
 SHARK_FIXTURE = Path(__file__).parent / "fixtures" / "rear_pushrod.shk"
@@ -151,7 +151,7 @@ def test_reimport_judges_the_datum_against_orion_not_the_imported_car(tmp_path: 
     becomes self-referential - which can report a shared ground plane that was never
     established and silently un-withhold the z-dependent curves.
     """
-    from _0_Utils.shark_import import write_vehicle
+    from common.shark_import import write_vehicle
 
     first, first_report = import_shark(SHARK_FIXTURE)
     variant = tmp_path / "vehicle_variant.yml"
@@ -180,7 +180,7 @@ def test_rod_attachment_is_derived_from_geometry() -> None:
     overlay pipeline swaps that file in place while it runs, so reading it here
     makes the suite timing-dependent.
     """
-    from _0_Utils.shark_import import _rod_attachment
+    from common.shark_import import _rod_attachment
 
     points = parse_shark(SHARK_FIXTURE)
     assert _rod_attachment(points) == "lower"
@@ -199,7 +199,7 @@ def test_carrying_the_arb_onto_a_moved_bellcrank_is_refused() -> None:
 
 def test_coherent_stabar_pickup_is_accepted() -> None:
     """A pickup in scale with the other rocker arms passes the coherence check."""
-    from _0_Utils.shark_import import _check_carried_stabar_is_coherent
+    from common.shark_import import _check_carried_stabar_is_coherent
 
     _check_carried_stabar_is_coherent(
         {
@@ -231,7 +231,7 @@ def test_kinematic_solve_ignores_actuation_entirely() -> None:
     If the solver ever starts reading actuation, dropping the bar by default would
     silently change kinematic results and this test should fail loudly.
     """
-    from _5_App.kinematics import CornerKinematics
+    from app.kinematics import CornerKinematics
 
     baseline = _baseline()
     stripped = load_yaml(repo_root() / "vehicle.yml")
@@ -244,7 +244,7 @@ def test_kinematic_solve_ignores_actuation_entirely() -> None:
 
 
 def _write_variant(tmp_path: Path, vehicle: dict, name: str = "variant.yml") -> Path:
-    from _0_Utils.shark_import import write_vehicle
+    from common.shark_import import write_vehicle
 
     target = tmp_path / name
     write_vehicle(vehicle, target)
@@ -258,7 +258,7 @@ def _resolve(vehicle: dict, axle: str) -> dict:
 
 def test_datum_gate_is_closed_when_no_record_exists(tmp_path: Path) -> None:
     """Missing metadata is unknown, not agreement."""
-    from _0_Utils.shark_import import datum_gate
+    from common.shark_import import datum_gate
 
     merged, _ = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)
@@ -268,7 +268,7 @@ def test_datum_gate_is_closed_when_no_record_exists(tmp_path: Path) -> None:
 
 
 def test_datum_gate_is_closed_while_any_imported_axle_is_unresolved(tmp_path: Path) -> None:
-    from _0_Utils.shark_import import datum_gate, write_datum_sidecar
+    from common.shark_import import datum_gate, write_datum_sidecar
 
     merged, report = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)
@@ -282,7 +282,7 @@ def test_datum_gate_is_closed_while_any_imported_axle_is_unresolved(tmp_path: Pa
 
 def test_rear_then_front_import_keeps_both_axle_verdicts(tmp_path: Path) -> None:
     """A second axle must merge beside the first, not erase it."""
-    from _0_Utils.shark_import import datum_gate, read_datum_sidecar, write_datum_sidecar
+    from common.shark_import import datum_gate, read_datum_sidecar, write_datum_sidecar
 
     merged, report = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)
@@ -301,7 +301,7 @@ def test_rear_then_front_import_keeps_both_axle_verdicts(tmp_path: Path) -> None
 
 def test_front_then_rear_import_reaches_the_same_state(tmp_path: Path) -> None:
     """Import order must not change the recorded verdicts."""
-    from _0_Utils.shark_import import read_datum_sidecar, write_datum_sidecar
+    from common.shark_import import read_datum_sidecar, write_datum_sidecar
 
     merged, report = import_shark(SHARK_FIXTURE)
     first = _write_variant(tmp_path, merged, "a.yml")
@@ -317,7 +317,7 @@ def test_front_then_rear_import_reaches_the_same_state(tmp_path: Path) -> None:
 
 
 def test_datum_gate_opens_only_when_every_axle_is_resolved(tmp_path: Path) -> None:
-    from _0_Utils.shark_import import datum_gate, write_datum_sidecar
+    from common.shark_import import datum_gate, write_datum_sidecar
 
     merged, _ = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)
@@ -334,7 +334,7 @@ def test_editing_the_geometry_invalidates_the_datum_record(tmp_path: Path) -> No
     Nudging the wheel-centre z is the plausible edit here, because that is exactly
     the quantity the datum question is about.
     """
-    from _0_Utils.shark_import import datum_gate, write_datum_sidecar, write_vehicle
+    from common.shark_import import datum_gate, write_datum_sidecar, write_vehicle
 
     merged, _ = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)
@@ -356,7 +356,7 @@ def test_editing_the_geometry_invalidates_the_datum_record(tmp_path: Path) -> No
 
 def test_digest_ignores_actuation_which_the_datum_does_not_describe(tmp_path: Path) -> None:
     """Editing a spring rate must not invalidate a geometry datum verdict."""
-    from _0_Utils.shark_import import geometry_digest
+    from common.shark_import import geometry_digest
 
     merged, _ = import_shark(SHARK_FIXTURE)
     before = geometry_digest(merged, "rear")
@@ -366,7 +366,7 @@ def test_digest_ignores_actuation_which_the_datum_does_not_describe(tmp_path: Pa
 
 
 def test_malformed_sidecar_closes_the_gate(tmp_path: Path) -> None:
-    from _0_Utils.shark_import import datum_gate, datum_sidecar_path
+    from common.shark_import import datum_gate, datum_sidecar_path
 
     merged, _ = import_shark(SHARK_FIXTURE)
     target = _write_variant(tmp_path, merged)

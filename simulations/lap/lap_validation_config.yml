@@ -1,0 +1,51 @@
+schema: bobsim.lap-validation.v1
+
+vehicle: vehicle.yml
+model_dofs: [3, 6, 10, 14]
+output_directory: temp/lap_time_validation
+
+reference_tracks:
+  michigan_2019: simulations/lap/tracks/endurance_michigan_2019.csv
+  synthetic_stress_course: simulations/lap/tracks/endurance_reference.csv
+
+track:
+  boundary_csv: simulations/lap/tracks/endurance_reference.csv
+  vehicle_width_m: 1.35
+  safety_margin_m: 0.15
+  sample_step_m: 2.0
+
+ggv:
+  speeds_mps: [6.0, 12.0, 18.0]
+  ay_max_g: 2.6
+  ay_points: 17
+  ax_search_min_g: -3.2
+  ax_search_max_g: 2.8
+  ax_binary_iterations: 8
+  max_abs_beta_rad: 0.25
+  max_abs_steering_rad: 0.5
+  enforce_tire_load_range: true
+  # Off to keep the visual smoke pass fast.
+  trim_multistart: false
+
+ymd:
+  speed_mps: 12.0
+  beta_min_deg: -8.0
+  beta_max_deg: 8.0
+  beta_points: 9
+  roadwheel_min_deg: -12.0
+  roadwheel_max_deg: 12.0
+  roadwheel_points: 9
+  enforce_tire_load_range: true
+
+lap:
+  line_mode: minimum_time_qss
+  curvature_max_iterations: 5
+  lap_time_max_iterations: 3
+  max_speed_mps: 18.0
+
+transient:
+  sample_period_s: 0.05
+  lookahead_m: 3.0
+  steering_trim_step_m: 10.0
+  integration_rtol: 2.0e-5
+  integration_atol: 2.0e-7

@@ -1,7 +1,7 @@
-"""The browser camera must agree with ``_1_VisualSim/navigation.py``.
+"""The browser camera must agree with ``visualization/navigation.py``.
 
 The viewer moved to WebGL, but the arithmetic that decides how a drag feels did
-not change: ``_5_App/static/visual.js`` is a port of ``navigation.py``, constant
+not change: ``app/static/visual.js`` is a port of ``navigation.py``, constant
 for constant. That module and ``tests/test_visual_navigation.py`` stay as the
 reference, and this pins the port to them.
 
@@ -25,10 +25,10 @@ from typing import Any
 import numpy as np
 import pytest
 
-from _1_VisualSim import navigation as nav
+from visualization import navigation as nav
 
 ROOT = Path(__file__).resolve().parents[1]
-VISUAL_JS = ROOT / "_5_App/static/visual.js"
+VISUAL_JS = ROOT / "app/static/visual.js"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("node") is None,

@@ -4,9 +4,9 @@ import sys
 import pytest
 import yaml
 
-from _0_Utils.vehicle_io import repo_root
+from common.vehicle_io import repo_root
 
-OPTSIM_DIR = repo_root() / "_4_OptSim"
+OPTSIM_DIR = repo_root() / "simulations/optimization"
 if str(OPTSIM_DIR) not in sys.path:
     sys.path.insert(0, str(OPTSIM_DIR))
 

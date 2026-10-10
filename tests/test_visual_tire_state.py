@@ -1,6 +1,6 @@
 """BobVis friction-circle and LLTD arithmetic.
 
-:mod:`_1_VisualSim.tire_state` is numpy only, so these run everywhere, CI
+:mod:`visualization.tire_state` is numpy only, so these run everywhere, CI
 included. The friction limit has to match BobLib's MF5.2 peak exactly, or a
 tire the solver has sliding would look like it has grip to spare.
 """
@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from _0_Utils.vehicle_io import parse_tir, repo_root
-from _1_VisualSim.tire_state import (
+from common.vehicle_io import parse_tir, repo_root
+from visualization.tire_state import (
     LLTD_MIN_FRACTION,
     MIN_LOAD_N,
     axle_load_transfer,
@@ -112,7 +112,7 @@ def test_friction_coefficients_default_scales_and_name_missing_terms() -> None:
 
 
 def test_the_bundled_tire_file_gives_plausible_fsae_grip() -> None:
-    tir = parse_tir(repo_root() / "_0_Utils" / "tire_templates" / "16x7p5_10_12psi.tir")
+    tir = parse_tir(repo_root() / "common" / "tire_templates" / "16x7p5_10_12psi.tir")
     mu_x, mu_y = peak_mu(np.array([400.0, 650.0, 1000.0]), 0.0, friction_coefficients(tir))
     assert np.all((mu_x > 1.0) & (mu_x < 4.0))
     assert np.all((mu_y > 1.0) & (mu_y < 4.0))

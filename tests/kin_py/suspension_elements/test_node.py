@@ -1,4 +1,4 @@
-from _0_Utils.kin_py.suspension_model.suspension_elements._1_elements.node import Node
+from engines.kinpy.suspension_model.suspension_elements._1_elements.node import Node
 import numpy as np
 
 from unittest import TestCase

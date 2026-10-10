@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from _3_StandardSim.FourPostEval import shark_overlay_report as sor
+from simulations.mbd.FourPostEval import shark_overlay_report as sor
 
 
 def test_stale_binary_is_refused_even_when_the_build_reports_success(
@@ -57,7 +57,7 @@ def test_a_missing_datum_record_withholds_rather_than_publishes(tmp_path: Path) 
     vertical datum, so the z-dependent curves stay withheld. Failing open here would
     publish exactly the curves the datum question puts in doubt.
     """
-    from _0_Utils.shark_import import datum_gate, write_datum_sidecar
+    from common.shark_import import datum_gate, write_datum_sidecar
 
     bare = tmp_path / "vehicle_bare.yml"
     bare.write_text("front: {}\n", encoding="utf-8")
@@ -348,7 +348,7 @@ def test_four_post_section_gates_and_flags_confounds() -> None:
 
 def test_design_position_is_sampled_not_extrapolated() -> None:
     """The app's even grid straddles zero; the report's grid lands on it."""
-    from _0_Utils.kin_py.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
+    from engines.kinpy.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
 
     assert 0.0 not in DEFAULT_SWEEP_M and 0.0 not in DEFAULT_ROLL_DEG
     assert 0.0 in sor.BUMP_SWEEP_M and 0.0 in sor.ROLL_SWEEP_DEG
@@ -362,7 +362,7 @@ def test_design_position_is_sampled_not_extrapolated() -> None:
 
 
 def test_steer_sweep_is_zero_centered_and_front_axle_only() -> None:
-    from _0_Utils.kin_py.kinematics import DEFAULT_STEER_M
+    from engines.kinpy.kinematics import DEFAULT_STEER_M
 
     assert sor.STEER_SWEEP_M == DEFAULT_STEER_M
     assert 0.0 in sor.STEER_SWEEP_M

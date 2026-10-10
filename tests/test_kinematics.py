@@ -7,14 +7,14 @@ import numpy as np
 import pytest
 import yaml
 
-from _3_StandardSim.FourPostEval import four_post_eval_sim as four_post_eval
-from _0_Utils.kin_py import (
+from simulations.mbd.FourPostEval import four_post_eval_sim as four_post_eval
+from engines.kinpy import (
     KINEMATIC_CURVE_META,
     CornerKinematics,
     create_kinematics,
     kinematic_curves_payload,
 )
-from _5_App import kinematics as app_kinematics
+from app import kinematics as app_kinematics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,8 +22,8 @@ INCH_TO_M = 0.0254
 
 
 def test_kinematics_model_lives_in_shared_suspension_package() -> None:
-    assert CornerKinematics.__module__ == "_0_Utils.kin_py.kinematics"
-    assert kinematic_curves_payload.__module__ == "_0_Utils.kin_py.kinematics"
+    assert CornerKinematics.__module__ == "engines.kinpy.kinematics"
+    assert kinematic_curves_payload.__module__ == "engines.kinpy.kinematics"
 
 
 def test_app_kinematics_import_is_compatibility_shim() -> None:
@@ -1001,7 +1001,7 @@ def test_four_post_lltd_uses_spring_roll_stiffness_when_arb_is_absent(
 
 
 def test_kinematic_heave_gains_match_four_post_eval_metrics() -> None:
-    metrics_path = ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv"
+    metrics_path = ROOT / "simulations/mbd/results/four_post_eval_report_metrics.csv"
     if not metrics_path.is_file():
         pytest.skip("FourPostEval metrics artifact is not available")
 

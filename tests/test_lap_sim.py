@@ -7,15 +7,15 @@ import numpy as np
 import pytest
 import yaml
 
-from _0_Utils.dyn_py import DOFModel, create_model, load_reduced_vehicle_parameters
-from _0_Utils.lap_sim import (
+from engines.dynpy import DOFModel, create_model, load_reduced_vehicle_parameters
+from simulations.lap.core import (
     GGVMap,
     TrackCorridor,
     optimize_racing_line,
     simulate_transient_lap,
     solve_qss_lap,
 )
-from _3_StandardSim.LapTimeEval.lap_time_eval_sim import run_lap_time_evaluation
+from simulations.lap.lap_time_eval_sim import run_lap_time_evaluation
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +69,7 @@ def test_track_corridor_builds_closed_clearance_constrained_line(
 
 def test_synthetic_endurance_reference_has_mixed_curvature() -> None:
     corridor = TrackCorridor.from_csv(
-        "_3_StandardSim/LapTimeEval/tracks/endurance_reference.csv"
+        "simulations/lap/tracks/endurance_reference.csv"
     )
     line = corridor.line_from_offsets(np.zeros(corridor.gate_count), sample_step_m=1.0)
 
@@ -82,7 +82,7 @@ def test_synthetic_endurance_reference_has_mixed_curvature() -> None:
 
 def test_michigan_2019_endurance_reference_has_full_course_scale() -> None:
     corridor = TrackCorridor.from_csv(
-        "_3_StandardSim/LapTimeEval/tracks/endurance_michigan_2019.csv"
+        "simulations/lap/tracks/endurance_michigan_2019.csv"
     )
     points = corridor.center_points_m
     closed = np.vstack((points, points[0]))
@@ -192,7 +192,7 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
                 "model_dof": 3,
                 "event": {"name": "endurance", "drive_power_limit_w": 32_000.0},
                 "track": {
-                    "boundary_csv": "_3_StandardSim/LapTimeEval/tracks/endurance_reference.csv",
+                    "boundary_csv": "simulations/lap/tracks/endurance_reference.csv",
                     "vehicle_width_m": 1.35,
                     "safety_margin_m": 0.15,
                     "sample_step_m": 2.0,

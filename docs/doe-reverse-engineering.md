@@ -1,6 +1,6 @@
 # DOE and reverse engineering a vehicle from target metrics
 
-**TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `_4_OptSim/StandardSens/`.
+**TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `simulations/optimization/StandardSens/`.
 
 ## Three questions, one set of compiled vehicles
 
@@ -40,7 +40,7 @@ samples. Leave the overrides off to use the full sweep configured in
 | `DOE_SCOPE` | `all` (default), `setup`, or `architecture`. See [Sweep scope](#sweep-scope-setup-vs-architecture) |
 
 The overrides rewrite the generated `_doe_config.yaml`, so it will show as
-modified afterwards. `git checkout _4_OptSim/StandardSens/configs/_doe_config.yaml`
+modified afterwards. `git checkout simulations/optimization/StandardSens/configs/_doe_config.yaml`
 restores it.
 
 To check the plumbing without an OpenModelica toolchain — useful on any
@@ -56,7 +56,7 @@ The sweep varies spring rate, and holding static ride height while the rate
 changes requires recomputing each spring's free length. That calculation
 (`static_balance_free_length` in `pipeline/generator.py`) needs the motion
 ratios measured by FourPostEval, read from
-`_3_StandardSim/generated_results/four_post_eval_report_metrics.csv`
+`simulations/mbd/generated_results/four_post_eval_report_metrics.csv`
 (specifically `static_motion_ratio_front` / `_rear`, falling back to
 `avg_motion_ratio_*`).
 
@@ -72,12 +72,12 @@ error names the paths it searched.
 
 1. **Sample and generate variants** — `pipeline/sampler.py` + `generator.py`
    read the DOE config and emit one vehicle definition per variant into
-   `_4_OptSim/Build/StandardSens/population/`.
+   `simulations/optimization/Build/StandardSens/population/`.
 2. **Build and simulate** — `pipeline/build_pipeline.py` + `compiler.py` compile
    and run each variant. This is the expensive stage.
 3. **Aggregate** — `pipeline/aggregator.py` collapses every variant's study
    output into one table:
-   `_4_OptSim/Build/StandardSens/standard_sensitivity_results.parquet`.
+   `simulations/optimization/Build/StandardSens/standard_sensitivity_results.parquet`.
 4. **Response surfaces / sensitivities** — fit and rank parameter influence.
 5. **Plot** — tornado plots via `_shared/plot_sensitivity_tornado.py`.
 
@@ -256,13 +256,13 @@ make opt-search METRICS="SteadyStateEval_understeer_gradient_deg_per_g=0.05" SEA
 Equivalent direct invocation:
 
 ```bash
-PYTHONPATH=_4_OptSim:. python -m StandardSens.pipeline.search \
+PYTHONPATH=simulations/optimization:. python -m StandardSens.pipeline.search \
     --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 \
     --top 3
 ```
 
 `PYTHONPATH` uses the platform's own separator. On Windows, outside the
-container, that separator is `;`: `PYTHONPATH="_4_OptSim;."`. The `:` form above
+container, that separator is `;`: `PYTHONPATH="simulations/optimization;."`. The `:` form above
 fails with `No module named 'StandardSens'`. That error looks like a broken
 checkout, not a path problem.
 
@@ -334,7 +334,7 @@ The guards cover two limits only partly:
   Everything else in the returned variant stays at baseline. The scope guard tells
   you *that* the set was narrowed. Nothing tells you the baseline values of the
   rest of the car. If they matter, read the variant's own definition under
-  `_4_OptSim/Build/StandardSens/population/`.
+  `simulations/optimization/Build/StandardSens/population/`.
 - **Under-constrained targets have many answers.** Naming one metric will find a
   variant that matches it and says nothing about the rest of the car. Use
   `--top`/`SEARCH_TOP` to see the spread of candidates rather than trusting the
@@ -446,7 +446,7 @@ not change. But a gradient from `opt-solve` and the same gradient from
 differ slightly. Compare results from the same tool.
 
 The solver caches executables and evaluations under
-`_4_OptSim/Build/StandardSens/solve/`. It discards the cache when BobLib, the
+`simulations/optimization/Build/StandardSens/solve/`. It discards the cache when BobLib, the
 vehicle or the SteadyStateEval tooling changes. The star does not depend on the
 targets. So after the star is cached, a new set of targets costs only the
 verification runs.
@@ -486,7 +486,7 @@ metrics:
     yaw_rise_time_s: {resolution: 0.005}
 ```
 
-The report goes to `_4_OptSim/results/trade/<name>.md` and `.csv`. It has one
+The report goes to `simulations/optimization/results/trade/<name>.md` and `.csv`. It has one
 table for each standard. Each cell has the simulated value and its change from
 baseline.
 
@@ -500,7 +500,7 @@ studies.
 
 **One compile serves every standard.** SteadyStateEval, RampSteerEval and
 TransientEval all run the same model, `BobLib.Experiments.Standards.VehicleSim`.
-`_3_StandardSim` itself builds it once and points all three configs at it. They
+`simulations/mbd` itself builds it once and points all three configs at it. They
 also share one interface. So a standard is one entry in `STANDARDS` in
 `pipeline/standards.py`. FourPostEval is not in the list. It runs `FourPostSim`,
 which is a different model, so it would need a second compile for each vehicle.
@@ -544,7 +544,7 @@ through its own denser isoline.
 
 ## Envelope sensitivities
 
-`_4_OptSim/EnvelopeSens/` is the same idea against GGV/YMD envelope outputs
+`simulations/optimization/EnvelopeSens/` is the same idea against GGV/YMD envelope outputs
 rather than StandardSim studies, driven by `EnvelopeSens/config.yml`:
 
 ```bash

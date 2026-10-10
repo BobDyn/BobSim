@@ -8,16 +8,16 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from _3_StandardSim.LapTimeEval import lap_time_eval_sim as lap
+from simulations.lap import lap_time_eval_sim as lap
 
 
 @pytest.fixture
 def provenance_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lap, 'repo_root', lambda: tmp_path)
     monkeypatch.setattr(lap, '__file__', str(tmp_path / 'lap.py'))
-    for name in ('lap.py', '_2_EnvelopeSim/GGV/ggv_generation.py',
-                 '_2_EnvelopeSim/vehicle_yaml.py', '_0_Utils/vehicle_io.py',
-                 '_0_Utils/dyn_py/parameters.py', '_0_Utils/kin_py/geometry.py'):
+    for name in ('lap.py', 'simulations/envelope/GGV/ggv_generation.py',
+                 'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'engines/dynpy/parameters.py', 'engines/kinpy/geometry.py'):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('# physics\n')
@@ -36,10 +36,10 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
 
 @pytest.mark.parametrize('relative', [
     'tires/front.tir', 'tires/rear.tir',
-    '_3_StandardSim/generated_results/four_post_eval_report_metrics.csv',
-    '_3_StandardSim/results/four_post_eval_report_metrics.csv',
-    '_2_EnvelopeSim/vehicle_yaml.py', '_0_Utils/vehicle_io.py',
-    '_0_Utils/kin_py/geometry.py',
+    'simulations/mbd/generated_results/four_post_eval_report_metrics.csv',
+    'simulations/mbd/results/four_post_eval_report_metrics.csv',
+    'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+    'engines/kinpy/geometry.py',
 ])
 def test_ggv_fingerprint_tracks_referenced_physics(provenance_workspace, relative):
     root, arguments = provenance_workspace
@@ -55,8 +55,8 @@ def test_ggv_fingerprint_tracks_referenced_physics(provenance_workspace, relativ
 
 
 def test_ggv_cache_reused_only_while_inputs_match(provenance_workspace, monkeypatch):
-    from _2_EnvelopeSim.GGV import ggv_generation
-    from _2_EnvelopeSim import vehicle_yaml
+    from simulations.envelope.GGV import ggv_generation
+    from simulations.envelope import vehicle_yaml
 
     root, arguments = provenance_workspace
     path = root / 'ggv.csv'

@@ -8,7 +8,7 @@ tied to any one tool's skills format.
 
 Each skill is a folder with a `SKILL.md`: what it's for, when to reach for
 it, the steps, and which underlying script/target actually does the work
-(skills document and sequence existing tools in `_0_Utils` / the makefile —
+(skills document and sequence existing tools in `common` / the makefile —
 they don't duplicate that logic).
 
 | Skill | Use it when |

@@ -1,6 +1,6 @@
 """BobVis camera navigation checks.
 
-:mod:`_1_VisualSim.navigation` is numpy only, so unlike ``test_visual_scene.py``
+:mod:`visualization.navigation` is numpy only, so unlike ``test_visual_scene.py``
 these run everywhere, CI included. They pin the properties that make a gesture
 feel right or wrong: what stays fixed on screen, what never flips, and where a
 double-click lands when there is no geometry under it.
@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from _1_VisualSim.navigation import (
+from visualization.navigation import (
     GROUND_REACH,
     MIN_DISTANCE,
     MIN_POLAR_DEG,

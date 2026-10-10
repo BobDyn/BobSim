@@ -2,12 +2,12 @@
 explicit_package_bases = true
 ignore_missing_imports = true
 files = [
-    "_0_Utils",
-    "_1_VisualSim",
-    "_2_EnvelopeSim",
-    "_3_StandardSim",
-    "_4_OptSim",
-    "_5_App",
+    "common",
+    "visualization",
+    "engines/kinpy",
+    "engines/dynpy",
+    "simulations",
+    "app",
     "tests",
 ]
 
@@ -15,7 +15,7 @@ exclude = '''
 (^|/)build/
 |(^|/)__pycache__/
 |(^|/)\.venv/
-|(^|/)_0_Utils/external/BobLib/
+|(^|/)engines/boblib/
 '''
 
 [[tool.mypy.overrides]]
@@ -28,7 +28,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "_0_Utils.kin_py.suspension_model.*",
+    "engines.kinpy.suspension_model.*",
     "tests.kin_py.*",
 ]
 ignore_errors = true
