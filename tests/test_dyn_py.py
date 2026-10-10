@@ -6,6 +6,7 @@ from copy import deepcopy
 import numpy as np
 import pytest
 import yaml
+from scipy.spatial.transform import Rotation
 
 from engines.dynpy import (
     ModelInputs,
@@ -884,8 +885,15 @@ def test_path_acceleration_trim_matches_constant_radius(parameters, dof, directi
     np.testing.assert_allclose(path.state, steady.state, atol=1e-6)
     np.testing.assert_allclose(path.output.generalized_acceleration, 0.0, atol=1e-6)
     beta = path.unknowns["beta_rad"]
-    assert path.longitudinal_acceleration_mps2 == pytest.approx(-speed * yaw * np.sin(beta), abs=1e-7)
-    assert path.lateral_acceleration_mps2 == pytest.approx(speed * yaw * np.cos(beta), abs=1e-7)
+    physical = np.array([-speed * yaw * np.sin(beta), speed * yaw * np.cos(beta), 0.0])
+    if dof >= 6:
+        rotation = Rotation.from_euler("xyz", path.state[3:6]).as_matrix()
+        physical = rotation.T @ physical
+        np.testing.assert_allclose(path.output.derivative[2:5], 0.0, atol=1e-12)
+        assert path.output.derivative[5] == pytest.approx(yaw)
+        np.testing.assert_allclose(path.output.jounce_speed_mps, 0.0, atol=1e-12)
+    assert path.longitudinal_acceleration_mps2 == pytest.approx(physical[0], abs=1e-7)
+    assert path.lateral_acceleration_mps2 == pytest.approx(physical[1], abs=1e-7)
 
 
 def test_vehicle_rejects_unknown_acceleration_frame(parameters):
@@ -918,11 +926,47 @@ def test_path_and_body_acceleration_demands_agree(parameters, dof):
     )
     assert path.success, path.message
     beta = path.unknowns["beta_rad"]
+    physical = np.array([np.cos(beta) - 5.0 * np.sin(beta),
+                         np.sin(beta) + 5.0 * np.cos(beta), 0.0])
+    if dof >= 6:
+        physical = Rotation.from_euler("xyz", path.state[3:6]).inv().apply(physical)
     body = solve_acceleration_trim(
         model, speed_mps=10.0, yaw_rate_radps=0.5,
-        longitudinal_acceleration_mps2=np.cos(beta) - 5.0 * np.sin(beta),
-        lateral_acceleration_mps2=np.sin(beta) + 5.0 * np.cos(beta),
+        longitudinal_acceleration_mps2=physical[0],
+        lateral_acceleration_mps2=physical[1],
         initial_unknowns=path.unknowns,
     )
     assert body.success, body.message
     np.testing.assert_allclose(path.state, body.state, atol=1e-6)
+
+
+@pytest.mark.parametrize("dof", [6, 10, 14])
+@pytest.mark.parametrize("solver", ["acceleration", "moment"])
+def test_qss_level_road_has_no_suspension_or_attitude_motion(parameters, dof, solver):
+    model = create_model(dof, parameters)
+    if solver == "acceleration":
+        result = solve_acceleration_trim(
+            model, speed_mps=10.0, yaw_rate_radps=0.5,
+            longitudinal_acceleration_mps2=1.0, lateral_acceleration_mps2=5.0,
+            acceleration_frame="path",
+        )
+    else:
+        result = solve_moment_state(
+            model, speed_mps=10.0, beta_rad=-0.03, steering_rad=0.06,
+        )
+    assert result.success, result.message
+    output = result.output
+    np.testing.assert_allclose(output.derivative[2:5], 0.0, atol=1e-12)
+    np.testing.assert_allclose(output.jounce_speed_mps, 0.0, atol=1e-12)
+    rotation = Rotation.from_euler("xyz", result.state[3:6]).as_matrix()
+    velocity = result.state[dof:]
+    acceleration = rotation @ (
+        output.generalized_acceleration[:3] + np.cross(velocity[3:6], velocity[:3])
+    )
+    assert acceleration[2] == pytest.approx(0.0, abs=1e-7)
+    if solver == "acceleration":
+        beta = result.unknowns["beta_rad"]
+        expected = [np.cos(beta) - 5 * np.sin(beta),
+                    np.sin(beta) + 5 * np.cos(beta), 0.0]
+        np.testing.assert_allclose(acceleration, expected, atol=1e-7)
+        assert np.linalg.norm(output.derivative[:2]) == pytest.approx(10.0)
