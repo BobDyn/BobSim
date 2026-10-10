@@ -1,4 +1,4 @@
-"""MF5.2 steady-state force curves matching BobLib's tire evaluator."""
+"""MF5.2 steady-state forces and moments matching BobLib's tire evaluator."""
 
 from __future__ import annotations
 
@@ -23,12 +23,21 @@ RBY1 RBY2 RBY3 RCY1 REY1 REY2 RHY1 RHY2 RVY1 RVY2 RVY3 RVY4 RVY5 RVY6
 """.split()
 )
 
+MOMENT_COEFFICIENTS = tuple(
+    """
+UNLOADED_RADIUS LONGVL QSX1 QSX2 QSX3 LVMX LMX QSY1 QSY2 QSY3 QSY4 LMY
+QBZ1 QBZ2 QBZ3 QBZ4 QBZ5 QBZ9 QBZ10 QCZ1 QDZ1 QDZ2 QDZ3 QDZ4 QDZ6 QDZ7 QDZ8 QDZ9
+QEZ1 QEZ2 QEZ3 QEZ4 QEZ5 QHZ1 QHZ2 QHZ3 QHZ4 LGAZ LTR LRES SSZ1 SSZ2 SSZ3 SSZ4 LS
+""".split()
+)
+MF52_COEFFICIENTS = FORCE_COEFFICIENTS + MOMENT_COEFFICIENTS
+
 
 @dataclass(frozen=True)
 class MF52Tire:
     """## MF5.2 Tire
 
-    Pure and combined longitudinal/lateral curves in BobLib's z-up frame.
+    Pure and combined forces and moments in BobLib's z-up frame.
     No friction floor or friction-ellipse clipping is applied.
 
     Parameters
@@ -40,10 +49,10 @@ class MF52Tire:
     coefficients: Mapping[str, float]
 
     def __post_init__(self) -> None:
-        missing = set(FORCE_COEFFICIENTS) - self.coefficients.keys()
+        missing = set(MF52_COEFFICIENTS) - self.coefficients.keys()
         if missing:
-            raise ValueError(f"Missing MF5.2 force coefficients: {', '.join(sorted(missing))}")
-        p = {key: float(self.coefficients[key]) for key in FORCE_COEFFICIENTS}
+            raise ValueError(f"Missing MF5.2 coefficients: {', '.join(sorted(missing))}")
+        p = {key: float(self.coefficients[key]) for key in MF52_COEFFICIENTS}
         if not all(np.isfinite(value) for value in p.values()):
             raise ValueError("MF5.2 coefficients must be finite.")
         if p["FNOMIN"] <= 0 or p["LFZO"] <= 0 or not 0 < p["FZMIN"] < p["FZMAX"]:
@@ -126,6 +135,167 @@ class MF52Tire:
                 else:
                     result[index] = best
         return result
+
+    def evaluate(
+        self,
+        fz_n: ArrayLike,
+        alpha_rad: ArrayLike,
+        kappa: ArrayLike,
+        camber_rad: ArrayLike = 0.0,
+        speed_mps: ArrayLike = 0.0,
+    ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, FloatArray]:
+        """## Tire Wrench
+
+        Evaluate BobLib's steady-state MF5.2 forces and moments.
+
+        Parameters
+        ----------
+        fz_n : ArrayLike
+            Normal load in newtons.
+        alpha_rad : ArrayLike
+            Wheel-frame slip angle in radians.
+        kappa : ArrayLike
+            Longitudinal slip ratio.
+        camber_rad : ArrayLike
+            Signed inclination angle in radians.
+        speed_mps : ArrayLike
+            Wheel-frame longitudinal speed in meters per second.
+
+        Returns
+        -------
+        tuple[NDArray, NDArray, NDArray, NDArray, NDArray]
+            Fx, Fy in newtons and Mx, My, Mz in newton meters, in the z-up wheel frame.
+        """
+        load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
+        fx, fy = self.forces(load, alpha, slip, gamma)
+        mx, my, mz = self.moments(load, alpha, slip, gamma, speed)
+        return fx, fy, mx, my, mz
+
+    def rolling_moment(self, fz_n: ArrayLike, fx_n: ArrayLike, speed_mps: ArrayLike) -> FloatArray:
+        """## Rolling Moment
+
+        Evaluate BobLib's My equation in the z-up wheel frame.
+
+        Parameters
+        ----------
+        fz_n : ArrayLike
+            Actual normal load in newtons.
+        fx_n : ArrayLike
+            Actual longitudinal force in newtons, including low-load fading.
+        speed_mps : ArrayLike
+            Longitudinal speed in meters per second.
+
+        Returns
+        -------
+        NDArray
+            Rolling moment in newton meters.
+        """
+        load, fx, speed = np.broadcast_arrays(fz_n, fx_n, speed_mps)
+        fz = np.maximum(load, self.fz_min_n)
+        scale = np.where(load > 1e-3, load / fz, 0.0)
+        raw_fx = np.divide(fx, scale, out=np.zeros_like(fz, dtype=float), where=scale != 0)
+        return -scale * self._my_raw(fz, raw_fx, speed)
+
+    def _my_raw(self, fz: FloatArray, fx: FloatArray, speed: FloatArray) -> FloatArray:
+        p = self.coefficients
+        if abs(p["QSY1"]) <= 1e-8 and abs(p["QSY2"]) <= 1e-8:
+            dfz = (fz - p["FNOMIN"] * p["LFZO"]) / (p["FNOMIN"] * p["LFZO"])
+            kx = fz * (p["PKX1"] + p["PKX2"] * dfz) * np.exp(p["PKX3"] * dfz) * p["LKX"]
+            hx = (p["PHX1"] + p["PHX2"] * dfz) * p["LHX"]
+            vx = fz * (p["PVX1"] + p["PVX2"] * dfz) * p["LVX"] * p["LMUX"]
+            return p["UNLOADED_RADIUS"] * (vx + kx * hx)
+        speed_ratio = speed / max(abs(p["LONGVL"]), 1e-8)
+        return (
+            p["UNLOADED_RADIUS"]
+            * fz
+            * (p["QSY1"] + p["QSY2"] * fx / p["FNOMIN"] + p["QSY3"] * np.abs(speed_ratio) + p["QSY4"] * speed_ratio**4)
+            * p["LMY"]
+        )
+
+    def moments(
+        self,
+        fz_n: ArrayLike,
+        alpha_rad: ArrayLike,
+        kappa: ArrayLike,
+        camber_rad: ArrayLike = 0.0,
+        speed_mps: ArrayLike = 0.0,
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        """## Tire Moments
+
+        Port of BobLib MF52's pure and combined Mx, My and Mz equations.
+
+        Parameters
+        ----------
+        fz_n : ArrayLike
+            Normal load in newtons.
+        alpha_rad : ArrayLike
+            Slip angle in radians.
+        kappa : ArrayLike
+            Longitudinal slip ratio.
+        camber_rad : ArrayLike
+            Signed inclination angle in radians.
+        speed_mps : ArrayLike
+            Longitudinal speed in meters per second.
+
+        Returns
+        -------
+        tuple[NDArray, NDArray, NDArray]
+            Overturning, rolling and aligning moments in the z-up wheel frame.
+        """
+        load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
+        fz = np.maximum(load, self.fz_min_n)
+        scale = np.where(load > 1e-3, load / fz, 0.0)
+        p = self.coefficients
+        fx, fy_up = self.forces(fz, alpha, slip, gamma)
+        fy = -fy_up
+        radius, nominal = p["UNLOADED_RADIUS"], p["FNOMIN"]
+        mx = radius * fz * (p["QSX1"] * p["LVMX"] + (-p["QSX2"] * gamma + p["QSX3"] * fy / nominal) * p["LMX"])
+        my = self._my_raw(fz, fx, speed)
+        dfz = (fz - nominal * p["LFZO"]) / (nominal * p["LFZO"])
+        iy = gamma * p["LGAY"]
+        cy = p["PCY1"] * p["LCY"]
+        muy = (p["PDY1"] + p["PDY2"] * dfz) * (1 - p["PDY3"] * iy**2) * p["LMUY"]
+        ky = p["PKY1"] * nominal * np.sin(2 * np.arctan(fz / (p["PKY2"] * nominal * p["LFZO"])))
+        ky *= (1 - p["PKY3"] * np.abs(iy)) * p["LFZO"] * p["LKY"]
+        by = ky / (cy * muy * fz + 1e-8)
+        hy = (p["PHY1"] + p["PHY2"] * dfz) * p["LHY"] + p["PHY3"] * iy
+        vy = fz * ((p["PVY1"] + p["PVY2"] * dfz) * p["LVY"] + (p["PVY3"] + p["PVY4"] * dfz) * iy) * p["LMUY"]
+        kx = fz * (p["PKX1"] + p["PKX2"] * dfz) * np.exp(p["PKX3"] * dfz) * p["LKX"]
+        iz = gamma * p["LGAZ"]
+        dt = (
+            fz
+            * (p["QDZ1"] + p["QDZ2"] * dfz)
+            * (1 + p["QDZ3"] * iz + p["QDZ4"] * iz**2)
+            * (radius / nominal)
+            * p["LTR"]
+        )
+        ct = p["QCZ1"]
+        # The zero-friction limit has no lateral aligning moment. Avoid 0/0 without a friction floor.
+        stiffness_scale = p["LKY"] / p["LMUY"] if p["LMUY"] != 0 else 0.0
+        bt = (
+            (p["QBZ1"] + p["QBZ2"] * dfz + p["QBZ3"] * dfz**2)
+            * (1 + p["QBZ4"] * iz + p["QBZ5"] * np.abs(iz))
+            * stiffness_scale
+        )
+        ht = p["QHZ1"] + p["QHZ2"] * dfz + (p["QHZ3"] + p["QHZ4"] * dfz) * iz
+        at = alpha + ht
+        et = np.minimum(
+            (p["QEZ1"] + p["QEZ2"] * dfz + p["QEZ3"] * dfz**2)
+            * (1 + (p["QEZ4"] + p["QEZ5"] * iz) * (2 / np.pi) * np.arctan(bt * ct * at)),
+            1,
+        )
+        at_eq = np.arctan(np.sqrt(np.tan(at) ** 2 + (kx / (ky + 1e-8)) ** 2 * slip**2)) * np.sign(at)
+        trail = dt * np.cos(ct * _magic_argument(bt * at_eq, et)) * np.cos(alpha)
+        ar = alpha + hy + vy / (ky + 1e-8)
+        ar_eq = np.arctan(np.sqrt(np.tan(ar) ** 2 + (kx / (ky + 1e-8)) ** 2 * slip**2)) * np.sign(ar)
+        dr = fz * ((p["QDZ6"] + p["QDZ7"] * dfz) * p["LRES"] + (p["QDZ8"] + p["QDZ9"] * dfz) * iz) * radius * p["LMUY"]
+        br = p["QBZ9"] * stiffness_scale + p["QBZ10"] * by * cy
+        residual = dr * np.cos(np.arctan(br * ar_eq)) * np.cos(alpha)
+        vyk = muy * fz * (p["RVY1"] + p["RVY2"] * dfz + p["RVY3"] * gamma) * np.cos(np.arctan(p["RVY4"] * alpha))
+        vyk *= np.sin(p["RVY5"] * np.arctan(p["RVY6"] * slip)) * p["LVYKA"]
+        arm = (p["SSZ1"] + p["SSZ2"] * fy / nominal + (p["SSZ3"] + p["SSZ4"] * dfz) * gamma) * radius * p["LS"]
+        mz = -trail * (fy - vyk) + residual + arm * fx
+        return scale * mx, -scale * my, -scale * mz
 
     def forces(
         self,

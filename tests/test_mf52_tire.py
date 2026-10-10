@@ -9,13 +9,13 @@ import numpy as np
 import pytest
 
 from common.vehicle_io import parse_tir, repo_root
-from engines.dynpy.tire import FORCE_COEFFICIENTS, MF52Tire
+from engines.dynpy.tire import MF52_COEFFICIENTS, MF52Tire
 
 
 @pytest.fixture
 def coefficients():
     values = parse_tir(repo_root() / "common/tire_templates/16x7p5_10_12psi.tir")
-    return {name: float(values[name]) for name in FORCE_COEFFICIENTS}
+    return {name: float(values[name]) for name in MF52_COEFFICIENTS}
 
 
 def test_force_signs_peak_and_contact(coefficients):
@@ -60,10 +60,10 @@ def test_coefficients_are_validated_and_copied(coefficients):
 
 
 @pytest.mark.skipif(shutil.which("omc") is None, reason="OpenModelica required for independent tire parity")
-@pytest.mark.parametrize("perturbed", [False, True])
-def test_boblib_force_parity(coefficients, tmp_path, perturbed):
+@pytest.mark.parametrize("variant", ["default", "shifted", "rolling"])
+def test_boblib_wrench_parity(coefficients, tmp_path, variant):
     # Exercise shifts and scale factors that happen to be zero/unity in the default fit.
-    if perturbed:
+    if variant != "default":
         coefficients.update({name: 0.83 for name in coefficients if name.startswith("L")})
         coefficients.update(
             dict(
@@ -89,9 +89,14 @@ def test_boblib_force_parity(coefficients, tmp_path, perturbed):
                 RVY6=3,
             )
         )
+    if variant == "rolling":
+        coefficients.update(
+            QSY1=0.012, QSY2=0.003, QSY3=0.002, QSY4=0.0004, QSX2=0.1, SSZ1=0.01, SSZ2=0.02, SSZ3=0.03, SSZ4=0.01
+        )
     points = np.array(
         list(product([0, 50, 100, 650, 1800], [-0.25, -0.08, 0, 0.08, 0.25], [-0.15, 0, 0.07, 0.15], [-0.06, 0, 0.06]))
     )
+    points = np.column_stack((points, np.resize([-12.0, 0.0, 24.0], len(points))))
     root = repo_root() / "engines/boblib/BobLib"
     records = root / "Records/VehicleRecord/Chassis/Suspension/Templates/Tire/MF52"
     declarations = []
@@ -100,31 +105,42 @@ def test_boblib_force_parity(coefficients, tmp_path, perturbed):
         ("PureSlip", "FyPureRecord", "py"),
         ("CombinedSlip", "FxCombinedRecord", "cx"),
         ("CombinedSlip", "FyCombinedRecord", "cy"),
+        ("PureSlip", "MxPureRecord", "pmx"),
+        ("PureSlip", "MyPureRecord", "pmy"),
+        ("PureSlip", "MzPureRecord", "pmz"),
+        ("CombinedSlip", "MxCombinedRecord", "cmx"),
+        ("CombinedSlip", "MyCombinedRecord", "cmy"),
+        ("CombinedSlip", "MzCombinedRecord", "cmz"),
     ]:
         fields = re.findall(r"\bReal\s+(\w+)", (records / group / (record + ".mo")).read_text())
-        args = ",".join(f"{key}={coefficients[key]:.17g}" for key in fields)
+        args = ",".join(f"{key}={coefficients['LONGVL' if key == 'Vref' else key]:.17g}" for key in fields)
         declarations.append(f"parameter R.{group}.{record} {variable}=R.{group}.{record}({args});")
     rows = ",".join("{" + ",".join(f"{v:.17g}" for v in row) + "}" for row in points)
     source = f"""model TireParity
       import R=BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Tire.MF52;
-      import T=BobLib.Chassis.Suspension.Tires.MF52.CombinedSlip;
+      import T=BobLib.Chassis.Suspension.Tires.MF52;
       Boolean ok;
     protected
       parameter R.SetupRecord setup(FNOMIN={coefficients["FNOMIN"]}, FZMIN=100, FZMAX=1800, UNLOADED_RADIUS=.2032);
       {" ".join(declarations)}
-      parameter Real points[{len(points)},4]={{{rows}}};
-      Real fz;
-      Real scale;
+      parameter R.MF52Record tire(setup=setup, relaxation=R.RelaxationRecord(),
+        fxPure=px, fyPure=py, fxCombined=cx, fyCombined=cy,
+        mxPure=pmx, myPure=pmy, mzPure=pmz, mxCombined=cmx, myCombined=cmy, mzCombined=cmz);
+      parameter Real points[{len(points)},5]={{{rows}}};
       Real fx;
       Real fy;
+      Real mx;
+      Real my;
+      Real mz;
+      Real trail;
+      Real arm;
     algorithm
       when initial() then
       for i in 1:size(points,1) loop
-        fz := max(points[i,1],setup.FZMIN);
-        scale := if points[i,1]>1e-3 then points[i,1]/fz else 0;
-        fx := scale*T.FxCombinedEval(fz,points[i,3],points[i,2],points[i,4],px,cx,setup);
-        fy := -scale*T.FyCombinedEval(fz,points[i,2],points[i,3],points[i,4],py,cy,setup);
-        Modelica.Utilities.Streams.print(String(fx,significantDigits=16)+","+String(fy,significantDigits=16),"forces.csv");
+        (fx,fy,mx,my,mz,trail,arm) := T.Eval(points[i,1],points[i,2],points[i,3],points[i,4],points[i,5],tire);
+        Modelica.Utilities.Streams.print(String(fx,significantDigits=16)+","+String(fy,significantDigits=16)
+          +","+String(mx,significantDigits=16)+","+String(my,significantDigits=16)
+          +","+String(mz,significantDigits=16),"forces.csv");
       end for;
       ok := true;
       end when;
@@ -138,7 +154,7 @@ def test_boblib_force_parity(coefficients, tmp_path, perturbed):
     run = subprocess.run(["omc", "run.mos"], cwd=tmp_path, capture_output=True, text=True, timeout=120)
     assert (tmp_path / "forces.csv").exists(), run.stdout + run.stderr
     expected = np.loadtxt(tmp_path / "forces.csv", delimiter=",")
-    actual = np.column_stack(MF52Tire(coefficients).forces(*points.T))
+    actual = np.column_stack(MF52Tire(coefficients).evaluate(*points.T))
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-8)
 
 
@@ -163,3 +179,18 @@ def test_algebraic_slip_matches_combined_force_and_rejects_excess(coefficients):
                 )[0]
             )
             assert np.all(force >= neighbor)
+
+
+def test_moment_limits_and_velocity_broadcast(coefficients):
+    tire = MF52Tire({**coefficients, 'QSY1': .02, 'QSY3': .005})
+    wrench = tire.evaluate(650., .08, .02, .03, np.array([12., 24.]))
+    assert all(component.shape == (2,) for component in wrench)
+    assert wrench[3][1] < wrench[3][0] < 0
+    np.testing.assert_array_equal(tire.evaluate(0, .08, .02, .03, 12), 0)
+    low = tire.evaluate(50, .08, .02, .03, 12)
+    at_min = tire.evaluate(100, .08, .02, .03, 12)
+    np.testing.assert_allclose(low, np.asarray(at_min)*.5)
+    no_grip = MF52Tire({**coefficients, 'LMUX': 0., 'LMUY': 0.})
+    result = no_grip.evaluate(650, .08, .02, .03, 12)
+    assert np.isfinite(result).all()
+    np.testing.assert_array_equal([result[0], result[1], result[4]], 0)

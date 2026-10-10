@@ -591,7 +591,8 @@ def _trim_is_racing_feasible(
             body_forces[:, 0] * np.cos(wheel_steering)
             + body_forces[:, 1] * np.sin(wheel_steering)
         )
-        requested_fx = np.asarray(trim.inputs.wheel_torques_nm, dtype=float) / np.asarray(
+        requested_fx = (np.asarray(trim.inputs.wheel_torques_nm, dtype=float)
+                        + trim.output.wheel_moments_tire_nm[:, 1]) / np.asarray(
             model.parameters.wheel_radius_m,
             dtype=float,
         )
