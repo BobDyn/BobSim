@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import math
 from pathlib import Path
-from typing import Mapping
+from typing import Literal, Mapping
 
 from numpy.typing import ArrayLike
 
@@ -181,7 +181,7 @@ class Vehicle:
         *,
         speed_mps: float,
         yaw_rate_radps: float = 0.0,
-        initial_beta_rad: float = 0.0,
+        initial_beta_rad: float | None = None,
         initial_steering_rad: float | None = None,
         initial_unknowns: Mapping[str, float] | None = None,
         max_nfev: int = 400,
@@ -208,13 +208,27 @@ class Vehicle:
         longitudinal_acceleration_mps2: float,
         lateral_acceleration_mps2: float,
         yaw_rate_radps: float = 0.0,
-        initial_beta_rad: float = 0.0,
+        acceleration_frame: Literal["body", "path"] = "body",
+        initial_beta_rad: float | None = None,
         initial_steering_rad: float | None = None,
         initial_unknowns: Mapping[str, float] | None = None,
         max_nfev: int = 400,
         tolerance: float = 1e-8,
     ) -> QSSResult:
-        """Solve a prescribed longitudinal/lateral acceleration point."""
+        """## Acceleration Trim
+
+        Solve prescribed acceleration with the selected fidelity.
+
+        Parameters
+        ----------
+        acceleration_frame : {"body", "path"}, optional
+            Body axes by default. Path axes follow the velocity direction.
+
+        Returns
+        -------
+        QSSResult
+            Trim state and diagnostics with reported accelerations in body axes.
+        """
 
         return solve_acceleration_trim(
             self.model(dof),
@@ -222,6 +236,7 @@ class Vehicle:
             longitudinal_acceleration_mps2=longitudinal_acceleration_mps2,
             lateral_acceleration_mps2=lateral_acceleration_mps2,
             yaw_rate_radps=yaw_rate_radps,
+            acceleration_frame=acceleration_frame,
             initial_beta_rad=initial_beta_rad,
             initial_steering_rad=initial_steering_rad,
             initial_unknowns=initial_unknowns,
