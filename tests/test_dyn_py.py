@@ -664,3 +664,48 @@ def test_reduced_projection_never_reads_global_four_post_report(monkeypatch):
 def test_explicit_calibration_must_exist(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_reduced_vehicle_parameters(four_post_metrics_path=tmp_path / 'missing.csv')
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_model_uses_rack_solved_wheel_frames(parameters, dof):
+    model = create_model(dof, parameters)
+    state = model.initial_state(12.0)
+    angle = 0.2
+    rack = parameters.kinematics.rack_from_steering(angle)
+    output = model.evaluate(state, ModelInputs(steering_rad=angle))
+    direct_input = model.evaluate(state, ModelInputs(rack_displacement_m=rack))
+    geometry = parameters.kinematics.at(output.jounce_m, rack)
+    np.testing.assert_allclose(output.toe_rad, geometry.toe_rad)
+    np.testing.assert_allclose(output.camber_rad, geometry.camber_rad)
+    np.testing.assert_allclose(output.slip_angles_rad, geometry.toe_rad, atol=1e-10)
+    np.testing.assert_allclose(output.derivative, direct_input.derivative)
+    assert abs(output.toe_rad[0] - output.toe_rad[1]) > 1e-3
+    assert np.mean(output.toe_rad[:2]) == pytest.approx(angle, abs=1e-8)
+
+
+def test_rack_geometry_reflects_with_turn_and_individual_travel(parameters):
+    evaluator = parameters.kinematics
+    travel = np.array([0.012, -0.009, 0.004, -0.003])
+    left = evaluator.at(travel, 0.008)
+    right = evaluator.at(travel[[1, 0, 3, 2]], -0.008)
+    np.testing.assert_allclose(left.toe_rad, -right.toe_rad[[1, 0, 3, 2]], atol=1e-9)
+    np.testing.assert_allclose(left.camber_rad, -right.camber_rad[[1, 0, 3, 2]], atol=1e-9)
+    reflected = right.contact_patch_offsets_m[[1, 0, 3, 2]] * [1, -1, 1]
+    np.testing.assert_allclose(left.contact_patch_offsets_m, reflected, atol=1e-9)
+    unsteered = evaluator.at(travel)
+    assert np.max(abs(left.camber_rad[:2] - unsteered.camber_rad[:2])) > 1e-3
+    np.testing.assert_allclose(left.toe_rad[2:], unsteered.toe_rad[2:], atol=1e-5)
+
+
+def test_steered_contact_tangent_holds_rack_fixed(parameters):
+    evaluator = parameters.kinematics
+    travel = np.array([0.012, -0.009, 0.004, -0.003])
+    step = 1e-4
+    state = evaluator.at(travel, 0.008)
+    below = evaluator.at(travel - step, 0.008)
+    above = evaluator.at(travel + step, 0.008)
+    np.testing.assert_allclose(
+        state.contact_patch_tangents,
+        (above.contact_patch_offsets_m - below.contact_patch_offsets_m) / (2 * step),
+        atol=1e-8,
+    )

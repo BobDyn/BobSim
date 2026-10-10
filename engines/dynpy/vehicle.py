@@ -90,10 +90,24 @@ class Vehicle:
 
         return self.parameters.kinematics
 
-    def kinematics_at(self, jounce_m: ArrayLike) -> VehicleKinematicState:
-        """Evaluate all four suspension corners at individual jounces."""
+    def kinematics_at(
+        self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0,
+    ) -> VehicleKinematicState:
+        """Evaluate all four suspension corners.
 
-        return self.kinematics.at(jounce_m)
+        Parameters
+        ----------
+        jounce_m : ArrayLike
+            Individual corner travel ordered FL, FR, RL, RR, in meters.
+        rack_displacement_m : float
+            Front rack displacement along the vehicle lateral axis, in meters.
+
+        Returns
+        -------
+        VehicleKinematicState
+            Solved wheel geometry and instantaneous force links.
+        """
+        return self.kinematics.at(jounce_m, rack_displacement_m)
 
     def with_power_limit(self, power_limit_w: float) -> Vehicle:
         """Return an independent vehicle capped at an event-level drive power.

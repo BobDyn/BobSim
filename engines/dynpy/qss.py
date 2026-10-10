@@ -185,12 +185,13 @@ def _solve_trim(
             speed_mps=speed_mps,
             yaw_rate_radps=yaw_rate_radps,
         )
-        acceleration = steady_state_residual(model, state, controls)
+        output = model.evaluate(state, controls)
+        acceleration = output.generalized_acceleration.copy()
         if target_acceleration_mps2 is not None:
             acceleration -= _generalized_acceleration_target(
                 model,
                 state,
-                controls,
+                output,
                 longitudinal_mps2=target_acceleration_mps2[0],
                 lateral_mps2=target_acceleration_mps2[1],
             )
@@ -223,7 +224,7 @@ def _solve_trim(
         physical_residual -= _generalized_acceleration_target(
             model,
             state,
-            inputs,
+            output,
             longitudinal_mps2=target_acceleration_mps2[0],
             lateral_mps2=target_acceleration_mps2[1],
         )
@@ -419,7 +420,7 @@ def _residual_scales(model: ReducedVehicleModel) -> FloatArray:
 def _generalized_acceleration_target(
     model: ReducedVehicleModel,
     state: FloatArray,
-    inputs: ModelInputs,
+    output: ModelOutput,
     *,
     longitudinal_mps2: float,
     lateral_mps2: float,
@@ -432,7 +433,7 @@ def _generalized_acceleration_target(
     target[0] = longitudinal_mps2 + yaw_rate * v
     target[1] = lateral_mps2 - yaw_rate * u
     if model.dof >= 10:
-        positions = model.parameters.corner_positions
+        positions = output.contact_patch_positions_body_m
         omega = np.array([0.0, 0.0, yaw_rate])
         centripetal = np.cross(
             np.broadcast_to(omega, positions.shape),
@@ -441,9 +442,7 @@ def _generalized_acceleration_target(
         corner_acceleration = centripetal
         corner_acceleration[:, 0] += longitudinal_mps2
         corner_acceleration[:, 1] += lateral_mps2
-        steering = np.array(
-            [inputs.steering_rad, inputs.steering_rad, 0.0, 0.0]
-        )
+        steering = output.toe_rad
         wheel_longitudinal_acceleration = (
             corner_acceleration[:, 0] * np.cos(steering)
             + corner_acceleration[:, 1] * np.sin(steering)
