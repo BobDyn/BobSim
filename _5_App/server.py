@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from _5_App.http_utils import parse_byte_range as _parse_byte_range
 from _5_App import visual as app_visual
+from _5_App import execution as workspace_execution
 from _0_Utils.dyn_py import kinematic_curves_payload
 
 
@@ -174,6 +175,23 @@ class BobSimHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
+        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
+        if launches_job or read_only:
+            self._handle_post()
+            return
+        try:
+            workspace_execution.reserve()
+        except RuntimeError as exc:
+            self._send_error(HTTPStatus.CONFLICT, str(exc))
+            return
+        try:
+            self._handle_post()
+        finally:
+            workspace_execution.LOCK.release()
+
+    def _handle_post(self) -> None:
         sync_runtime()
         parsed = urlparse(self.path)
         try:
@@ -279,6 +297,9 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
         except KeyError as exc:
             self._send_error(HTTPStatus.BAD_REQUEST, f"Unknown action: {exc}")
+        except RuntimeError as exc:
+            status = HTTPStatus.CONFLICT if str(exc) == workspace_execution.BUSY_MESSAGE else HTTPStatus.BAD_REQUEST
+            self._send_error(status, str(exc))
         except Exception as exc:
             self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
 

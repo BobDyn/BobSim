@@ -1120,7 +1120,7 @@ def _workflow_run_roots(workflow: WorkflowSpec) -> tuple[Path, ...]:
     return (build_dir / "results", build_dir / "runs")
 
 
-def _workflow_run_dirs(workflow: WorkflowSpec, *, since: float | None = None) -> list[Path]:
+def _workflow_run_dirs(workflow: WorkflowSpec, *, since: float | None = None, job_id: str | None = None) -> list[Path]:
     run_dirs: dict[Path, Path] = {}
     min_mtime = (since - 2.0) if since else None
     for root in _workflow_run_roots(workflow):
@@ -1128,6 +1128,12 @@ def _workflow_run_dirs(workflow: WorkflowSpec, *, since: float | None = None) ->
             continue
         for path in root.glob("run_*"):
             if not path.is_dir():
+                continue
+            manifest = _read_run_manifest(path)
+            if job_id is not None:
+                if manifest.get("job_id") != job_id:
+                    continue
+            elif manifest.get("workflow_id") != workflow.id:
                 continue
             try:
                 file_mtimes = (child.stat().st_mtime for child in path.rglob("*") if child.is_file())
@@ -1172,8 +1178,9 @@ def _build_signal_archive(
     archive_path: Path,
     *,
     since: float | None = None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
-    run_dirs = _workflow_run_dirs(workflow, since=since)
+    run_dirs = _workflow_run_dirs(workflow, since=since, job_id=job_id)
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     runs: list[dict[str, Any]] = []
     created_at = time.time()
@@ -1365,7 +1372,7 @@ def save_active_results(
     existing_outputs = []
     for output in workflow.outputs:
         source = _safe_repo_path(output.path)
-        if source.is_file():
+        if source.is_file() and (since is None or source.stat().st_mtime >= since):
             existing_outputs.append((output, source))
     if not existing_outputs:
         raise FileNotFoundError(f"No active output files exist for {workflow.label}")
@@ -1418,7 +1425,7 @@ def save_active_results(
 
     architecture = vehicle_data.get("architecture", {}) if isinstance(vehicle_data, dict) else {}
     vehicle = vehicle_data.get("vehicle", {}) if isinstance(vehicle_data, dict) else {}
-    analysis = _build_signal_archive(workflow, files_dir / "signals.zip", since=since)
+    analysis = _build_signal_archive(workflow, files_dir / "signals.zip", since=since, job_id=job_id)
     file_entries.append(
         {
             "label": "Signal Archive",

@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Any, Iterable
 
+from _5_App import execution as workspace_execution
 from _5_App.contracts import ActionSpec, BuildTargetSpec, WorkflowSpec
 
 
@@ -108,6 +109,9 @@ def _subprocess_creation_flags() -> int:
 def _run_subprocess_action(action: ActionSpec, job_id: str) -> int:
     env = os.environ.copy()
     env.update(action.env)
+    env["BOBSIM_JOB_ID"] = job_id
+    job = JOBS.get(job_id) or {}
+    env["BOBSIM_WORKFLOW_ID"] = str(job.get("workflow_id") or "")
     env.setdefault("PYTHONUNBUFFERED", "1")
     _apply_python_stdio_env(env)
     argv = _action_argv(action)
@@ -198,10 +202,7 @@ def start_job(action_id: str) -> dict[str, Any]:
     action = ACTION_SPECS[action_id]
     if not action_available(action):
         raise RuntimeError(unavailable_action_reason(action))
-    job = JOBS.create(action.id, action.label, list(action.argv))
-    thread = threading.Thread(target=run_actions_job, args=((action,), job["id"]), daemon=True)
-    thread.start()
-    return job
+    return _launch_job((action,), action.id, action.label, list(action.argv))
 
 
 def start_workflow(workflow_id: str) -> dict[str, Any]:
@@ -215,8 +216,27 @@ def start_workflow(workflow_id: str) -> dict[str, Any]:
         raise RuntimeError(unavailable_action_reason(unavailable[0]))
     label = f"Run {workflow.label}"
     argv = [action.label for action in actions]
-    job = JOBS.create(f"workflow:{workflow.id}", label, argv)
-    thread = threading.Thread(target=run_actions_job, args=(actions, job["id"], workflow.id), daemon=True)
-    thread.start()
-    return job
+    return _launch_job(actions, f"workflow:{workflow.id}", label, argv, workflow.id)
 
+
+def _launch_job(actions, action_id, label, argv, workflow_id=None):
+    # Reserve before creating a thread, so simultaneous requests cannot both win.
+    workspace_execution.reserve()
+    try:
+        job = JOBS.create(action_id, label, argv)
+        owner = workflow_id or next((w.id for w in WORKFLOWS if action_id in w.actions
+                                     and not action_id.startswith("build-")), None)
+        JOBS.update(job["id"], workflow_id=owner)
+
+        def run():
+            try:
+                run_actions_job(actions, job["id"], workflow_id)
+            finally:
+                workspace_execution.LOCK.release()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return job
+    except BaseException:
+        workspace_execution.LOCK.release()
+        raise
