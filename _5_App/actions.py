@@ -63,6 +63,10 @@ def _workflow_by_id(_workflow_id: str) -> WorkflowSpec:
     raise KeyError(_workflow_id)
 
 
+def capture_workflow_inputs(_workflow_id: str) -> dict[str, Any]:
+    raise RuntimeError("Workflow input capture has not been connected")
+
+
 def save_active_results(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
     return {}
 
@@ -159,6 +163,7 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
     started_at = time.time()
     JOBS.update(job_id, status="running", started_at=started_at)
     try:
+        input_snapshot = capture_workflow_inputs(workflow_id) if workflow_id else None
         returncode = 0
         for action in actions:
             returncode = _run_action_process(action, job_id)
@@ -174,6 +179,7 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
                     f"{workflow.label} review",
                     since=started_at,
                     job_id=job_id,
+                    input_snapshot=input_snapshot,
                 )
                 review = review_payload.get("saved")
                 JOBS.append_log(job_id, f"Review package saved: {review.get('label') if review else workflow.label}\n")
