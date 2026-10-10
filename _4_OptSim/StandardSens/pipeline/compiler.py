@@ -60,6 +60,12 @@ PIPELINE_TOOLING_INPUTS = (
     DEFAULT_STEADY_STATE_SIM,
     DEFAULT_STEADY_STATE_CONFIG,
     DEFAULT_MODELICA_RUNNER,
+    STANDARD_DIR / "pipeline/generator.py",
+    STANDARD_DIR / "pipeline/modelica_params.py",
+    STANDARD_DIR / "pipeline/compiler.py",
+    STANDARD_DIR / "configs/build_template.mos",
+    REPO_ROOT / "_3_StandardSim/generated_results/four_post_eval_report_metrics.csv",
+    REPO_ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv",
 )
 
 

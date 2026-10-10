@@ -22,6 +22,8 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+import yaml
+
 HASH_FILE = ".pipeline.hash"
 VARIANT_HASH_FILE = ".variant.hash"
 
@@ -56,6 +58,31 @@ def _boblib_sha(boblib_path: Path) -> str:
     return "unknown"
 
 
+
+def _referenced_inputs(doe_config: Path) -> tuple[Path, ...]:
+    config = yaml.safe_load(doe_config.read_text())
+    if not isinstance(config, dict):
+        return ()
+    paths = []
+    if config.get("baseline_mo"):
+        paths.append((doe_config.parent / config["baseline_mo"]).resolve())
+    template = (config.get("architecture") or {}).get("template")
+    if template:
+        paths.append((doe_config.parent.parent / template).resolve())
+    return tuple(paths)
+
+
+def _working_tree_digest(boblib_path: Path) -> str:
+    root = boblib_path.parent if boblib_path.suffix == ".mo" else boblib_path
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and (path.suffix == ".mo" or path.name == "package.order"):
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    return digest.hexdigest()
+
 def compute_pipeline_hash(
     doe_config: Path,
     compiler_config: Path,
@@ -67,12 +94,13 @@ def compute_pipeline_hash(
         f"doe:{_hash_file(doe_config)}",
         f"compiler:{_hash_file(compiler_config)}",
         f"boblib:{_boblib_sha(boblib_path)}",
+        f"boblib-working-tree:{_working_tree_digest(boblib_path)}",
     ]
     if architecture_config is not None and architecture_config.exists():
         parts.append(f"architecture:{_hash_file(architecture_config)}")
-    for path in extra_inputs:
-        if path.exists():
-            parts.append(f"extra:{path.name}:{_hash_file(path)}")
+    for index, path in enumerate((*_referenced_inputs(doe_config), *extra_inputs)):
+        value = _hash_file(path) if path.is_file() else "missing"
+        parts.append(f"extra:{index}:{path.name}:{value}")
     combined = "|".join(parts)
     return _hash_string(combined)
 
@@ -110,6 +138,8 @@ def check_pipeline_hash(
     """
     hash_path = population_dir / HASH_FILE
     if not hash_path.exists():
+        if any(population_dir.glob("variant_*/build")):
+            raise RuntimeError("Compiled population has no input fingerprint; rebuild it.")
         return
 
     stored = hash_path.read_text().strip()
