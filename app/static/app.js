@@ -4798,6 +4798,8 @@ function renderSavedResultSummary() {
     <div class="result-summary-grid">
       ${resultSummaryItem("Workflow", result.workflow?.label || "Simulation")}
       ${resultSummaryItem("Engine", workflowModelLabel(result) || "Not recorded")}
+      ${Object.entries(result.action_wall_time_s || {}).map(([action, seconds]) =>
+        resultSummaryItem(`${action} wall time`, `${Number(seconds).toFixed(2)} s`)).join("")}
       ${resultSummaryItem("Vehicle", result.vehicle_name || "Active vehicle")}
       ${resultSummaryItem("Architecture", `${architecture.front || "front"} / ${architecture.rear || "rear"}`)}
       ${runCount ? resultSummaryItem("Runs", String(runCount)) : ""}

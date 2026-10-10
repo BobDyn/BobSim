@@ -322,6 +322,7 @@ def clean_generated_artifacts(include_deploy: bool = True) -> None:
     for path in (
         *(item.as_posix() for item in app_storage.USER_DATA_DIRS),
         "visualization/results",
+        "simulations/lap/results",
         "simulations/envelope/Build",
         "simulations/envelope/results",
         "simulations/mbd/Build",

@@ -976,9 +976,9 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
         ),
         WorkflowSpec(
             id="vehicle-review",
-            engine="DynPy",
-            fidelity="QSS",
-            runtime="Python",
+            engine="DynPy + recorded BobLib",
+            fidelity="QSS + MBD reports",
+            runtime="Python report",
             group="report",
             label="VehicleReview",
             config="simulations/envelope/VehicleReview/vehicle_review_config.yml",

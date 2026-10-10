@@ -255,6 +255,7 @@ def _seed_runtime_root(
     package_root = package_root or PACKAGE_ROOT
     remove_runtime_path = remove_runtime_path or _remove_runtime_path
     runtime_output_dirs = (
+        "simulations/lap/results",
         "simulations/envelope/Build",
         "simulations/envelope/results",
         "simulations/mbd/Build",

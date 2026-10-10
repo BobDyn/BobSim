@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -115,6 +116,7 @@ def main() -> None:
     args = _parse_args()
     dof = cast(DOFModel, args.dof)
     print(f"Engine: DynPy | {dof} DOF transient | Runtime: Python")
+    started = time.perf_counter()
     result = run_step_steer(
         dof=dof,
         speed_mps=args.speed_mps,
@@ -127,6 +129,7 @@ def main() -> None:
         kinematics_mode=cast(KinematicsMode, args.kinematics_mode),
         kinematics_sample_count=args.kinematics_sample_count,
     )
+    print(f"Wall time: {time.perf_counter() - started:.2f} s")
     print(f"{dof}DOF transient: {len(result.time_s)} samples; success={result.success}")
     print(
         f"final yaw rate={result.signals['yawVel'][-1]:.6f} rad/s, "

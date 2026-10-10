@@ -129,7 +129,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	envelope-ggv envelope-ymd envelope-all \
 	opt-standard opt-standard-setup opt-standard-architecture \
 	opt-envelope opt-refined opt-search opt-solve opt-trade opt-doe-smoke \
-	clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned clean-all
+	clean clean-app clean-visual clean-standard clean-lap clean-envelope clean-opt clean-owned clean-all
 
 ifeq ($(OS),Windows_NT)
 help:
@@ -243,6 +243,7 @@ help:
 		'  clean                     Remove local Python/tool caches' \
 		'  clean-app                 Remove generated app configs/workspaces' \
 		'  clean-visual             Remove generated VisualSim artifacts' \
+		'  clean-lap                Remove generated lap results' \
 		'  clean-standard           Remove generated StandardSim artifacts' \
 		'  clean-envelope           Remove generated EnvelopeSim artifacts' \
 		'  clean-opt                Remove generated OptSim artifacts' \
@@ -532,6 +533,9 @@ clean-standard:
 		if [ -d "$$path" ]; then find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} + 2>/dev/null || true; fi; \
 		done; echo "StandardSim artifacts cleaned"'
 
+clean-lap:
+	bash -lc 'rm -rf $(CLEAN_WORKSPACE)/simulations/lap/results'
+
 clean-envelope:
 	bash -lc 'for path in $(CLEAN_WORKSPACE)/simulations/envelope/Build $(CLEAN_WORKSPACE)/simulations/envelope/results; do \
 		mkdir -p "$$path"; \
@@ -554,6 +558,7 @@ clean-owned:
 	@if command -v docker >/dev/null 2>&1 && docker image inspect $(CLEAN_DOCKER_IMAGE) >/dev/null 2>&1; then \
 		if docker run --rm --network none -v $(CLEAN_WORKSPACE):/workspace -w /workspace $(CLEAN_DOCKER_IMAGE) bash -lc 'for path in \
 			visualization/results \
+			simulations/lap/results \
 			simulations/envelope/Build \
 			simulations/envelope/results \
 			simulations/mbd/Build \
@@ -579,4 +584,4 @@ clean-owned:
 		echo 'Docker cleanup fallback skipped'; \
 	fi
 
-clean-all: clean clean-app clean-visual clean-standard clean-envelope clean-opt clean-owned
+clean-all: clean clean-app clean-visual clean-standard clean-lap clean-envelope clean-opt clean-owned

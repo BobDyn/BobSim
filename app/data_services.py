@@ -1377,7 +1377,7 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
         Engine, fidelity, runtime and configured reduced model DOFs.
     """
     dofs: set[int] = set()
-    if workflow.engine == "DynPy":
+    if workflow.engine.startswith("DynPy"):
         configs = [root / workflow.config] if workflow.config else []
         if workflow.id == "vehicle-review":
             configs = [root / f"simulations/envelope/{name}/{name.lower()}_config.yml" for name in ("GGV", "YMD")]
@@ -1498,6 +1498,7 @@ def save_active_results(
         "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at)),
         "job_id": job_id,
         "model": inputs.get("model"),
+        "action_wall_time_s": inputs.get("action_wall_time_s"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),
@@ -1530,6 +1531,7 @@ def save_active_results(
         "vehicle_snapshot": vehicle_snapshot,
         "config_snapshot": config_snapshot,
         "model": inputs.get("model"),
+        "action_wall_time_s": inputs.get("action_wall_time_s"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),

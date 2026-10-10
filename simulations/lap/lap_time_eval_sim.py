@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import hashlib
+import time
 import json
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -36,6 +37,7 @@ def run_lap_time_evaluation(
 ) -> dict[str, Any]:
     """Run both scenarios on one shared optimized line and return summary metrics."""
 
+    started = time.perf_counter()
     root = repo_root()
     config = load_yaml(Path(config_path))
     track_config = _mapping(config, "track")
@@ -152,6 +154,7 @@ def run_lap_time_evaluation(
                 ),
             }
         )
+    summary["wall_time_s"] = time.perf_counter() - started
     summary_path = output_directory / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary

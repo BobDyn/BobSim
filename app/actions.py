@@ -169,10 +169,17 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
     try:
         input_snapshot = capture_workflow_inputs(workflow_id) if workflow_id else None
         returncode = 0
+        action_wall_time_s: dict[str, float] = {}
         for action in actions:
+            action_started = time.perf_counter()
             returncode = _run_action_process(action, job_id)
+            elapsed = time.perf_counter() - action_started
+            action_wall_time_s[action.id] = elapsed
+            JOBS.append_log(job_id, f"{action.label}: {elapsed:.2f} s wall time\n")
             if returncode != 0:
                 break
+        if input_snapshot is not None:
+            input_snapshot["action_wall_time_s"] = action_wall_time_s
         review = None
         if returncode == 0 and workflow_id:
             workflow = _workflow_by_id(workflow_id)
