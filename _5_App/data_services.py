@@ -1361,12 +1361,30 @@ def delete_saved_result(result_id: str, vehicle_key: str | None = None) -> dict[
     }
 
 
+def capture_workflow_inputs(workflow_id: str) -> dict[str, Any]:
+    """Read the inputs used by a workflow before it begins producing outputs."""
+    workflow = _workflow_by_id(workflow_id)
+    vehicle_path = _safe_repo_path("vehicle.yml")
+    config_path = _safe_repo_path(workflow.config) if workflow.config else None
+    if config_path is not None and any(
+        spec.path == workflow.config and spec.relocatable for spec in BASE_CONFIG_SPECS.values()
+    ):
+        config_path = config_io.resolve(config_path, root=ROOT)
+    return {
+        "vehicle_text": vehicle_path.read_text(encoding="utf-8") if vehicle_path.is_file() else None,
+        "config_text": config_path.read_text(encoding="utf-8") if config_path and config_path.is_file() else None,
+        "config_source": config_path.relative_to(ROOT).as_posix() if config_path else None,
+        "captured_at": time.time(),
+    }
+
+
 def save_active_results(
     workflow_id: str,
     name: str | None = None,
     *,
     since: float | None = None,
     job_id: str | None = None,
+    input_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     workflow = _workflow_by_id(workflow_id)
     existing_outputs = []
@@ -1377,8 +1395,11 @@ def save_active_results(
     if not existing_outputs:
         raise FileNotFoundError(f"No active output files exist for {workflow.label}")
 
-    vehicle_path = _safe_repo_path("vehicle.yml")
-    vehicle_data = _load_vehicle_yaml_file(vehicle_path) if vehicle_path.is_file() else {}
+    inputs = input_snapshot if input_snapshot is not None else capture_workflow_inputs(workflow_id)
+    vehicle_text = inputs.get("vehicle_text")
+    vehicle_data = yaml.safe_load(vehicle_text) if vehicle_text else {}
+    if not isinstance(vehicle_data, dict):
+        vehicle_data = {}
     vehicle_key = _vehicle_workspace_key_from_data(vehicle_data)
     label = str(name or "").strip() or f"{workflow.label} results"
     result_dir = _unique_result_dir(_result_slug(label))
@@ -1410,18 +1431,16 @@ def save_active_results(
         )
 
     vehicle_snapshot = None
-    if vehicle_path.is_file():
+    if vehicle_text is not None:
         snapshot = result_dir / "vehicle.yml"
-        shutil.copy2(vehicle_path, snapshot)
+        snapshot.write_text(vehicle_text, encoding="utf-8")
         vehicle_snapshot = snapshot.relative_to(ROOT).as_posix()
 
     config_snapshot = None
-    if workflow.config:
-        config_path = _safe_repo_path(workflow.config)
-        if config_path.is_file():
-            snapshot = result_dir / "config.yml"
-            shutil.copy2(config_path, snapshot)
-            config_snapshot = snapshot.relative_to(ROOT).as_posix()
+    if inputs.get("config_text") is not None:
+        snapshot = result_dir / "config.yml"
+        snapshot.write_text(inputs["config_text"], encoding="utf-8")
+        config_snapshot = snapshot.relative_to(ROOT).as_posix()
 
     architecture = vehicle_data.get("architecture", {}) if isinstance(vehicle_data, dict) else {}
     vehicle = vehicle_data.get("vehicle", {}) if isinstance(vehicle_data, dict) else {}
@@ -1442,6 +1461,9 @@ def save_active_results(
         "created_at": created_at,
         "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at)),
         "job_id": job_id,
+        "inputs_captured_at": inputs.get("captured_at"),
+        "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
+        "config_source": inputs.get("config_source"),
         "run_count": analysis["run_count"],
         "files": [
             {"label": item["label"], "kind": item["kind"], "source_path": item.get("source_path") or ""}
@@ -1470,6 +1492,9 @@ def save_active_results(
         "architecture": architecture if isinstance(architecture, dict) else {},
         "vehicle_snapshot": vehicle_snapshot,
         "config_snapshot": config_snapshot,
+        "inputs_captured_at": inputs.get("captured_at"),
+        "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
+        "config_source": inputs.get("config_source"),
         "analysis": analysis,
         "run_count": analysis["run_count"],
         "files": file_entries,
