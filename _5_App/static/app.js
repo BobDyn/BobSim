@@ -8385,6 +8385,15 @@ function drawReadinessCard(ctx, x, y, width, height, check) {
   drawCanvasText(ctx, check.detail, x + 12, y + 68, { size: 10, weight: 650, color: palette.muted });
 }
 
+function resolvedDamperTable(data, axle) {
+  const shock = nestedValue(data, [axle, "actuation", "shock"]) || {};
+  if (!shock.damper) return shock.damper_table?.table;
+  const resolved = state.vehiclePayload?.resolved_dampers?.[axle];
+  // Never display a curve for stale, unsaved adjuster settings.
+  if (JSON.stringify(resolved?.configuration) !== JSON.stringify(shock.damper)) return undefined;
+  return resolved?.table;
+}
+
 function mbdReadinessChecks(data) {
   const repo = state.status?.repo || {};
   const model = buildVehicleGeometry(data);
@@ -8392,9 +8401,9 @@ function mbdReadinessChecks(data) {
   const massBlocks = massPropertyBlocks(data);
   const suspensionTables = [
     nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]),
-    nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]),
+    resolvedDamperTable(data, "front"),
     nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]),
-    nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]),
+    resolvedDamperTable(data, "rear"),
   ];
   const aero = data.aero || {};
   const aeroMapCount = [
@@ -10793,9 +10802,9 @@ function drawSuspensionPreview(ctx, width, height, data) {
   });
   const maps = [
     ["front-spring", "Front spring", nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["front-damper", "Front damper", nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
+    ["front-damper", "Front damper", resolvedDamperTable(data, "front"), "Compression velocity", "m/s", "Force", "N"],
     ["rear-spring", "Rear spring", nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["rear-damper", "Rear damper", nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
+    ["rear-damper", "Rear damper", resolvedDamperTable(data, "rear"), "Compression velocity", "m/s", "Force", "N"],
   ];
   const gap = 14;
   const top = 76;

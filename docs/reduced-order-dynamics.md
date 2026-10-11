@@ -131,9 +131,12 @@ instant-link coefficient. A 14DOF force evaluation took about 1.5 ms with the
 lookup and 165 ms with in-loop solves on the development machine. Grid density
 has negligible interpolation-time cost, so 49 points remains the default.
 
-Spring/damper and stabilizer-bar forces remain a separate elastic path. Spring
-and damper tables are projected through the BobLib/FourPost motion ratio to an
-equivalent wheel rate. Bar torsion is projected to axle roll stiffness and
+Spring/damper and stabilizer-bar forces remain a separate elastic path. Springs
+are projected through the BobLib/FourPost motion ratio to an equivalent wheel
+rate. Dampers evaluate the full compression-positive shaft force table at wheel
+jounce speed divided by the static wheel/shock motion ratio; force is divided
+by that same ratio to preserve power. Named TTX25 settings resolve to the same
+table used by BobLib (see `conventions.md`). Bar torsion is projected to axle roll stiffness and
 applied as equal-and-opposite corner force. In 6/10DOF the massless-upright
 closure is
 

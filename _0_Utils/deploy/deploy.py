@@ -37,6 +37,7 @@ DATA_PATHS = (
     "_0_Utils/plotting",
     "_0_Utils/reporting",
     "_0_Utils/tire_templates",
+    "_0_Utils/damper_data/ttx25_mkii_c12_r12_pdf_v1.json",
     "_0_Utils/vehicle_templates",
     "_1_VisualSim/visual_templates",
     "_2_EnvelopeSim/GGV/ggv_config.yml",

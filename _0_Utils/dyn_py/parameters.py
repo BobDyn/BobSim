@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
+from _0_Utils.damper_curves import ResolvedDamperCurve, resolve_damper_curve
 
 from _0_Utils.vehicle_io import (
     load_yaml,
@@ -154,6 +155,10 @@ class ReducedVehicleParameters:
     maximum_drive_speed_mps: float
     drive_distribution_front: float
     brake_distribution_front: float
+    # Motion ratio convention: wheel travel / shock compression. Static projection,
+    # consistent with the spring-rate projection; not a travel-dependent ratio.
+    damper_curves: tuple[ResolvedDamperCurve, ...] = ()
+    damper_motion_ratios: tuple[float, ...] = ()
 
     @property
     def double_wishbone(self) -> VehicleKinematics:
@@ -257,6 +262,10 @@ def load_reduced_vehicle_parameters(
     rear_spring_rate = _wheel_rate(data, "rear", metrics, track=2.0 * abs(rear_wc[1]))
     front_damping = _wheel_damping(data, "front", metrics)
     rear_damping = _wheel_damping(data, "rear", metrics)
+    front_curve = resolve_damper_curve(data["front"]["actuation"]["shock"])
+    rear_curve = resolve_damper_curve(data["rear"]["actuation"]["shock"])
+    front_ratio = _damper_motion_ratio(metrics, "front")
+    rear_ratio = _damper_motion_ratio(metrics, "rear")
 
     tire_name = tire_template_name(data, data["front"])
     tire_path = tire_templates_root(data) / f"{tire_name}.tir"
@@ -323,6 +332,8 @@ def load_reduced_vehicle_parameters(
             rear_damping,
             rear_damping,
         ),
+        damper_curves=(front_curve, front_curve, rear_curve, rear_curve),
+        damper_motion_ratios=(front_ratio, front_ratio, rear_ratio, rear_ratio),
         antiroll_stiffness_nm_per_rad=(
             metrics.get("arb_roll_stiffness_front_Nm_per_rad", 0.0),
             metrics.get("arb_roll_stiffness_rear_Nm_per_rad", 0.0),
@@ -497,9 +508,17 @@ def _wheel_damping(
     axle: str,
     metrics: Mapping[str, float],
 ) -> float:
-    shock_damping = _table_slope(data[axle]["actuation"]["shock"]["damper_table"]["table"])
-    motion_ratio = metrics.get(f"static_motion_ratio_{axle}", 1.0)
-    return shock_damping / max(motion_ratio**2, 1e-9)
+    # Retained as an endpoint-equivalent diagnostic; transient forces use the full curve.
+    shock_damping = _table_slope(resolve_damper_curve(data[axle]["actuation"]["shock"]).table)
+    motion_ratio = _damper_motion_ratio(metrics, axle)
+    return shock_damping / motion_ratio**2
+
+
+def _damper_motion_ratio(metrics: Mapping[str, float], axle: str) -> float:
+    ratio = float(metrics.get(f"static_motion_ratio_{axle}", 1.0))
+    if not math.isfinite(ratio) or ratio <= 0:
+        raise ValueError(f"static_motion_ratio_{axle} must be finite and positive")
+    return ratio
 
 
 def _table_slope(table: Sequence[Sequence[float]]) -> float:

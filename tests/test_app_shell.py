@@ -831,7 +831,10 @@ def test_app_vehicle_setup_exposes_vehicle_parameters_without_repo_paths() -> No
     assert fields_by_path[("aero", "drag_table_n")]["array_shape"] == [5, 5]
     assert fields_by_path[("front", "actuation", "bellcrank", "order")]["choices"] == front_order_choices
     assert fields_by_path[("front", "actuation", "shock", "spring_table", "table")]["label"] == "Spring force curve"
-    assert fields_by_path[("front", "actuation", "shock", "damper_table", "table")]["label"] == "Damper force curve"
+    front_ls = ("front", "actuation", "shock", "damper", "compression", "low_speed_clicks_from_closed")
+    rear_ls = ("rear", "actuation", "shock", "damper", "rebound", "low_speed_clicks_from_closed")
+    assert fields_by_path[front_ls]["value"] == 6
+    assert fields_by_path[rear_ls]["value"] == 10
     assert payload["data"]["powertrain"]["implementation"] == "EVBatInvMotDiff"
     assert fields_by_path[("powertrain", "pBattery", "Ns")]["value"] == 140
     assert fields_by_path[("powertrain", "pMotor", "P_mech_peak")]["unit"] == "W"

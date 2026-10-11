@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any, Callable, Mapping
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -24,6 +24,7 @@ class TransientResult:
     signals: Mapping[str, FloatArray]
     success: bool
     message: str
+    damper_provenance: Mapping[str, Any] = field(default_factory=dict)
 
 
 def simulate_transient(
@@ -124,6 +125,12 @@ def simulate_transient(
         }
     )
     for corner_index, corner in enumerate(("FL", "FR", "RL", "RR")):
+        if model.parameters.damper_curves:
+            curve = model.parameters.damper_curves[corner_index]
+            speed = jounce_speed[:, corner_index] / model.parameters.damper_motion_ratios[corner_index]
+            low, high = curve.velocity_limits
+            signals[f"damperCompressionVel{corner}"] = speed
+            signals[f"damperExtrapolated{corner}"] = ((speed < low) | (speed > high)).astype(float)
         signals[f"camber{corner}"] = camber[:, corner_index]
         signals[f"toe{corner}"] = toe[:, corner_index]
         signals[f"caster{corner}"] = caster[:, corner_index]
@@ -150,6 +157,10 @@ def simulate_transient(
         signals=signals,
         success=bool(solution.success),
         message=str(solution.message),
+        damper_provenance={
+            corner: {**curve.provenance, "table": curve.table}
+            for corner, curve in zip(("FL", "FR", "RL", "RR"), model.parameters.damper_curves)
+        },
     )
 
 

@@ -450,12 +450,23 @@ class VehicleDynamicsSystem(ABC):
         compression_speed: FloatArray,
         spring_preload: FloatArray,
     ) -> FloatArray:
-        """Apply linearized wheel rates, damping, and anti-roll coupling."""
+        """Apply linearized springs, nonlinear shaft damping, and anti-roll coupling."""
 
         spring_rates = np.asarray(self.parameters.suspension_stiffness_n_per_m)
-        damper_rates = np.asarray(self.parameters.suspension_damping_n_s_per_m)
+        if self.parameters.damper_curves:
+            # v_shock = v_wheel / MR and F_wheel = F_shock / MR preserve power.
+            damper_force = np.array([
+                curve.force(float(speed) / ratio) / ratio
+                for curve, speed, ratio in zip(
+                    self.parameters.damper_curves, compression_speed,
+                    self.parameters.damper_motion_ratios, strict=True,
+                )
+            ])
+        else:
+            # Compatibility with explicitly constructed reduced parameter sets.
+            damper_force = np.asarray(self.parameters.suspension_damping_n_s_per_m) * compression_speed
         suspension_forces = (
-            spring_preload + spring_rates * compression + damper_rates * compression_speed
+            spring_preload + spring_rates * compression + damper_force
         )
         suspension_forces += self._antiroll_forces(compression)
         return suspension_forces

@@ -10,7 +10,9 @@ import yaml
 
 from _3_StandardSim._modelica_runner import ModelicaRunner
 from _0_Utils import config_io
+from _0_Utils.damper_curves import resolve_damper_curve
 from _0_Utils.reporting.report_engine import ReportEngine
+from _0_Utils.vehicle_io import load_yaml, vehicle_yaml_path
 
 SEED_CONFIG_PATH = Path("_3_StandardSim/TransientEval/transient_eval_config.yml")
 
@@ -44,6 +46,18 @@ TransientEval_SIGNALS = [
     "roll",
     "handwheelTorque",
 ]
+
+DAMPER_CHANNELS = {
+    "fl": 1,
+    "fr": 2,
+    "rl": 3,
+    "rr": 4,
+}
+for index in DAMPER_CHANNELS.values():
+    TransientEval_SIGNALS.extend((
+        f"chassis.damperCompressionVelocity[{index}]",
+        f"chassis.damperForce[{index}]",
+    ))
 
 
 # These are Python/report metadata fields.
@@ -385,6 +399,9 @@ class TransientEvalSim:
             "ay_fit_error": np.array([], dtype=float),
             "yaw_fit_error": np.array([], dtype=float),
         }
+        for corner in DAMPER_CHANNELS:
+            plot_series[f"damper_speed_{corner}"] = np.array([], dtype=float)
+            plot_series[f"damper_force_{corner}"] = np.array([], dtype=float)
 
         step_result = next(
             (r for r in group_results if self._is_representative_step(r)),
@@ -416,6 +433,13 @@ class TransientEvalSim:
             plot_series["step_sideslip"] = self._signal(step_result, "sideslip")
             plot_series["step_yaw"] = self._signal(step_result, "yawVel")
             plot_series["step_roll"] = self._signal(step_result, "roll")
+            for corner, index in DAMPER_CHANNELS.items():
+                plot_series[f"damper_speed_{corner}"] = self._signal(
+                    step_result, f"chassis.damperCompressionVelocity[{index}]"
+                )
+                plot_series[f"damper_force_{corner}"] = self._signal(
+                    step_result, f"chassis.damperForce[{index}]"
+                )
 
             t = plot_series["step_time"]
             ay = plot_series["step_ay"]
@@ -1065,6 +1089,19 @@ class TransientEvalSim:
             "ay_fit_error": {},
             "yaw_fit_error": {},
         }
+        for corner in DAMPER_CHANNELS:
+            series[f"damper_speed_{corner}"] = {}
+            series[f"damper_force_{corner}"] = {}
+
+        vehicle_data = load_yaml(vehicle_yaml_path())
+        for axle in ("front", "rear"):
+            curve = resolve_damper_curve(vehicle_data[axle]["actuation"]["shock"])
+            series[f"damper_reference_speed_{axle}"] = np.array(
+                [row[0] for row in curve.table], dtype=float
+            )
+            series[f"damper_reference_force_{axle}"] = np.array(
+                [row[1] for row in curve.table], dtype=float
+            )
 
         velocity_summaries = []
 

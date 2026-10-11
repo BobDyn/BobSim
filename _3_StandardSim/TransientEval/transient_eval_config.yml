@@ -64,8 +64,66 @@ report:
     - Frequency delays are reported at 0.5 Hz and 1.0 Hz
     - Gain and phase slopes summarize the FRF trend
     - Steering shown in degrees for readability
+    - Damper force versus shaft speed overlays the simulated step-steer samples on the selected vehicle.yml curve
 
 plots:
+  damper_force_speed:
+    layout: quad
+    title: "Damper check: simulated force versus selected curve"
+    subplots:
+      - title: "Front left"
+        x: { key: damper_reference_speed_front, label: "Compression-positive shaft speed [m/s]" }
+        y: { key: damper_reference_force_front, label: "Damper force [N]" }
+        label: "Selected TTX25 curve"
+        color: black
+        linewidth: 2
+        overlay:
+          x: { key: damper_speed_fl, label: "Compression-positive shaft speed [m/s]" }
+          y: { key: damper_force_fl, label: "Damper force [N]" }
+          style: scatter
+          group_labels: true
+          alpha: 0.6
+          markersize: 3
+      - title: "Front right"
+        x: { key: damper_reference_speed_front, label: "Compression-positive shaft speed [m/s]" }
+        y: { key: damper_reference_force_front, label: "Damper force [N]" }
+        label: "Selected TTX25 curve"
+        color: black
+        linewidth: 2
+        overlay:
+          x: { key: damper_speed_fr, label: "Compression-positive shaft speed [m/s]" }
+          y: { key: damper_force_fr, label: "Damper force [N]" }
+          style: scatter
+          group_labels: true
+          alpha: 0.6
+          markersize: 3
+      - title: "Rear left"
+        x: { key: damper_reference_speed_rear, label: "Compression-positive shaft speed [m/s]" }
+        y: { key: damper_reference_force_rear, label: "Damper force [N]" }
+        label: "Selected TTX25 curve"
+        color: black
+        linewidth: 2
+        overlay:
+          x: { key: damper_speed_rl, label: "Compression-positive shaft speed [m/s]" }
+          y: { key: damper_force_rl, label: "Damper force [N]" }
+          style: scatter
+          group_labels: true
+          alpha: 0.6
+          markersize: 3
+      - title: "Rear right"
+        x: { key: damper_reference_speed_rear, label: "Compression-positive shaft speed [m/s]" }
+        y: { key: damper_reference_force_rear, label: "Damper force [N]" }
+        label: "Selected TTX25 curve"
+        color: black
+        linewidth: 2
+        overlay:
+          x: { key: damper_speed_rr, label: "Compression-positive shaft speed [m/s]" }
+          y: { key: damper_force_rr, label: "Damper force [N]" }
+          style: scatter
+          group_labels: true
+          alpha: 0.6
+          markersize: 3
+
   step_response:
     layout: triple
     title: "Step Steer Response (TransientEval)"

@@ -7,12 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import hashlib
+import json
 import math
 import re
 
 import numpy as np
 
 from _0_Utils.vehicle_io import load_yaml, parse_tir, tire_template_name
+from _0_Utils.damper_curves import resolve_damper_curve
 
 
 @dataclass(frozen=True)
@@ -261,7 +263,8 @@ FOUR_POST_OMC_OPTIONS = (
 
 VEHICLE_VARIABLE_FILTER = (
     "time|frSteerCmd|accX|accY|handwheelAngle|steerExcess|handwheelTorque|Fz_.*|leftSteerAngle|"
-    "rightSteerAngle|roll|sideslip|velX|velY|yawVel|steadyState.*|linearity.*|minTireNormalLoad"
+    "rightSteerAngle|roll|sideslip|velX|velY|yawVel|steadyState.*|linearity.*|minTireNormalLoad|"
+    "chassis.(front|rear)(Left|Right)SpringLength|chassis.damper(CompressionVelocity|Force).*"
 )
 
 TARGET_SIGNATURE_KINDS: dict[str, tuple[str, ...]] = {
@@ -522,6 +525,10 @@ def _vehicle_record_text(
 
     for side_name, prefix, arch in (("front", "Fr", front_arch), ("rear", "Rr", rear_arch)):
         side = _mapping(data.get(side_name), side_name)
+        shock = _mapping(_mapping(side.get("actuation"), side_name).get("shock"), side_name)
+        if "damper" in shock:
+            curve = resolve_damper_curve(shock)
+            sections.append(f"  // {side_name} damper: " + json.dumps(curve.provenance, sort_keys=True))
         sections.extend(_axle_sections(data, tire_root, side_name, prefix, side, arch))
 
     sections.extend(_powertrain_sections(data))
@@ -654,9 +661,8 @@ def _axle_assignments(side_name: str, side: Mapping[str, Any], arch: Architectur
         if arch.has_stabar:
             assignments.append(("stabarPickup", pickup_order["stabar"]))
     spring_path = f"{shock_path}.spring_table"
-    damper_path = f"{shock_path}.damper_table"
     spring_table = _required_table(_mapping(shock.get("spring_table"), spring_path), "table", spring_path)
-    damper_table = _required_table(_mapping(shock.get("damper_table"), damper_path), "table", damper_path)
+    damper_table = resolve_damper_curve(shock).table
     assignments.extend(
         (
             ("rodToLower", str(actuation.get("rod_to", "lower")).lower() == "lower"),
