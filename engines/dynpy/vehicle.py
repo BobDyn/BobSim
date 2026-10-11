@@ -34,6 +34,7 @@ from engines.dynpy.qss import (
 )
 from engines.dynpy.transient import (
     ControlLaw,
+    DynamicControls,
     TransientResult,
     simulate_transient,
 )
@@ -157,7 +158,7 @@ class Vehicle:
         dof: DOFModel,
         *,
         initial_state: ArrayLike,
-        controls: ModelInputs | ControlLaw,
+        controls: ModelInputs | ControlLaw | DynamicControls,
         time_s: ArrayLike,
         method: str = "RK45",
         rtol: float = 1e-6,

@@ -88,17 +88,23 @@ def build_dynpy_report(
              ("Step time (s)", config["step_time_s"]), ("Rise time (s)", config["rise_time_s"])]
         )
         rows = [("Solver succeeded", summary["success"]), ("Samples", len(frame)),
-                ("Initial speed (m/s)", config["speed_mps"]), *inputs,
+                ("Target speed (m/s)", config["speed_mps"]), *inputs,
                 ("Duration (s)", float(frame.time.iloc[-1])), ("KinPy evaluation", config["kinematics_mode"]),
                 ("Peak absolute lateral acceleration (m/s²)", float(frame.accY.abs().max())),
                 ("Final yaw rate (deg/s)", float(frame.yawVel.iloc[-1] * deg)),
-                ("Final speed (m/s)", float(frame.velX.iloc[-1]))]
+                ("Final speed (m/s)", float(frame.get("speed", frame.velX).iloc[-1]))]
         plots = [
             _plot("Steering input", "time", "handwheelAngle", "Time (s)", "Roadwheel steer (deg)", deg),
             _plot("Yaw response", "time", "yawVel", "Time (s)", "Yaw rate (deg/s)", deg),
             _plot("Lateral response", "time", "accY", "Time (s)", "Lateral acceleration (m/s²)"),
-            _plot("Speed", "time", "velX", "Time (s)", "Longitudinal speed (m/s)"),
+            _plot("Speed", "time", "speed" if "speed" in frame else "velX", "Time (s)", "Speed (m/s)"),
         ]
+        if "targetSpeed" in frame and "speed" in frame:
+            rows.extend([("Speed control", "PI"),
+                         ("Maximum speed error (m/s)", float((frame.speed - frame.targetSpeed).abs().max()))])
+            plots[-1]["label"] = "Actual"
+            plots[-1]["overlay"] = {"x": {"key": "time"}, "y": {"key": "targetSpeed"},
+                                    "label": "Target", "linestyle": "--"}
         pages.append((frame, {"layout": "quad", "title": "Steering response", "subplots": plots}))
         for signal, label, unit, scale in (("tireFy", "Lateral tire force", "N", 1.0),
                                           ("camber", "Wheel camber", "deg", deg),

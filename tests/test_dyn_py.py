@@ -988,3 +988,26 @@ def test_implicit_transients_do_not_use_unbounded_adaptive_jacobian(parameters, 
     )
     assert result.success
     assert np.isfinite(result.state).all()
+
+
+@pytest.mark.parametrize("method", ("RK45", "Radau"))
+def test_controller_integral_is_integrated_without_changing_vehicle_state(parameters, method):
+    from engines.dynpy.transient import DynamicControls
+
+    model = create_model(3, parameters)
+    trim = solve_steady_state(model, speed_mps=10.0)
+    observed = []
+
+    def inputs(time, state, controller_state):
+        assert state.shape == trim.state.shape
+        observed.append((time, float(controller_state[0])))
+        return trim.inputs
+
+    controls = DynamicControls(np.zeros(1), inputs, lambda time, state, integral: np.array([time]))
+    result = simulate_transient(model, initial_state=trim.state, controls=controls,
+                                time_s=np.linspace(0, 0.2, 5), method=method)
+    assert result.success
+    assert result.state.shape == (5, model.state_size)
+    assert result.state_names == model.state_names
+    # The final calls reconstruct the sampled outputs from the integrated state.
+    np.testing.assert_allclose([integral for _, integral in observed[-5:]], 0.5 * result.time_s**2, atol=1e-10)

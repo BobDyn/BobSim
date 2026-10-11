@@ -662,7 +662,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         workflow_id="reduced-ramp-steer", relocatable=True,
         fields=(
             _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
-            _field("speed_mps", "Initial speed", kind="number", group="Input", unit="m/s"),
+            _field("speed_mps", "Target speed", kind="number", group="Input", unit="m/s"),
             _field("roadwheel_rate_deg_s", "Roadwheel steer rate", kind="number", group="Input", unit="deg/s"),
             _field("start_time_s", "Ramp start", kind="number", group="Input", unit="s"),
             _field("ramp_end_time_s", "Ramp end (then hold)", kind="number", group="Input", unit="s"),
@@ -681,7 +681,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         relocatable=True,
         fields=(
             _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
-            _field("speed_mps", "Initial speed", kind="number", group="Input", unit="m/s"),
+            _field("speed_mps", "Target speed", kind="number", group="Input", unit="m/s"),
             _field("roadwheel_step_deg", "Roadwheel steer step", kind="number", group="Input", unit="deg"),
             _field("step_time_s", "Step time", kind="number", group="Input", unit="s"),
             _field("rise_time_s", "Rise time", kind="number", group="Input", unit="s"),
