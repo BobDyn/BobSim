@@ -3956,6 +3956,7 @@ async function reviewSimulationWorkflow(workflowId) {
     state.selectedResultId = review.id;
     state.view = "studies";
     render();
+    expandResultReport();
     return;
   }
 }
@@ -4791,7 +4792,9 @@ function renderSavedResultCatalog() {
     card.addEventListener("click", () => {
       state.selectedResultId = card.dataset.resultId;
       state.activeStudyTab = "saved";
+      card.closest("details").open = false;
       renderStudies();
+      expandResultReport();
     });
   });
   grid.querySelectorAll("[data-delete-result]").forEach((button) => {
@@ -5378,6 +5381,10 @@ function pdfPreviewHtml(path) {
       <iframe class="pdf-preview-frame" title="Simulation report" src="${url}#view=FitH&navpanes=0"></iframe>
     </div>
   `;
+}
+
+function expandResultReport() {
+  document.querySelector('#study-preview [data-expand-pdf][aria-expanded="false"]')?.click();
 }
 
 function wirePdfPreview(preview) {
