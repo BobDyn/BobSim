@@ -801,7 +801,7 @@ function setSaveStatus(message) {
   state.saveStatusMessage = message || "";
   const saveStatus = document.getElementById("save-status");
   if (saveStatus) {
-    saveStatus.textContent = state.saveStatusMessage || (state.dirtyVehicle ? "Unsaved" : "Saved");
+    saveStatus.textContent = state.saveStatusMessage || (state.dirtyVehicle ? "Unsaved changes" : activeVehicleConfigReady() ? "Saved" : "Save to library");
   }
 }
 
@@ -1107,8 +1107,8 @@ function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
 }
 
 function simulationLockedMessage() {
-  if (!activeVehicleConfigReady()) return "Save this vehicle config before running an MBD simulation.";
-  if (!vehicleDefinitionCurrent()) return "Write the saved vehicle definition to MBD before running an MBD simulation.";
+  if (!activeVehicleConfigReady()) return "Save this vehicle to your library before running a simulation.";
+  if (!vehicleDefinitionCurrent()) return "Prepare the multibody (MBD) model from your saved vehicle before running a simulation.";
   if (!externalToolchainAvailable()) return state.status?.external_toolchain?.reason || "Simulation runner unavailable.";
   return "Simulation is available.";
 }
@@ -3840,6 +3840,10 @@ function renderStandard() {
   const notice = document.getElementById("simulation-notice");
   notice.hidden = canUseStandardSim();
   notice.textContent = notice.hidden ? "" : simulationLockedMessage();
+  const nextStep = document.getElementById("simulation-next-btn");
+  nextStep.hidden = notice.hidden;
+  nextStep.textContent = activeVehicleConfigReady() && vehicleDefinitionCurrent()
+    ? "OpenModelica settings" : "Go to setup";
   syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
@@ -4632,8 +4636,14 @@ function renderSavedResultCatalog() {
   const grid = document.getElementById("saved-result-list");
   if (!grid) return;
   const results = savedResults();
+  document.querySelector(".archive-workspace").classList.toggle("is-empty", !results.length);
   if (!results.length) {
-    grid.innerHTML = `<div class="empty-state">No archived simulation runs yet. Run a simulation to save the report, metrics, and signal archive locally.</div>`;
+    grid.innerHTML = `<div class="archive-empty-state">
+      <h3>No saved runs yet</h3>
+      <p>Completed simulation reports and data appear here.</p>
+      <button class="ghost-button" type="button" data-browse-simulations>Browse simulations</button>
+    </div>`;
+    grid.querySelector("[data-browse-simulations]").addEventListener("click", () => setView("standard"));
     return;
   }
   grid.innerHTML = results.map(resultArchiveCard).join("");
@@ -12794,6 +12804,10 @@ function wireEvents() {
   document.getElementById("save-vehicle-btn").addEventListener("click", () => saveVehicleAs({ actionKey: "menu-save-vehicle" }));
   document.getElementById("save-raw-btn").addEventListener("click", saveRawVehicle);
   document.getElementById("run-workflow-btn").addEventListener("click", startSelectedWorkflow);
+  document.getElementById("simulation-next-btn").addEventListener("click", () => {
+    if (activeVehicleConfigReady() && vehicleDefinitionCurrent()) openModelicaToolchain();
+    else setView("setup");
+  });
   document.getElementById("run-study-btn")?.addEventListener("click", saveActiveResults);
   document.getElementById("add-processing-btn")?.addEventListener("click", addProcessingWorkflow);
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);

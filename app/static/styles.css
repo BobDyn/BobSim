@@ -3939,6 +3939,36 @@ body.resizing-plot-pane * {
   color: var(--amber);
 }
 
+.simulation-next-step {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.archive-workspace.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.archive-workspace.is-empty .results-app-pane {
+  display: none;
+}
+
+.archive-workspace.is-empty .study-catalog::before {
+  content: none;
+}
+
+.archive-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 24px;
+}
+
+.archive-empty-state p {
+  color: var(--muted);
+}
+
 .simulation-catalog {
   padding: 0;
 }
