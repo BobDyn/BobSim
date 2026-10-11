@@ -4404,9 +4404,9 @@ summary:focus-visible {
 }
 
 .simulation-visual svg {
-  flex: 0 0 180px;
-  width: 180px;
-  height: 72px;
+  flex: 0 0 220px;
+  width: 220px;
+  height: 110px;
   color: var(--blue);
 }
 
