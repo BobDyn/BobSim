@@ -4017,19 +4017,27 @@ function simulationVisualHtml(workflow) {
   let caption;
   if (id.includes('ramp-steer') || id.includes('step-steer')) {
     const ramp = id.includes('ramp-steer');
-    drawing = `${axes}<path d="${ramp ? 'M27 94H70L217 24' : 'M27 94H91V26H224'}" ${stroke} stroke-width="2.5"/>`;
-    caption = ramp ? 'Steering increases at a constant rate.' : 'Steering changes to a new value and holds.';
+    drawing = `${axes}<path d="${ramp ? 'M27 94H65L165 24H224' : 'M27 94H91V26H224'}" ${stroke} stroke-width="2.5"/>`;
+    caption = ramp ? 'Steering ramps to a target and holds.' : 'Steering changes to a new value and holds.';
   } else if (id === 'steady-state' || id === 'transient') {
     const steady = id === 'steady-state';
-    drawing = `${text(15, 70, 'ẋ =', 25)}<path d="M93 18H85V108H93M137 18H145V108H137" ${stroke}/>`
-      + text(106, 40, 'u̇', 21) + text(106, 66, 'v̇', 21) + text(107, 91, 'ṙ', 21)
-      + text(166, 70, steady ? '= 0' : '≠ 0', 25);
-    caption = steady ? 'Body-state derivatives vanish at equilibrium.' : 'The state evolves through time: ẋ = f(x, u).';
+    drawing = steady
+      ? `<text x="130" y="70" text-anchor="middle" fill="currentColor" font-size="24">F(0, x, u) = 0</text>`
+      : text(24, 70, 'F(', 24)
+        + '<text x="60" y="70" text-anchor="middle" fill="currentColor" font-size="24">x</text>'
+        + '<circle cx="60" cy="49" r="1.6" fill="currentColor"/>'
+        + text(68, 70, ', x, u, t) = 0', 24);
+    caption = steady ? 'Solve a steady operating point.' : 'Evolve the state while satisfying the model constraints.';
   } else if (id === 'four-post') {
-    drawing = `<path d="M30 106H227M55 72V102M97 49V102M162 78V102M205 55V102" ${stroke} opacity=".45"/>`
-      + `<path d="M45 92H65V104H45ZM87 69H107V101H87ZM152 98H172V105H152ZM195 75H215V102H195Z" ${stroke}/>`
-      + `<path d="M37 62L81 36L211 44L167 72ZM81 36L93 17L156 22L178 42M93 17L137 31L156 22M137 31L130 48" ${stroke}/>`
-      + [[55, 68], [97, 45], [162, 75], [205, 51]].map(([x,y]) => `<ellipse cx="${x}" cy="${y}" rx="9" ry="13" fill="var(--surface)" stroke="currentColor" stroke-width="2"/>`).join('');
+    drawing = `<path d="M19 97L91 61L239 84L169 122Z" ${stroke} opacity=".2"/>`
+      + [[91, 76, 24], [211, 87, 31], [49, 108, 48], [161, 119, 53]].map(([x, base, top]) =>
+        `<path d="M${x-17} ${base-3}l13 -6l22 4l-13 6Z" ${stroke}/>`
+        + `<path d="M${x-6} ${base-4}V${top+19}h12V${base-4}Z" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
+        + `<path d="M${x-3} ${top+19}V${top+4}h6v15" ${stroke}/>`
+        + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
+        + `<ellipse cx="${x}" cy="${top}" rx="19" ry="6" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
+        + `<path d="M${x-14} ${top-2}v-5m28 5v-5M${x+12} ${base-9}q15 -4 11 -21" ${stroke} opacity=".5"/>`
+      ).join('');
     caption = 'Four hydraulic posts move the wheels independently.';
   } else if (id === 'ggv') {
     drawing = `<path d="M127 112V7M127 105L34 119M127 105L225 119" ${stroke} opacity=".35"/>`
@@ -4059,7 +4067,8 @@ function simulationVisualHtml(workflow) {
       drawing += '<g transform="translate(105 20) rotate(7)"><rect x="-12" y="-7" width="24" height="14" rx="4" fill="currentColor"/><path d="M-4-5H4V5H-4ZM-8-9V-6M8-9V-6M-8 6V9M8 6V9" fill="none" stroke="var(--surface)" stroke-width="2"/></g>';
       caption = 'Driver inputs move the vehicle around the track.';
     } else {
-      drawing += '<path d="M49 37C83 5 121 15 151 37C174 56 194 34 211 49C235 76 202 102 178 88C153 71 121 81 96 94C56 113 23 85 36 63Z" fill="none" stroke="currentColor" stroke-width="2"/>';
+      // Minimum-curvature line solved inside this schematic's 17-unit-wide track.
+      drawing += '<path d="M51.5 27.8L55.4 25.5L59.4 23.5L63.5 21.8L67.8 20.5L72.2 19.4L76.6 18.6L81.0 18.0L85.5 17.7L90.0 17.7L94.5 17.8L99.0 18.1L103.4 18.6L107.9 19.2L112.3 19.9L116.7 20.8L121.1 21.7L125.5 22.7L129.8 23.8L134.2 24.8L138.5 25.9L142.9 26.9L147.3 27.9L151.7 28.9L156.1 29.8L160.5 30.5L164.9 31.2L169.4 31.7L173.8 32.0L178.3 32.4L182.8 32.7L187.3 33.1L191.7 33.5L196.2 34.2L200.5 35.1L204.9 36.3L209.1 37.9L213.1 39.8L216.9 42.2L220.4 45.0L223.6 48.2L226.2 51.8L228.3 55.8L229.8 60.0L230.6 64.4L230.7 68.9L230.1 73.3L228.7 77.6L226.6 81.5L224.0 85.1L220.8 88.3L217.2 90.9L213.2 93.0L209.0 94.6L204.6 95.7L200.2 96.3L195.7 96.4L191.2 96.3L186.8 95.8L182.4 95.0L178.0 94.1L173.6 93.0L169.3 91.9L164.9 90.8L160.6 89.7L156.2 88.8L151.8 88.0L147.3 87.5L142.8 87.3L138.3 87.4L133.9 87.8L129.4 88.5L125.0 89.3L120.7 90.3L116.3 91.5L112.0 92.7L107.7 94.0L103.4 95.3L99.1 96.5L94.8 97.7L90.4 98.8L86.0 99.8L81.6 100.5L77.2 101.0L72.7 101.2L68.2 101.2L63.7 100.7L59.3 99.9L55.0 98.6L50.9 96.9L46.9 94.8L43.3 92.2L39.9 89.2L37.0 85.8L34.5 82.0L32.6 78.0L31.1 73.8L30.2 69.4L29.9 64.9L30.1 60.4L30.8 56.0L32.1 51.7L33.8 47.6L35.9 43.6L38.4 39.9L41.3 36.4L44.4 33.2L47.8 30.3Z" fill="none" stroke="currentColor" stroke-width="2"/>';
       caption = 'A racing line and speed profile from the track and grip envelope.';
     }
   }
