@@ -51,7 +51,7 @@ def build_dynpy_report(
     Parameters
     ----------
     workflow_id : str
-        Step-steer, QSS lap or transient lap workflow ID.
+        Ramp-steer, step-steer, QSS lap or transient lap workflow ID.
     output_directory : Path
         Directory containing the run's CSV files.
     config : dict
@@ -66,9 +66,12 @@ def build_dynpy_report(
     Path
         Generated PDF path.
     """
-    response = workflow_id == "reduced-step-steer"
+    response = workflow_id in {"reduced-step-steer", "reduced-ramp-steer"}
+    ramp = workflow_id == "reduced-ramp-steer"
     transient = workflow_id == "lap-transient"
     title = "Step-steer response" if response else "Transient lap" if transient else "QSS lap"
+    if ramp:
+        title = "Ramp-steer response"
     method = "Transient" if response else "Transient with QSS reference" if transient else "QSS"
     model = f"DynPy | {summary['model_dof']} DOF | {method} | Python"
     filename = "report.pdf" if response else "transient_report.pdf" if transient else "qss_report.pdf"
@@ -77,10 +80,14 @@ def build_dynpy_report(
     pages: list[tuple[pd.DataFrame, dict[str, Any]]] = []
     if response:
         frame = pd.read_csv(output_directory / "signals.csv")
+        inputs = (
+            [("Roadwheel rate (deg/s)", config["roadwheel_rate_deg_s"]),
+             ("Ramp start (s)", config["start_time_s"])] if ramp else
+            [("Roadwheel step (deg)", config["roadwheel_step_deg"]),
+             ("Step time (s)", config["step_time_s"]), ("Rise time (s)", config["rise_time_s"])]
+        )
         rows = [("Solver succeeded", summary["success"]), ("Samples", len(frame)),
-                ("Initial speed (m/s)", config["speed_mps"]),
-                ("Roadwheel step (deg)", config["roadwheel_step_deg"]),
-                ("Step time (s)", config["step_time_s"]), ("Rise time (s)", config["rise_time_s"]),
+                ("Initial speed (m/s)", config["speed_mps"]), *inputs,
                 ("Duration (s)", float(frame.time.iloc[-1])), ("KinPy evaluation", config["kinematics_mode"]),
                 ("Peak absolute lateral acceleration (m/s²)", float(frame.accY.abs().max())),
                 ("Final yaw rate (deg/s)", float(frame.yawVel.iloc[-1] * deg)),

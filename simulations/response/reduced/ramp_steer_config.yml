@@ -1,0 +1,7 @@
+model_dof: 6
+speed_mps: 15.0
+roadwheel_rate_deg_s: 1.0
+start_time_s: 1.0
+stop_time_s: 5.0
+sample_period_s: 0.01
+kinematics_mode: lookup

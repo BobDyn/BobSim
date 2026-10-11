@@ -53,7 +53,7 @@ in `static/app.js`.
   and outputs.
 - `registry.py`: declarative workflow/action/build-target/config-field
   registry.
-- `python_simulations.py`: app entry point for DynPy step-steer and lap runs.
+- `python_simulations.py`: app entry point for ramp-steer, step-steer and DynPy lap runs.
 - `runtime.py`: packaged-app runtime seeding, manifests, and cache invalidation.
 - `toolchain.py`: OpenModelica discovery, verification, and environment setup.
 - `server.py`: HTTP routing, JSON/file responses, and static/repo file serving.

@@ -644,6 +644,33 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("procedure.forceMagnitude", "Force magnitude", kind="number", group="Procedure", unit="N"),
         ),
     ),
+    "mbd-step-steer": ConfigSpec(
+        id="mbd-step-steer", group="response", label="Step steer",
+        path="simulations/response/mbd/transient/step_steer_config.yml",
+        workflow_id="mbd-step-steer", relocatable=True,
+        fields=COMMON_SIM_FIELDS + (
+            _field("test.testVel", "Test velocities", kind="list", group="Input", unit="m/s"),
+            _field("test.steerStep_deg", "Steer step amplitudes", kind="list", group="Input", unit="deg"),
+            _field("test.stepTime", "Step time", kind="number", group="Input", unit="s"),
+            _field("test.stepDuration", "Rise time", kind="number", group="Input", unit="s"),
+            _field("test.directions", "Directions", kind="list", group="Input", choices=DIRECTION_CHOICES),
+        ),
+    ),
+    "reduced-ramp-steer": ConfigSpec(
+        id="reduced-ramp-steer", group="response", label="Ramp steer",
+        path="simulations/response/reduced/ramp_steer_config.yml",
+        workflow_id="reduced-ramp-steer", relocatable=True,
+        fields=(
+            _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
+            _field("speed_mps", "Initial speed", kind="number", group="Input", unit="m/s"),
+            _field("roadwheel_rate_deg_s", "Roadwheel steer rate", kind="number", group="Input", unit="deg/s"),
+            _field("start_time_s", "Ramp start", kind="number", group="Input", unit="s"),
+            _field("stop_time_s", "Duration", kind="number", group="Run", unit="s"),
+            _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
+            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
+                   choices=("lookup", "nonlinear")),
+        ),
+    ),
     "reduced-step-steer": ConfigSpec(
         id="reduced-step-steer",
         group="response",
@@ -874,6 +901,11 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             ),
             requires_external_toolchain=True,
         ),
+        "run-mbd-step-steer": ActionSpec(
+            id="run-mbd-step-steer", label="Run MBD step steer",
+            argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-step-steer"),
+            requires_external_toolchain=True,
+        ),
         "run-four-post": ActionSpec(
             id="run-four-post",
             label="Run FourPostEval",
@@ -888,7 +920,7 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
                 label=f"Run {name}",
                 argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), name),
             )
-            for name in ("reduced-step-steer", "lap-qss", "lap-transient")
+            for name in ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient")
         },
         "run-ggv": ActionSpec(
             id="run-ggv",
@@ -1003,6 +1035,27 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/four_post_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/four_post_eval_report_metrics.csv", "csv"),
+            ),
+        ),
+        WorkflowSpec(
+            id="mbd-step-steer", group="response", label="Step steer",
+            engine="BobLib", fidelity="MBD", runtime="OpenModelica compiled executable",
+            config="simulations/response/mbd/transient/step_steer_config.yml",
+            actions=("build-vehicle", "run-mbd-step-steer"),
+            outputs=(
+                OutputSpec("Report", "simulations/mbd/generated_results/step_steer_report.pdf", "pdf"),
+                OutputSpec("Metrics", "simulations/mbd/generated_results/step_steer_report_metrics.csv", "csv"),
+            ),
+        ),
+        WorkflowSpec(
+            id="reduced-ramp-steer", group="response", label="Ramp steer",
+            engine="DynPy", fidelity="Transient", runtime="Python",
+            config="simulations/response/reduced/ramp_steer_config.yml",
+            actions=("run-reduced-ramp-steer",),
+            outputs=(
+                OutputSpec("Report", "app/user_data/results/reduced-ramp-steer/report.pdf", "pdf"),
+                OutputSpec("Signals", "app/user_data/results/reduced-ramp-steer/signals.csv", "csv"),
+                OutputSpec("Summary", "app/user_data/results/reduced-ramp-steer/summary.json", "json"),
             ),
         ),
         WorkflowSpec(

@@ -1404,7 +1404,7 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
         if workflow.id == "vehicle-review":
             configs = [root / f"simulations/envelope/{name}/{name}_config.yml" for name in ("ggv", "ymd")]
         for path in configs:
-            if workflow.id in {"reduced-step-steer", "lap-qss", "lap-transient"}:
+            if workflow.id in {"reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient"}:
                 path = config_io.resolve(path, root=root)
             if not path.is_file():
                 continue
