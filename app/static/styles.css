@@ -1652,6 +1652,7 @@ body.resizing-panes * {
 }
 
 .config-section {
+  min-width: 0;
   display: none;
   padding-top: 4px;
 }
@@ -2663,27 +2664,18 @@ body.resizing-panes * {
 }
 
 .powertrain-implementation-card {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 10px;
-}
-
-.powertrain-implementation-card > div {
   display: grid;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
-}
-
-.powertrain-implementation-card strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .powertrain-implementation-card select {
   min-width: 0;
-  max-width: 100%;
+  width: 100%;
+}
+
+.powertrain-subsystem-panel .field-object-label {
+  display: none;
 }
 
 .powertrain-subsystem-tabs {

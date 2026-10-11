@@ -2042,17 +2042,12 @@ function powertrainSectionHtml(area) {
             type="button"
           >
             <span>${escapeHtml(subsystem.label)}</span>
-            <small>${subsystem.fields.length}</small>
           </button>
         `).join("")}
       </div>
       <div class="powertrain-subsystem-panels">
         ${subsystems.map((subsystem) => `
           <section class="powertrain-subsystem-panel" data-powertrain-panel="${escapeHtml(subsystem.id)}"${state.activePowertrainSubsystem === subsystem.id ? "" : " hidden"}>
-            <div class="powertrain-subsystem-head">
-              <span>${escapeHtml(subsystem.label)}</span>
-              <small>${escapeHtml(profile.id)}</small>
-            </div>
             ${subsystem.fields.length
               ? `<div class="field-grid">${subsystem.fields.map(fieldControl).join("")}</div>`
               : `<div class="area-empty">No ${escapeHtml(subsystem.label.toLowerCase())} specs are exposed for this architecture.</div>`}
@@ -2067,18 +2062,14 @@ function powertrainImplementationHtml(profile, field) {
   const choices = availablePowertrains();
   const key = field?.key || JSON.stringify(["powertrain", "implementation"]);
   return `
-    <div class="powertrain-implementation-card">
-      <div>
-        <span class="tool-label">Implementation</span>
-        <strong>${escapeHtml(profile.label)}</strong>
-      </div>
+    <label class="powertrain-implementation-card">
+      <span class="tool-label">Powertrain model</span>
       <select class="config-picker" data-config-path="${escapeHtml(key)}" data-kind="select" data-powertrain-implementation>
         ${choices.map((item) => `
           <option value="${escapeHtml(item.id)}"${item.id === profile.id ? " selected" : ""}>${escapeHtml(item.label)}</option>
         `).join("")}
       </select>
-      <span class="mini-pill ok">${escapeHtml(humanizeToken(profile.status))}</span>
-    </div>
+    </label>
   `;
 }
 
@@ -8510,35 +8501,7 @@ function heatColor(t) {
 }
 
 function drawPowertrainPreview(ctx, width, height, data) {
-  const palette = canvasPalette();
-  const profile = powertrainProfile(data);
-  const explicit = explicitPowertrainData(data);
-  const activeSubsystem = activePowertrainSubsystemId();
-  drawCanvasText(ctx, "Powertrain", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, profile.label, 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
-  const diagramTop = 82;
-  const diagramHeight = Math.min(300, Math.max(220, height * 0.42));
-  drawPowertrainArchitecture(ctx, 28, diagramTop, width - 56, diagramHeight, data, activeSubsystem);
-
-  const metricTop = diagramTop + diagramHeight + 16;
-  const metricGap = 12;
-  const metricWidth = (width - 56 - metricGap * 3) / 4;
-  const activeEntries = powertrainSubsystemEntries(explicit, activeSubsystem);
-  [
-    ["Selected", powertrainSubsystemLabel(activeSubsystem)],
-    ["Maturity", humanizeToken(profile.status)],
-    ["Inputs", `${activeEntries.length} scalar${activeEntries.length === 1 ? "" : "s"}`],
-    ["Loop", activeSubsystem === "pVCU" ? "Off-loop control" : "Main path"],
-  ].forEach(([label, value], index) => {
-    drawDiagnosticTile(ctx, 28 + index * (metricWidth + metricGap), metricTop, metricWidth, 78, label, value);
-  });
-
-  drawPowertrainStats(ctx, width, height, activeEntries, metricTop + 98, activeSubsystem);
+  drawPowertrainArchitecture(ctx, 16, 16, width - 32, height - 32, data, activePowertrainSubsystemId());
 }
 
 function activePowertrainSubsystemId() {
@@ -8553,26 +8516,18 @@ function powertrainSubsystemLabel(id) {
 
 function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsystem) {
   const palette = canvasPalette();
-  const fill = state.dark ? "rgba(19, 23, 32, 0.92)" : "rgba(255, 255, 255, 0.96)";
-  drawPanel(ctx, x, y, width, height, fill);
-  drawCanvasText(ctx, "Architecture", x + 14, y + 18, { size: 13, weight: 800 });
-  drawCanvasText(ctx, "VCU", x + width - 14, y + 18, {
-    size: 11,
-    weight: 760,
-    align: "right",
-    color: palette.muted,
-  });
-
   const nodes = powertrainMainLoopNodes(data);
-  const nodeWidth = clamp((width - 68 - 14 * (nodes.length - 1)) / nodes.length, 64, 136);
-  const nodeHeight = clamp(height * 0.33, 74, 92);
-  const gap = Math.max(12, (width - 68 - nodeWidth * nodes.length) / Math.max(1, nodes.length - 1));
+  const vertical = width < 620;
+  const pathWidth = width - 100;
+  const nodeWidth = vertical ? 110 : clamp((pathWidth - 28 - 20 * (nodes.length - 1)) / nodes.length, 64, 136);
+  const nodeHeight = vertical ? 76 : 92;
+  const gap = Math.max(12, (pathWidth - 28 - nodeWidth * nodes.length) / Math.max(1, nodes.length - 1));
   const totalWidth = nodeWidth * nodes.length + gap * (nodes.length - 1);
   const centerY = y + height * 0.64;
-  const startX = x + width / 2 - totalWidth / 2 + nodeWidth / 2;
+  const startX = x + pathWidth / 2 - totalWidth / 2 + nodeWidth / 2;
   nodes.forEach((node, index) => {
-    node.cx = startX + index * (nodeWidth + gap);
-    node.cy = centerY;
+    node.cx = vertical ? x + 65 : startX + index * (nodeWidth + gap);
+    node.cy = vertical ? y + 48 + index * ((height - 116) / 3) : centerY;
     node.width = nodeWidth;
     node.height = nodeHeight;
   });
@@ -8582,10 +8537,10 @@ function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsys
     label: "VCU",
     meta: powertrainNodeMetric(data, "pVCU"),
     color: palette.amber,
-    cx: (nodes[1].cx + nodes[2].cx) / 2,
-    cy: y + Math.max(66, height * 0.25),
+    cx: vertical ? x + width - 62 : (nodes[1].cx + nodes[2].cx) / 2,
+    cy: vertical ? (nodes[1].cy + nodes[2].cy) / 2 : y + Math.max(50, height * 0.25),
     width: clamp(nodeWidth * 0.95, 76, 116),
-    height: 58,
+    height: 84,
   };
 
   nodes.forEach((node, index) => {
@@ -8593,34 +8548,40 @@ function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsys
       const previous = nodes[index - 1];
       drawPowertrainConnection(
         ctx,
-        previous.cx + previous.width / 2,
-        previous.cy,
-        node.cx - node.width / 2,
-        node.cy,
+        vertical ? previous.cx : previous.cx + previous.width / 2,
+        vertical ? previous.cy + previous.height / 2 : previous.cy,
+        vertical ? node.cx : node.cx - node.width / 2,
+        vertical ? node.cy - node.height / 2 : node.cy,
         palette.blue,
       );
     }
   });
 
   const driveline = nodes[nodes.length - 1];
-  const splitX = Math.min(x + width - 64, driveline.cx + driveline.width / 2 + Math.max(38, gap * 0.72));
-  const wheelX = Math.min(x + width - 28, splitX + 36);
-  const wheelY = [centerY - Math.min(48, height * 0.18), centerY + Math.min(48, height * 0.18)];
-  drawPowertrainConnection(ctx, driveline.cx + driveline.width / 2, centerY, splitX, centerY, palette.green, {
+  const splitX = vertical
+    ? driveline.cx + driveline.width / 2 + 24
+    : Math.min(x + width - 64, driveline.cx + driveline.width / 2 + Math.max(38, gap * 0.72));
+  const wheelX = Math.min(x + width - 24, splitX + 36);
+  const wheelOffset = vertical ? 22 : Math.min(48, height * 0.18);
+  drawPowertrainConnection(ctx, driveline.cx + driveline.width / 2, driveline.cy, splitX, driveline.cy, palette.green, {
     arrow: false,
   });
-  wheelY.forEach((yPos) => {
-    drawPowertrainConnection(ctx, splitX, centerY, wheelX - 20, yPos, palette.green, { arrow: false });
+  [driveline.cy - wheelOffset, driveline.cy + wheelOffset].forEach((yPos) => {
+    drawPowertrainConnection(ctx, splitX, driveline.cy, wheelX - 20, yPos, palette.green, { arrow: false });
     drawWheelGlyph(ctx, wheelX, yPos, 20, 0, palette.green);
   });
 
   const signalTargets = [nodes[1], nodes[2], nodes[3]];
   signalTargets.forEach((node) => {
-    drawPowertrainConnection(ctx, vcu.cx, vcu.cy + vcu.height / 2, node.cx, node.cy - node.height / 2, palette.amber, {
-      dashed: true,
-      arrow: false,
-      width: 1.6,
-    });
+    drawPowertrainConnection(
+      ctx,
+      vertical ? vcu.cx - vcu.width / 2 : vcu.cx,
+      vertical ? vcu.cy : vcu.cy + vcu.height / 2,
+      vertical ? node.cx + node.width / 2 : node.cx,
+      vertical ? node.cy : node.cy - node.height / 2,
+      palette.amber,
+      { dashed: true, arrow: false, width: 1.6 },
+    );
   });
 
   nodes.forEach((node) => drawPowertrainNode(ctx, node, activeSubsystem === node.id));
@@ -8901,66 +8862,6 @@ function powertrainProfile(data) {
 function explicitPowertrainData(data) {
   const powertrain = data.powertrain || data.drivetrain || {};
   return typeof powertrain === "object" && !Array.isArray(powertrain) && powertrain ? powertrain : {};
-}
-
-function flattenedPowertrainEntries(value, prefix = "") {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  return Object.entries(value).flatMap(([key, item]) => {
-    const label = prefix ? `${prefix}.${key}` : key;
-    if (typeof item === "number" || typeof item === "string" || typeof item === "boolean") return [[label, item]];
-    if (item && typeof item === "object" && !Array.isArray(item)) return flattenedPowertrainEntries(item, label);
-    return [];
-  });
-}
-
-function powertrainSubsystemEntries(powertrain, subsystemId) {
-  const block = powertrain?.[subsystemId];
-  return flattenedPowertrainEntries(block);
-}
-
-function drawDiagnosticTile(ctx, x, y, width, height, label, value) {
-  const palette = canvasPalette();
-  drawPanel(ctx, x, y, width, height, palette.surface);
-  drawCanvasText(ctx, label, x + 12, y + 18, { size: 11, weight: 740, color: palette.muted });
-  drawCanvasText(ctx, value, x + 12, y + 48, { size: 13, weight: 780 });
-}
-
-function drawPowertrainStats(ctx, width, height, entries, top, subsystemId) {
-  const palette = canvasPalette();
-  const panelX = 28;
-  const panelY = top;
-  const panelW = width - 56;
-  const panelH = Math.max(110, height - top - 28);
-  drawPanel(ctx, panelX, panelY, panelW, panelH, palette.surface);
-  drawCanvasText(ctx, `${powertrainSubsystemLabel(subsystemId)} Parameters`, panelX + 14, panelY + 18, {
-    size: 13,
-    weight: 780,
-  });
-  if (!entries.length) {
-    drawCanvasText(ctx, "No parameters exposed for this subsystem", panelX + panelW / 2, panelY + panelH / 2, {
-      align: "center",
-      color: palette.muted,
-    });
-    return;
-  }
-  const columns = panelW > 650 ? 3 : 2;
-  const cellW = (panelW - 28 - 12 * (columns - 1)) / columns;
-  entries.slice(0, columns * 4).forEach(([key, value], index) => {
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const x = panelX + 14 + col * (cellW + 12);
-    const y = panelY + 48 + row * 42;
-    drawCanvasText(ctx, humanizeToken(key), x, y, { size: 10, weight: 700, color: palette.muted });
-    drawCanvasText(ctx, formatDisplayValue(value), x, y + 18, { size: 13, weight: 760 });
-  });
-  if (entries.length > columns * 4) {
-    drawCanvasText(ctx, `+${entries.length - columns * 4} more`, panelX + panelW - 14, panelY + panelH - 16, {
-      size: 10,
-      weight: 760,
-      align: "right",
-      color: palette.muted,
-    });
-  }
 }
 
 function drawTirePreview(ctx, width, height, data) {
