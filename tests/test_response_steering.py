@@ -19,7 +19,7 @@ def test_steering_inputs_have_the_requested_shape_and_hold_speed(monkeypatch, do
 
     def simulate(model_dof, *, controls, method, **kwargs):
         assert model_dof == dof
-        assert method == ("Radau" if dof == 14 else "RK45")
+        assert method == ("Radau" if dof >= 10 else "RK45")
         observed.extend(controls.inputs(t, trim.state, np.zeros(1)) for t in sample_times)
         slow = trim.state.copy()
         slow[dof] -= 1.0

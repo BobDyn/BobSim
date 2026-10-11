@@ -118,7 +118,8 @@ def run_step_steer(
         )
 
     time = np.arange(0.0, stop_time_s + 0.5 * sample_period_s, sample_period_s)
-    method = "Radau" if dof == 14 else "RK45"
+    # Wheel rotation adds fast slip dynamics in both 10 and 14 DOF models.
+    method = "Radau" if dof >= 10 else "RK45"
     result = vehicle.simulate(
         dof,
         initial_state=initial_trim.state,
