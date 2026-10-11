@@ -112,6 +112,9 @@ const state = {
   loadingStudyConfigFor: null,
   activeParamGroup: null,
   vehicleStartOpen: true,
+  vehicleStartError: "",
+  vehicleStartLoading: true,
+  vehicleStartLoadFailed: false,
   dirtyVehicle: false,
   vehicleSaving: false,
   saveStatusMessage: "",
@@ -962,8 +965,25 @@ function renderVehicleControls() {
 function renderVehicleStartModal() {
   const modal = document.getElementById("vehicle-start-modal");
   if (!modal) return;
+  const wasOpen = !modal.hidden;
   modal.hidden = !state.vehicleStartOpen;
-  if (!state.vehicleStartOpen) return;
+  document.querySelector(".app-shell").inert = state.vehicleStartOpen;
+  document.body.classList.toggle("vehicle-start-open", state.vehicleStartOpen);
+  if (!state.vehicleStartOpen) {
+    if (wasOpen) document.querySelector(".rail-item.active")?.focus();
+    return;
+  }
+  modal.setAttribute("aria-busy", String(state.vehicleStartLoading));
+  document.getElementById("start-loading").hidden = !state.vehicleStartLoading;
+  const content = document.getElementById("start-content");
+  content.hidden = state.vehicleStartLoading || state.vehicleStartLoadFailed;
+  content.inert = content.hidden;
+  const status = document.getElementById("start-status");
+  status.textContent = state.vehicleStartError;
+  status.hidden = !state.vehicleStartError;
+  document.getElementById("start-retry-btn").hidden = !state.vehicleStartLoadFailed || state.vehicleStartLoading;
+  document.getElementById("start-current-name").textContent = state.vehiclePayload
+    ? activeVehicleName() : state.vehicleStartError ? "Vehicle unavailable" : "Loading vehicle…";
 
   const loadPicker = document.getElementById("start-load-picker");
   const templatePicker = document.getElementById("start-template-picker");
@@ -1003,14 +1023,14 @@ function renderVehicleStartModal() {
   if (nameInput && !nameInput.value) nameInput.value = nextVehicleName();
   if (nameInput) nameInput.disabled = startBusy;
   setActionButton(importButton, {
-    label: "Import YAML",
+    label: "Import vehicle YAML",
     busy: actionBusy("start-import"),
     busyLabel: "Importing",
     disabled: startBusy,
   });
   setActionButton(activeButton, {
-    label: "Continue Active File",
-    disabled: startBusy,
+    label: "Open vehicle",
+    disabled: startBusy || !state.vehiclePayload,
   });
 }
 
@@ -1235,8 +1255,10 @@ function renderVehicleLibrary() {
 
 function openVehicleStartModal() {
   state.vehicleStartOpen = true;
-  document.querySelector(".model-menu")?.removeAttribute("open");
+  state.vehicleStartError = "";
+  document.querySelectorAll(".model-menu[open]").forEach((menu) => { menu.open = false; });
   renderVehicleStartModal();
+  document.getElementById("start-active-btn").focus();
 }
 
 function selectedVehicleLibraryItem() {
@@ -3067,13 +3089,15 @@ async function loadVehicleFromStart() {
   const sourceId = document.getElementById("start-load-picker")?.value;
   if (!sourceId || startActionBusy()) return;
   state.busyAction = "start-load";
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     await loadVehicleSourceById(sourceId);
     state.vehicleStartOpen = false;
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not load vehicle");
+    state.vehicleStartError = error.message || "Could not load vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === "start-load") state.busyAction = null;
@@ -3086,6 +3110,7 @@ async function createVehicleFromStart() {
   const name = document.getElementById("start-vehicle-name")?.value.trim() || nextVehicleName();
   if (!templateId || startActionBusy()) return;
   state.busyAction = "start-create";
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     state.vehiclePayload = await api("/api/vehicle-template", {
@@ -3123,7 +3148,8 @@ async function createVehicleFromStart() {
     if (saveName) saveName.value = name;
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not create vehicle");
+    state.vehicleStartError = error.message || "Could not create vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === "start-create") state.busyAction = null;
@@ -3134,6 +3160,7 @@ async function createVehicleFromStart() {
 async function importVehicleFile(file, { actionKey = "start-import" } = {}) {
   if (!file || startActionBusy()) return;
   state.busyAction = actionKey;
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     const text = await file.text();
@@ -3159,7 +3186,8 @@ async function importVehicleFile(file, { actionKey = "start-import" } = {}) {
     document.getElementById("save-vehicle-name").value = file.name.replace(/\.(ya?ml)$/i, "");
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not import vehicle");
+    state.vehicleStartError = error.message || "Could not import vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === actionKey) state.busyAction = null;
@@ -12619,6 +12647,7 @@ function wireEvents() {
   document.getElementById("theme-toggle-btn").addEventListener("click", toggleTheme);
   document.getElementById("reference-toggle-btn").addEventListener("click", toggleReferencePanel);
   document.getElementById("open-vehicle-start-btn").addEventListener("click", openVehicleStartModal);
+  document.getElementById("start-retry-btn").addEventListener("click", refreshFromStart);
   document.getElementById("start-load-btn").addEventListener("click", loadVehicleFromStart);
   document.getElementById("start-create-btn").addEventListener("click", createVehicleFromStart);
   document.getElementById("start-active-btn").addEventListener("click", () => {
@@ -12861,8 +12890,24 @@ function wireEvents() {
   });
 }
 
+async function refreshFromStart() {
+  state.vehicleStartLoading = true;
+  state.vehicleStartLoadFailed = false;
+  state.vehicleStartError = "";
+  renderVehicleStartModal();
+  try {
+    await refresh();
+  } catch (error) {
+    state.vehicleStartError = error.message || "Could not load the vehicle";
+    state.vehicleStartLoadFailed = true;
+  } finally {
+    state.vehicleStartLoading = false;
+    renderVehicleStartModal();
+  }
+}
+
 wireEvents();
-refresh();
+refreshFromStart();
 setInterval(async () => {
   if ((state.status?.jobs || []).some((job) => job.status === "running" || job.status === "queued")) {
     state.status = await api("/api/status");

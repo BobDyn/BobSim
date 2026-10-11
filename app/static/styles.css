@@ -580,14 +580,26 @@ button.is-loading {
   margin-bottom: 10px;
 }
 
+body.vehicle-start-open {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.vehicle-start-open .app-shell {
+  height: 100dvh;
+  visibility: hidden;
+}
+
 .vehicle-start-modal {
   position: fixed;
   inset: 0;
   z-index: 100;
   display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--bg) 82%, rgba(0, 0, 0, 0.22));
-  padding: 24px;
+  align-items: start;
+  justify-items: center;
+  background: var(--bg);
+  padding: clamp(32px, 10vh, 100px) 24px 40px;
+  overflow-y: auto;
 }
 
 .vehicle-start-modal[hidden] {
@@ -595,58 +607,111 @@ button.is-loading {
 }
 
 .vehicle-start-card {
-  width: min(820px, 100%);
-  max-height: min(720px, calc(100vh - 48px));
+  width: min(560px, 100%);
+  min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-overlay);
-  padding: 18px;
-  overflow: hidden;
+  gap: 28px;
 }
 
-.vehicle-start-head {
+.start-content {
+  display: grid;
+  gap: 28px;
+}
+
+.start-loading {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0;
+  color: var(--muted);
+}
+
+.start-content[hidden],
+.start-loading[hidden] {
+  display: none;
+}
+
+.start-brand {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
 }
 
 .vehicle-start-head h2 {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: clamp(26px, 4vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 
 .vehicle-start-head p {
   color: var(--muted);
-  font-size: 13px;
-  margin-top: 3px;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 12px;
+  max-width: 42ch;
+}
+
+.start-current-vehicle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.start-current-vehicle > div {
+  min-width: 0;
+}
+
+.start-current-vehicle strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.start-current-vehicle button {
+  flex-shrink: 0;
 }
 
 .vehicle-start-options {
-  min-height: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
 }
 
 .vehicle-start-panel {
   min-width: 0;
-  display: grid;
-  align-content: start;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  padding: 14px;
+  border-bottom: 1px solid var(--line);
 }
 
-.vehicle-start-panel h3 {
-  font-size: 15px;
-  font-weight: 700;
+.vehicle-start-panel summary {
+  padding: 16px 0;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.vehicle-start-panel[open] summary {
+  color: var(--ink);
+}
+
+.start-option-fields {
+  display: grid;
+  gap: 10px;
+  padding: 8px 0 24px;
+}
+
+.start-option-fields label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.start-option-fields button {
+  justify-self: start;
+  margin-top: 6px;
 }
 
 .vehicle-start-panel .config-picker,
@@ -655,13 +720,21 @@ button.is-loading {
   min-width: 0;
 }
 
-.vehicle-start-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
+.vehicle-start-footer button {
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
+  color: var(--muted);
+}
+
+.start-status {
+  color: var(--red);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#start-retry-btn {
+  justify-self: start;
 }
 
 .connection-modal {
@@ -4017,15 +4090,13 @@ summary:focus-visible {
       "save";
   }
 
-  .vehicle-start-options {
-    grid-template-columns: 1fr;
-    overflow: auto;
+  .start-current-vehicle {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+    padding: 20px;
   }
 
-  .vehicle-start-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
 
   .architecture-control-grid,
   .architecture-template-list,

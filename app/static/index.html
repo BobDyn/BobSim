@@ -6,8 +6,8 @@
     <title>BobSim App</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
-  <body>
-    <div class="app-shell">
+  <body class="vehicle-start-open">
+    <div class="app-shell" inert>
       <header class="topbar">
         <div class="brand">
           <img src="/media/bob.png" alt="BobSim">
@@ -343,42 +343,59 @@
       </main>
     </div>
 
-    <div id="vehicle-start-modal" class="vehicle-start-modal" role="dialog" aria-modal="true" aria-labelledby="vehicle-start-title">
+    <div id="vehicle-start-modal" class="vehicle-start-modal" aria-busy="true" role="dialog" aria-modal="true" aria-labelledby="vehicle-start-title">
       <div class="vehicle-start-card">
+        <div class="brand start-brand">
+          <img src="/media/bob.png" alt="">
+          <span>BobSim</span>
+        </div>
         <div class="vehicle-start-head">
-          <div>
-            <span class="context-label">Vehicle setup</span>
-            <h2 id="vehicle-start-title">Choose a Vehicle</h2>
-            <p>Load a saved vehicle, or create a new working vehicle from a template.</p>
+          <h2 id="vehicle-start-title">Start with a vehicle</h2>
+          <p>Edit its setup, run a simulation, and review the results.</p>
+        </div>
+
+        <div id="start-loading" class="start-loading" role="status">
+          <span class="action-spinner" aria-hidden="true"></span>
+          <span>Loading vehicle…</span>
+        </div>
+        <div id="start-content" class="start-content" hidden inert>
+          <section class="start-current-vehicle" aria-label="Current vehicle">
+            <div>
+              <span class="tool-label">Current vehicle</span>
+              <strong id="start-current-name">Loading vehicle…</strong>
+            </div>
+            <button id="start-active-btn" class="run-button" type="button" disabled>Open vehicle</button>
+          </section>
+
+          <div class="vehicle-start-options">
+            <details class="vehicle-start-panel" name="vehicle-source">
+              <summary>Load a saved vehicle</summary>
+              <div class="start-option-fields">
+                <label for="start-load-picker">Saved vehicle</label>
+                <select id="start-load-picker" class="config-picker"></select>
+                <button id="start-load-btn" class="ghost-button" type="button">Load vehicle</button>
+              </div>
+            </details>
+
+            <details class="vehicle-start-panel" name="vehicle-source">
+              <summary>Create from a template</summary>
+              <div class="start-option-fields">
+                <label for="start-template-picker">Suspension layout</label>
+                <select id="start-template-picker" class="config-picker"></select>
+                <label for="start-vehicle-name">Vehicle name</label>
+                <input id="start-vehicle-name" class="name-input" type="text" placeholder="New vehicle name">
+                <button id="start-create-btn" class="ghost-button" type="button">Create vehicle</button>
+              </div>
+            </details>
+          </div>
+
+          <div class="vehicle-start-footer">
+            <input id="start-import-input" type="file" accept=".yml,.yaml" hidden>
+            <button id="start-import-btn" class="ghost-button" type="button">Import vehicle YAML</button>
           </div>
         </div>
-
-        <div class="vehicle-start-options">
-          <section class="vehicle-start-panel">
-            <div>
-              <span class="tool-label">Load</span>
-              <h3>Saved Vehicle</h3>
-            </div>
-            <select id="start-load-picker" class="config-picker"></select>
-            <button id="start-load-btn" class="run-button" type="button">Load Vehicle</button>
-          </section>
-
-          <section class="vehicle-start-panel">
-            <div>
-              <span class="tool-label">Create</span>
-              <h3>From Template</h3>
-            </div>
-            <select id="start-template-picker" class="config-picker"></select>
-            <input id="start-vehicle-name" class="name-input" type="text" placeholder="New vehicle name">
-            <button id="start-create-btn" class="run-button" type="button">Create Vehicle</button>
-          </section>
-        </div>
-
-        <div class="vehicle-start-footer">
-          <input id="start-import-input" type="file" accept=".yml,.yaml" hidden>
-          <button id="start-import-btn" class="ghost-button" type="button">Import YAML</button>
-          <button id="start-active-btn" class="ghost-button" type="button">Continue Active File</button>
-        </div>
+        <p id="start-status" class="start-status" role="alert" hidden></p>
+        <button id="start-retry-btn" class="ghost-button" type="button" hidden>Retry</button>
       </div>
     </div>
 
