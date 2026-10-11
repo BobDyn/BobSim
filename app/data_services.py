@@ -339,6 +339,8 @@ def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
     data = yaml.safe_load(raw) or {}
     if not isinstance(data, (dict, list)):
         raise TypeError(f"{spec.path} must contain a YAML mapping or list")
+    if spec.id == "reduced-ramp-steer" and isinstance(data, dict):
+        data.setdefault("ramp_end_time_s", data["stop_time_s"])
     return path, raw, data
 
 

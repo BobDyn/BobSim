@@ -158,7 +158,7 @@ def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch)
     active = config_io.active_config_path("ramp_steer_config.yml", root=tmp_path)
     active.parent.mkdir(parents=True)
     data = {"model_dof": 10, "speed_mps": 8, "roadwheel_rate_deg_s": -2,
-            "start_time_s": 0.1, "stop_time_s": 0.3, "sample_period_s": 0.1,
+            "start_time_s": 0.1, "ramp_end_time_s": 0.2, "stop_time_s": 0.3, "sample_period_s": 0.1,
             "kinematics_mode": "nonlinear"}
     active.write_text(yaml.safe_dump(data))
     seen = {}
@@ -174,6 +174,7 @@ def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch)
     assert seen["dof"] == 10
     assert seen["roadwheel_rate_deg_s"] == -2
     assert seen["start_time_s"] == 0.1
+    assert seen["ramp_end_time_s"] == 0.2
     assert seen["kinematics_mode"] == "nonlinear"
     output = tmp_path / "app/user_data/results/reduced-ramp-steer"
     assert (output / "report.pdf").read_bytes().startswith(b"%PDF")
@@ -207,3 +208,15 @@ def test_mbd_step_builds_only_step_cases(monkeypatch):
     assert all(case["useMode"] == 2 for case in cases)
     assert config["report"]["output_path"].endswith("/step_steer_report.pdf")
     assert app.MODELICA_RUN_TARGETS_BY_ACTION["run-mbd-step-steer"].id == "vehicle"
+
+
+def test_legacy_ramp_keeps_its_end_when_simulation_duration_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    seed = tmp_path / app.BASE_CONFIG_SPECS["reduced-ramp-steer"].path
+    seed.parent.mkdir(parents=True)
+    seed.write_text("model_dof: 14\nstart_time_s: 1\nstop_time_s: 5\n")
+    payload = app.config_payload("reduced-ramp-steer")
+    assert payload["data"]["ramp_end_time_s"] == 5
+    updated = app.patch_config("reduced-ramp-steer", {json.dumps(["stop_time_s"]): 20})
+    assert updated["data"]["ramp_end_time_s"] == 5
+    assert updated["data"]["stop_time_s"] == 20
