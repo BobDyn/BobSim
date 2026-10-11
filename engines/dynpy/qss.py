@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Literal, Mapping
 
 import numpy as np
 from numpy.typing import NDArray
@@ -74,7 +74,7 @@ def solve_steady_state(
     *,
     speed_mps: float,
     yaw_rate_radps: float = 0.0,
-    initial_beta_rad: float = 0.0,
+    initial_beta_rad: float | None = None,
     initial_steering_rad: float | None = None,
     initial_unknowns: Mapping[str, float] | None = None,
     max_nfev: int = 400,
@@ -106,13 +106,31 @@ def solve_acceleration_trim(
     longitudinal_acceleration_mps2: float,
     lateral_acceleration_mps2: float,
     yaw_rate_radps: float = 0.0,
-    initial_beta_rad: float = 0.0,
+    acceleration_frame: Literal["body", "path"] = "body",
+    initial_beta_rad: float | None = None,
     initial_steering_rad: float | None = None,
     initial_unknowns: Mapping[str, float] | None = None,
     max_nfev: int = 400,
     tolerance: float = 1e-8,
 ) -> QSSResult:
-    """Solve a prescribed ``ax/ay`` QSS point using the transient equations."""
+    """## Acceleration Trim
+
+    Solve prescribed acceleration using the transient equations.
+
+    Parameters
+    ----------
+    acceleration_frame : {"body", "path"}, optional
+        Body axes by default. Path axes follow the velocity direction, with
+        longitudinal acceleration tangent to the path and lateral to its left.
+    initial_beta_rad : float, optional
+        Initial sideslip. When omitted, use rear-axle rolling geometry.
+
+    Returns
+    -------
+    QSSResult
+        Trim state and convergence diagnostics. Reported accelerations remain
+        in body axes.
+    """
 
     return _solve_trim(
         model,
@@ -122,6 +140,7 @@ def solve_acceleration_trim(
             float(longitudinal_acceleration_mps2),
             float(lateral_acceleration_mps2),
         ),
+        acceleration_frame=acceleration_frame,
         initial_beta_rad=initial_beta_rad,
         initial_steering_rad=initial_steering_rad,
         initial_unknowns=initial_unknowns,
@@ -136,19 +155,27 @@ def _solve_trim(
     speed_mps: float,
     yaw_rate_radps: float,
     target_acceleration_mps2: tuple[float, float] | None,
-    initial_beta_rad: float,
+    initial_beta_rad: float | None,
     initial_steering_rad: float | None,
     initial_unknowns: Mapping[str, float] | None,
     max_nfev: int,
     tolerance: float,
+    acceleration_frame: Literal["body", "path"] = "body",
 ) -> QSSResult:
     if speed_mps <= 0.0:
         raise ValueError("QSS speed must be positive.")
+    if acceleration_frame not in ("body", "path"):
+        raise ValueError("Acceleration frame must be 'body' or 'path'.")
+    rear_x = float(np.mean(model.parameters.corner_positions[2:, 0]))
+    beta_guess = (
+        float(initial_beta_rad) if initial_beta_rad is not None
+        else float(np.arcsin(np.clip(-rear_x * yaw_rate_radps / speed_mps, -1.0, 1.0)))
+    )
     wheelbase = model.parameters.wheelbase_m
     steer_guess = (
         float(initial_steering_rad)
         if initial_steering_rad is not None
-        else float(np.arctan2(wheelbase * yaw_rate_radps, speed_mps))
+        else float(np.arctan2(wheelbase * yaw_rate_radps, speed_mps * np.cos(beta_guess)))
     )
     dynamic_pressure = 0.5 * model.parameters.rho_air_kg_m3 * speed_mps**2
     drag_force = dynamic_pressure * model.parameters.cd_area_m2
@@ -156,7 +183,7 @@ def _solve_trim(
     torque_guess = drag_force * mean_radius
 
     names = ["beta_rad", "steering_rad", "total_wheel_torque_nm"]
-    guess = [initial_beta_rad, steer_guess, torque_guess]
+    guess = [beta_guess, steer_guess, torque_guess]
     lower = [-0.6, -0.7, -20_000.0]
     upper = [0.6, 0.7, 20_000.0]
     if model.dof >= 6:
@@ -198,6 +225,7 @@ def _solve_trim(
                 output,
                 longitudinal_mps2=target_acceleration_mps2[0],
                 lateral_mps2=target_acceleration_mps2[1],
+                acceleration_frame=acceleration_frame,
             )
         return acceleration / scales
 
@@ -233,6 +261,7 @@ def _solve_trim(
             output,
             longitudinal_mps2=target_acceleration_mps2[0],
             lateral_mps2=target_acceleration_mps2[1],
+            acceleration_frame=acceleration_frame,
         )
     physical_norm = float(np.linalg.norm(physical_residual))
     tire_error = _tire_state_error(model, inputs, output)
@@ -434,28 +463,29 @@ def _generalized_acceleration_target(
     *,
     longitudinal_mps2: float,
     lateral_mps2: float,
+    acceleration_frame: Literal["body", "path"] = "body",
 ) -> FloatArray:
     velocity = state[model.dof :]
     u = float(velocity[0])
     v = float(velocity[1])
     yaw_rate = float(velocity[2] if model.dof == 3 else velocity[5])
+    if acceleration_frame == "path":
+        beta = np.arctan2(v, u)
+        longitudinal_mps2, lateral_mps2 = (
+            longitudinal_mps2 * np.cos(beta) - lateral_mps2 * np.sin(beta),
+            longitudinal_mps2 * np.sin(beta) + lateral_mps2 * np.cos(beta),
+        )
     target = np.zeros(model.dof, dtype=float)
     target[0] = longitudinal_mps2 + yaw_rate * v
     target[1] = lateral_mps2 - yaw_rate * u
     if model.dof >= 10:
-        positions = output.contact_patch_positions_body_m
-        omega = np.array([0.0, 0.0, yaw_rate])
-        centripetal = np.cross(
-            np.broadcast_to(omega, positions.shape),
-            np.cross(np.broadcast_to(omega, positions.shape), positions),
-        )
-        corner_acceleration = centripetal
-        corner_acceleration[:, 0] += longitudinal_mps2
-        corner_acceleration[:, 1] += lateral_mps2
+        # With fixed yaw rate and wheel headings, rolling speed changes with
+        # body-frame velocity components. Centripetal acceleration rotates the
+        # wheel frame without accelerating wheel spin.
         steering = output.toe_rad
         wheel_longitudinal_acceleration = (
-            corner_acceleration[:, 0] * np.cos(steering)
-            + corner_acceleration[:, 1] * np.sin(steering)
+            target[0] * np.cos(steering)
+            + target[1] * np.sin(steering)
         )
         wheel_acceleration = wheel_longitudinal_acceleration / np.asarray(
             model.parameters.wheel_radius_m

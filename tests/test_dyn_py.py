@@ -866,3 +866,63 @@ def test_racing_trim_retries_rejected_root(parameters, monkeypatch, first_failur
     assert result is valid
     assert len(attempts) == 2
     assert attempts[1] is None
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_path_acceleration_trim_matches_constant_radius(parameters, dof, direction):
+    model = create_model(dof, parameters)
+    speed, yaw = 7.5, direction * 0.8
+    steady = solve_steady_state(model, speed_mps=speed, yaw_rate_radps=yaw)
+    path = solve_acceleration_trim(
+        model, speed_mps=speed, yaw_rate_radps=yaw,
+        longitudinal_acceleration_mps2=0.0,
+        lateral_acceleration_mps2=speed * yaw, acceleration_frame="path",
+    )
+    assert steady.success, steady.message
+    assert path.success, path.message
+    np.testing.assert_allclose(path.state, steady.state, atol=1e-6)
+    np.testing.assert_allclose(path.output.generalized_acceleration, 0.0, atol=1e-6)
+    beta = path.unknowns["beta_rad"]
+    assert path.longitudinal_acceleration_mps2 == pytest.approx(-speed * yaw * np.sin(beta), abs=1e-7)
+    assert path.lateral_acceleration_mps2 == pytest.approx(speed * yaw * np.cos(beta), abs=1e-7)
+
+
+def test_vehicle_rejects_unknown_acceleration_frame(parameters):
+    with pytest.raises(ValueError, match="Acceleration frame"):
+        solve_acceleration_trim(
+            create_model(6, parameters), speed_mps=12.0,
+            longitudinal_acceleration_mps2=0.0, lateral_acceleration_mps2=0.0,
+            acceleration_frame="global",
+        )
+
+
+@pytest.mark.parametrize("dof", [6, 14])
+def test_tight_circle_uses_geometric_initial_sideslip(parameters, dof):
+    result = solve_steady_state(
+        create_model(dof, parameters), speed_mps=7.34, yaw_rate_radps=1.78,
+        max_nfev=150,
+    )
+    assert result.success, result.message
+    assert result.residual_norm < 1e-6
+    assert 0.1 < result.unknowns["beta_rad"] < 0.25
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_path_and_body_acceleration_demands_agree(parameters, dof):
+    model = create_model(dof, parameters)
+    path = solve_acceleration_trim(
+        model, speed_mps=10.0, yaw_rate_radps=0.5,
+        longitudinal_acceleration_mps2=1.0, lateral_acceleration_mps2=5.0,
+        acceleration_frame="path",
+    )
+    assert path.success, path.message
+    beta = path.unknowns["beta_rad"]
+    body = solve_acceleration_trim(
+        model, speed_mps=10.0, yaw_rate_radps=0.5,
+        longitudinal_acceleration_mps2=np.cos(beta) - 5.0 * np.sin(beta),
+        lateral_acceleration_mps2=np.sin(beta) + 5.0 * np.cos(beta),
+        initial_unknowns=path.unknowns,
+    )
+    assert body.success, body.message
+    np.testing.assert_allclose(path.state, body.state, atol=1e-6)
