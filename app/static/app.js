@@ -1,6 +1,5 @@
 const savedRotationSensitivity = Number(localStorage.getItem("bobsim-rotation-sensitivity"));
 const savedSetupPaneWidth = Number(localStorage.getItem("bobsim-setup-pane-width"));
-const savedGeometryPlotHeight = Number(localStorage.getItem("bobsim-geometry-plot-height"));
 const savedGeometryShowFront = localStorage.getItem("bobsim-geometry-show-front");
 const savedGeometryShowRear = localStorage.getItem("bobsim-geometry-show-rear");
 const savedGeometryPlotSelections = (() => {
@@ -40,9 +39,6 @@ const MAX_TIRE_SURFACE_ZOOM = 7.5;
 const DEFAULT_SETUP_PANE_WIDTH = 320;
 const MIN_SETUP_PANE_WIDTH = 260;
 const MAX_SETUP_PANE_WIDTH = 620;
-const DEFAULT_GEOMETRY_PLOT_HEIGHT = 252;
-const MIN_GEOMETRY_PLOT_HEIGHT = 150;
-const MAX_GEOMETRY_PLOT_HEIGHT = 560;
 const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
@@ -143,9 +139,7 @@ const state = {
   setupPaneWidth: Number.isFinite(savedSetupPaneWidth) && savedSetupPaneWidth > 0
     ? savedSetupPaneWidth
     : DEFAULT_SETUP_PANE_WIDTH,
-  geometryPlotHeight: Number.isFinite(savedGeometryPlotHeight) && savedGeometryPlotHeight > 0
-    ? savedGeometryPlotHeight
-    : DEFAULT_GEOMETRY_PLOT_HEIGHT,
+  activeGeometryTab: "setup",
   vehicleDrag: null,
   geometryScene: null,
   geometryHoverPointId: null,
@@ -179,7 +173,6 @@ const state = {
   architectureModalHoverId: null,
   architectureDrag: null,
   setupResize: null,
-  geometryPlotResize: null,
   undoStack: [],
   pendingUndoSnapshot: null,
   cleanVehicleSignature: "",
@@ -1119,44 +1112,6 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
   return "";
 }
 
-function geometryPlotHeightBounds() {
-  const stage = document.querySelector(".visual-stage");
-  const height = stage?.getBoundingClientRect().height || 0;
-  const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
-  const maxByViewport = height > 0
-    ? height - toolbarHeight - 260
-    : MAX_GEOMETRY_PLOT_HEIGHT;
-  const max = Math.max(
-    MIN_GEOMETRY_PLOT_HEIGHT,
-    Math.min(MAX_GEOMETRY_PLOT_HEIGHT, maxByViewport),
-  );
-  return { min: MIN_GEOMETRY_PLOT_HEIGHT, max };
-}
-
-function setGeometryPlotHeight(height, { persist = false, redraw = true } = {}) {
-  const { min, max } = geometryPlotHeightBounds();
-  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, min, max);
-  state.geometryPlotHeight = clamped;
-  applyGeometryPlotHeight(clamped, min, max);
-  if (persist) localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(clamped)));
-  if (redraw) requestAnimationFrame(drawVehicleFromForm);
-}
-
-function applyGeometryPlotHeight(height = state.geometryPlotHeight, min, max) {
-  const stage = document.querySelector(".visual-stage");
-  if (!stage) return;
-  const bounds = min === undefined || max === undefined ? geometryPlotHeightBounds() : { min, max };
-  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, bounds.min, bounds.max);
-  state.geometryPlotHeight = clamped;
-  stage.style.setProperty("--geometry-plot-height", `${Math.round(clamped)}px`);
-  const splitter = document.getElementById("geometry-plot-splitter");
-  if (splitter) {
-    splitter.setAttribute("aria-valuemin", String(Math.round(bounds.min)));
-    splitter.setAttribute("aria-valuemax", String(Math.round(bounds.max)));
-    splitter.setAttribute("aria-valuenow", String(Math.round(clamped)));
-  }
-}
-
 function renderMode() {
   document.querySelectorAll(".rail-item").forEach((button) => {
     const active = button.dataset.view === state.view;
@@ -1381,7 +1336,7 @@ function navigateParameterStep(delta) {
 function handleSetupStageKeys(event) {
   if (state.view !== "setup") return;
   if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter, #geometry-plot-splitter")) return;
+  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter")) return;
   if (state.architectureModalOpen || state.vehicleStartOpen || document.querySelector(".model-menu[open]")) return;
   event.preventDefault();
   navigateParameterStep(event.key === "ArrowRight" ? 1 : -1);
@@ -5463,9 +5418,8 @@ function drawVehiclePreview(data) {
   const area = activeParameterArea();
   syncPreviewModeControls(area);
   if (!isKinematicPlotArea(area)) clearSuspensionPlotInteractionScene();
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(420, Math.floor(rect.width));
-  const height = Math.max(360, Math.floor(rect.height));
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
@@ -6528,8 +6482,8 @@ function pointerCanvasPoint(event) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left - canvas.clientLeft,
+    y: event.clientY - rect.top - canvas.clientTop,
   };
 }
 
@@ -7041,8 +6995,8 @@ function pointerCanvasPointFor(event, canvas) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left - canvas.clientLeft,
+    y: event.clientY - rect.top - canvas.clientTop,
   };
 }
 
@@ -7230,9 +7184,9 @@ function drawGeometryPlotPanel() {
     clearGeometryPlotScene();
     return;
   }
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(420, Math.floor(rect.width));
-  const height = Math.max(120, Math.floor(rect.height));
+  canvas.style.height = `${Math.max(1, state.geometryPlotSelections.length) * 230}px`;
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
@@ -7336,12 +7290,19 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
   const geometryPlotPanel = document.getElementById("geometry-plot-panel");
-  const geometryPlotSplitter = document.getElementById("geometry-plot-splitter");
+  const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
   const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
   const usesMassScroll = area.id === "mass";
-  const usesGeometryPlots = area.id === "hardpoints";
+  const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
+  geometryTabs.hidden = area.id !== "hardpoints";
+  document.getElementById("config-form").hidden = usesGeometryPlots;
+  geometryTabs.querySelectorAll("[data-geometry-tab]").forEach((button) => {
+    const active = button.dataset.geometryTab === state.activeGeometryTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
   const usesTireSurface = isSurfaceMapPreviewArea(area);
   if (controls) {
     controls.hidden = true;
@@ -7356,13 +7317,8 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     if (usesGeometryPlots) renderGeometryPlotControls();
     else clearGeometryPlotScene();
   }
-  if (geometryPlotSplitter) {
-    geometryPlotSplitter.hidden = !usesGeometryPlots;
-    if (usesGeometryPlots) applyGeometryPlotHeight();
-  }
   if (stage) {
     stage.classList.toggle("mass-scroll-stage", usesMassScroll);
-    stage.classList.toggle("geometry-plot-stage", usesGeometryPlots);
   }
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
@@ -10997,6 +10953,7 @@ function drawPlotGrid(ctx, chart) {
   ctx.lineWidth = 1;
   ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.42 : 0.68);
   xTicks.forEach((tick) => {
+    if (tick < chart.xDomain[0] || tick > chart.xDomain[1]) return;
     const px = toX(tick);
     ctx.beginPath();
     ctx.moveTo(px, plot.y);
@@ -11010,6 +10967,7 @@ function drawPlotGrid(ctx, chart) {
     });
   });
   yTicks.forEach((tick) => {
+    if (tick < chart.yDomain[0] || tick > chart.yDomain[1]) return;
     const py = toY(tick);
     ctx.beginPath();
     ctx.moveTo(plot.x, py);
@@ -12571,60 +12529,6 @@ function wireSetupSplitter() {
   });
 }
 
-function wireGeometryPlotSplitter() {
-  const splitter = document.getElementById("geometry-plot-splitter");
-  if (!splitter) return;
-  applyGeometryPlotHeight();
-  splitter.addEventListener("pointerdown", (event) => {
-    state.geometryPlotResize = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: state.geometryPlotHeight,
-    };
-    splitter.classList.add("active");
-    document.body.classList.add("resizing-plot-pane");
-    splitter.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  });
-  splitter.addEventListener("pointermove", (event) => {
-    const resize = state.geometryPlotResize;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-    setGeometryPlotHeight(resize.startHeight - (event.clientY - resize.startY), { redraw: false });
-    drawVehicleFromForm();
-  });
-  splitter.addEventListener("pointerup", (event) => finishGeometryPlotResize(event.pointerId));
-  splitter.addEventListener("pointercancel", (event) => finishGeometryPlotResize(event.pointerId));
-  splitter.addEventListener("keydown", (event) => {
-    const step = event.shiftKey ? 48 : 16;
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setGeometryPlotHeight(state.geometryPlotHeight + step, { persist: true });
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setGeometryPlotHeight(state.geometryPlotHeight - step, { persist: true });
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      setGeometryPlotHeight(MIN_GEOMETRY_PLOT_HEIGHT, { persist: true });
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      setGeometryPlotHeight(geometryPlotHeightBounds().max, { persist: true });
-    }
-  });
-}
-
-function finishGeometryPlotResize(pointerId) {
-  const resize = state.geometryPlotResize;
-  if (!resize || resize.pointerId !== pointerId) return;
-  state.geometryPlotResize = null;
-  document.getElementById("geometry-plot-splitter")?.classList.remove("active");
-  document.body.classList.remove("resizing-plot-pane");
-  localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(state.geometryPlotHeight)));
-  drawVehicleFromForm();
-}
-
 function finishSetupResize(pointerId) {
   const resize = state.setupResize;
   if (!resize || resize.pointerId !== pointerId) return;
@@ -12890,12 +12794,16 @@ function wireEvents() {
     if (state.massSelectedPointId) queueMassPropertyEditorPosition();
   });
   wireSetupSplitter();
-  wireGeometryPlotSplitter();
+  document.querySelectorAll("[data-geometry-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeGeometryTab = button.dataset.geometryTab;
+      drawVehicleFromForm();
+    });
+  });
   wireGeometryEditor();
   wireVehicleCanvas();
   window.addEventListener("resize", () => {
     applySetupPaneWidth();
-    applyGeometryPlotHeight();
     drawVehicleFromForm();
     drawArchitectureConnectionCanvas();
     drawSuspensionPlotModal();

@@ -104,7 +104,28 @@
                 </div>
               </div>
               <div id="workflow-guide" class="workflow-guide" hidden></div>
+              <div id="geometry-tabs" class="tire-subtabs" aria-label="Geometry views" hidden>
+                <button class="tire-subtab active" data-geometry-tab="setup" type="button" aria-pressed="true">Setup</button>
+                <button class="tire-subtab" data-geometry-tab="kinematics" type="button" aria-pressed="false">Kinematics</button>
+              </div>
               <form id="config-form" class="config-form"></form>
+              <section id="geometry-plot-panel" class="geometry-plot-panel" aria-label="Geometry plots" hidden>
+                <div class="geometry-plot-head">
+                  <div class="geometry-plot-controls">
+                    <label class="geometry-axis-select">
+                      <span>X</span>
+                      <select id="geometry-plot-x-axis" class="config-picker" aria-label="Plot x-axis"></select>
+                    </label>
+                    <label class="geometry-axis-select">
+                      <span>Y</span>
+                      <select id="geometry-plot-y-axis" class="config-picker" aria-label="Plot y-axis"></select>
+                    </label>
+                    <button id="geometry-add-plot-btn" class="ghost-button" type="button">Add</button>
+                  </div>
+                </div>
+                <div id="geometry-plot-list" class="geometry-plot-list"></div>
+                <canvas id="geometry-plot-canvas"></canvas>
+              </section>
             </aside>
 
             <div
@@ -189,40 +210,7 @@
                 <div id="mass-property-grid" class="mass-property-grid"></div>
               </div>
               <canvas id="vehicle-canvas"></canvas>
-              <div
-                id="geometry-plot-splitter"
-                class="geometry-plot-splitter"
-                role="separator"
-                aria-label="Resize geometry plot pane"
-                aria-orientation="horizontal"
-                aria-valuemin="150"
-                aria-valuemax="520"
-                aria-valuenow="252"
-                tabindex="0"
-                title="Drag to resize plots"
-                hidden
-              ></div>
-              <section id="geometry-plot-panel" class="geometry-plot-panel" aria-label="Geometry plots" hidden>
-                <div class="geometry-plot-head">
-                  <div>
-                    <span class="tool-label">Geometry plots</span>
-                    <strong>Kinematic signals</strong>
-                  </div>
-                  <div class="geometry-plot-controls">
-                    <label class="geometry-axis-select">
-                      <span>X</span>
-                      <select id="geometry-plot-x-axis" class="config-picker" aria-label="Plot x-axis"></select>
-                    </label>
-                    <label class="geometry-axis-select">
-                      <span>Y</span>
-                      <select id="geometry-plot-y-axis" class="config-picker" aria-label="Plot y-axis"></select>
-                    </label>
-                    <button id="geometry-add-plot-btn" class="ghost-button" type="button">Add</button>
-                  </div>
-                </div>
-                <div id="geometry-plot-list" class="geometry-plot-list"></div>
-                <canvas id="geometry-plot-canvas"></canvas>
-              </section>
+
             </section>
           </div>
         </section>

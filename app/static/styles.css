@@ -1268,51 +1268,6 @@ body.resizing-panes * {
   user-select: none;
 }
 
-.geometry-plot-splitter {
-  min-height: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  cursor: row-resize;
-  outline: none;
-  touch-action: none;
-}
-
-.geometry-plot-splitter[hidden] {
-  display: none;
-}
-
-.geometry-plot-splitter::before {
-  width: 74px;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background:
-    radial-gradient(circle at 18px 50%, var(--muted) 0 1.5px, transparent 2px),
-    radial-gradient(circle at 37px 50%, var(--muted) 0 1.5px, transparent 2px),
-    radial-gradient(circle at 56px 50%, var(--muted) 0 1.5px, transparent 2px),
-    color-mix(in srgb, var(--line) 74%, transparent);
-  content: "";
-  opacity: 0.72;
-}
-
-.geometry-plot-splitter:hover::before,
-.geometry-plot-splitter:focus-visible::before,
-.geometry-plot-splitter.active::before {
-  background:
-    radial-gradient(circle at 18px 50%, var(--blue) 0 1.5px, transparent 2px),
-    radial-gradient(circle at 37px 50%, var(--blue) 0 1.5px, transparent 2px),
-    radial-gradient(circle at 56px 50%, var(--blue) 0 1.5px, transparent 2px),
-    color-mix(in srgb, var(--blue) 18%, var(--line));
-  opacity: 1;
-}
-
-body.resizing-plot-pane,
-body.resizing-plot-pane * {
-  cursor: row-resize !important;
-  user-select: none;
-}
-
 .visual-stage,
 .editor-pane,
 .workflow-list,
@@ -1330,11 +1285,6 @@ body.resizing-plot-pane * {
   grid-template-rows: auto minmax(0, 1fr);
   position: relative;
   padding: 10px;
-}
-
-.visual-stage.geometry-plot-stage {
-  grid-template-rows: auto minmax(0, 1fr) 10px var(--geometry-plot-height, 252px);
-  gap: 4px;
 }
 
 .visual-stage.mass-scroll-stage {
@@ -1537,15 +1487,19 @@ body.resizing-plot-pane * {
 .geometry-plot-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-content: start;
   gap: 8px;
-  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
-  padding: 10px;
-  overflow: hidden;
+  grid-row: 4;
+  overflow: auto;
+  border: 0;
+  padding: 8px 0 0;
 }
 
+#geometry-tabs[hidden],
+.config-form[hidden],
 .geometry-plot-panel[hidden] {
   display: none;
 }
@@ -1568,11 +1522,13 @@ body.resizing-plot-pane * {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: min(520px, 66%);
+  min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .geometry-axis-select {
-  flex: 1 1 0;
+  flex: 1 1 100%;
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1645,7 +1601,7 @@ body.resizing-plot-pane * {
 
 .editor-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   position: relative;
   padding: 10px;
 }
@@ -1685,6 +1641,7 @@ body.resizing-plot-pane * {
 }
 
 .config-form {
+  grid-row: 4;
   min-height: 0;
   overflow: auto;
   display: grid;
