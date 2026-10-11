@@ -3859,7 +3859,7 @@ const SIMULATION_GROUPS = [
 ];
 
 function renderWorkflows() {
-  const order = ["ramp-steer", "step-steer", "steady-state", "transient", "four-post", "ggv", "ymd", "lap-qss", "lap-transient"];
+  const order = ["four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
   const rank = (workflow) => {
     const index = order.indexOf(responseFamily(workflow) || workflow.id);
     return index < 0 ? order.length : index;
