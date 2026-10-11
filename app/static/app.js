@@ -3853,9 +3853,9 @@ function responseModelPicker(workflow) {
 
 let activeSimulationGroup = "response";
 const SIMULATION_GROUPS = [
-  {id: "response", label: "Vehicle response", groups: ["standard", "response"], description: "Steering inputs, operating states and suspension motion."},
-  {id: "envelope", label: "Grip envelopes", groups: ["envelope"], description: "Acceleration limits and yaw moment maps."},
-  {id: "lap", label: "Lap performance", groups: ["lap"], description: "Racing lines, speed profiles and driver-controlled laps."},
+  {id: "response", label: "Vehicle Response", groups: ["standard", "response"], description: "Steering inputs, operating states and suspension motion."},
+  {id: "envelope", label: "Performance Envelopes", groups: ["envelope"], description: "Acceleration limits and yaw moment maps."},
+  {id: "lap", label: "Laptime", groups: ["lap"], description: "Racing lines, speed profiles and driver-controlled laps."},
 ];
 
 function renderWorkflows() {
