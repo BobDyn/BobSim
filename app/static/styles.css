@@ -122,12 +122,12 @@ button:disabled {
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  white-space: nowrap;
-  padding: 8px 14px;
+  gap: 32px;
+  padding: 0 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 50;
 }
 
 .brand,
@@ -149,8 +149,8 @@ button:disabled {
 }
 
 .brand img {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
@@ -213,34 +213,16 @@ p {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: 154px minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 16px 24px 24px;
   overflow: hidden;
-}
-
-.rail {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  box-shadow: var(--shadow);
 }
 
 .rail-stack,
 .rail-actions {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 8px;
-}
-
-.rail-actions {
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
 }
 
 .rail-item,
@@ -369,17 +351,13 @@ button.is-loading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  box-shadow: var(--shadow);
+  gap: 16px;
+  padding: 8px 0 16px;
 }
 
 .screen-head h2 {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 21px;
+  font-weight: 600;
 }
 
 .setup-head {
@@ -390,6 +368,11 @@ button.is-loading {
 
 .setup-head > div:first-child {
   min-width: 0;
+  max-width: 100%;
+}
+
+#setup-title {
+  overflow-wrap: anywhere;
 }
 
 .context-label {
@@ -416,39 +399,6 @@ button.is-loading {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.workflow-nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.step-nav-button {
-  max-width: 176px;
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  overflow: hidden;
-  padding: 0 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.step-nav-button.primary-step {
-  border-color: color-mix(in srgb, var(--blue) 42%, var(--line));
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.step-nav-button:disabled {
-  cursor: default;
-  opacity: 0.44;
 }
 
 .model-menu {
@@ -1683,10 +1633,7 @@ body.resizing-plot-pane * {
 .field-subsection {
   display: block;
   overflow: clip;
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, var(--line));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-2) 86%, var(--surface));
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--section-accent, var(--blue)) 24%, transparent);
+  border-top: 1px solid var(--line);
 }
 
 .field-subsection[hidden],
@@ -1696,52 +1643,27 @@ body.resizing-plot-pane * {
 
 .axle-field-block {
   overflow: clip;
-  border: 1px solid color-mix(in srgb, var(--ink) 24%, var(--line));
-  border-radius: var(--radius-md);
-  background:
-    color-mix(in srgb, var(--surface-2) 92%, var(--surface));
-  box-shadow:
-    inset 4px 0 0 color-mix(in srgb, var(--section-accent, var(--blue)) 54%, transparent),
-    0 1px 0 color-mix(in srgb, var(--ink) 8%, transparent);
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .axle-field-title {
-  min-height: 38px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface) 64%, var(--surface-2));
   color: var(--ink);
   font-size: 12px;
-  font-weight: 700;
-  padding: 9px 11px 9px 13px;
-}
-
-.axle-field-title small {
-  min-width: 24px;
-  height: 21px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--line));
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
+  padding: 12px 0 4px;
 }
 
 .axle-field-groups {
   display: grid;
-  gap: 8px;
-  padding: 9px;
+  gap: 12px;
 }
 
 .nested-subsection {
-  border-color: color-mix(in srgb, var(--ink) 12%, var(--line));
-  background: color-mix(in srgb, var(--surface) 54%, var(--surface-2));
+  border: 0;
+  background: transparent;
 }
 
 .field-group-front {
@@ -1773,21 +1695,12 @@ body.resizing-plot-pane * {
 }
 
 .field-subsection-title {
-  position: sticky;
-  top: -8px;
-  z-index: 2;
-  min-height: 34px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, var(--line));
-  background: color-mix(in srgb, var(--surface) 70%, var(--surface-2));
-  color: var(--ink);
+  color: var(--muted);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-  padding: 8px 10px;
+  font-weight: 600;
+  padding: 12px 0 8px;
 }
 
 .field-subsection-title span {
@@ -1797,22 +1710,8 @@ body.resizing-plot-pane * {
   white-space: nowrap;
 }
 
-.field-subsection-title small {
-  min-width: 22px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
 .field-subsection.expanded .field-grid {
-  padding: 8px 10px 10px;
+  padding: 0 0 12px;
 }
 
 .form-field.geometry-source-active {
@@ -2307,61 +2206,34 @@ body.resizing-plot-pane * {
 }
 
 .parameter-tabs {
-  min-height: 0;
   display: flex;
-  gap: 6px;
+  gap: 24px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  padding: 7px;
+  border-bottom: 1px solid var(--line);
 }
 
 .parameter-tab {
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: 0;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   min-height: 40px;
-  padding: 6px 8px;
+  padding: 6px 0 12px;
   cursor: pointer;
-  text-align: center;
 }
 
 .parameter-tab.active {
-  background: var(--blue-soft);
-  border-color: color-mix(in srgb, var(--blue) 36%, var(--line));
+  border-bottom-color: var(--blue);
   color: var(--blue);
 }
 
 .step-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.step-number {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .parameter-tab.active .step-number {
@@ -2421,11 +2293,8 @@ body.resizing-plot-pane * {
 
 .form-field {
   display: grid;
-  gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, var(--line));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--surface) 66%, var(--surface-2));
-  padding: 8px;
+  gap: 6px;
+  padding: 6px 0;
 }
 
 .form-field.disabled-field {
@@ -2955,7 +2824,7 @@ body.resizing-plot-pane * {
 }
 
 .simulation-catalog::before {
-  content: "Simulation Catalog";
+  content: none;
 }
 
 .workflow-grid {
@@ -2964,113 +2833,29 @@ body.resizing-plot-pane * {
 }
 
 .simulation-catalog .workflow-grid {
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
 .simulation-card {
   min-width: 0;
-  min-height: 430px;
-  grid-template-rows: 158px minmax(0, 1fr);
-  padding: 0;
-  overflow: hidden;
-}
-
-.simulation-card-figure {
-  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  padding: 24px;
   border-bottom: 1px solid var(--line);
-  background:
-    var(--surface-2);
-}
-
-.simulation-card-figure svg {
-  width: 100%;
-  height: 158px;
-  display: block;
-}
-
-.simulation-card-figure rect {
-  fill: var(--surface-2);
-  stroke: var(--line);
-  stroke-width: 1.4;
-}
-
-.simulation-card-figure path,
-.simulation-card-figure line {
-  fill: none;
-  stroke: var(--ink);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 4;
-}
-
-.simulation-card-figure .axis {
-  stroke: color-mix(in srgb, var(--muted) 58%, transparent);
-  stroke-width: 1.8;
-}
-
-.simulation-card-figure .accent {
-  stroke: var(--green);
-  stroke-width: 3.2;
-}
-
-.simulation-card-figure .target {
-  stroke: var(--blue);
-  stroke-dasharray: 6 5;
-  stroke-width: 2.2;
-}
-
-.simulation-card-figure .fixture {
-  stroke: color-mix(in srgb, var(--ink) 72%, var(--line));
-  stroke-width: 2.8;
-}
-
-.simulation-card-figure .post {
-  stroke: var(--blue);
-  stroke-width: 4.2;
-}
-
-.simulation-card-figure circle {
-  fill: var(--blue);
-  stroke: var(--surface);
-  stroke-width: 2;
-}
-
-.simulation-card-figure text {
-  fill: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .simulation-card-body {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 13px;
-}
-
-.simulation-card .card-head {
-  align-items: flex-start;
-}
-
-.simulation-card .card-title {
-  font-size: 15px;
-  font-weight: 700;
+  gap: 8px;
 }
 
 .simulation-card .card-meta {
   margin-top: 3px;
   line-height: 1.35;
   white-space: normal;
-}
-
-.simulation-explanation {
-  display: grid;
-  gap: 6px;
-  color: var(--ink);
-  font-size: 12px;
-  line-height: 1.42;
 }
 
 .simulation-detail-grid {
@@ -3082,10 +2867,7 @@ body.resizing-plot-pane * {
 
 .simulation-detail-block {
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-2) 78%, var(--surface));
-  padding: 9px;
+  padding: 12px 0;
 }
 
 .simulation-detail-block h4 {
@@ -3108,15 +2890,12 @@ body.resizing-plot-pane * {
 }
 
 .simulation-card .card-actions {
-  align-items: center;
+  align-items: flex-start;
+  padding-top: 2px;
 }
 
 .simulation-card .card-actions .run-button {
   margin-left: 0;
-}
-
-.simulation-card .simulation-review-button {
-  margin-left: auto;
 }
 
 .study-catalog {
@@ -3806,29 +3585,9 @@ body.resizing-plot-pane * {
   gap: 12px;
 }
 
-.sim-guide-panel,
 .sim-config-tools {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-2) 78%, var(--surface));
-  padding: 12px;
-}
-
-.sim-guide-panel {
-  display: grid;
-  gap: 7px;
-}
-
-.sim-guide-panel h3 {
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.sim-guide-panel p {
-  max-width: 760px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
 }
 
 .sim-step-strip {
@@ -4030,9 +3789,94 @@ body.resizing-plot-pane * {
   padding: 18px;
 }
 
+/* Main navigation and secondary controls. */
+.rail-stack .rail-item {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  min-width: 0;
+  font-weight: 500;
+}
+
+.rail-stack .rail-item.active {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.settings-menu {
+  margin-left: auto;
+}
+
+.settings-menu .model-menu-body {
+  width: min(380px, calc(100vw - 32px));
+  padding: 20px;
+  box-shadow: var(--shadow-overlay);
+}
+
+.settings-menu .modelica-stack-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 16px 0;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.simulation-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.simulation-card-heading h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.model-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.simulation-details summary,
+.sim-config-tools summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.simulation-details[open] summary,
+.sim-config-tools[open] summary {
+  color: var(--ink);
+}
+
+.sim-config-library {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.screen-head .simulation-notice {
+  margin-top: 8px;
+  color: var(--amber);
+}
+
+.simulation-catalog {
+  padding: 0;
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
 @media (max-width: 1180px) {
-  .workspace,
-  .setup-workspace,
   .standard-workspace {
     grid-template-columns: 1fr;
   }
@@ -4056,37 +3900,57 @@ body.resizing-plot-pane * {
     max-height: 360px;
   }
 
-  .parameter-tabs {
-    grid-template-columns: repeat(8, minmax(92px, 1fr));
-    overflow-x: auto;
-  }
-
-  .splitter {
-    display: none;
-  }
-
-  .rail {
-    flex-direction: row;
-  }
-
-  .rail-stack,
-  .rail-actions {
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-  }
-
   #vehicle-canvas {
     min-height: 0;
   }
 }
 
 @media (max-width: 720px) {
+  body {
+    overflow: auto;
+  }
   .app-shell {
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
+    grid-template-rows: auto 1fr;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .rail-stack {
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .workspace {
+    padding: 12px;
+  }
+  .screen {
+    overflow: visible;
+  }
+  .setup-workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .splitter {
+    display: none;
+  }
+  .editor-pane {
+    max-height: 45vh;
+  }
+  .visual-stage {
+    min-height: 480px;
+  }
+  .simulation-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 20px;
+  }
+  .setup-head .model-menu {
+    margin-left: auto;
   }
 
-  .topbar,
   .screen-head,
   .vehicle-source {
     align-items: flex-start;
@@ -4110,23 +3974,9 @@ body.resizing-plot-pane * {
     width: 100%;
   }
 
-  .parameter-tabs {
-    grid-template-columns: repeat(8, minmax(104px, 1fr));
-  }
-
-  .setup-head-actions,
-  .model-menu {
-    width: 100%;
-  }
-
   .setup-head-actions {
-    justify-content: stretch;
-  }
-
-  .workflow-nav {
     width: 100%;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    justify-content: space-between;
   }
 
   .sim-step-strip {
@@ -4142,11 +3992,7 @@ body.resizing-plot-pane * {
     grid-template-columns: 1fr;
   }
 
-  .step-nav-button {
-    max-width: none;
-  }
-
-  .model-menu summary {
+  .setup-head .model-menu summary {
     width: 100%;
     justify-content: center;
   }
@@ -4201,6 +4047,7 @@ body.resizing-plot-pane * {
 
 .replay-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }

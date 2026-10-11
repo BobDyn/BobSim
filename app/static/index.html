@@ -12,63 +12,60 @@
         <div class="brand">
           <img src="/media/bob.png" alt="BobSim">
           <div>
-            <h1>BobSim Workbench</h1>
-            <p id="repo-root"></p>
+            <h1>BobSim</h1>
           </div>
         </div>
-        <div class="top-actions">
-          <div id="modelica-stack-panel" class="modelica-stack-panel" aria-label="Modelica stack status">
-            <div id="boblib-initialized-step" class="modelica-stack-step">
-              <span class="status-dot"></span>
-              <span>BobLib</span>
+        <nav class="rail-stack" aria-label="Main navigation">
+          <button class="rail-item active" data-view="setup" type="button">Setup</button>
+          <button class="rail-item" data-view="standard" type="button">Simulation</button>
+          <button class="rail-item" data-view="replay" type="button">Replay</button>
+          <button class="rail-item" data-view="studies" type="button">Archive</button>
+        </nav>
+        <details class="model-menu settings-menu">
+          <summary>Settings</summary>
+          <div class="model-menu-body">
+            <h3>MBD status</h3>
+            <div id="modelica-stack-panel" class="modelica-stack-panel" aria-label="Modelica stack status">
+              <div id="boblib-initialized-step" class="modelica-stack-step">
+                <span class="status-dot"></span>
+                <span>BobLib</span>
+              </div>
+              <div id="modelica-write-step" class="modelica-stack-step">
+                <span class="status-dot"></span>
+                <span>Vehicle Definition</span>
+              </div>
+              <div id="modelica-vehicle-build-step" class="modelica-stack-step">
+                <span class="status-dot"></span>
+                <span>VehicleSim</span>
+              </div>
+              <div id="modelica-four-post-build-step" class="modelica-stack-step">
+                <span class="status-dot"></span>
+                <span>FourPostSim</span>
+              </div>
             </div>
-            <div id="modelica-write-step" class="modelica-stack-step">
-              <span class="status-dot"></span>
-              <span>Vehicle Definition</span>
-            </div>
-            <div id="modelica-vehicle-build-step" class="modelica-stack-step">
-              <span class="status-dot"></span>
-              <span>VehicleSim</span>
-            </div>
-            <div id="modelica-four-post-build-step" class="modelica-stack-step">
-              <span class="status-dot"></span>
-              <span>FourPostSim</span>
+            <div class="settings-actions">
+              <button id="toolchain-settings-btn" class="ghost-button" type="button">OpenModelica</button>
+              <button id="theme-toggle-btn" class="ghost-button" type="button">Light theme</button>
+              <button id="refresh-btn" class="ghost-button" type="button">Refresh</button>
             </div>
           </div>
-          <button id="toolchain-settings-btn" class="ghost-button" type="button">OpenModelica</button>
-          <button id="theme-toggle-btn" class="ghost-button" type="button">Dark</button>
-          <button id="refresh-btn" class="ghost-button" type="button">Refresh</button>
-        </div>
+        </details>
       </header>
 
       <main class="workspace">
-        <aside class="rail">
-          <div class="rail-stack">
-            <button class="rail-item active" data-view="setup" type="button">Setup</button>
-            <button class="rail-item" data-view="standard" type="button">Simulation</button>
-            <button class="rail-item" data-view="replay" type="button">Replay</button>
-            <button class="rail-item" data-view="studies" type="button">Archive</button>
-          </div>
-          <div class="rail-actions">
-            <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
-            <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
-          </div>
-        </aside>
-
         <section id="setup-view" class="screen active">
           <div class="screen-head setup-head">
             <div>
-              <span id="setup-step-label" class="context-label">Setup</span>
-              <h2 id="setup-title">Vehicle Model</h2>
-              <p id="setup-focus" class="setup-focus"></p>
+              <h2 id="setup-title">Vehicle</h2>
+              <p id="setup-focus" class="setup-focus">Vehicle setup</p>
             </div>
             <div class="setup-head-actions">
-              <div class="workflow-nav" aria-label="Setup step navigation">
-                <button id="setup-prev-btn" class="step-nav-button" type="button">Previous</button>
-                <button id="setup-next-btn" class="step-nav-button primary-step" type="button">Next</button>
+              <div class="rail-actions">
+                <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
+                <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
               </div>
               <details class="model-menu">
-                <summary>Vehicle</summary>
+                <summary>Files</summary>
                 <div class="model-menu-body">
                   <button id="open-vehicle-start-btn" class="run-button menu-primary" type="button">Open / Create Vehicle</button>
                   <div class="vehicle-source">
@@ -127,7 +124,6 @@
               <div class="preview-toolbar">
                 <div>
                   <h3 id="vehicle-preview-title">Vehicle</h3>
-                  <p id="vehicle-preview-subtitle"></p>
                 </div>
                 <div class="preview-controls" hidden>
                   <label class="range-control" for="rotation-sensitivity">
@@ -236,6 +232,7 @@
             <div>
               <h2>Simulation</h2>
               <p id="standard-context"></p>
+              <p id="simulation-notice" class="simulation-notice" role="status" hidden></p>
             </div>
           </div>
 
@@ -250,7 +247,7 @@
           <div class="screen-head">
             <div>
               <h2>Replay</h2>
-              <p>Suspension geometry, tire loads and grip, played back from a captured run.</p>
+              <p>Suspension geometry, tire loads and grip from a captured run.</p>
             </div>
             <div class="replay-controls">
               <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
@@ -271,15 +268,15 @@
                   <li><b>Drag</b> orbits around the centre</li>
                   <li><b>Shift + drag</b>, or a middle or right drag, pans</li>
                   <li><b>Scroll</b> zooms toward the cursor</li>
-                  <li><b>Two-finger drag</b> pans as soon as it moves sideways;
-                    straight up and down zooms</li>
+                  <li><b>Two-finger drag</b> pans as soon as it moves sideways.
+                    Straight up and down zooms</li>
                   <li><b>Shift + scroll</b> always pans</li>
                   <li><b>Pinch</b> zooms toward the cursor</li>
                   <li><b>Touchscreen:</b> one finger orbits, two pan and pinch</li>
                   <li><b>Double-click</b> re-centres on the ground under the cursor</li>
                   <li><b>Space</b> plays and pauses, <b>F1</b> toggles this list</li>
                   <li><b>Export video</b> renders the whole run to a video file and
-                    downloads it; it keeps going in a background tab</li>
+                    downloads it. It keeps going in a background tab</li>
                 </ul>
               </div>
               <div class="replay-timeline">
@@ -303,8 +300,7 @@
                 <canvas id="replay-tires-canvas" class="replay-tires"></canvas>
                 <p id="replay-lltd" class="replay-lltd"></p>
                 <p class="replay-note">
-                  Each dot is a tire's force against its MF5.2 peak grip. The outer ring is
-                  the limit &mdash; read it as "at the limit", not as a hard wall.
+                  Dots show tire force. Rings show the MF5.2 peak grip estimate.
                 </p>
               </div>
 
@@ -407,26 +403,23 @@
 
         <div id="setup-panel" class="panel active">
           <div class="sim-setup-shell">
-            <section class="sim-guide-panel">
-              <span class="context-label">Run setup</span>
-              <h3 id="sim-setup-title">Select a Workflow</h3>
-              <p id="sim-setup-copy"></p>
-            </section>
-
-            <section class="sim-config-tools">
-              <div class="sim-config-row">
-                <select id="sim-config-picker" class="config-picker"></select>
-                <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
-                <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+            <details class="sim-config-tools">
+              <summary>Saved run configs</summary>
+              <div class="sim-config-library">
+                <div class="sim-config-row">
+                  <select id="sim-config-picker" class="config-picker"></select>
+                  <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
+                  <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
+                </div>
+                <div class="sim-config-row">
+                  <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
+                  <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
+                  <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
+                </div>
               </div>
-              <div class="sim-config-row">
-                <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
-                <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
-                <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
-              </div>
-              <span id="sim-config-status" class="sim-config-status"></span>
-            </section>
+            </details>
 
+            <span id="sim-config-status" class="sim-config-status" role="status"></span>
             <form id="sim-config-form" class="sim-config-form"></form>
           </div>
         </div>

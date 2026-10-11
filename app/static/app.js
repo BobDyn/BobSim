@@ -849,8 +849,6 @@ function render() {
 }
 
 function renderTopbar() {
-  const repo = state.status?.repo;
-  document.getElementById("repo-root").textContent = repo?.root ? "Local BobSim workspace" : "";
   const toolchainButton = document.getElementById("toolchain-settings-btn");
   if (toolchainButton) {
     const toolchain = openmodelicaToolchain();
@@ -913,7 +911,7 @@ function modelicaDefinitionTone(stack) {
 }
 
 function renderThemeButton() {
-  document.getElementById("theme-toggle-btn").textContent = state.dark ? "Light" : "Dark";
+  document.getElementById("theme-toggle-btn").textContent = state.dark ? "Light theme" : "Dark theme";
 }
 
 function actionBusy(actionKey) {
@@ -1089,8 +1087,8 @@ function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
 }
 
 function simulationLockedMessage() {
-  if (!activeVehicleConfigReady()) return "Save this vehicle config before viewing Simulation.";
-  if (!vehicleDefinitionCurrent()) return "Write the saved vehicle definition to MBD before viewing Simulation.";
+  if (!activeVehicleConfigReady()) return "Save this vehicle config before running an MBD simulation.";
+  if (!vehicleDefinitionCurrent()) return "Write the saved vehicle definition to MBD before running an MBD simulation.";
   if (!externalToolchainAvailable()) return state.status?.external_toolchain?.reason || "Simulation runner unavailable.";
   return "Simulation is available.";
 }
@@ -1141,13 +1139,10 @@ function applyGeometryPlotHeight(height = state.geometryPlotHeight, min, max) {
 
 function renderMode() {
   document.querySelectorAll(".rail-item").forEach((button) => {
-    const disabled = button.dataset.view === "standard" && !canUseStandardSim();
-    button.disabled = disabled;
-    button.classList.toggle("disabled", disabled);
-    button.classList.toggle("active", button.dataset.view === state.view && !disabled);
-    if (button.dataset.view === "standard") {
-      button.title = disabled ? simulationLockedMessage() : "";
-    }
+    const active = button.dataset.view === state.view;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   document.querySelectorAll(".screen").forEach((screen) => {
     screen.classList.toggle("active", screen.id === `${state.view}-view`);
@@ -1158,8 +1153,8 @@ function renderRailActions() {
   const primary = document.getElementById("rail-primary-btn");
   const secondary = document.getElementById("rail-secondary-btn");
   if (state.view === "setup") {
-    secondary.classList.add("run-button");
-    secondary.classList.remove("ghost-button");
+    secondary.classList.add("ghost-button");
+    secondary.classList.remove("run-button");
     const needsVehicleConfig = !activeVehicleConfigReady();
     const canSaveVehicle = Boolean(state.vehiclePayload) && (state.dirtyVehicle || needsVehicleConfig);
     setActionButton(primary, {
@@ -1339,17 +1334,9 @@ function setupGuide(areaId = state.activeParamGroup) {
 
 function renderSetupFocus() {
   const guide = setupGuide();
-  const stepLabel = document.getElementById("setup-step-label");
-  const setupTitle = document.getElementById("setup-title");
-  const setupFocus = document.getElementById("setup-focus");
-  if (stepLabel) stepLabel.textContent = `Step ${guide.step} of ${guide.total}`;
-  if (setupTitle) setupTitle.textContent = guide.title;
-  if (setupFocus) setupFocus.textContent = guide.focus;
-  document.getElementById("vehicle-preview-title").textContent = guide.figure || guide.title;
-  document.getElementById("vehicle-preview-subtitle").textContent = guide.purpose || "";
-  const heading = document.getElementById("editor-title");
-  if (heading) heading.textContent = `${String(guide.step).padStart(2, "0")} ${guide.title}`;
-  renderSetupStepActions();
+  document.getElementById("setup-title").textContent = activeVehicleName();
+  document.getElementById("vehicle-preview-title").textContent = guide.figure.replace(/\.$/, "");
+  document.getElementById("editor-title").textContent = guide.title;
   renderWorkflowGuide(guide);
 }
 
@@ -1360,23 +1347,6 @@ function setupAreas() {
 function activeParameterIndex(areas = setupAreas()) {
   const index = areas.findIndex((area) => area.id === state.activeParamGroup);
   return index >= 0 ? index : 0;
-}
-
-function renderSetupStepActions() {
-  const areas = setupAreas();
-  const index = activeParameterIndex(areas);
-  const previous = areas[index - 1];
-  const next = areas[index + 1];
-  const previousButton = document.getElementById("setup-prev-btn");
-  const nextButton = document.getElementById("setup-next-btn");
-  if (previousButton) {
-    previousButton.disabled = !previous;
-    previousButton.textContent = previous ? `Previous: ${setupGuide(previous.id).title}` : "Previous";
-  }
-  if (nextButton) {
-    nextButton.disabled = !next;
-    nextButton.textContent = next ? `Next: ${setupGuide(next.id).title}` : "Next";
-  }
 }
 
 function navigateParameterStep(delta) {
@@ -1963,12 +1933,10 @@ function suspensionFieldSections(grouped) {
 }
 
 function axleFieldBlock(axle, grouped) {
-  const count = grouped.reduce((total, [, fields]) => total + fields.length, 0);
   return `
     <section class="axle-field-block field-group-${axle}" data-axle-block="${escapeHtml(axle)}">
       <div class="axle-field-title">
         <span>${humanizeToken(axle)} axle</span>
-        <small>${count}</small>
       </div>
       <div class="axle-field-groups">
         ${grouped.map(([group, fields]) => fieldSubsectionHtml(group, fields, { nested: true })).join("")}
@@ -1982,7 +1950,6 @@ function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
     <section class="field-subsection expanded ${fieldGroupClass(group)}${nested ? " nested-subsection" : ""}">
       <div class="field-subsection-title">
         <span>${escapeHtml(humanizeToken(group))}</span>
-        <small>${fields.length}</small>
       </div>
       <div class="field-grid">${fields.map(fieldControl).join("")}</div>
     </section>
@@ -2419,9 +2386,8 @@ function fieldDisplayGroup(field) {
 
 function renderParameterTabs(areas) {
   const tabs = document.getElementById("parameter-tabs");
-  tabs.innerHTML = areas.map((area, index) => `
+  tabs.innerHTML = areas.map((area) => `
     <button class="parameter-tab ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}" type="button" title="${escapeHtml(setupGuide(area.id).focus)}">
-      <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="step-name">${escapeHtml(setupGuide(area.id).title)}</span>
     </button>
   `).join("");
@@ -3840,9 +3806,12 @@ async function resetOpenModelicaToolchain() {
 
 function renderStandard() {
   if (canUseStandardSim()) ensureSelectedSimConfigLoaded();
-  const workflow = canUseStandardSim() ? selectedWorkflow() : null;
+  const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
-    `${activeVehicleName()} | ${vehicleWorkspaceStatusLabel()} | ${workflow?.label || simulationLockedMessage()}`;
+    activeVehicleName();
+  const notice = document.getElementById("simulation-notice");
+  notice.hidden = canUseStandardSim();
+  notice.textContent = notice.hidden ? "" : simulationLockedMessage();
   syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
@@ -3852,7 +3821,7 @@ function renderStandard() {
 
 function syncSimTabs() {
   if (!["setup", "jobs"].includes(state.activeSimTab)) state.activeSimTab = "setup";
-  document.querySelectorAll(".tab").forEach((item) => {
+  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((item) => {
     item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
   });
   document.querySelectorAll(".panel").forEach((panel) => {
@@ -3863,15 +3832,11 @@ function syncSimTabs() {
 function renderWorkflows() {
   const workflows = standardWorkflows();
   const grid = document.getElementById("workflow-grid");
-  if (!canUseStandardSim()) {
-    grid.innerHTML = `<div class="empty-state">${escapeHtml(simulationLockedMessage())}</div>`;
-    return;
-  }
+  const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
+    (details) => details.closest("[data-workflow]").dataset.workflow));
   grid.innerHTML = workflows.map(workflowCard).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
-    card.addEventListener("click", async () => {
-      await selectStandardWorkflow(card.dataset.workflow);
-    });
+    card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
   });
   grid.querySelectorAll("[data-configure-workflow]").forEach((button) => {
     button.addEventListener("click", async (event) => {
@@ -3953,59 +3918,39 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
   if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
   if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
     ? "Run log"
-    : meta.summary || workflowDescription(workflow);
+    : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
   if (state.simModalOpen && workflow?.config_id && state.simConfigPayload?.id !== workflow.config_id) {
     ensureSelectedSimConfigLoaded();
   }
 }
 
 function workflowCard(workflow) {
-  const runLabel = workflow.actions.length > 1 ? "Build + run" : "Run";
   const meta = simWorkflowMeta(workflow);
   const canReview = workflowReviewAvailable(workflow);
-  const reviewTitle = canReview ? "Open archived simulation results" : "Run this simulation to create a local archive entry";
-  const canConfigure = workflowAvailable(workflow);
-  const configureTitle = canConfigure ? "Configure simulation" : workflowUnavailableMessage(workflow);
+  const canConfigure = canRunStandardWorkflow(workflow);
   return `
-    <article class="workflow-card simulation-card ${workflow.id === state.selectedWorkflowId ? "active" : ""} ${canConfigure ? "" : "disabled"}" data-workflow="${workflow.id}">
-      <div class="simulation-card-figure">
-        ${simFigureHtml(workflow)}
-      </div>
+    <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
       <div class="simulation-card-body">
-        <div class="card-head">
-          <div>
-            <div class="card-title">${escapeHtml(meta.title || workflow.label)}</div>
-            <div class="card-meta">${escapeHtml(workflowModelLabel(workflow))}</div>
-            <div class="card-meta">${escapeHtml(meta.summary || workflowDescription(workflow))}</div>
+        <div class="simulation-card-heading">
+          <h3>${escapeHtml(meta.title || workflow.label)}</h3>
+          <span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>
+        </div>
+        <p class="card-meta">${escapeHtml(meta.summary)}</p>
+        <details class="simulation-details">
+          <summary>Run details</summary>
+          <div class="simulation-detail-grid">
+            ${simDetailBlock("Procedure", meta.sequence)}
+            ${simDetailBlock("Parameters", meta.parameters)}
+            ${simDetailBlock("Outputs", meta.outputs)}
           </div>
-          <span class="mini-pill">${runLabel}</span>
-        </div>
-        <div class="simulation-explanation">
-          ${meta.explanation.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
-        </div>
-        <div class="simulation-detail-grid">
-          ${simDetailBlock("What happens", meta.sequence)}
-          ${simDetailBlock("Key parameters", meta.parameters)}
-          ${simDetailBlock("Outputs", meta.outputs)}
-        </div>
-        <div class="card-actions">
-          ${architectureStatusPill()}
-          <button class="ghost-button simulation-review-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}"${canReview ? "" : " disabled"} title="${escapeHtml(reviewTitle)}">Review</button>
-          <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(configureTitle)}">Configure</button>
-        </div>
+        </details>
+      </div>
+      <div class="card-actions">
+        ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(standardWorkflowLockedMessage(workflow) || "Configure simulation")}">Configure</button>
       </div>
     </article>
   `;
-}
-
-function architectureStatusPill() {
-  if (!activeVehicleConfigReady()) {
-    return `<span class="mini-pill missing" title="Save a vehicle before running simulations">No saved vehicle</span>`;
-  }
-  if (!vehicleDefinitionCurrent()) {
-    return `<span class="mini-pill missing" title="Save Vehicle and Write to MBD before running simulations">Architecture stale</span>`;
-  }
-  return `<span class="mini-pill ok" title="Current architecture is saved and written to MBD">${escapeHtml(activeArchitecture())}</span>`;
 }
 
 function workflowDescription(workflow) {
@@ -4027,120 +3972,40 @@ function simWorkflowMeta(workflow) {
   const fallback = {
     title: workflow?.label || "Simulation",
     summary: "Configure the run, execute it against the active vehicle definition, then inspect generated logs and outputs.",
-    explanation: [
-      "This workflow uses the active vehicle definition and run-specific YAML to produce a repeatable simulation case.",
-    ],
     sequence: ["Load active vehicle definition", "Apply run configuration", "Execute workflow actions"],
     parameters: ["Solver and stop time", "Case-specific sweep values", "Report output paths"],
     outputs: ["Job log", "Registered reports and CSV files"],
-    steps: ["Vehicle is selected", "Configure run", "Run"],
   };
   return {
     "ramp-steer": {
       title: "Ramp Steer",
-      summary: "Open-loop steering ramp across speed and lateral-acceleration operating points.",
-      explanation: [
-        "RampSteerEval builds the full VehicleSim model, applies a prescribed handwheel ramp, and sweeps the requested velocity cases.",
-        "The run is useful for checking steering response shape, lateral acceleration build-up, yaw-rate response, and whether the vehicle stays inside expected handling limits.",
-      ],
+      summary: "Steering ramp across a range of speeds.",
       sequence: ["Build VehicleSim if needed", "Initialize the active vehicle record", "Sweep speed cases", "Apply steering ramp", "Collect report metrics"],
       parameters: ["Velocity isolines", "Handwheel ramp timing and amplitude", "Nonlinearity cutoff", "Solver tolerance and stop time"],
       outputs: ["Ramp steer PDF report", "Metrics CSV", "Job log with build and run output"],
-      steps: ["Vehicle is selected", "Set speed sweep", "Build + run"],
     },
     "steady-state": {
       title: "Steady State",
-      summary: "Closed-loop lateral acceleration map for settled cornering operating points.",
-      explanation: [
-        "SteadyStateEval asks the model to converge to target lateral-acceleration points across the configured operating range.",
-        "It is the browser-side doorway into balance, understeer behavior, control demand, and tire utilization at settled conditions.",
-      ],
+      summary: "Settled cornering across lateral-acceleration targets.",
       sequence: ["Build VehicleSim if needed", "Initialize each target condition", "Close the control loop", "Converge settled states", "Export metrics"],
       parameters: ["Target lateral-acceleration grid", "Velocity-specific Ay caps", "Convergence criteria", "Report and solver controls"],
       outputs: ["Steady-state PDF report", "Metrics CSV", "Settled-point job log"],
-      steps: ["Vehicle is selected", "Set target grid", "Build + run"],
     },
     transient: {
       title: "Transient",
-      summary: "Time-domain response to steering inputs such as step and sine events.",
-      explanation: [
-        "TransientEval runs the full vehicle forward in time with configured steering inputs and records the dynamic response.",
-        "This is the place to inspect yaw-rate gain, phase, overshoot, settling, and how quickly the chassis responds after the input changes.",
-      ],
+      summary: "Response to step and sine steering inputs.",
       sequence: ["Build VehicleSim if needed", "Apply input schedule", "Integrate the time response", "Capture response channels", "Generate summary files"],
       parameters: ["Input type and amplitude", "Input timing/frequency", "Initial speed", "Stop time, step size, and solver"],
       outputs: ["Transient PDF report", "Metrics CSV", "Time-response job log"],
-      steps: ["Vehicle is selected", "Set input cases", "Build + run"],
     },
     "four-post": {
       title: "Four Post",
-      summary: "Heave, roll, and vertical-force procedures for suspension and chassis response.",
-      explanation: [
-        "FourPostEval builds the FourPostSim model and drives the corners with configured vertical procedures.",
-        "It is focused on ride/suspension behavior rather than the full powertrain loop, so it can isolate heave, roll, spring/damper, and tire vertical-load behavior.",
-      ],
+      summary: "Suspension response to heave, roll, and corner loads.",
       sequence: ["Build FourPostSim if needed", "Initialize corner positions", "Apply vertical actuator procedures", "Sweep heave/roll/force cases", "Collect suspension metrics"],
       parameters: ["Corner input magnitudes", "Heave and roll sweeps", "Override rates and initial conditions", "Solver and output controls"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
-      steps: ["Vehicle is selected", "Set procedure", "Build + run"],
     },
   }[workflow?.id] || fallback;
-}
-
-function simFigureHtml(workflow) {
-  const id = workflow?.id || "generic";
-  if (id === "steady-state") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Second-order steady-state response">
-        <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-        <path class="axis" d="M34 104 H226 M42 116 V30"></path>
-        <path class="target" d="M34 58 H226"></path>
-        <path class="accent" d="M34 104 C54 104, 59 58, 76 41 S105 65, 122 57 S151 54, 168 58 S202 58, 226 58"></path>
-        <path d="M34 104 H56 V58 H226"></path>
-        <text x="28" y="139">time</text>
-        <text x="154" y="40">settled output</text>
-      </svg>
-    `;
-  }
-  if (id === "transient") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Step and sine inputs about the x-axis">
-        <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-        <path class="axis" d="M34 72 H226 M42 116 V30"></path>
-        <path d="M34 94 H64 V52 H114"></path>
-        <path class="accent" d="M122 72 C132 46, 146 46, 156 72 S180 98, 190 72 S214 46, 226 72"></path>
-        <text x="28" y="139">time</text>
-        <text x="52" y="42">step</text>
-        <text x="168" y="42">sine</text>
-      </svg>
-    `;
-  }
-  if (id === "four-post") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Kinematics and compliance rig with four vertical posts">
-        <rect x="42" y="42" width="176" height="62" rx="6"></rect>
-        <path class="fixture" d="M54 36 H206 M54 110 H206 M70 36 V116 M190 36 V116"></path>
-        <path d="M78 54 H182 M78 92 H182 M92 54 L168 92 M168 54 L92 92"></path>
-        <circle cx="70" cy="42" r="11"></circle>
-        <circle cx="190" cy="42" r="11"></circle>
-        <circle cx="70" cy="104" r="11"></circle>
-        <circle cx="190" cy="104" r="11"></circle>
-        <path class="post" d="M70 18 V32 M190 18 V32 M70 114 V136 M190 114 V136"></path>
-        <path class="accent" d="M60 24 H80 M180 24 H200 M60 130 H80 M180 130 H200"></path>
-        <text x="24" y="139">vertical posts</text>
-        <text x="153" y="28">KnC fixture</text>
-      </svg>
-    `;
-  }
-  return `
-    <svg viewBox="0 0 260 150" role="img" aria-label="Ramp input">
-      <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-      <path class="axis" d="M34 104 H226 M42 116 V30"></path>
-      <path class="accent" d="M42 104 H78 L176 44 H222"></path>
-      <text x="28" y="139">time</text>
-      <text x="171" y="36">ramp</text>
-    </svg>
-  `;
 }
 
 function studyGroupMeta(groupId) {
@@ -5223,19 +5088,7 @@ function renderStudyJobs() {
   loadJobLog("study-job-log");
 }
 
-function simWorkflowGuide(workflow) {
-  const meta = simWorkflowMeta(workflow);
-  return {
-    title: meta.title,
-    copy: meta.summary,
-    steps: meta.steps,
-  };
-}
-
-function renderSimSetup(workflow) {
-  const guide = simWorkflowGuide(workflow);
-  document.getElementById("sim-setup-title").textContent = guide.title;
-  document.getElementById("sim-setup-copy").textContent = guide.copy;
+function renderSimSetup() {
   renderSimConfigLibrary();
   renderSimConfigForm();
 }
@@ -5406,11 +5259,11 @@ function renderJobs() {
   const workflow = selectedWorkflow();
   const canRun = canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
-  const runVerb = workflow?.actions.length > 1 ? "Build + Run" : "Run";
+  const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
   runButton.textContent = !canRun
     ? "Simulation locked"
     : workflow
-    ? `${state.dirtySimConfig ? "Apply + " : ""}${runVerb} ${workflow.label}`
+    ? state.dirtySimConfig ? "Apply + run" : runVerb
     : "No Workflow";
   runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
   if (!jobs.length) {
@@ -5514,13 +5367,6 @@ async function startSelectedStudyWorkflow() {
 }
 
 function setView(view) {
-  if (view === "standard" && !canUseStandardSim()) {
-    state.view = "setup";
-    renderMode();
-    renderRailActions();
-    renderSetup();
-    return;
-  }
   state.view = view;
   renderMode();
   renderRailActions();
@@ -7619,13 +7465,6 @@ function drawArchitecturePreview(ctx, width, height, data) {
     : state.architectureSelectedId;
   const hotspots = [];
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Architecture Assembly", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Front views use the actual axle pickup points.", 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
   const fullModel = buildVehicleGeometry(data);
   const geometryModel = filterVehicleModel(fullModel, sectionFocus("geometry"));
   const referencePoints = fullModel.points.filter((point) => point.id === "vehicle-mass");
@@ -12902,6 +12741,18 @@ function wireEvents() {
     }
     if (event.key === "Escape" && state.architectureModalOpen) closeArchitectureConnectionModal();
   });
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll(".model-menu[open]").forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll(".model-menu[open]").forEach((menu) => {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    });
+  });
   window.addEventListener("keydown", handleUndoShortcut);
   window.addEventListener("keydown", handleSetupStageKeys);
   document.getElementById("vehicle-library-picker").addEventListener("change", syncVehicleLibraryActions);
@@ -12951,8 +12802,6 @@ function wireEvents() {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
   document.getElementById("reset-view-btn").addEventListener("click", resetVehicleView);
-  document.getElementById("setup-prev-btn")?.addEventListener("click", () => navigateParameterStep(-1));
-  document.getElementById("setup-next-btn")?.addEventListener("click", () => navigateParameterStep(1));
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
@@ -12971,7 +12820,7 @@ function wireEvents() {
   document.querySelectorAll(".rail-item").forEach((button) => {
     button.addEventListener("click", () => setView(button.dataset.view));
   });
-  document.querySelectorAll(".tab").forEach((button) => {
+  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeSimTab = button.dataset.tab;
       syncSimTabs();
