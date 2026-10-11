@@ -1,0 +1,43 @@
+clear();
+
+root := OpenModelica.Scripting.cd();
+boblibDir := root + "/engines/boblib/BobLib";
+buildDir := root + "/simulations/mbd/BuildBobLib/VehicleFMU";
+
+OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
+OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
+OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
+OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
+OpenModelica.Scripting.setCommandLineOptions("-d=initialization,NLSanalyticJacobian");
+OpenModelica.Scripting.setCommandLineOptions("--generateDynamicJacobian=none");
+
+// Use CVODE instead of forward Euler; event handling still needs validation.
+OpenModelica.Scripting.setCommandLineOptions("--fmiFlags=s:cvode");
+
+// Keep the generated initializer within compiler memory limits. Runtime stays optimized.
+OpenModelica.Scripting.setEnvironmentVar("CMAKE_TOOLCHAIN_FILE",
+  root + "/simulations/response/mbd/fmu_compile_options.cmake");
+
+// GCC compiled the large initialization function in the original export experiment.
+OpenModelica.Scripting.setCompiler("gcc");
+OpenModelica.Scripting.setCXXCompiler("g++");
+
+loadModel(Modelica, {"4.1.0"});
+loadModel(VehicleInterfaces, {"2.0.2"});
+loadFile(boblibDir + "/package.mo");
+
+mkdir(root + "/simulations/mbd/BuildBobLib");
+mkdir(buildDir);
+cd(buildDir);
+
+// Omit native CPU flags so compatible machines can share the FMU.
+res := buildModelFMU(
+  BobLib.Experiments.Standards.VehicleSim,
+  version = "2.0",
+  fmuType = "me_cs",
+  fileNamePrefix = "VehicleSim",
+  platforms = {"static"}
+);
+
+res;
+getErrorString();

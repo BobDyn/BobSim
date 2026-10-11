@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-BOBLIB_PACKAGE_ROOT = ROOT / "_0_Utils/external/BobLib/BobLib"
+BOBLIB_PACKAGE_ROOT = ROOT / "engines/boblib/BobLib"
 
 if (BOBLIB_PACKAGE_ROOT / "package.mo").is_file():
     os.environ.setdefault("BOBLIB_PACKAGE_ROOT", str(BOBLIB_PACKAGE_ROOT))

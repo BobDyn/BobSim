@@ -32,7 +32,7 @@ Makefile auto-detects context: inside container (`/.dockerenv` exists) targets r
 network and so cannot publish a port. The container listens on 8765 and
 publishes it on `127.0.0.1:$(APP_PORT)` (default 8765). The app in the container
 uses the image's `omc` and keeps its toolchain choice in
-`_5_App/user_data/config/app/openmodelica.docker.json`, so it never overwrites
+`app/user_data/config/app/openmodelica.docker.json`, so it never overwrites
 the host app's `openmodelica.json`. `make app RUN=` runs the app on the host.
 
 ## Target vocabulary
@@ -71,18 +71,20 @@ make standard-eval-transient
 make standard-eval-four-post   # uses the separate FourPostSim executable
 ```
 
-Output: `_3_StandardSim/generated_results/` (`*_report_metrics.csv`, `*_report.pdf`).
+Output: `simulations/mbd/generated_results/` (`*_report_metrics.csv`, `*_report.pdf`).
 
-## Closed-loop stepping
+## Fixed-period stepping
 
 ```bash
-make standard-build-fmu       # export VehicleSim as an FMI 2.0 FMU
-make standard-realtime-bench  # time 50 Hz stepping of the FMU and dyn_py (build the FMU first)
-make standard-realtime-bench ARGS=--skip-fmu  # dyn_py only, no OpenModelica build
+make standard-build-fmu
+make standard-realtime-bench
+make standard-realtime-bench ARGS='--skip-fmu --dof 3 --stop-s 2'
 ```
 
-See [simulation-entrypoints.md](simulation-entrypoints.md#closed-loop-stepping-fmu-and-dyn_py)
-for measured speeds and the FMU's known limits.
+The benchmark measures stepping cost. DynPy uses prescribed inputs; VehicleSim
+uses its internal controller. Failed cases retain diagnostics and exit nonzero.
+See the [benchmark README](../simulations/response/realtime/README.md) for output
+fields, vehicle selection and FMU limits.
 
 ## Lap-time simulation
 
@@ -96,7 +98,7 @@ make lap-validation-visuals  # disposable figures under temp/lap_time_validation
 
 The config selects one shared `model_dof` (3, 6, 10, or 14) for GGV generation
 and transient integration. Output lands in
-`_3_StandardSim/generated_results/lap_time_eval/`. See
+`simulations/lap/results/`. See
 [lap-time-simulation.md](lap-time-simulation.md) for the track schema,
 optimization objective, and validation interpretation.
 
@@ -127,21 +129,18 @@ make opt-trade      # compare the vehicles named in configs/trade_study.yaml
 ```
 
 `opt-solve` and `opt-trade` cache compiled vehicles and results under
-`_4_OptSim/Build/StandardSens/{solve,trade}/`, and discard them when BobLib, the
-vehicle or the simulation tooling changes, so a rerun is usually seconds. Which of
-the `opt-*` tools answers which question is the first section of
-[doe-reverse-engineering.md](doe-reverse-engineering.md).
+`optimization/Build/StandardSens/{solve,trade}/`. They discard the cache when BobLib,
+the vehicle or the simulation tooling changes. So a rerun usually takes seconds.
+The first section of [doe-reverse-engineering.md](doe-reverse-engineering.md)
+says which `opt-*` tool answers which question.
 
-Note the `opt-*` targets set `PYTHONPATH=_4_OptSim:.` and invoke modules as
-`StandardSens.*` / `EnvelopeSens.*`, not `_4_OptSim.StandardSens.*`. If you run
-one by hand, replicate that or the imports of `_shared` will fail. `PYTHONPATH`
-uses the platform's separator, so on Windows outside the container it is
-`PYTHONPATH="_4_OptSim;."`.
+Optimization uses ordinary package imports. From the repo root, run modules
+such as `python -m optimization.response.solve_setup` without a custom `PYTHONPATH`.
 
 ## Visualizing a run
 
 BobVis captures a run as a 3D scene; the app's Replay tab draws it. Full
-reference: [`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
+reference: [`../visualization/README.md`](../visualization/README.md).
 
 ```bash
 make visual-demo       # synthetic scene, no OpenModelica build needed
@@ -150,7 +149,7 @@ make visual-rig        # four-post rig, same
 make app               # then open the Replay tab
 ```
 
-Each writes a `<name>_visual.yml` and `.npz` pair into `_1_VisualSim/results/`,
+Each writes a `<name>_visual.yml` and `.npz` pair into `visualization/results/`,
 and the Replay tab lists whatever it finds there. Every step goes through
 `$(RUN)` like every other BobSim workflow.
 
@@ -159,13 +158,13 @@ columns of KnC numbers and nothing to draw. `make visual-capture` (which
 `visual-rig` and `visual-maneuver` wrap) re-runs one evaluation —
 `VISUAL_EVAL=four_post|transient|ramp_steer|steady_state` — asking for the
 MultiBody frames as well, then writes a matched `.npz` and template into
-`_1_VisualSim/results/`. The capture also keeps each tire's forces and records
+`visualization/results/`. The capture also keeps each tire's forces and records
 the run's metrics CSV. The window then shows LLTD under each axle, a Tires tab
 of friction circles, and a Metrics tab, and F1 lists the mouse and trackpad
 controls. A scene captured before that has no Tires or Metrics tab until it is
-re-captured. The templates in `_1_VisualSim/visual_templates/` are stale: they
+re-captured. The templates in `visualization/visual_templates/` are stale: they
 name `vis*` signals no pinned model emits. See
-[`../_1_VisualSim/README.md`](../_1_VisualSim/README.md).
+[`../visualization/README.md`](../visualization/README.md).
 
 ## Testing
 
@@ -193,8 +192,8 @@ For a fast check of the DOE pipeline with no OpenModelica toolchain:
 make opt-doe-smoke
 ```
 
-CI runs lint, typecheck, and this DOE smoke natively for fast feedback, then
-the full fast gate inside the Docker image.
+CI runs lint, type checking, and tests natively. The container job checks
+OpenModelica and runs the DOE smoke tests.
 
 ## Cleaning
 
@@ -209,7 +208,7 @@ the image isn't built.
 ## Deploy
 
 `make deploy` builds a per-OS PyInstaller artifact into
-`_0_Utils/deploy/dist/BobSim/`. It bundles the Python backend only — not
+`common/deploy/dist/BobSim/`. It bundles the Python backend only — not
 simulation executables, reports, or caches. Windows and macOS release assets
 come from the `Release Builds` GitHub Actions workflow on a `v*` tag, not from a
 local build. Never commit `.exe`/`.app`/`.zip`/`.tar.gz` outputs.

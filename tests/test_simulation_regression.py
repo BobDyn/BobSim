@@ -15,7 +15,7 @@ from typing import Any, Mapping, cast
 import pytest
 import yaml
 
-from _0_Utils import config_io
+from common import config_io
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,18 +74,16 @@ def _workflow_specs(baseline: Mapping[str, Any]) -> Mapping[str, Mapping[str, An
 
 
 STUDY_CONFIGS = {
-    "four_post": "_3_StandardSim/FourPostEval/four_post_eval_config.yml",
-    "ramp_steer": "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
-    "steady_state": "_3_StandardSim/SteadyStateEval/steady_state_eval_config.yml",
-    "transient": "_3_StandardSim/TransientEval/transient_eval_config.yml",
+    "four_post": "simulations/response/mbd/four_post/four_post_eval_config.yml",
+    "ramp_steer": "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
+    "steady_state": "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
+    "transient": "simulations/response/mbd/transient/transient_eval_config.yml",
 }
 
-# Only sections that can move a simulated number. `execution` (worker counts),
-# `report`, and `plots` are deliberately excluded so cosmetic edits and
-# parallelism tuning do not invalidate a baseline that is still valid.
+# Only sections that can move a simulated number.
 RESULT_AFFECTING_SECTIONS = ("simulation", "sweep", "fit")
 
-BOBLIB_SUBMODULE = "_0_Utils/external/BobLib"
+BOBLIB_SUBMODULE = "engines/boblib"
 
 
 def simulation_inputs_digest() -> str:
@@ -155,9 +153,9 @@ def _standard_generated_artifact_path(path: Path) -> Path | None:
         relative = path.relative_to(ROOT)
     except ValueError:
         return None
-    if len(relative.parts) < 3 or relative.parts[:2] != ("_3_StandardSim", "results"):
+    if len(relative.parts) < 4 or relative.parts[:3] != ("simulations", "mbd", "results"):
         return None
-    return ROOT / "_3_StandardSim" / "generated_results" / Path(*relative.parts[2:])
+    return ROOT / "simulations/mbd" / "generated_results" / Path(*relative.parts[3:])
 
 
 def _min_report_bytes(workflow: Mapping[str, Any]) -> int:
@@ -530,7 +528,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The pin is the only thing that overrides an active copy."""
-    relative = "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    relative = "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     seed = tmp_path / relative
     seed.parent.mkdir(parents=True)
     seed.write_text("simulation: {solver: dassl}", encoding="utf-8")
@@ -552,9 +550,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
     reason="set BOBSIM_BASELINE_REGRESSION=1 to compare against the default vehicle baseline",
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
-    # Every metric is checked before failing: this test is gated behind a ~12 min
-    # simulation refresh, so aborting on the first mismatch would leak one drifted
-    # metric per run.
+    # Check every metric before failing, because a refresh takes about 12 min.
     failures: list[str] = []
 
     for metric, spec in _metric_baselines(workflow_data.spec).items():

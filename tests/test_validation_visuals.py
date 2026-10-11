@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from _0_Utils.lap_sim.track import TrackCorridor
-from _3_StandardSim.LapTimeEval.validation_visuals import _write_lap_figures
+from simulations.lap.core.track import TrackCorridor
+from simulations.lap.validation_visuals import _write_lap_figures
 
 
 def test_validation_visuals_render_corner_kinematic_histories(tmp_path) -> None:

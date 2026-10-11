@@ -1,0 +1,33 @@
+# Target-metric setup solver. See docs/doe-reverse-engineering.md.
+#   make opt-solve TARGETS="understeer_gradient_deg_per_g=0.31 roll_gradient_deg_per_g=0.85"
+
+# SteadyStateEval metric names. TARGETS=... replaces this block. It does not merge.
+targets:
+  understeer_gradient_deg_per_g: 0.31
+  roll_gradient_deg_per_g: 0.85
+
+# Only `scope: setup` variables from vehicle_architecture.yaml. Each knob costs
+# two more simulations. Toe and camber need a compile per value (see
+# pipeline/overrides.py). Dampers cannot change a steady-state metric.
+knobs:
+  - front.stabar.rate_n_m_per_rad
+  - rear.stabar.rate_n_m_per_rad
+  - front.actuation.spring_rate_n_per_m
+  - rear.actuation.spring_rate_n_per_m
+
+# Every targeted metric needs one. It also weights targets against each other.
+tolerances:
+  understeer_gradient_deg_per_g: 0.02
+  sideslip_gradient_deg_per_g: 0.02
+  roll_gradient_deg_per_g: 0.02
+  handwheel_angle_gradient_deg_per_g: 0.25
+  peak_handwheel_torque_Nm: 0.5
+
+# Solver-only test matrix. Six points are inside the 1-4 m/s^2 gradient-fit band.
+# Changing this re-simulates the cached star.
+test_matrix:
+  velocity_mps: 15.0
+  target_ays: [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 7.0, 10.0]
+
+# The Docker container's CPU count, not the host's.
+cpus: 12

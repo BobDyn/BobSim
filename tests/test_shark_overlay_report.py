@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from _3_StandardSim.FourPostEval import shark_overlay_report as sor
+from simulations.response.mbd.four_post import shark_overlay_report as sor
 
 
 def test_stale_binary_is_refused_even_when_the_build_reports_success(
@@ -57,7 +57,7 @@ def test_a_missing_datum_record_withholds_rather_than_publishes(tmp_path: Path) 
     vertical datum, so the z-dependent curves stay withheld. Failing open here would
     publish exactly the curves the datum question puts in doubt.
     """
-    from _0_Utils.shark_import import datum_gate, write_datum_sidecar
+    from common.shark_import import datum_gate, write_datum_sidecar
 
     bare = tmp_path / "vehicle_bare.yml"
     bare.write_text("front: {}\n", encoding="utf-8")
@@ -216,8 +216,7 @@ def test_post_run_state_is_consistent_across_yaml_boblib_and_binary(
     variant.write_text("name: variant\n", encoding="utf-8")
     monkeypatch.setattr(sor, "VEHICLE_YAML", baseline)
 
-    # The variant run dirties BobLib and then fails, which is the path that used
-    # to leave the library carrying the imported car.
+    # The variant run dirties BobLib and then fails.
     def generate_then_fail(path: Any) -> None:
         _dirty_boblib(pkg)
         raise sor.StaleGeometryError("build failed")
@@ -319,7 +318,6 @@ def test_geometry_only_mode_holds_force_elements_and_reports_what_it_cannot(
     assert shock["spring_table"] == base["rear"]["actuation"]["shock"]["spring_table"]
     assert shock["damper_table"] == base["rear"]["actuation"]["shock"]["damper_table"]
     assert shock["free_length_m"] == 0.26
-    # Geometry is kept from the variant, which is the whole point of the mode.
     assert held["rear"]["actuation"]["bellcrank"]["pivot_m"] == [0.05, 0.0, 0.0]
     assert any("anti-roll bar" in item for item in unheld)
     assert "stabar" not in held["rear"]["actuation"]
@@ -350,7 +348,7 @@ def test_four_post_section_gates_and_flags_confounds() -> None:
 
 def test_design_position_is_sampled_not_extrapolated() -> None:
     """The app's even grid straddles zero; the report's grid lands on it."""
-    from _0_Utils.kin_py.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
+    from engines.kinpy.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
 
     assert 0.0 not in DEFAULT_SWEEP_M and 0.0 not in DEFAULT_ROLL_DEG
     assert 0.0 in sor.BUMP_SWEEP_M and 0.0 in sor.ROLL_SWEEP_DEG
@@ -364,7 +362,7 @@ def test_design_position_is_sampled_not_extrapolated() -> None:
 
 
 def test_steer_sweep_is_zero_centered_and_front_axle_only() -> None:
-    from _0_Utils.kin_py.kinematics import DEFAULT_STEER_M
+    from engines.kinpy.kinematics import DEFAULT_STEER_M
 
     assert sor.STEER_SWEEP_M == DEFAULT_STEER_M
     assert 0.0 in sor.STEER_SWEEP_M
@@ -417,8 +415,7 @@ def test_ranking_uses_engineering_tolerance_not_baseline_range() -> None:
     by_id = {row["meta"]["id"]: row for row in rows}
     assert by_id["bump_camber_deg"]["significance"] == pytest.approx(10.0)
     assert by_id["bump_caster_deg"]["significance"] == pytest.approx(0.02)
-    # Ranked by significance, the real change comes first despite the flat baseline
-    # scoring an infinite delta-over-range ratio.
+    # The real change ranks first, although the flat baseline gives an infinite ratio.
     assert by_id["bump_caster_deg"]["ratio"] == float("inf")
     assert rows[0]["meta"]["id"] == "bump_camber_deg"
 
@@ -427,17 +424,14 @@ def test_rear_caster_is_relabelled_as_a_steering_axis_angle() -> None:
     caster = next(m for m in sor.KINEMATIC_CURVE_META if m["id"] == "bump_caster_deg")
     assert sor.display_label(caster, "front") == caster["label"]
     rear = sor.display_label(caster, "rear")
-    # Named for the steering axis it actually describes, not "caster", which implies
-    # a steered axle. Kept short enough to render without clipping in the PDF table.
+    # Named for the steering axis it describes. Short enough to fit the PDF table.
     assert "Kingpin side-view inclination" in rear
     assert "caster" not in rear.lower()
 
-    # Only caster is relabelled; every other curve keeps its registry name.
     camber = next(m for m in sor.KINEMATIC_CURVE_META if m["id"] == "bump_camber_deg")
     assert sor.display_label(camber, "rear") == camber["label"]
 
-    # The axis label must move with the title; a plot headed "Kingpin side-view
-    # inclination" whose y axis still reads "Caster" is worse than no rename.
+    # The y-axis label must change with the title.
     assert sor.display_y_label(caster, "rear") == "Kingpin side-view inclination"
     assert sor.display_y_label(caster, "front") == caster["y_label"]
     assert sor.display_y_label(camber, "rear") == camber["y_label"]

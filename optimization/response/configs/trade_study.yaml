@@ -1,0 +1,35 @@
+# Named vehicles compared across the standard sims. See docs/doe-reverse-engineering.md.
+#   make opt-trade STUDY=path/to/another_study.yaml
+# Results go to optimization/results/trade/<name>.md and .csv.
+name: rear_roll_stiffness
+
+# Each candidate is the baseline with these variables changed. Any variable in
+# vehicle_architecture.yaml is allowed because every candidate is compiled.
+# The baseline is always included.
+candidates:
+  stiff_rear_bar:
+    rear.stabar.rate_n_m_per_rad: 961.495352
+  soft_front_spring:
+    front.actuation.spring_rate_n_per_m: 21015.2202
+  both:
+    rear.stabar.rate_n_m_per_rad: 961.495352
+    front.actuation.spring_rate_n_per_m: 21015.2202
+
+# `resolution` is the smallest change worth acting on. A smaller delta is marked `~`.
+# With no resolution the delta is not judged.
+metrics:
+  SteadyStateEval:
+    understeer_gradient_deg_per_g: {resolution: 0.02}
+    roll_gradient_deg_per_g: {resolution: 0.02}
+    peak_handwheel_torque_Nm: {resolution: 0.5}
+  TransientEval:
+    yaw_rise_time_s: {resolution: 0.005}
+    yaw_overshoot_pct: {resolution: 1.0}
+    roll_overshoot_pct: {resolution: 1.0}
+    settling_time_s: {resolution: 0.05}
+
+# Renders each standard's PDF report per vehicle.
+render_reports: true
+
+# The Docker container's CPU count, not the host's.
+cpus: 12

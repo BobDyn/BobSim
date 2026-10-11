@@ -4,6 +4,6 @@ line-length = 120
 select = ["E", "F"]
 
 [lint.per-file-ignores]
-"_0_Utils/kin_py/misc_math.py" = ["E501"]
-"_0_Utils/kin_py/suspension_model/**/*.py" = ["E501", "E711", "E722", "F841"]
+"engines/kinpy/misc_math.py" = ["E501"]
+"engines/kinpy/suspension_model/**/*.py" = ["E501", "E711", "E722", "F841"]
 "tests/kin_py/**/*.py" = ["E501", "F841"]

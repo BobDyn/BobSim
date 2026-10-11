@@ -4,7 +4,7 @@
 merged into a `vehicle.yml`, with the vertical datum handled correctly rather
 than assumed.
 
-**Underlying tool:** `_0_Utils/shark_import.py` (CLI + library — this skill
+**Underlying tool:** `common/shark_import.py` (CLI + library — this skill
 sequences it, it doesn't reimplement it). Coordinate conventions and the
 vertical-datum rules it enforces: [`docs/conventions.md`](../../docs/conventions.md).
 
@@ -17,7 +17,7 @@ vertical-datum rules it enforces: [`docs/conventions.md`](../../docs/conventions
 
    ```bash
    make shell   # or run natively if you have PyYAML installed
-   python -m _0_Utils.shark_import <front.shk> -o <variant>/vehicle.yml --name "<car name>"
+   python -m common.shark_import <front.shk> -o <variant>/vehicle.yml --name "<car name>"
    ```
 
    This writes `<variant>/vehicle.yml` *and* a `<variant>/vehicle.datum.json`
@@ -37,7 +37,7 @@ vertical-datum rules it enforces: [`docs/conventions.md`](../../docs/conventions
    falsely report a resolved match:
 
    ```bash
-   python -m _0_Utils.shark_import <rear.shk> -o <variant>/vehicle.yml \
+   python -m common.shark_import <rear.shk> -o <variant>/vehicle.yml \
      --baseline <variant>/vehicle.yml --datum-baseline vehicle.yml
    ```
 
@@ -51,7 +51,7 @@ vertical-datum rules it enforces: [`docs/conventions.md`](../../docs/conventions
 
 ## If z-dependent metrics are missing from the report
 
-That's `_0_Utils/shark_import.py:datum_gate` withholding them, not a solve
+That's `common/shark_import.py:datum_gate` withholding them, not a solve
 failure. Roll-centre height/migration and four-post jacking metrics come back
 empty rather than wrong when the vertical datum can't be verified.
 
