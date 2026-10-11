@@ -4028,14 +4028,13 @@ function simulationVisualHtml(workflow) {
       + '<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">Constraints, if present</text></g>';
     caption = steady ? 'Solve a steady operating point.' : 'Evolve the state while satisfying the model constraints.';
   } else if (id === 'four-post') {
-    drawing = `<path d="M19 97L91 61L239 84L169 122Z" ${stroke} opacity=".2"/>`
-      + [[91, 76, 24], [211, 87, 31], [49, 108, 48], [161, 119, 53]].map(([x, base, top]) =>
-        `<path d="M${x-17} ${base-3}l13 -6l22 4l-13 6Z" ${stroke}/>`
+    drawing = `<path d="M49 104L91 72L211 83L169 115Z" ${stroke} opacity=".2"/>`
+      + [[91, 76, 24], [211, 87, 31], [49, 108, 48], [169, 119, 53]].map(([x, base, top]) =>
+        `<path d="M${x-17} ${base-4}l12 -6l22 6l-12 6Z" ${stroke}/>`
         + `<path d="M${x-6} ${base-4}V${top+19}h12V${base-4}Z" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<path d="M${x-3} ${top+19}V${top+4}h6v15" ${stroke}/>`
         + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<ellipse cx="${x}" cy="${top}" rx="19" ry="6" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
-        + `<path d="M${x-14} ${top-2}v-5m28 5v-5" ${stroke} opacity=".5"/>`
       ).join('');
     caption = 'Four hydraulic posts move the wheels independently.';
   } else if (id === 'ggv') {
