@@ -9,20 +9,14 @@ assumed to add when they do not, and a metric name that means two things.
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-OPTSIM_DIR = ROOT / "simulations/optimization"
-if str(OPTSIM_DIR) not in sys.path:
-    sys.path.insert(0, str(OPTSIM_DIR))
-
 pytest.importorskip("scipy", reason="the OptSim pipeline package imports scipy")
 
-from StandardSens import trade_study  # noqa: E402
-from StandardSens.pipeline import standards, trade  # noqa: E402
-from StandardSens.pipeline.variants import split_cpus, variant_key  # noqa: E402
+from optimization.response import trade_study  # noqa: E402
+from optimization.response.pipeline import standards, trade  # noqa: E402
+from optimization.response.pipeline.variants import split_cpus, variant_key  # noqa: E402
 
 UNDERSTEER = trade.MetricSpec("SteadyStateEval", "understeer", resolution=0.02)
 RISE = trade.MetricSpec("TransientEval", "yaw_rise_time_s", resolution=0.005)
@@ -193,7 +187,7 @@ def test_the_solver_refuses_an_evaluation_that_lost_cases() -> None:
     fewer points. Accepted silently it bends the surrogate, and because
     evaluations are cached it would bend every later solve as well.
     """
-    from StandardSens.pipeline.evaluator import require_whole
+    from optimization.response.pipeline.evaluator import require_whole
 
     whole = {"n_cases": 8.0, "n_successful_cases": 8.0, "understeer": 0.3}
     assert standards.case_loss(whole) is None

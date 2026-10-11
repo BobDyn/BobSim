@@ -133,8 +133,8 @@ RESULT_EXPLORER_ROOTS = (
     Path("simulations/mbd/BuildBobLib"),
     Path("simulations/envelope/results"),
     Path("simulations/envelope/Build"),
-    Path("simulations/optimization/results"),
-    Path("simulations/optimization/Build"),
+    Path("optimization/results"),
+    Path("optimization/Build"),
     SAVED_RESULTS_ROOT,
     VEHICLE_WORKSPACE_ROOT,
 )

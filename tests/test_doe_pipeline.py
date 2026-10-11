@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-import sys
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,18 +21,15 @@ if TYPE_CHECKING:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OPTSIM_DIR = ROOT / "simulations/optimization"
-ARCHITECTURE_CONFIG = OPTSIM_DIR / "StandardSens/configs/vehicle_architecture.yaml"
+OPTSIM_DIR = ROOT / "optimization"
+ARCHITECTURE_CONFIG = OPTSIM_DIR / "response/configs/vehicle_architecture.yaml"
 
-# Import as the opt-* make targets do, with simulations/optimization on the path.
-if str(OPTSIM_DIR) not in sys.path:
-    sys.path.insert(0, str(OPTSIM_DIR))
 
 pytest.importorskip("scipy", reason="DOE sampling requires scipy")
 pd = pytest.importorskip("pandas", reason="the reverse-lookup guards operate on DataFrames")
 np = pytest.importorskip("numpy", reason="normalization ranges are numpy arrays")
 
-from StandardSens.pipeline import generate_configs, generator, search  # noqa: E402
+from optimization.response.pipeline import generate_configs, generator, search  # noqa: E402
 
 
 def _localize(doe_config_path: Path) -> Path:
@@ -123,7 +119,7 @@ def test_checked_in_config_matches_regeneration(doe_config: Path) -> None:
     assert committed == regenerated, (
         "_doe_config.yaml is stale or was hand-edited; it is generated from "
         "configs/vehicle_architecture.yaml. Regenerate it with "
-        "'python -m StandardSens.pipeline.generate_configs' and commit the result."
+        "'python -m optimization.response.pipeline.generate_configs' and commit the result."
     )
 
 
@@ -514,7 +510,7 @@ def test_four_post_metrics_resolve_to_generated_results() -> None:
     assert primary.parts[-4:-1] == ("simulations", "mbd", "generated_results")
 
     report_cfg = yaml.safe_load(
-        (ROOT / "simulations/mbd/FourPostEval/four_post_eval_config.yml").read_text()
+        (ROOT / "simulations/response/mbd/four_post/four_post_eval_config.yml").read_text()
     )["report"]
     assert Path(report_cfg["metrics_csv_path"]) == primary.relative_to(ROOT)
 
@@ -544,7 +540,7 @@ def test_small_doe_generates_variants(
     if not _boblib_record_available(doe_config_path):
         pytest.skip("BobLib submodule is not checked out; run 'make init'")
 
-    from StandardSens.pipeline.sampler import sample
+    from optimization.response.pipeline.sampler import sample
 
     variants = sample(doe_config_path)
     assert len(variants) == samples + 1, "LHS returns the baseline plus N samples"
@@ -584,7 +580,7 @@ def test_build_template_renders(tmp_path: Path) -> None:
     Literal Modelica braces such as the MSL version list `{"4.1.0"}` must be
     escaped as `{{...}}` or format() reads them as replacement fields.
     """
-    from StandardSens.pipeline import compiler
+    from optimization.response.pipeline import compiler
 
     rendered = compiler.generate_mos(
         variant_mo=tmp_path / "variant.mo",
@@ -612,11 +608,11 @@ def test_optsim_entrypoints_import() -> None:
     import importlib
 
     for module in (
-        "StandardSens.pre_screen_sensitivities",
-        "StandardSens.refined_response_surfaces",
-        "StandardSens.pipeline.aggregator",
-        "StandardSens.pipeline.search",
-        "StandardSens.solve_setup",
+        "optimization.response.pre_screen_sensitivities",
+        "optimization.response.refined_response_surfaces",
+        "optimization.response.pipeline.aggregator",
+        "optimization.response.pipeline.search",
+        "optimization.response.solve_setup",
     ):
         importlib.import_module(module)
 
@@ -625,7 +621,7 @@ def test_optsim_entrypoints_import() -> None:
 
 def test_soft_compile_failure_cannot_reuse_old_variant(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from StandardSens.pipeline import compiler
+    from optimization.response.pipeline import compiler
     (tmp_path / 'variant.mo').write_text('record Variant end Variant;')
     build = tmp_path / 'build/SteadyStateEval'
     build.mkdir(parents=True)

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from simulations.mbd.FourPostEval import shark_overlay_report as sor
+from simulations.response.mbd.four_post import shark_overlay_report as sor
 
 
 def test_stale_binary_is_refused_even_when_the_build_reports_success(

@@ -1,61 +1,54 @@
 # BobSim App
 
-The local browser app: a standard-library web shell over the existing BobSim
-workflows. User-facing docs live at [bobdyn.com/bobsim/app](https://bobdyn.com/bobsim/app);
-this file is the module map.
+The browser app configures vehicles, runs simulations, and displays results.
+User documentation: [bobdyn.com/bobsim/app](https://bobdyn.com/bobsim/app).
 
 ```bash
-python -m app.app      # then open http://127.0.0.1:8765
+make app                  # Docker
+python -m app.app         # host Python and local simulation tools
 ```
 
-## What the UI is
+Open `http://127.0.0.1:8765`.
 
-Three tabs, used in order:
+## Views
 
-| Tab | Surface |
+| View | Contents |
 | --- | --- |
-| `Setup` | Configure, visualise, load, and save the active vehicle, then `Write to MBD` |
-| `Simulation` | Launch the StandardSim workflows, edit their run configs, stream job logs |
-| `Archive` | Download the archive package a completed run produced |
+| Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
+| Simulation | Workflows, run configs, and job logs |
+| Replay | Captured 3D scenes, tire data, and metrics |
+| Archive | Saved run packages and downloads |
 
-Setup covers the checked-in architecture templates from
-`common/vehicle_templates`, so swapping between direct, bellcrank, and
-bellcrank-stabar packages happens in the browser before any study runs. It
-exposes vehicle parameters while hiding repo path plumbing, backed by a large
-interactive preview with hardpoints, suspension links, scaled mass spheres, and
-representative inertia rods.
+Setup uses the architecture templates in `common/vehicle_templates`, including
+direct, bellcrank, and bellcrank-stabar suspension. The preview shows hardpoints,
+links, masses, and inertia.
 
-Styling follows the BobDocs/bobdyn.com theme: same Inter face, same palette
-tokens, same 8px/12px radius scale. Dark is the default; the header toggle
-persists a light override in `localStorage` under `bobsim-theme`. The CSS
-tokens in `static/styles.css` and the `canvasPalette()` values in `static/app.js`
-are two halves of one palette — change both together or the plots drift from the
-shell.
+## Data
 
-## Where data lives
+Development data lives under `app/user_data`. Packaged builds use the user's
+BobSim runtime directory. `storage.py` defines these paths:
 
-Mutable app data is under `app/user_data` in development, and under the
-user's BobSim runtime directory in packaged builds. `storage.py` is the single
-source of truth for the layout:
+| Path under `user_data/` | Contents |
+| --- | --- |
+| `config/app` | App settings and OpenModelica selection |
+| `config/vehicles` | Saved vehicles |
+| `config/simulations` | Saved run configs |
+| `config/active` | Active simulation configs |
+| `results/saved` | Archive packages |
+| `workspaces/vehicles` | Per-vehicle generated configs and results |
+| `cache/modelica` | Cached Modelica builds |
 
-- `user_data/config/app` — app settings, OpenModelica selection
-- `user_data/config/vehicles` — saved vehicles
-- `user_data/config/simulations` — saved run configs
-- `user_data/results/saved` — archive packages
-- `user_data/workspaces/vehicles` — per-vehicle generated configs and results
-- `user_data/cache/modelica` — cached Modelica builds
+The UI assets are in `static/`. Default run configs live with their workflows.
+`visualization/` captures scenes. `visual.py` and `static/visual.js` load and draw
+them in Replay.
 
-Shipped, read-only assets stay in the repo: `static/` (UI) and
-`sim_configs/_defaults/` (stock run configs).
-
-`visualization` turns runs into scenes; `app/visual.py` and
-`static/visual.js` draw them in the Replay tab. `app` owns the local browser
-shell, setup menus, job launch, output preview, and logs.
+The app defaults to dark mode. The theme toggle saves `bobsim-theme` in
+`localStorage`. Colors are defined in `static/styles.css` and `canvasPalette()`
+in `static/app.js`.
 
 ## Module layout
 
 - `app.py`: compatibility facade for existing imports plus the CLI entrypoint.
-  New code should prefer the domain modules below.
 - `contracts.py`: shared dataclasses for workflows, actions, configs, fields,
   and outputs.
 - `registry.py`: declarative workflow/action/build-target/config-field

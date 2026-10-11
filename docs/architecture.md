@@ -16,21 +16,23 @@ an analysis method, not a DOF count. BobLib is a separate git submodule.
 | Directory | Contents |
 | --- | --- |
 | `engines/` | Physics tools |
-| `simulations/mbd/` | BobLib builders, runners and standard maneuver studies |
-| `simulations/reduced/` | DynPy transient studies and correlation against BobLib |
+| `simulations/response/` | Dynamic response studies, with MBD and reduced implementations |
 | `simulations/envelope/` | DynPy GGV and YMD maps and vehicle reports |
 | `simulations/lap/` | Track tools, QSS racing lines and transient laps |
-| `simulations/optimization/` | MBD and envelope sweeps, setup solving and trade studies |
+| `optimization/` | MBD and envelope sweeps, setup solving and trade studies |
 | `common/` | Vehicle I/O, templates, plotting, reporting and packaging |
 | `visualization/` | Capture and replay data |
 | `app/` | Browser UI, workflow registry and local server |
 
 Engines and common helpers must not import simulation workflows or the app.
-Studies reuse `common/plotting` and `common/reporting`.
+Studies reuse `common/plotting` and `common/reporting`. Optimization calls these
+workflows. It is separate from the simulation families and their model choices.
+Response studies currently have MBD and reduced implementations. Envelopes and
+laps use DynPy. There is no shared backend selection API yet.
 
 `make help` lists the entry points. Existing make target names are retained.
 Python imports use the new directories, such as `engines.dynpy` and
-`simulations.mbd`. Run the browser app with `python -m app.app`.
+`simulations.response.mbd`. Run the browser app with `python -m app.app`.
 
 The app's `contracts.py` and `registry.py` declare workflows. Its cards identify
 the engine, selected fidelity and runtime. Saved results retain the model
@@ -54,3 +56,8 @@ against their own directories.
 Generated builds, results and app state are ignored by Git. Moving from the
 numbered layout requires rebuilding executables. Existing local vehicles need
 their `paths.boblib` and `paths.tire_templates` updated to the new locations.
+
+The response source move retains build and result paths under `simulations/mbd`
+and `simulations/reduced` for existing consumers. Optimization assets now live
+under `optimization`. Existing make commands and app workflow IDs are unchanged.
+Direct Python imports must use the new package paths.

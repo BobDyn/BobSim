@@ -1,145 +1,76 @@
-# `visualization` — BobVis
+# BobVis
 
-BobVis replays a simulation's motion as 3D geometry: suspension links
-articulating, uprights and tires moving, force vectors growing and shrinking,
-tire loads pressing into the ground.
-
-It used to be a second desktop application, PyQt6 driving VTK through PyVista.
-It is now the **Replay tab of the app** — `app/visual.py` turns a captured
-run into a payload and `app/static/visual.js` draws it in WebGL. What is
-left in this package is the part that was never about rendering: turning a
-simulation result into a scene.
+BobVis captures simulation geometry for the app's Replay view. It shows
+suspension links, tires, force vectors, and tire loads.
 
 ```bash
-make visual-maneuver   # simulate a VehicleSim transient and write its scene
-make visual-rig        # simulate the four-post rig and write its scene
-make visual-demo       # synthetic scene, no simulation needed
-make app               # open the app, then the Replay tab
+make visual-maneuver   # capture a VehicleSim transient
+make visual-rig        # capture a four-post run
+make visual-demo       # generate a synthetic scene
+make app               # open Replay
 ```
 
-There is nothing to install for it. Every step runs in Docker like every other
-BobSim workflow, and so does `make app`.
-
----
+These targets run in Docker by default.
 
 ## Targets
 
-| Target | What it does |
+| Target | Input |
 | --- | --- |
-| `visual-maneuver` | Re-runs a VehicleSim manoeuvre (`VISUAL_MANEUVER`) with geometry capture, then writes its scene. |
-| `visual-rig` | The same for the four-post rig. |
-| `visual-capture` | The general form: whichever evaluation `VISUAL_EVAL` names. |
-| `visual-demo` | A synthetic scene, no simulation and no OpenModelica needed. |
+| `visual-maneuver` | VehicleSim maneuver selected by `VISUAL_MANEUVER` |
+| `visual-rig` | Four-post evaluation |
+| `visual-capture` | Evaluation selected by `VISUAL_EVAL` |
+| `visual-demo` | Synthetic data, no simulation required |
 
-Each writes a `<name>_visual.yml` and `<name>_visual.npz` pair into
-`visualization/results/`. The Replay tab lists whatever it finds there.
+Each writes `<name>_visual.yml` and `<name>_visual.npz` to
+`visualization/results/`. Replay lists the available scenes.
 
----
+## Scene Capture
 
-## Where the data comes from
+A scene has two inputs:
 
-Two inputs, always:
+- A YAML template defining points, links, tires, force vectors, and camera settings.
+- A signal file containing positions over time, in `.npz` or `.csv` format with a
+  `time` column.
 
-* a **visual template** — YAML describing which signals are 3D points, how
-  they connect into links, where the tires and force vectors are, and how the
-  camera follows the car;
-* a **signal file** — hardpoint positions over time, `.npz` or any `.csv` with
-  a `time` column.
+Normal evaluation output contains the signals needed for metrics, which may
+exclude geometry. `make visual-capture` reruns the evaluation with those signals
+plus the hardpoint frame origins in `from_results.FRAME_MAP`, then converts the
+result to a scene pair.
 
-`make visual-capture` produces both, together, from a real simulation.
+The converter detects whether axle frames belong to the four-post rig or are
+nested under VehicleSim's `chassis.detailedChassis`.
+It reconstructs wheel-center and contact-patch positions removed by OpenModelica
+from three surviving upright points. The run reports reconstructed points.
 
-### Why there is a capture step
+Capture also includes tire `Fx`, `Fy`, `Fz`, and camber, and records the metrics
+CSV in the template. Recapture older scenes to add these channels.
 
-The evaluations do not emit geometry. Each one sets a `variable_filter` naming
-the handful of scalars its metrics need — `frKnC.leftGamma`, spring lengths,
-`accY` — and OpenModelica writes only those. A default
-`make standard-eval-four-post` result CSV is 45 columns of KnC numbers with no
-positions in it at all, so there is nothing for a viewer to draw.
+The older files in `visual_templates/` name signals absent from the current
+BobLib models. Use `make visual-maneuver` to generate a current template and data
+pair. Missing signal names are reported when a template is loaded.
 
-`make visual-capture` re-runs an evaluation with a wider filter that also asks
-for the MultiBody frame origins behind each hardpoint (`from_results.FRAME_MAP`),
-at a finer output step, then converts the result:
-
-```
-capture config  ->  the evaluation in the container  ->  from_results  ->  .npz + .yml
-```
-
-The rig and VehicleSim share one frame map: VehicleSim's axles are the rig's,
-nested under `chassis.detailedChassis.`, and the converter detects the prefix.
-
-It asks for ~250 columns rather than the model's 39,000, and writes the data
-and the template as a pair so they cannot disagree.
-
-The same filter keeps each tire's `Fx`, `Fy`, `Fz` and camber for the friction
-circles, and the conversion records the run's metrics CSV in the template for
-the Metrics tab. A scene captured before either existed has neither; re-run
-`make visual-capture` to get them.
-
-Two details worth knowing:
-
-* **The evaluation's own signals stay in the filter.** It re-reads the same CSV
-  to compute its metrics and fails if they are missing, so the capture filter
-  is a union, never a replacement.
-* **Some points come back by refit.** OpenModelica eliminates variables it can
-  prove redundant, and the wheel-centre frames and contact-patch Z go with
-  them. Rather than recompiling the model with that optimisation off, the
-  converter fits the upright's pose from three outboard points that did
-  survive and maps the rest through it. That is exact for a rigid upright, and
-  it is where the tire spin axes come from too. The run reports which points
-  were refit.
-
-### The bundled templates
-
-`visual_templates/` holds four older templates naming signals like
-`signals/visfrontaxleleftlowerfore_i1`. **No current model emits those.** There
-is no `vis` bus anywhere in the pinned BobLib, and nothing in this repo ever
-wrote the `*_visual.npz` files their headers refer to. They are kept because
-they document the intended layout for the VehicleSim maneuvers, but they
-cannot be opened against a run produced today. Use `make visual-maneuver`.
-
-If a template names a signal the data file has not got, BobVis lists the
-missing names instead of failing somewhere inside VTK.
-
----
-
----
-
-## Module map
+## Modules
 
 | File | Role |
 | --- | --- |
-| `sim_data.py` | `SimData`: a visual config resolved against the signals it names. Numpy and YAML only. |
-| `navigation.py` | Camera arithmetic: orbit, pan, zoom-to-cursor, and where a double-click lands. Numpy only, and the reference the browser camera is tested against. |
-| `tire_state.py` | Friction-circle and LLTD arithmetic: MF5.2 peak μ from `.tir` terms, grip use, axle load transfer. Numpy only. |
-| `from_results.py` | Maps BobLib frames to hardpoints; turns a result CSV into a scene. |
-| `capture.py` | Writes the geometry-capture eval config, then converts what it produced. |
-| `demo.py` | Generates the synthetic scene behind `make visual-demo`. |
-| `visual_templates/` | Older templates, currently stale. See above. |
-| `results/` | Generated output. Gitignored. |
+| `sim_data.py` | Resolve a visual config against its signals |
+| `navigation.py` | Camera orbit, pan, zoom, and double-click calculations |
+| `tire_state.py` | MF5.2 pure-slip peak friction, grip utilization, and axle load transfer |
+| `from_results.py` | Convert BobLib result frames to a scene |
+| `capture.py` | Run an evaluation with geometry capture and convert its output |
+| `demo.py` | Generate the synthetic scene |
+| `visual_templates/` | Older templates |
+| `results/` | Generated scenes, excluded from Git |
+| `../app/visual.py` | Resolve scenes into a JSON header and float32 buffer |
+| `../app/static/visual.js` | Browser camera and WebGL renderer |
+| `../app/static/visual_panel.js` | Run picker, timeline, layers, tire data, and metrics |
 
-The drawing lives in `app`:
+The server resolves signal names to buffer indices. The browser interpolates
+samples and draws links, tires, joints, trails, and vectors.
+`tests/test_visual_camera_parity.py` compares the browser camera calculations
+with `navigation.py`. It requires Node.js and skips when Node.js is unavailable.
 
-| File | Role |
-| --- | --- |
-| `app/visual.py` | Resolves a config and its signals into a JSON header plus one float32 buffer. |
-| `app/static/visual.js` | The camera and the WebGL renderer. |
-| `app/static/visual_panel.js` | The Replay screen: run picker, timeline, layers, tire and metric tabs. |
-
-Everything that depends on the run is resolved once, server side, into flat
-indices. Per frame the browser looks up no names and makes no decisions — it
-interpolates numbers and draws. Two instanced programs cover the whole scene:
-segments (links, grid, trails, force arrows) and discs (tires, load
-footprints, and billboarded joints).
-
-`navigation.py` stays even though the camera now runs in the browser.
-`tests/test_visual_camera_parity.py` runs the JavaScript under `node` and
-holds it to this module's answers, so the arithmetic that made the first pass
-at these controls feel wrong cannot drift again unnoticed. It skips where
-`node` is absent, as in CI.
-
----
-
-## Writing a visual template
+## Template Format
 
 ```yaml
 style:
@@ -194,26 +125,17 @@ camera:
   camera_offsets: {back: 3.0, height: 2.0}
 ```
 
-Point coordinates are **world frame**, in metres, matching BobSim's axis
+Point coordinates are in the world frame, in metres, matching BobSim's axis
 conventions ([`docs/conventions.md`](../docs/conventions.md)). Wheel spin is
-integrated from wheel-center velocity, so tires roll correctly without a
-spin-angle signal.
+integrated from wheel-center velocity, without a separate spin-angle signal.
 
 `input_stride` is applied once, to every signal including `time`, so geometry,
 plots and the timeline stay on one index.
 
----
+## Limits
 
----
+The friction display uses an ellipse based on pure-slip peak friction. It does
+not represent the full MF5.2 combined-slip envelope.
 
-## Notes
-
-- **The friction circle is an approximation.** It is an ellipse built from
-  pure-slip peak μ, not MF5.2's combined-slip envelope. Read its edge as "at
-  the limit", not as a hard wall.
-- **Scenes are generated, never committed.** `visualization/results/` is
-  gitignored; `make visual-demo` rebuilds the synthetic pair whenever it is
-  missing.
-- **Video export is gone.** It went with the off-screen VTK renderer. Nothing
-  in the repo consumed the MP4s, and a screen recording of the tab costs less
-  than the dependency did.
+Video export is not supported. Scenes are generated locally and excluded from
+Git.

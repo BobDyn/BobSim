@@ -9,7 +9,7 @@ import yaml
 from app.tire_eval import _tire_template_for_side
 from common.vehicle_io import load_yaml, repo_root, tire_template_name, vehicle_yaml_path
 from engines.dynpy import ModelInputs, Vehicle
-from simulations.envelope.GGV.ggv_generation import _trim_outside_tire_domain
+from simulations.envelope.ggv.ggv_generation import _trim_outside_tire_domain
 
 
 @pytest.fixture(scope="module")

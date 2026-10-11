@@ -1,20 +1,11 @@
 # Skills
 
-Packaged, repeatable procedures for tasks that are more than "read a doc and
-run a command" — multi-step workflows where the value is in the judgment
-calls and verification steps, not just the command syntax. Agent-agnostic
-plain directories, readable and runnable by any coding agent or human; not
-tied to any one tool's skills format.
+Each folder contains a `SKILL.md` with steps and checks for a repeatable task.
+The procedures use existing scripts and make targets.
 
-Each skill is a folder with a `SKILL.md`: what it's for, when to reach for
-it, the steps, and which underlying script/target actually does the work
-(skills document and sequence existing tools in `common` / the makefile —
-they don't duplicate that logic).
-
-| Skill | Use it when |
+| Skill | Task |
 | --- | --- |
-| [shark-import](shark-import/SKILL.md) | Importing Lotus SHARK suspension geometry into a `vehicle.yml`, including the vertical-datum check. |
-| [regression-baseline-refresh](regression-baseline-refresh/SKILL.md) | Updating `tests/regression_baselines/default_vehicle_standard.yml` after an intentional physics/model change. |
+| [shark-import](shark-import/SKILL.md) | Import Lotus SHARK suspension geometry into `vehicle.yml` and verify the vertical datum |
+| [regression-baseline-refresh](regression-baseline-refresh/SKILL.md) | Regenerate and review the baseline after an intentional physics or model change |
 
-If you're just running a single documented command, you want
-[`docs/workflows.md`](../docs/workflows.md) or `make help`, not a skill here.
+For individual commands, see [workflows](../docs/workflows.md) or `make help`.

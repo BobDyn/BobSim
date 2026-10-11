@@ -15,7 +15,7 @@ services:
 
   standard:
     <<: *bobsim-base
-    working_dir: /workspace/simulations/mbd
+    working_dir: /workspace/simulations/response/mbd
 
   envelope:
     <<: *bobsim-base
@@ -23,7 +23,7 @@ services:
 
   opt:
     <<: *bobsim-base
-    working_dir: /workspace/simulations/optimization
+    working_dir: /workspace/optimization
 
   app:
     <<: *bobsim-base

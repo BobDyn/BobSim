@@ -15,7 +15,7 @@ from simulations.lap import lap_time_eval_sim as lap
 def provenance_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lap, 'repo_root', lambda: tmp_path)
     monkeypatch.setattr(lap, '__file__', str(tmp_path / 'lap.py'))
-    for name in ('lap.py', 'simulations/envelope/GGV/ggv_generation.py',
+    for name in ('lap.py', 'simulations/envelope/ggv/ggv_generation.py',
                  'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
                  'engines/dynpy/parameters.py', 'engines/kinpy/geometry.py'):
         path = tmp_path / name
@@ -56,7 +56,7 @@ def test_ggv_fingerprint_tracks_referenced_physics(provenance_workspace, relativ
 
 
 def test_ggv_cache_reused_only_while_inputs_match(provenance_workspace, monkeypatch):
-    from simulations.envelope.GGV import ggv_generation
+    from simulations.envelope.ggv import ggv_generation
     from simulations.envelope import vehicle_yaml
 
     root, arguments = provenance_workspace

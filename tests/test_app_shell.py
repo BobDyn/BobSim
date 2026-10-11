@@ -11,8 +11,8 @@ import yaml
 
 from common.deploy import deploy
 from engines.kinpy import KINEMATIC_CURVE_META
-from simulations.mbd import _modelica_runner
-from simulations.mbd._modelica_runner import ModelicaRunner
+from simulations.response.mbd import _modelica_runner
+from simulations.response.mbd._modelica_runner import ModelicaRunner
 from app import app
 from app import desktop
 
@@ -79,12 +79,12 @@ def test_standard_config_fields_expose_sim_tuning_controls() -> None:
     ("argv", "normalized"),
     [
         (
-            ["BobSim", "--run-module", "simulations.mbd.SomeEval"],
-            ["BobSim", "--run-module", "simulations.mbd.SomeEval"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval"],
         ),
         (
-            ["BobSim", "-m", "simulations.mbd.SomeEval", "config.yml"],
-            ["BobSim", "--run-module", "simulations.mbd.SomeEval", "config.yml"],
+            ["BobSim", "-m", "simulations.response.mbd.SomeEval", "config.yml"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval", "config.yml"],
         ),
     ],
 )
@@ -430,8 +430,8 @@ def test_openmodelica_selection_accepts_omc_bin_directory(
 def test_deploy_does_not_bundle_generated_modelica_binaries() -> None:
     data_paths = set(deploy.DATA_PATHS)
 
-    assert "simulations/mbd/build_vehicle_sim.mos" in data_paths
-    assert "simulations/mbd/build_four_post_sim.mos" in data_paths
+    assert "simulations/response/mbd/build_vehicle_sim.mos" in data_paths
+    assert "simulations/response/mbd/build_four_post_sim.mos" in data_paths
     assert "simulations/mbd/BuildBobLib" not in data_paths
     assert app.BUILD_ARCHIVE_ROOT.as_posix() not in data_paths
 
@@ -464,14 +464,14 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
 ) -> None:
     package_root = tmp_path / "package"
     runtime_root = tmp_path / "runtime"
-    package_script = package_root / "simulations/mbd/build_vehicle_sim.mos"
+    package_script = package_root / "simulations/response/mbd/build_vehicle_sim.mos"
     package_vehicle = package_root / "vehicle.yml"
-    package_workflow = package_root / "simulations/mbd/FourPostEval/four_post_eval_config.yml"
+    package_workflow = package_root / "simulations/response/mbd/four_post/four_post_eval_config.yml"
     package_tire = package_root / "common/tire_templates/stock.tir"
-    runtime_script = runtime_root / "simulations/mbd/build_vehicle_sim.mos"
+    runtime_script = runtime_root / "simulations/response/mbd/build_vehicle_sim.mos"
     runtime_vehicle = runtime_root / "vehicle.yml"
     runtime_active = runtime_root / app.ACTIVE_SIM_CONFIG_ROOT / "four_post_eval_config.yml"
-    runtime_workflow = runtime_root / "simulations/mbd/FourPostEval/four_post_eval_config.yml"
+    runtime_workflow = runtime_root / "simulations/response/mbd/four_post/four_post_eval_config.yml"
     runtime_tire = runtime_root / "common/tire_templates/stock.tir"
     runtime_custom_tire = runtime_root / "common/tire_templates/custom.tir"
     runtime_build = runtime_root / "simulations/mbd/BuildBobLib/VehicleSim/old.exe"
@@ -529,7 +529,7 @@ def test_runtime_seed_preserves_build_cache_when_packaged_sources_are_unchanged(
 ) -> None:
     package_root = tmp_path / "package"
     runtime_root = tmp_path / "runtime"
-    package_script = package_root / "simulations/mbd/build_vehicle_sim.mos"
+    package_script = package_root / "simulations/response/mbd/build_vehicle_sim.mos"
     runtime_build = runtime_root / "simulations/mbd/BuildBobLib/VehicleSim/current.exe"
     package_script.parent.mkdir(parents=True)
     package_script.write_text("// build script\n", encoding="utf-8")
@@ -618,7 +618,10 @@ def test_frozen_external_tool_env_removes_pyinstaller_paths(
 
 
 def test_modelica_build_scripts_use_cross_platform_directory_creation() -> None:
-    for rel_path in ("simulations/mbd/build_vehicle_sim.mos", "simulations/mbd/build_four_post_sim.mos"):
+    for rel_path in (
+        "simulations/response/mbd/build_vehicle_sim.mos",
+        "simulations/response/mbd/build_four_post_sim.mos",
+    ):
         text = Path(rel_path).read_text(encoding="utf-8")
 
         assert 'system("mkdir -p "' not in text
@@ -789,9 +792,9 @@ def test_modelica_runner_accepts_exe_suffix(tmp_path: Path) -> None:
 
 
 def test_app_can_read_repo_configs() -> None:
-    payload = app.read_text_payload("simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml")
+    payload = app.read_text_payload("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml")
 
-    assert payload["path"] == "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"
+    assert payload["path"] == "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     assert "BobLib.Experiments.Standards.VehicleSim" in payload["text"]
 
 
@@ -1083,7 +1086,7 @@ def test_app_archives_and_restores_matching_modelica_builds(
     monkeypatch.setattr(app, "ROOT", tmp_path)
     fake_openmodelica_install(tmp_path, monkeypatch)
     (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: CacheCar\n", encoding="utf-8")
-    script_path = tmp_path / "simulations/mbd/build_vehicle_sim.mos"
+    script_path = tmp_path / "simulations/response/mbd/build_vehicle_sim.mos"
     script_path.parent.mkdir(parents=True)
     script_path.write_text("// fake build script\n", encoding="utf-8")
     stack = {
@@ -1133,7 +1136,7 @@ def test_modelica_build_signature_changes_when_boblib_source_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(app, "ROOT", tmp_path)
-    script_path = tmp_path / "simulations/mbd/build_vehicle_sim.mos"
+    script_path = tmp_path / "simulations/response/mbd/build_vehicle_sim.mos"
     boblib_package = tmp_path / "engines/boblib/BobLib/package.mo"
     script_path.parent.mkdir(parents=True)
     boblib_package.parent.mkdir(parents=True)
@@ -1693,7 +1696,7 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
     """Editing a relocatable study config writes user_data, never the tracked file."""
     from common import config_io
 
-    seed = tmp_path / "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"
+    seed = tmp_path / "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     seed.parent.mkdir(parents=True)
     seed_text = "simulation:\n  solver: dassl\nexecution:\n  max_workers: 8\n"
     seed.write_text(seed_text, encoding="utf-8")
@@ -1706,7 +1709,7 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
                 id="ramp-steer",
                 group="standard",
                 label="Ramp",
-                path="simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml",
+                path="simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
                 workflow_id="ramp-steer",
                 relocatable=True,
                 fields=(app.FieldSpec(("simulation", "solver"), "Solver", kind="select", choices=("dassl", "ida")),),
@@ -1715,7 +1718,7 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
     )
 
     active = config_io.active_config_path(
-        "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     )
     assert not active.exists()
 
@@ -1727,19 +1730,19 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
 
     # The CLI reads the same file the app is running.
     assert config_io.resolve(
-        "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     ) == active
 
     # "Default" is the checked-in config itself, so restoring cannot drift.
     library = app.sim_config_library_payload("ramp-steer")
-    assert library["sources"][0]["path"] == "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml"
+    assert library["sources"][0]["path"] == "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     app.load_sim_config_source("default:ramp-steer")
     assert active.read_text(encoding="utf-8") == seed_text
 
     # With no active copy the CLI falls back to the checked-in config.
     active.unlink()
     assert config_io.resolve(
-        "simulations/mbd/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     ) == seed
 
 
@@ -1748,7 +1751,7 @@ def test_non_relocatable_configs_are_still_edited_in_place(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GGV/YMD/OptSim configs resolve "../" against their own directory, so they stay put."""
-    config = tmp_path / "simulations/envelope/GGV/ggv_config.yml"
+    config = tmp_path / "simulations/envelope/ggv/ggv_config.yml"
     config.parent.mkdir(parents=True)
     config.write_text("vehicle_template: ../../vehicle.yml\nreport:\n  enabled: true\n", encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
@@ -1760,7 +1763,7 @@ def test_non_relocatable_configs_are_still_edited_in_place(
                 id="ggv",
                 group="envelope",
                 label="GGV",
-                path="simulations/envelope/GGV/ggv_config.yml",
+                path="simulations/envelope/ggv/ggv_config.yml",
                 workflow_id="ggv",
                 fields=(app.FieldSpec(("report", "enabled"), "Enabled", kind="boolean"),),
             )

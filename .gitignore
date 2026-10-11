@@ -87,14 +87,16 @@ vehicle_2027.yml
 # a tracked file confidently describing geometry that no longer exists. The
 # overlay treats a missing record as unknown and withholds, so absence is safe.
 *.datum.json
-simulations/optimization/Build/
-simulations/optimization/results/**
-!simulations/optimization/results/
-!simulations/optimization/results/.gitkeep
-simulations/optimization/population/
-simulations/optimization/population_refined/
-simulations/optimization/StandardSens/results/
-simulations/optimization/EnvelopeSens/results/
+# Artifacts left by the previous optimization location.
+simulations/optimization/
+optimization/Build/
+optimization/results/**
+!optimization/results/
+!optimization/results/.gitkeep
+optimization/population/
+optimization/population_refined/
+optimization/response/results/
+optimization/envelope/results/
 app/user_data/**
 !app/user_data/
 !app/user_data/**/

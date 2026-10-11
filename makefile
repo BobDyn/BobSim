@@ -2,8 +2,8 @@ PYTHON ?= python
 RUFF_CACHE_DIR ?= /tmp/bobsim-ruff-cache
 MYPY_CACHE_DIR ?= /tmp/bobsim-mypy-cache
 
-QUALITY_DIRS := common engines/kinpy engines/dynpy visualization simulations app tests
-TYPECHECK_DIRS := common engines/kinpy engines/dynpy visualization simulations app tests
+QUALITY_DIRS := common engines/kinpy engines/dynpy visualization simulations optimization app tests
+TYPECHECK_DIRS := common engines/kinpy engines/dynpy visualization simulations optimization app tests
 BOBLIB_PATH := engines/boblib
 BOBLIB_PACKAGE_PATH := $(BOBLIB_PATH)/BobLib
 VEHICLE_SIM_CLASS := BobLib.Experiments.Standards.VehicleSim
@@ -14,8 +14,8 @@ FOUR_POST_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/FourPostSim.
 VEHICLE_SIM_EXE := simulations/mbd/BuildBobLib/VehicleSim/$(VEHICLE_SIM_CLASS)
 FOUR_POST_SIM_EXE := simulations/mbd/BuildBobLib/FourPostSim/$(FOUR_POST_SIM_CLASS)
 
-BUILD_VEHICLE_MOS := simulations/mbd/build_vehicle_sim.mos
-BUILD_FOUR_POST_MOS := simulations/mbd/build_four_post_sim.mos
+BUILD_VEHICLE_MOS := simulations/response/mbd/build_vehicle_sim.mos
+BUILD_FOUR_POST_MOS := simulations/response/mbd/build_four_post_sim.mos
 
 SEARCH_TOP ?= 1
 TARGETS ?=
@@ -53,10 +53,10 @@ VISUAL_DEMO_DATA := $(VISUAL_RESULTS)/demo_step_steer.npz
 VISUAL_EVAL ?= four_post
 VISUAL_MANEUVER ?= transient
 VISUAL_CAPTURE := $(VISUAL_RESULTS)/$(VISUAL_EVAL)
-VISUAL_EVAL_MODULE_four_post := FourPostEval.four_post_eval_sim
-VISUAL_EVAL_MODULE_transient := TransientEval.transient_eval_sim
-VISUAL_EVAL_MODULE_ramp_steer := RampSteerEval.ramp_steer_eval_sim
-VISUAL_EVAL_MODULE_steady_state := SteadyStateEval.steady_state_eval_sim
+VISUAL_EVAL_MODULE_four_post := four_post.four_post_eval_sim
+VISUAL_EVAL_MODULE_transient := transient.transient_eval_sim
+VISUAL_EVAL_MODULE_ramp_steer := ramp_steer.ramp_steer_eval_sim
+VISUAL_EVAL_MODULE_steady_state := steady_state.steady_state_eval_sim
 VISUAL_EVAL_BUILD := $(if $(filter four_post,$(VISUAL_EVAL)),standard-build-four-post,standard-build)
 
 DEPLOY_MODE ?= onefile
@@ -87,9 +87,9 @@ RUN :=
 DOCKER_BUILD_CMD := @echo "Already inside the BobSim container."
 DOCKER_REBUILD_CMD := @echo "Already inside the BobSim container."
 SHELL_BOBSIM_CMD := bash
-SHELL_STANDARD_CMD := cd simulations/mbd && bash
+SHELL_STANDARD_CMD := cd simulations/response/mbd && bash
 SHELL_ENVELOPE_CMD := cd simulations/envelope && bash
-SHELL_OPT_CMD := cd simulations/optimization && bash
+SHELL_OPT_CMD := cd optimization && bash
 else
 # cmd.exe cannot parse the POSIX probe, so Windows uses `docker compose` directly.
 ifeq ($(OS),Windows_NT)
@@ -268,7 +268,7 @@ app:
 # suspension frames and converts the result to a scene.
 visual-capture: $(VISUAL_EVAL_BUILD)
 	$(RUN) $(PYTHON) -m visualization.capture config $(VISUAL_CAPTURE)_capture_config.yml --eval $(VISUAL_EVAL)
-	$(RUN) $(PYTHON) -m simulations.mbd.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
+	$(RUN) $(PYTHON) -m simulations.response.mbd.$(VISUAL_EVAL_MODULE_$(VISUAL_EVAL)) $(VISUAL_CAPTURE)_capture_config.yml
 	$(RUN) $(PYTHON) -m visualization.capture convert $(VISUAL_CAPTURE)_capture_config.yml \
 		--npz $(VISUAL_CAPTURE)_visual.npz --template $(VISUAL_CAPTURE)_visual.yml
 	@printf '%s\n' 'Scene written. Open it with: make app, then the Replay tab.'
@@ -376,42 +376,42 @@ $(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PAC
 # Runs in the container because ARGS=--four-post needs the container-built simulator.
 SHARK_ARG := $(if $(SHARK),--shark $(SHARK),)
 shark-overlay:
-	$(RUN) $(PYTHON) -m simulations.mbd.FourPostEval.shark_overlay_report $(SHARK_ARG) $(ARGS)
+	$(RUN) $(PYTHON) -m simulations.response.mbd.four_post.shark_overlay_report $(SHARK_ARG) $(ARGS)
 
 standard-build: $(VEHICLE_SIM_EXE)
 
 standard-build-four-post: $(FOUR_POST_SIM_EXE)
 
 standard-eval-ramp-steer: standard-build
-	$(RUN) $(PYTHON) -m simulations.mbd.RampSteerEval.ramp_steer_eval_sim
+	$(RUN) $(PYTHON) -m simulations.response.mbd.ramp_steer.ramp_steer_eval_sim
 
 standard-eval-steady-state: standard-build
-	$(RUN) $(PYTHON) -m simulations.mbd.SteadyStateEval.steady_state_eval_sim
+	$(RUN) $(PYTHON) -m simulations.response.mbd.steady_state.steady_state_eval_sim
 
 standard-eval-transient: standard-build
-	$(RUN) $(PYTHON) -m simulations.mbd.TransientEval.transient_eval_sim
+	$(RUN) $(PYTHON) -m simulations.response.mbd.transient.transient_eval_sim
 
 standard-eval-four-post: standard-build-four-post
-	$(RUN) $(PYTHON) -m simulations.mbd.FourPostEval.four_post_eval_sim
+	$(RUN) $(PYTHON) -m simulations.response.mbd.four_post.four_post_eval_sim
 
 standard-eval-all: standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post
 
 reduced-eval:
-	$(RUN) $(PYTHON) -m simulations.reduced.reduced_order_eval_sim \
+	$(RUN) $(PYTHON) -m simulations.response.reduced.reduced_order_eval_sim \
 		--dof $(REDUCED_DOF) \
 		--kinematics-mode $(REDUCED_KINEMATICS) \
 		$(if $(REDUCED_BOBLIB_CSV),--boblib-csv $(REDUCED_BOBLIB_CSV),)
 
 reduced-fidelity-suite:
-	$(RUN) $(PYTHON) -m simulations.reduced.fidelity_suite \
+	$(RUN) $(PYTHON) -m simulations.response.reduced.fidelity_suite \
 		$(if $(REDUCED_MBD_DIR),--mbd-directory $(REDUCED_MBD_DIR),)
 
 reduced-suspension-correlation:
-	$(RUN) $(PYTHON) -m simulations.reduced.suspension_correlation \
+	$(RUN) $(PYTHON) -m simulations.response.reduced.suspension_correlation \
 		--metrics $(REDUCED_SUSPENSION_METRICS)
 
 reduced-kinematics-benchmark:
-	$(RUN) $(PYTHON) -m simulations.reduced.kinematics_benchmark
+	$(RUN) $(PYTHON) -m simulations.response.reduced.kinematics_benchmark
 
 lap-eval:
 	$(RUN) $(PYTHON) -m simulations.lap.lap_time_eval_sim \
@@ -434,10 +434,10 @@ lap-validation-visuals:
 standard-regression-four-post: regression-baseline
 
 envelope-ggv:
-	$(RUN) $(PYTHON) -m simulations.envelope.GGV.ggv_generation
+	$(RUN) $(PYTHON) -m simulations.envelope.ggv.ggv_generation
 
 envelope-ymd:
-	$(RUN) $(PYTHON) -m simulations.envelope.YMD.ymd_generation
+	$(RUN) $(PYTHON) -m simulations.envelope.ymd.ymd_generation
 
 envelope-all: envelope-ggv envelope-ymd
 
@@ -449,7 +449,7 @@ opt-doe-smoke:
 	$(RUN) $(PYTHON) -m pytest tests/test_doe_pipeline.py -q
 
 opt-standard: $(FOUR_POST_METRICS)
-	$(RUN) env $(DOE_ENV) PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m StandardSens.pre_screen_sensitivities
+	$(RUN) env $(DOE_ENV) $(PYTHON) -m optimization.response.pre_screen_sensitivities
 
 # A scope change requires 'make clean-opt'. These targets do not clean, to keep earlier results.
 opt-standard-setup:
@@ -459,10 +459,10 @@ opt-standard-architecture:
 	$(MAKE) opt-standard DOE_SCOPE=architecture
 
 opt-envelope:
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m EnvelopeSens.sensitivities
+	$(RUN) $(PYTHON) -m optimization.envelope.sensitivities
 
 opt-refined:
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m StandardSens.refined_response_surfaces
+	$(RUN) $(PYTHON) -m optimization.response.refined_response_surfaces
 
 opt-search:
 	@if [ -z '$(METRICS)' ]; then \
@@ -475,15 +475,15 @@ opt-search:
 			'Requires a populated results table; run make opt-standard first.'; \
 		exit 1; \
 	fi
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m StandardSens.pipeline.search --metrics $(METRICS) --top $(SEARCH_TOP)
+	$(RUN) $(PYTHON) -m optimization.response.pipeline.search --metrics $(METRICS) --top $(SEARCH_TOP)
 
 # Solves for the setup directly and simulates the result.
 opt-solve: $(FOUR_POST_METRICS)
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m StandardSens.solve_setup $(if $(TARGETS),--targets $(TARGETS),) $(if $(KNOBS),--knobs $(KNOBS),)
+	$(RUN) $(PYTHON) -m optimization.response.solve_setup $(if $(TARGETS),--targets $(TARGETS),) $(if $(KNOBS),--knobs $(KNOBS),)
 
 # Compiles each candidate once and runs every requested standard on it.
 opt-trade: $(FOUR_POST_METRICS)
-	$(RUN) env PYTHONPATH=$(WORKSPACE)/simulations/optimization:$(WORKSPACE) $(PYTHON) -m StandardSens.trade_study $(if $(STUDY),--study $(STUDY),)
+	$(RUN) $(PYTHON) -m optimization.response.trade_study $(if $(STUDY),--study $(STUDY),)
 
 clean:
 	bash -lc 'find $(CLEAN_WORKSPACE) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; \
@@ -544,12 +544,12 @@ clean-envelope:
 
 clean-opt:
 	bash -lc 'for path in \
-		$(CLEAN_WORKSPACE)/simulations/optimization/Build \
-		$(CLEAN_WORKSPACE)/simulations/optimization/StandardSens/results \
-		$(CLEAN_WORKSPACE)/simulations/optimization/EnvelopeSens/results \
-		$(CLEAN_WORKSPACE)/simulations/optimization/population \
-		$(CLEAN_WORKSPACE)/simulations/optimization/population_refined \
-		$(CLEAN_WORKSPACE)/simulations/optimization/results; do \
+		$(CLEAN_WORKSPACE)/optimization/Build \
+		$(CLEAN_WORKSPACE)/optimization/response/results \
+		$(CLEAN_WORKSPACE)/optimization/envelope/results \
+		$(CLEAN_WORKSPACE)/optimization/population \
+		$(CLEAN_WORKSPACE)/optimization/population_refined \
+		$(CLEAN_WORKSPACE)/optimization/results; do \
 		mkdir -p "$$path"; \
 		if [ -d "$$path" ]; then find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} + 2>/dev/null || true; fi; \
 		done; echo "OptSim artifacts cleaned"'
@@ -565,12 +565,12 @@ clean-owned:
 			simulations/mbd/BuildBobLib \
 			simulations/mbd/generated_results \
 			simulations/mbd/results \
-			simulations/optimization/Build \
-			simulations/optimization/EnvelopeSens/results \
-			simulations/optimization/StandardSens/results \
-			simulations/optimization/population \
-			simulations/optimization/population_refined \
-			simulations/optimization/results \
+			optimization/Build \
+			optimization/envelope/results \
+			optimization/response/results \
+			optimization/population \
+			optimization/population_refined \
+			optimization/results \
 			$(APP_USER_DATA_DIRS); do \
 			mkdir -p "$$path"; \
 			find "$$path" -mindepth 1 -maxdepth 1 ! -name ".gitkeep" -exec rm -rf {} +; \

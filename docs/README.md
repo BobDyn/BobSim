@@ -1,32 +1,22 @@
 # BobSim Docs
 
-Repo-local documentation. The public/expanded docs live at https://bobdyn.com —
-this folder is the checked-in, version-matched subset that explains how *this*
-working copy is laid out and how to drive it.
+Documentation for this checkout. The public documentation is at
+[bobdyn.com](https://bobdyn.com).
 
-Read in this order:
-
-| Doc | Read it when |
+| Document | Contents |
 | --- | --- |
-| [architecture.md](architecture.md) | You need the engine and workflow layout and how data flows between them. Start here. |
-| [simulation-entrypoints.md](simulation-entrypoints.md) | You need to understand the fidelity levels and use cases of VehicleSim, EnvelopeSim, StandardSim, and FourPostSim — or you're publishing results and need to specify which workflow was used. |
-| [workflows.md](workflows.md) | You want to *run* something: app, standard studies, envelopes, sensitivities, tests. |
-| [doe-reverse-engineering.md](doe-reverse-engineering.md) | You are doing OptSim work: sweeping parameters (`make opt-standard`), solving for the setup that hits target metrics (`make opt-solve`), or comparing named vehicles across standard sims (`make opt-trade`). It opens with which of the three to reach for. |
+| [architecture.md](architecture.md) | Engines, workflows, and data flow |
+| [simulation-entrypoints.md](simulation-entrypoints.md) | Model fidelity and simulation entry points |
+| [workflows.md](workflows.md) | App, simulation, optimization, and test commands |
+| [doe-reverse-engineering.md](doe-reverse-engineering.md) | Parameter sweeps, target-metric solving, and vehicle comparisons |
+| [reduced-order-dynamics.md](reduced-order-dynamics.md) | 3/6/10/14DOF dynamics, QSS envelopes, and BobLib correlation |
+| [lap-time-simulation.md](lap-time-simulation.md) | Racing lines, speed profiles, and transient laps |
+| [boblib-submodule.md](boblib-submodule.md) | BobLib setup and Modelica build troubleshooting |
+| [conventions.md](conventions.md) | Vehicle geometry, axes, signs, hardpoints, and SHARK imports |
+| [Visualization](../visualization/README.md) | Scene capture and 3D replay |
+| [Skills](../skills/README.md) | SHARK import and regression baseline procedures |
 
-| [reduced-order-dynamics.md](reduced-order-dynamics.md) | You are working on 3/6/10/14DOF transient models, QSS envelopes, or BobLib correlation. |
-| [lap-time-simulation.md](lap-time-simulation.md) | You are optimizing a QSS racing line/speed profile or running the same lap as a forward transient. |
-| [boblib-submodule.md](boblib-submodule.md) | Modelica models are missing, builds fail with "file not found", or you touched BobLib. |
-| [conventions.md](conventions.md) | You're reading or writing `vehicle.yml` geometry, or importing external suspension data (e.g. SHARK) — axis/sign conventions, hardpoint naming, and the vertical-datum rules. |
-| [../visualization/README.md](../visualization/README.md) | You want to watch a run back in 3D — capturing a scene with `make visual-rig`, and the app's Replay tab that draws it. |
-| [../skills/README.md](../skills/README.md) | You're doing a repeated multi-step task by hand: SHARK import + datum verification, or a regression baseline refresh. |
-
-## Conventions used in these docs
-
-- Paths are relative to the repo root.
-- Numbered top-level directories (`common` … `app`) are pipeline *layers*,
-  not an import ordering. See [architecture.md](architecture.md).
-- Anything under a `Build/`, `results/`, `generated_results/`, `population/`, or
-  `user_data/` directory is generated runtime content and is gitignored. Never
-  hand-edit it and never commit it.
-- `make help` is the authoritative list of targets. These docs explain the
-  *why*; the makefile is the *what*.
+Paths are relative to the repository root unless stated otherwise.
+`make help` lists the available commands. The [architecture](architecture.md)
+describes the source layout. Builds, results, and app state are generated locally
+and excluded from Git.

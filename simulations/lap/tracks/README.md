@@ -1,16 +1,15 @@
 # Lap-time reference tracks
 
-`endurance_michigan_2019.csv` is the realistic system-level reference. It is a
-meter-converted copy of Longhorn Racing Electric's paired 2019 Formula SAE
-Michigan endurance boundaries from
+`endurance_michigan_2019.csv` contains the 2019 Formula SAE Michigan endurance
+boundaries from Longhorn Racing Electric's
 [`jomama_lapsim`](https://github.com/LonghornRacingElectric/jomama_lapsim/blob/main/tracks/Endurance_Michigan_2019.csv).
-The original `out_x,out_y,in_x,in_y` values are feet; every value here is
-multiplied by exactly 0.3048 and renamed to BobSim's left/right meter schema.
-The duplicated closing row was removed because BobSim closes tracks
-periodically.
+It is the default track in `lap_time_eval_config.yml`.
 
-`endurance_reference.csv` is the smaller synthetic stress/regression course.
-Its adjacent generator defines the geometry exactly. Validation uses it for the
-expensive all-DOF acceptance matrix so that routine checks stay bounded, while
-the Michigan course remains visible beside it and is the normal LapTimeEval
-default.
+The source `out_x,out_y,in_x,in_y` coordinates are in feet. This copy multiplies
+each value by 0.3048 and uses BobSim's left/right boundary column names in metres.
+The duplicated closing row is removed because BobSim closes tracks periodically.
+
+`endurance_reference.csv` is a smaller synthetic course used for validation
+across all DOF levels. `generate_endurance_reference.py` defines and regenerates
+its geometry. The validation config also includes the Michigan course as a
+reference.

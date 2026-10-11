@@ -28,7 +28,7 @@ from simulations.lap.core import (
 from simulations.lap.core.racing_line import LineMode
 from common.plotting.plot_engine import PlotEngine
 from common.vehicle_io import load_yaml, repo_root
-from simulations.envelope.GGV.ggv_generation import (
+from simulations.envelope.ggv.ggv_generation import (
     GGVConfig,
     GGVEnvelope,
     generate_ggv,
@@ -38,7 +38,7 @@ from simulations.envelope.GGV.ggv_generation import (
     save_ggv_csv,
     solve_lateral_limit,
 )
-from simulations.envelope.YMD.ymd_generation import (
+from simulations.envelope.ymd.ymd_generation import (
     YMDConfig,
     YMDResult,
     generate_ymd,
@@ -900,8 +900,8 @@ def _validation_fingerprint(
         inputs.extend(sorted(directory.glob("*.py")))
     inputs.extend(
         (
-            root / "simulations/envelope/GGV/ggv_generation.py",
-            root / "simulations/envelope/YMD/ymd_generation.py",
+            root / "simulations/envelope/ggv/ggv_generation.py",
+            root / "simulations/envelope/ymd/ymd_generation.py",
             Path(__file__),
         )
     )

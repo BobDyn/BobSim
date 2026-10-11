@@ -1,6 +1,6 @@
 # DOE and reverse engineering a vehicle from target metrics
 
-**TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `simulations/optimization/StandardSens/`.
+**TL;DR:** Sweep a population of vehicle variants → simulate them all → aggregate metrics → search backwards. Given target performance numbers, find the car that hits them. Everything here lives under `optimization/response/`.
 
 ## Three questions, one set of compiled vehicles
 
@@ -40,7 +40,7 @@ samples. Leave the overrides off to use the full sweep configured in
 | `DOE_SCOPE` | `all` (default), `setup`, or `architecture`. See [Sweep scope](#sweep-scope-setup-vs-architecture) |
 
 The overrides rewrite the generated `_doe_config.yaml`, so it will show as
-modified afterwards. `git checkout simulations/optimization/StandardSens/configs/_doe_config.yaml`
+modified afterwards. `git checkout optimization/response/configs/_doe_config.yaml`
 restores it.
 
 To check the plumbing without an OpenModelica toolchain — useful on any
@@ -72,12 +72,12 @@ error names the paths it searched.
 
 1. **Sample and generate variants** — `pipeline/sampler.py` + `generator.py`
    read the DOE config and emit one vehicle definition per variant into
-   `simulations/optimization/Build/StandardSens/population/`.
+   `optimization/Build/StandardSens/population/`.
 2. **Build and simulate** — `pipeline/build_pipeline.py` + `compiler.py` compile
    and run each variant. This is the expensive stage.
 3. **Aggregate** — `pipeline/aggregator.py` collapses every variant's study
    output into one table:
-   `simulations/optimization/Build/StandardSens/standard_sensitivity_results.parquet`.
+   `optimization/Build/StandardSens/standard_sensitivity_results.parquet`.
 4. **Response surfaces / sensitivities** — fit and rank parameter influence.
 5. **Plot** — tornado plots via `_shared/plot_sensitivity_tornado.py`.
 
@@ -206,7 +206,7 @@ one warning line, because the older missing-columns message covers the same
 condition. Read the condition, not the count.
 
 So `make opt-standard-setup` followed by `make opt-search` reports 14 parameters
-and gives the reason. `python -m StandardSens.pipeline.generate_configs` prints
+and gives the reason. `python -m optimization.response.pipeline.generate_configs` prints
 `scope: setup (14 variables)`. The pipeline run itself does not print it.
 
 Run `make clean-opt` when you change scope. The variant count changes with the
@@ -256,13 +256,13 @@ make opt-search METRICS="SteadyStateEval_understeer_gradient_deg_per_g=0.05" SEA
 Equivalent direct invocation:
 
 ```bash
-PYTHONPATH=simulations/optimization:. python -m StandardSens.pipeline.search \
+PYTHONPATH=optimization:. python -m optimization.response.pipeline.search \
     --metrics SteadyStateEval_understeer_gradient_deg_per_g=0.05 \
     --top 3
 ```
 
 `PYTHONPATH` uses the platform's own separator. On Windows, outside the
-container, that separator is `;`: `PYTHONPATH="simulations/optimization;."`. The `:` form above
+container, that separator is `;`: `PYTHONPATH="optimization;."`. The `:` form above
 fails with `No module named 'StandardSens'`. That error looks like a broken
 checkout, not a path problem.
 
@@ -334,7 +334,7 @@ The guards cover two limits only partly:
   Everything else in the returned variant stays at baseline. The scope guard tells
   you *that* the set was narrowed. Nothing tells you the baseline values of the
   rest of the car. If they matter, read the variant's own definition under
-  `simulations/optimization/Build/StandardSens/population/`.
+  `optimization/Build/StandardSens/population/`.
 - **Under-constrained targets have many answers.** Naming one metric will find a
   variant that matches it and says nothing about the rest of the car. Use
   `--top`/`SEARCH_TOP` to see the spread of candidates rather than trusting the
@@ -446,7 +446,7 @@ not change. But a gradient from `opt-solve` and the same gradient from
 differ slightly. Compare results from the same tool.
 
 The solver caches executables and evaluations under
-`simulations/optimization/Build/StandardSens/solve/`. It discards the cache when BobLib, the
+`optimization/Build/StandardSens/solve/`. It discards the cache when BobLib, the
 vehicle or the SteadyStateEval tooling changes. The star does not depend on the
 targets. So after the star is cached, a new set of targets costs only the
 verification runs.
@@ -486,7 +486,7 @@ metrics:
     yaw_rise_time_s: {resolution: 0.005}
 ```
 
-The report goes to `simulations/optimization/results/trade/<name>.md` and `.csv`. It has one
+The report goes to `optimization/results/trade/<name>.md` and `.csv`. It has one
 table for each standard. Each cell has the simulated value and its change from
 baseline.
 
@@ -544,8 +544,8 @@ through its own denser isoline.
 
 ## Envelope sensitivities
 
-`simulations/optimization/EnvelopeSens/` is the same idea against GGV/YMD envelope outputs
-rather than StandardSim studies, driven by `EnvelopeSens/config.yml`:
+`optimization/envelope/` is the same idea against GGV/YMD envelope outputs
+rather than StandardSim studies, driven by `optimization/envelope/config.yml`:
 
 ```bash
 make opt-envelope
