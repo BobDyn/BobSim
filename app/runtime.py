@@ -28,6 +28,7 @@ APP_SEED_RUNTIME_PATHS = (
     "common/tire_templates",
     "common/vehicle_templates",
     "visualization/visual_templates",
+    "simulations/response/reduced/reduced_order_eval_config.yml",
     "simulations/lap/lap_time_eval_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",

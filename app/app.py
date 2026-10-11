@@ -777,6 +777,7 @@ def workflow_payload(workflow: WorkflowSpec) -> dict[str, Any]:
         "group": workflow.group,
         "label": workflow.label,
         "model": app_data_services.workflow_model(workflow, root=ROOT),
+        "requires_mbd": any(action.requires_external_toolchain for action in actions),
         "available": available,
         "unavailable_reason": "" if available else external_toolchain_payload()["reason"],
         "config": _path_payload(workflow.config) if workflow.config else None,

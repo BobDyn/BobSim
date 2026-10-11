@@ -644,6 +644,55 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("procedure.forceMagnitude", "Force magnitude", kind="number", group="Procedure", unit="N"),
         ),
     ),
+    "reduced-step-steer": ConfigSpec(
+        id="reduced-step-steer",
+        group="response",
+        label="Step steer",
+        path="simulations/response/reduced/reduced_order_eval_config.yml",
+        workflow_id="reduced-step-steer",
+        relocatable=True,
+        fields=(
+            _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
+            _field("speed_mps", "Initial speed", kind="number", group="Input", unit="m/s"),
+            _field("roadwheel_step_deg", "Roadwheel steer step", kind="number", group="Input", unit="deg"),
+            _field("step_time_s", "Step time", kind="number", group="Input", unit="s"),
+            _field("rise_time_s", "Rise time", kind="number", group="Input", unit="s"),
+            _field("stop_time_s", "Duration", kind="number", group="Run", unit="s"),
+            _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
+            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
+                   choices=("lookup", "nonlinear")),
+        ),
+    ),
+    **{
+        name: ConfigSpec(
+            id=name,
+            group="lap",
+            label=label,
+            path="simulations/lap/lap_time_eval_config.yml",
+            workflow_id=name,
+            relocatable=True,
+            fields=(
+                _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
+                _field("track.boundary_csv", "Track CSV", kind="string", group="Track"),
+                _field("track.vehicle_width_m", "Vehicle width", kind="number", group="Track", unit="m"),
+                _field("track.safety_margin_m", "Edge clearance", kind="number", group="Track", unit="m"),
+                _field("track.sample_step_m", "Track sample spacing", kind="number", group="Track", unit="m"),
+                _field("racing_line.mode", "Racing line", kind="select", group="Track",
+                       choices=("centerline", "minimum_curvature", "minimum_time_qss")),
+                _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
+                _field("qss.speeds_mps", "Envelope speeds", kind="list", group="Envelope", unit="m/s"),
+                _field("qss.ay_points", "Lateral points", kind="integer", group="Envelope"),
+                *(
+                    (
+                        _field("transient.sample_period_s", "Sample period",
+                               kind="number", group="Transient", unit="s"),
+                        _field("transient.lookahead_m", "Driver lookahead", kind="number", group="Transient", unit="m"),
+                    ) if name == "lap-transient" else ()
+                ),
+            ),
+        )
+        for name, label in (("lap-qss", "QSS lap"), ("lap-transient", "Transient lap"))
+    },
     "ggv": ConfigSpec(
         id="ggv",
         group="envelope",
@@ -651,7 +700,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/envelope/ggv/ggv_config.yml",
         workflow_id="ggv",
         fields=(
-            _field("generation.model_dof", "Model DOF", kind="integer", group="Engine",
+            _field("generation.model_dof", "Model DOF", kind="select", group="Model",
+                   choices=("3", "6", "10", "14"),
                    help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
             _field("generation.speeds_mps", "Speeds", kind="list", group="Generation", unit="m/s"),
             _field("generation.ay_max_g", "Max lateral acceleration", kind="number", group="Generation", unit="g"),
@@ -684,7 +734,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/envelope/ymd/ymd_config.yml",
         workflow_id="ymd",
         fields=(
-            _field("generation.model_dof", "Model DOF", kind="integer", group="Engine",
+            _field("generation.model_dof", "Model DOF", kind="select", group="Model",
+                   choices=("3", "6", "10", "14"),
                    help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
             _field("generation.speed_mps", "Speed", kind="number", group="Generation", unit="m/s"),
             _field("generation.beta_min_deg", "Min beta", kind="number", group="Generation", unit="deg"),
@@ -831,17 +882,23 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             ),
             requires_external_toolchain=True,
         ),
+        **{
+            f"run-{name}": ActionSpec(
+                id=f"run-{name}",
+                label=f"Run {name}",
+                argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), name),
+            )
+            for name in ("reduced-step-steer", "lap-qss", "lap-transient")
+        },
         "run-ggv": ActionSpec(
             id="run-ggv",
             label="Run GGV",
             argv=_python_module_argv(python, python_module_arg, "simulations.envelope.ggv.ggv_generation"),
-            requires_external_toolchain=True,
         ),
         "run-ymd": ActionSpec(
             id="run-ymd",
             label="Run YMD",
             argv=_python_module_argv(python, python_module_arg, "simulations.envelope.ymd.ymd_generation"),
-            requires_external_toolchain=True,
         ),
         "run-review": ActionSpec(
             id="run-review",
@@ -947,6 +1004,42 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                 OutputSpec("Report", "simulations/mbd/generated_results/four_post_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/four_post_eval_report_metrics.csv", "csv"),
             ),
+        ),
+        WorkflowSpec(
+            id="reduced-step-steer",
+            engine="DynPy",
+            fidelity="Transient",
+            runtime="Python",
+            group="response",
+            label="Step steer",
+            config="simulations/response/reduced/reduced_order_eval_config.yml",
+            actions=("run-reduced-step-steer",),
+            outputs=(
+                OutputSpec("Signals", "app/user_data/results/reduced-step-steer/signals.csv", "csv"),
+                OutputSpec("Summary", "app/user_data/results/reduced-step-steer/summary.json", "json"),
+            ),
+        ),
+        *(
+            WorkflowSpec(
+                id=name,
+                engine="DynPy",
+                fidelity=method,
+                runtime="Python",
+                group="lap",
+                label=label,
+                config="simulations/lap/lap_time_eval_config.yml",
+                actions=(f"run-{name}",),
+                outputs=(
+                    OutputSpec("QSS lap", "simulations/lap/results/qss_lap.csv", "csv"),
+                    OutputSpec("Summary", "simulations/lap/results/summary.json", "json"),
+                    *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),)
+                       if name == "lap-transient" else ()),
+                ),
+            )
+            for name, label, method in (
+                ("lap-qss", "QSS lap", "QSS"),
+                ("lap-transient", "Transient lap", "Transient with QSS reference"),
+            )
         ),
         WorkflowSpec(
             id="ggv",
