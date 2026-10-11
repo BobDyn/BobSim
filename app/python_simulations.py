@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from typing import cast
+
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 import pandas as pd
 
 from common import config_io
+from common.reporting.dynpy_report import build_dynpy_report
 from common.vehicle_io import load_yaml, repo_root
 from engines.dynpy import DOFModel
 from engines.kinpy import KinematicsMode
@@ -32,6 +36,12 @@ def run(workflow_id: str) -> None:
         config = config_io.resolve("simulations/lap/lap_time_eval_config.yml", root=root)
         summary = run_lap_time_evaluation(
             config, scenario="qss" if workflow_id == "lap-qss" else "transient"
+        )
+        data = load_yaml(config)
+        output = root / str(data["output"]["directory"]).format(model_dof=summary["model_dof"])
+        vehicle = load_yaml(root / data.get("vehicle", "vehicle.yml"))
+        build_dynpy_report(
+            workflow_id, output, data, summary, vehicle_name=vehicle.get("vehicle", {}).get("name", "Vehicle")
         )
         print(json.dumps(summary, indent=2))
         if not summary["qss_converged"]:
@@ -74,6 +84,10 @@ def run(workflow_id: str) -> None:
         "wall_time_s": time.perf_counter() - started,
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    vehicle = load_yaml(root / "vehicle.yml")
+    build_dynpy_report(
+        workflow_id, output, data, summary, vehicle_name=vehicle.get("vehicle", {}).get("name", "Vehicle")
+    )
     print(json.dumps(summary, indent=2))
     if not result.success:
         raise RuntimeError("Step-steer integration failed. Inspect the job log.")

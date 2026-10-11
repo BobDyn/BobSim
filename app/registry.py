@@ -1015,6 +1015,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             config="simulations/response/reduced/reduced_order_eval_config.yml",
             actions=("run-reduced-step-steer",),
             outputs=(
+                OutputSpec("Report", "app/user_data/results/reduced-step-steer/report.pdf", "pdf"),
                 OutputSpec("Signals", "app/user_data/results/reduced-step-steer/signals.csv", "csv"),
                 OutputSpec("Summary", "app/user_data/results/reduced-step-steer/summary.json", "json"),
             ),
@@ -1030,6 +1031,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                 config="simulations/lap/lap_time_eval_config.yml",
                 actions=(f"run-{name}",),
                 outputs=(
+                    OutputSpec("Report", f"simulations/lap/results/{name.removeprefix('lap-')}_report.pdf", "pdf"),
                     OutputSpec("QSS lap", "simulations/lap/results/qss_lap.csv", "csv"),
                     OutputSpec("Summary", "simulations/lap/results/summary.json", "json"),
                     *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),)

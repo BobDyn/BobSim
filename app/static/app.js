@@ -3929,6 +3929,7 @@ function workflowCard(workflow) {
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
         ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
+        ${simulationVisualHtml(workflow)}
         <details class="simulation-details">
           <summary>Run details</summary>
           <div class="simulation-detail-grid">
@@ -3944,6 +3945,47 @@ function workflowCard(workflow) {
       </div>
     </article>
   `;
+}
+
+function simulationVisualHtml(workflow) {
+  const axis = '<path d="M24 8V62H220" fill="none" stroke="currentColor" opacity=".3"/>';
+  const profiles = {
+    "ramp-steer": ["M25 54H65L178 14H216", "Steering ramp → vehicle integration → cornering response"],
+    "steady-state": ["M25 54H70V40H115V27H160V14H216", "Lateral-acceleration targets → settled states → handling metrics"],
+    "transient": ["M25 48H64V22H105Q122 0 139 34T175 22T213 22", "Step or sine steering → vehicle integration → time response"],
+    "reduced-step-steer": ["M25 52H80V16H216", "Roadwheel step → DynPy integration → body and tire response"],
+  };
+  let drawing;
+  let caption;
+  if (profiles[workflow.id]) {
+    const [path, copy] = profiles[workflow.id];
+    drawing = `${axis}<path d="${path}" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      <text x="207" y="76" fill="currentColor" font-size="11">time</text>`;
+    caption = copy;
+  } else if (workflow.id === "four-post") {
+    drawing = '<rect x="54" y="20" width="124" height="24" rx="7" fill="none" stroke="currentColor" stroke-width="2"/>'
+      + [64, 98, 134, 168].map((x, i) => `<path d="M${x} 44V${i % 2 ? 63 : 55}m-10 0h20m-10-4v-8m-3 3l3-3 3 3" fill="none" stroke="currentColor" stroke-width="2"/>`).join("");
+    caption = "Four vertical actuators → suspension motion → wheel loads and kinematics";
+  } else if (workflow.id === "ggv") {
+    drawing = axis + [0, 1, 2].map((i) => `<ellipse cx="${96 + i * 30}" cy="${38 - i * 7}" rx="44" ry="22" fill="none" stroke="currentColor" opacity="${1 - i * .25}" stroke-width="2"/>`).join("")
+      + '<text x="170" y="76" fill="currentColor" font-size="11">aₓ / aᵧ / v</text>';
+    caption = "Speed grid → QSS force balance → acceleration limits";
+  } else if (workflow.id === "ymd") {
+    drawing = axis + [-1, 0, 1].map((i) => `<path d="M40 ${47 + i * 9}Q105 ${-4 + i * 10} 204 ${29 + i * 12}" fill="none" stroke="currentColor" stroke-width="2"/>`).join("")
+      + '<text x="6" y="10" fill="currentColor" font-size="11">Mz</text><text x="208" y="76" fill="currentColor" font-size="11">aᵧ</text>';
+    caption = "Sideslip and steer grid → tire forces → yaw moment";
+  } else {
+    drawing = '<path d="M66 12H174Q220 12 220 38T174 64H66Q20 64 20 38T66 12Z" fill="none" stroke="currentColor" opacity=".25" stroke-width="12"/>'
+      + '<path d="M66 12H174Q220 12 220 38T174 64H66Q20 64 20 38T66 12Z" fill="none" stroke="currentColor" stroke-dasharray="5 4" stroke-width="2"/>';
+    if (workflow.id === "lap-transient") drawing += '<rect x="104" y="5" width="24" height="13" rx="4" fill="currentColor"/>';
+    caption = workflow.id === "lap-transient"
+      ? "QSS reference → driver and vehicle integration → path tracking and lap time"
+      : "Track and GGV → racing line → speed profile and lap time";
+  }
+  return `<figure class="simulation-visual">
+    <svg viewBox="0 0 240 80" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg>
+    <figcaption><span>Schematic</span>${escapeHtml(caption)}</figcaption>
+  </figure>`;
 }
 
 function workflowDescription(workflow) {
@@ -3989,21 +4031,21 @@ function simWorkflowMeta(workflow) {
       summary: "Time response to a roadwheel steering step.",
       sequence: ["Trim at the initial speed, then integrate the steering step"],
       parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
-      outputs: ["Signals CSV and summary"],
+      outputs: ["PDF report, signals CSV and summary"],
     },
     "lap-qss": {
       title: "QSS lap",
       summary: "Racing line and speed profile from a vehicle acceleration envelope.",
       sequence: ["Generate or verify the GGV, then solve the line and speed profile"],
       parameters: ["DOF, track, racing line and power cap"],
-      outputs: ["Lap CSV and summary"],
+      outputs: ["PDF report, lap CSV and summary"],
     },
     "lap-transient": {
       title: "Transient lap",
       summary: "Driver-controlled lap following a QSS reference line and speed profile.",
       sequence: ["Solve the QSS reference, then integrate the vehicle and driver"],
       parameters: ["DOF, track, racing line, power cap and driver lookahead"],
-      outputs: ["QSS and transient lap CSVs and summary"],
+      outputs: ["PDF report, QSS and transient lap CSVs and summary"],
     },
     "ramp-steer": {
       title: "Ramp Steer",
