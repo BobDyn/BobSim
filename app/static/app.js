@@ -3851,21 +3851,48 @@ function responseModelPicker(workflow) {
   </label>`;
 }
 
+let activeSimulationGroup = "response";
+const SIMULATION_GROUPS = [
+  {id: "response", label: "Vehicle response", groups: ["standard", "response"], description: "Steering inputs, operating states and suspension motion."},
+  {id: "envelope", label: "Grip envelopes", groups: ["envelope"], description: "Acceleration limits and yaw moment maps."},
+  {id: "lap", label: "Lap performance", groups: ["lap"], description: "Racing lines, speed profiles and driver-controlled laps."},
+];
+
 function renderWorkflows() {
-  const workflows = simulationCards();
+  const order = ["ramp-steer", "step-steer", "steady-state", "transient", "four-post", "ggv", "ymd", "lap-qss", "lap-transient"];
+  const rank = (workflow) => {
+    const index = order.indexOf(responseFamily(workflow) || workflow.id);
+    return index < 0 ? order.length : index;
+  };
+  const workflows = simulationCards().sort((a, b) => rank(a) - rank(b));
   const grid = document.getElementById("workflow-grid");
   const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
     (details) => details.closest("[data-workflow]").dataset.workflow));
-  grid.innerHTML = [
-    ["Response", ["standard", "response"]],
-    ["Envelopes", ["envelope"]],
-    ["Laps", ["lap"]],
-  ].map(([label, groups]) => `
-    <section class="simulation-group">
-      <h3 class="simulation-group-title">${label}</h3>
-      ${workflows.filter((workflow) => groups.includes(workflow.group)).map(workflowCard).join("")}
-    </section>
-  `).join("");
+  grid.innerHTML = `
+    <nav class="simulation-categories" aria-label="Simulation categories">
+      ${SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="ghost-button simulation-category" data-simulation-group="${id}" aria-pressed="${id === activeSimulationGroup}" aria-controls="simulation-group-${id}">${label}</button>`).join("")}
+    </nav>
+    ${SIMULATION_GROUPS.map(({id, label, groups, description}) => `
+      <section id="simulation-group-${id}" class="simulation-group" aria-labelledby="simulation-title-${id}"${id === activeSimulationGroup ? "" : " hidden"}>
+        <header class="simulation-group-head">
+          <h3 id="simulation-title-${id}" class="simulation-group-title">${label}</h3>
+          <p>${description}</p>
+        </header>
+        ${workflows.filter((workflow) => groups.includes(workflow.group)).map(workflowCard).join("")}
+      </section>
+    `).join("")}
+  `;
+  grid.querySelectorAll("[data-simulation-group]").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeSimulationGroup = button.dataset.simulationGroup;
+      grid.querySelectorAll("[data-simulation-group]").forEach((item) => {
+        item.setAttribute("aria-pressed", String(item.dataset.simulationGroup === activeSimulationGroup));
+      });
+      grid.querySelectorAll(".simulation-group").forEach((group) => {
+        group.hidden = group.id !== `simulation-group-${activeSimulationGroup}`;
+      });
+    });
+  });
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
     card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
   });
