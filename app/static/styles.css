@@ -4490,35 +4490,97 @@ summary:focus-visible {
   padding: 4px 28px 4px 8px;
 }
 
-@media (max-width: 720px) {
-  .archive-workspace .results-pane {
-    height: 80dvh;
-    min-height: 440px;
-  }
+#studies-view {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .archive-workspace {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
+.archive-sidebar {
+  min-width: 0;
+  padding: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.archive-sidebar::before,
 .archive-catalog::before {
   content: none;
 }
 
+.archive-sidebar h2,
+.archive-sidebar h3 {
+  margin: 8px 0;
+}
+
+.archive-sidebar #studies-context {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.archive-catalog {
+  padding: 0;
+}
+
+.archive-sidebar .study-catalog-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.archive-sidebar .result-card {
+  min-width: 0;
+}
+
+.archive-sidebar .card-head {
+  flex-wrap: wrap;
+}
+
+.archive-sidebar .mini-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .archive-catalog > summary {
-  padding: 4px;
+  padding: 12px 0;
   cursor: pointer;
   color: var(--muted);
 }
 
-.archive-catalog .study-catalog-grid {
-  max-height: 24vh;
-  overflow: auto;
+.archive-sidebar .archive-details {
+  max-height: none;
+  overflow: visible;
 }
 
-.pdf-preview-shell.is-expanded {
-  inset: 0;
-  border: 0;
-  border-radius: 0;
+.archive-sidebar .result-summary-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.archive-sidebar .output-item {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.archive-sidebar .output-actions {
+  flex-wrap: wrap;
+}
+
+.archive-workspace .results-app-pane,
+.archive-workspace #study-preview {
+  height: 100%;
+  min-height: 0;
+}
+
+.archive-workspace #study-preview {
+  padding: 0;
+}
+
+@media (max-width: 720px) {
+  .archive-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(100px, 25%) minmax(0, 1fr);
+  }
 }

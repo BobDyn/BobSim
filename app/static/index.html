@@ -322,31 +322,29 @@
           </div>
         </section>
         <section id="studies-view" class="screen">
-          <div class="screen-head">
-            <div>
+          <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
+            <aside class="workflow-list archive-sidebar">
               <h2>Archive</h2>
               <p id="studies-context"></p>
-            </div>
-          </div>
-
-          <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
-            <details class="workflow-list study-catalog results-catalog analysis-catalog archive-catalog">
-              <summary>Saved runs</summary>
-              <div id="saved-result-list" class="study-catalog-grid"></div>
-            </details>
-
-            <section class="sim-pane study-pane results-pane results-app-pane">
+              <details class="study-catalog archive-catalog" open>
+                <summary>Saved runs</summary>
+                <div id="saved-result-list" class="study-catalog-grid"></div>
+              </details>
               <h3 id="study-selected-title">Results</h3>
               <div class="archive-details">
                 <details><summary>Run details</summary>
                   <div id="result-summary-panel" class="result-summary-panel"></div>
                 </details>
-                <details><summary>Files</summary>
+                <details open><summary>Files</summary>
                   <div id="study-output-list" class="output-list"></div>
                 </details>
               </div>
+            </aside>
+            <section class="results-app-pane" aria-label="Selected result">
               <div id="study-preview" class="preview"></div>
             </section>
+          </div>
+        </section>
           </div>
         </section>
       </main>
