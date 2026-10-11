@@ -18,6 +18,7 @@ from common.vehicle_io import (
     tire_templates_root,
     vehicle_yaml_path,
 )
+from engines.dynpy.aero import AeroMap
 from engines.dynpy.actuation import nominal_actuation_metrics
 from engines.dynpy.tire import MF52_COEFFICIENTS, MF52Tire
 from engines.kinpy import (
@@ -82,6 +83,7 @@ class ReducedVehicleParameters:
     maximum_drive_speed_mps: float
     drive_distribution_front: float
     brake_distribution_front: float
+    aero: AeroMap | None = None
 
     @property
     def tires(self) -> tuple[MF52Tire, MF52Tire, MF52Tire, MF52Tire]:
@@ -265,6 +267,7 @@ def load_reduced_vehicle_parameters(
         front_tire=axle_tires[0],
         rear_tire=axle_tires[1],
         rho_air_kg_m3=1.225,
+        aero=AeroMap.from_yaml(data["aero"], total_cg) if data.get("aero") else None,
         cl_area_m2=cl_area,
         cd_area_m2=cd_area,
         aero_balance_front=aero_balance,
@@ -478,6 +481,7 @@ def _project_aero(
     aero_ref_x = aero_ref[0]
     front_x = float(data["front"]["suspension"]["wheel_center_m"][0])
     if abs(downforce) <= 1e-9:
+        cop_from_front = wheelbase / 2.0
         balance = 0.5
     else:
         # ``my_table_nm`` is a free pitch moment at ``aero_ref_m`` (x-forward, z-up).
