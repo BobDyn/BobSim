@@ -4036,7 +4036,7 @@ function simulationVisualHtml(workflow) {
         + `<path d="M${x-3} ${top+19}V${top+4}h6v15" ${stroke}/>`
         + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<ellipse cx="${x}" cy="${top}" rx="19" ry="6" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
-        + `<path d="M${x-14} ${top-2}v-5m28 5v-5M${x+12} ${base-9}q15 -4 11 -21" ${stroke} opacity=".5"/>`
+        + `<path d="M${x-14} ${top-2}v-5m28 5v-5" ${stroke} opacity=".5"/>`
       ).join('');
     caption = 'Four hydraulic posts move the wheels independently.';
   } else if (id === 'ggv') {
