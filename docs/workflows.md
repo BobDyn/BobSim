@@ -73,6 +73,19 @@ make standard-eval-four-post   # uses the separate FourPostSim executable
 
 Output: `simulations/mbd/generated_results/` (`*_report_metrics.csv`, `*_report.pdf`).
 
+## Fixed-period stepping
+
+```bash
+make standard-build-fmu
+make standard-realtime-bench
+make standard-realtime-bench ARGS='--skip-fmu --dof 3 --stop-s 2'
+```
+
+The benchmark measures stepping cost. DynPy uses prescribed inputs; VehicleSim
+uses its internal controller. Failed cases retain diagnostics and exit nonzero.
+See the [benchmark README](../simulations/response/realtime/README.md) for output
+fields, vehicle selection and FMU limits.
+
 ## Lap-time simulation
 
 ```bash

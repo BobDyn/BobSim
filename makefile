@@ -12,9 +12,11 @@ FOUR_POST_SIM_CLASS := BobLib.Experiments.Standards.FourPostSim
 VEHICLE_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/VehicleSim.mo
 FOUR_POST_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/FourPostSim.mo
 VEHICLE_SIM_EXE := simulations/mbd/BuildBobLib/VehicleSim/$(VEHICLE_SIM_CLASS)
+VEHICLE_FMU := simulations/mbd/BuildBobLib/VehicleFMU/VehicleSim.fmu
 FOUR_POST_SIM_EXE := simulations/mbd/BuildBobLib/FourPostSim/$(FOUR_POST_SIM_CLASS)
 
 BUILD_VEHICLE_MOS := simulations/response/mbd/build_vehicle_sim.mos
+BUILD_VEHICLE_FMU_MOS := simulations/response/mbd/build_vehicle_fmu.mos
 BUILD_FOUR_POST_MOS := simulations/response/mbd/build_four_post_sim.mos
 
 SEARCH_TOP ?= 1
@@ -122,7 +124,7 @@ CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 	app deploy deploy-deps deploy-assets deploy-package deploy-release deploy-clean \
 	lint typecheck test regression-invariants regression-baseline ci \
 	shell shell-bobsim shell-standard shell-envelope shell-opt \
-	sync-vehicle sync-vehicle-write standard-build standard-build-four-post standard-regression-four-post \
+	sync-vehicle sync-vehicle-write standard-build standard-build-four-post standard-build-fmu standard-realtime-bench standard-regression-four-post \
 	standard-eval-ramp-steer standard-eval-steady-state standard-eval-transient standard-eval-four-post standard-eval-all reduced-eval reduced-fidelity-suite reduced-suspension-correlation reduced-kinematics-benchmark \
 	lap-eval lap-eval-qss lap-eval-transient lap-eval-all-dof \
 	lap-validation-visuals \
@@ -182,6 +184,8 @@ help:
 		'' \
 		'  standard-build            Build BobLib VehicleSim' \
 		'  standard-build-four-post  Build BobLib FourPostSim' \
+		'  standard-build-fmu        Export VehicleSim as an FMI 2.0 FMU' \
+		'  standard-realtime-bench   Benchmark fixed-period FMU and DynPy stepping (ARGS=...)' \
 		'  shark-overlay             Overlay the imported car against Orion on the kinematic' \
 		'                            curves. [SHARK=file.shk] to import first.' \
 		'                            ARGS=--four-post adds the experimental force sim;' \
@@ -381,6 +385,15 @@ shark-overlay:
 standard-build: $(VEHICLE_SIM_EXE)
 
 standard-build-four-post: $(FOUR_POST_SIM_EXE)
+
+$(VEHICLE_FMU): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_FMU_MOS) simulations/response/mbd/fmu_compile_options.cmake $(BOBLIB_PACKAGE_PATH)/package.mo \
+		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
+	$(RUN) bash -lc 'rm -f "$(WORKSPACE)/$(VEHICLE_FMU)" && omc "$(WORKSPACE)/$(BUILD_VEHICLE_FMU_MOS)" && test -s "$(WORKSPACE)/$(VEHICLE_FMU)"'
+
+standard-build-fmu: $(VEHICLE_FMU)
+
+standard-realtime-bench:
+	$(RUN) $(PYTHON) -m simulations.response.realtime.realtime_bench $(ARGS)
 
 standard-eval-ramp-steer: standard-build
 	$(RUN) $(PYTHON) -m simulations.response.mbd.ramp_steer.ramp_steer_eval_sim

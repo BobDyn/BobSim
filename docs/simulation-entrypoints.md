@@ -97,6 +97,16 @@ make reduced-kinematics-benchmark  # kinematics fidelity check
 
 ---
 
+## Fixed-period stepping
+
+`make standard-build-fmu` exports VehicleSim as an FMI 2.0 FMU.
+`make standard-realtime-bench` measures its co-simulation stepping cost and
+DynPy integration cost at a chosen communication period. VehicleSim still
+uses StandardVCU and has no external command inputs. DynPy accepts prescribed
+steering and wheel torque. These are different scenarios, not a validated
+closed-loop comparison. See the
+[benchmark README](../simulations/response/realtime/README.md).
+
 ## Quick Reference: When to Use What
 
 | Goal | Workflow | Fidelity | Speed |
