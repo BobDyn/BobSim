@@ -4021,12 +4021,11 @@ function simulationVisualHtml(workflow) {
     caption = ramp ? 'Steering ramps to a target and holds.' : 'Steering changes to a new value and holds.';
   } else if (id === 'steady-state' || id === 'transient') {
     const steady = id === 'steady-state';
-    drawing = steady
-      ? `<text x="130" y="70" text-anchor="middle" fill="currentColor" font-size="24">F(0, x, u) = 0</text>`
-      : text(24, 70, 'F(', 24)
-        + '<text x="60" y="70" text-anchor="middle" fill="currentColor" font-size="24">x</text>'
-        + '<circle cx="60" cy="49" r="1.6" fill="currentColor"/>'
-        + text(68, 70, ', x, u, t) = 0', 24);
+    drawing = '<text x="48" y="43" text-anchor="middle" fill="currentColor" font-size="23">x</text>'
+      + '<circle cx="48" cy="22" r="1.6" fill="currentColor"/>'
+      + text(58, 43, steady ? ' = f(x, u) = 0' : ' = f(x, u, t)', 23)
+      + `<g opacity=".6"><text x="130" y="83" text-anchor="middle" fill="currentColor" font-size="20">${steady ? 'g(x, u) = 0' : 'g(x, u, t) = 0'}</text>`
+      + '<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">Constraints, if present</text></g>';
     caption = steady ? 'Solve a steady operating point.' : 'Evolve the state while satisfying the model constraints.';
   } else if (id === 'four-post') {
     drawing = `<path d="M19 97L91 61L239 84L169 122Z" ${stroke} opacity=".2"/>`
