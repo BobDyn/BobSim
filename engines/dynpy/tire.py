@@ -105,7 +105,7 @@ class MF52Tire:
     ) -> FloatArray:
         """## Algebraic Wheel Slip
 
-        Find the smallest-slip rising-branch root for the requested wheel force.
+        Find a near-zero slip root, preferring rising-branch crossings.
         Unattainable requests return the curve extremum within the fitted slip
         range. Callers must reject a trim if the resulting force misses demand.
 
@@ -143,7 +143,8 @@ class MF52Tire:
                 left = min(crossings, key=lambda i: abs((grid[i] + grid[i + 1]) / 2))
                 result[index] = brentq(lambda slip: force(slip) - wanted, grid[left], grid[left + 1], xtol=1e-12)
             else:
-                sign = 1 if wanted >= force(0) else -1
+                start = float(np.clip(0.0, grid[0], grid[-1]))
+                sign = 1 if wanted >= force(start) else -1
                 peak = int(np.argmax(sign * curve))
                 lower, upper = grid[max(0, peak - 1)], grid[min(len(grid) - 1, peak + 1)]
                 optimum = minimize_scalar(
@@ -151,9 +152,8 @@ class MF52Tire:
                 )
                 candidates = [lower, float(optimum.x), upper]
                 best = max(candidates, key=lambda slip: sign * force(slip))
-                # A request close to the peak can fall between grid samples.
+                # Bracket from zero slip when a peak or reversed curve escapes the grid search.
                 if sign * (force(best) - wanted) >= 0:
-                    start = grid[0] if sign > 0 else grid[-1]
                     result[index] = brentq(
                         lambda slip: force(slip) - wanted, min(start, best), max(start, best), xtol=1e-12
                     )
