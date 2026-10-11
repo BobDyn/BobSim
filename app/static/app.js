@@ -4030,7 +4030,7 @@ function simulationVisualHtml(workflow) {
   } else if (id === 'four-post') {
     drawing = `<path d="M49 104L91 72L211 83L169 115Z" ${stroke} opacity=".2"/>`
       + [[91, 76, 24], [211, 87, 31], [49, 108, 48], [169, 119, 53]].map(([x, base, top]) =>
-        `<path d="M${x-17} ${base-4}l12 -6l22 6l-12 6Z" ${stroke}/>`
+        `<path d="M${x-16.2} ${base-1.9}l8.4 -6.4l24 2.2l-8.4 6.4Z" ${stroke}/>`
         + `<path d="M${x-6} ${base-4}V${top+19}h12V${base-4}Z" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<path d="M${x-3} ${top+19}V${top+4}h6v15" ${stroke}/>`
         + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
