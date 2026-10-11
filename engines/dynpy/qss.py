@@ -9,7 +9,9 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import least_squares
 
-from engines.dynpy.models import ModelInputs, ModelOutput, ReducedVehicleModel
+from engines.dynpy.models import (
+    ModelInputs, ModelOutput, ReducedVehicleModel, _body_to_world_rotation,
+)
 from engines.dynpy.parameters import G
 
 
@@ -36,21 +38,21 @@ class QSSResult:
 
     @property
     def lateral_acceleration_mps2(self) -> float:
-        velocity = self.state[self.output.generalized_acceleration.size :]
-        if velocity.size < 3:
-            return float("nan")
-        u = float(velocity[0])
-        yaw_rate = float(velocity[2] if velocity.size == 3 else velocity[5])
-        return float(self.output.generalized_acceleration[1] + yaw_rate * u)
+        return float(_physical_body_acceleration(self.state, self.output)[1])
 
     @property
     def longitudinal_acceleration_mps2(self) -> float:
-        velocity = self.state[self.output.generalized_acceleration.size :]
-        if velocity.size < 3:
-            return float("nan")
-        v = float(velocity[1])
-        yaw_rate = float(velocity[2] if velocity.size == 3 else velocity[5])
-        return float(self.output.generalized_acceleration[0] - yaw_rate * v)
+        return float(_physical_body_acceleration(self.state, self.output)[0])
+
+
+def _physical_body_acceleration(state: FloatArray, output: ModelOutput) -> FloatArray:
+    dof = output.generalized_acceleration.size
+    velocity = state[dof:]
+    if dof == 3:
+        return output.generalized_acceleration[:2] + np.array(
+            [-velocity[2] * velocity[1], velocity[2] * velocity[0]]
+        )
+    return output.generalized_acceleration[:3] + np.cross(velocity[3:6], velocity[:3])
 
 
 def steady_state_residual(
@@ -128,7 +130,8 @@ def solve_acceleration_trim(
     Returns
     -------
     QSSResult
-        Trim state and convergence diagnostics. Reported accelerations remain
+        Trim state and convergence diagnostics. Speed and yaw rate describe
+        level-road motion. Reported accelerations remain
         in body axes.
     """
 
@@ -341,9 +344,17 @@ def solve_moment_state(
     indices = _moment_state_residual_indices(model)
     scales = _residual_scales(model)[indices]
 
+    def moment_residual(state: FloatArray, output: ModelOutput) -> FloatArray:
+        acceleration = output.generalized_acceleration.copy()
+        if model.dof >= 6:
+            rotation = _body_to_world_rotation(state[3:6])
+            acceleration[:3] = rotation @ acceleration[:3]
+            acceleration[3:6] = rotation @ acceleration[3:6]
+        return acceleration[indices]
+
     def residual(values: FloatArray) -> FloatArray:
         state, controls = build(values)
-        return model.evaluate(state, controls).generalized_acceleration[indices] / scales
+        return moment_residual(state, model.evaluate(state, controls)) / scales
 
     solution = least_squares(  # type: ignore[operator]
         residual,
@@ -357,7 +368,7 @@ def solve_moment_state(
     )
     state, inputs = build(solution.x)
     output = model.evaluate(state, inputs)
-    physical_residual = output.generalized_acceleration[indices]
+    physical_residual = moment_residual(state, output)
     tire_error = _tire_state_error(model, inputs, output)
     return QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
@@ -400,6 +411,13 @@ def _trim_state_and_inputs(
     if model.dof >= 6:
         coordinates[2:5] = values[cursor : cursor + 3]
         cursor += 3
+        rotation = _body_to_world_rotation(coordinates[3:6])
+        # QSS holds world height and Euler roll/pitch fixed. Body-frame rates
+        # must include the solved attitude when describing level-road motion.
+        velocities[:3] = rotation.T @ np.array(
+            [speed_mps * np.cos(beta), speed_mps * np.sin(beta), 0.0]
+        )
+        velocities[3:6] = rotation.T @ np.array([0.0, 0.0, yaw_rate_radps])
 
     if model.dof >= 10:
         slips = np.asarray(values[cursor : cursor + 4], dtype=float)
@@ -466,18 +484,29 @@ def _generalized_acceleration_target(
     acceleration_frame: Literal["body", "path"] = "body",
 ) -> FloatArray:
     velocity = state[model.dof :]
-    u = float(velocity[0])
-    v = float(velocity[1])
-    yaw_rate = float(velocity[2] if model.dof == 3 else velocity[5])
+    rotation = (
+        _body_to_world_rotation(state[3:6]) if model.dof >= 6 else np.eye(3)
+    )
+    body_velocity = velocity[:3].copy()
+    omega = velocity[3:6] if model.dof >= 6 else np.array([0.0, 0.0, velocity[2]])
+    if model.dof == 3:
+        body_velocity[2] = 0.0
     if acceleration_frame == "path":
-        beta = np.arctan2(v, u)
-        longitudinal_mps2, lateral_mps2 = (
+        world_velocity = rotation @ body_velocity
+        beta = np.arctan2(world_velocity[1], world_velocity[0])
+        physical = rotation.T @ np.array([
             longitudinal_mps2 * np.cos(beta) - lateral_mps2 * np.sin(beta),
             longitudinal_mps2 * np.sin(beta) + lateral_mps2 * np.cos(beta),
-        )
+            0.0,
+        ])
+    else:
+        # Body x/y acceleration with zero world vertical acceleration.
+        vertical = -(rotation[2, 0] * longitudinal_mps2
+                     + rotation[2, 1] * lateral_mps2) / rotation[2, 2]
+        physical = np.array([longitudinal_mps2, lateral_mps2, vertical])
+    linear_target = physical - np.cross(omega, body_velocity)
     target = np.zeros(model.dof, dtype=float)
-    target[0] = longitudinal_mps2 + yaw_rate * v
-    target[1] = lateral_mps2 - yaw_rate * u
+    target[:2 if model.dof == 3 else 3] = linear_target[:2 if model.dof == 3 else 3]
     if model.dof >= 10:
         # With fixed yaw rate and wheel headings, rolling speed changes with
         # body-frame velocity components. Centripetal acceleration rotates the
