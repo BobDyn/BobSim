@@ -625,6 +625,8 @@ def _solve_racing_trim(
     """Return the first valid continuation/multistart root for one GGV point."""
 
     seeds: list[Mapping[str, float] | None] = [initial_unknowns]
+    if initial_unknowns is not None:
+        seeds.append(None)
     if trim_multistart:
         inherited = dict(initial_unknowns or {})
         # Grid crosses both beta/steer signs to find disconnected branches.
@@ -634,16 +636,19 @@ def _solve_racing_trim(
                 if candidate != initial_unknowns:
                     seeds.append(candidate)
 
-    for index, seed in enumerate(seeds):
-        trim = solve_acceleration_trim(
-            model,
-            speed_mps=speed_mps,
-            longitudinal_acceleration_mps2=longitudinal_acceleration_mps2,
-            lateral_acceleration_mps2=lateral_acceleration_mps2,
-            initial_unknowns=seed,
-            max_nfev=160,
-            tolerance=1e-7,
-        )
+    for seed in seeds:
+        try:
+            trim = solve_acceleration_trim(
+                model,
+                speed_mps=speed_mps,
+                longitudinal_acceleration_mps2=longitudinal_acceleration_mps2,
+                lateral_acceleration_mps2=lateral_acceleration_mps2,
+                initial_unknowns=seed,
+                max_nfev=160,
+                tolerance=1e-7,
+            )
+        except (ValueError, RuntimeError):
+            continue
         if _trim_is_racing_feasible(
             trim,
             model=model,
@@ -653,14 +658,6 @@ def _solve_racing_trim(
             enforce_tire_load_range=enforce_tire_load_range,
         ):
             return trim
-        if (
-            index == 0
-            and trim.success
-            and enforce_tire_load_range
-            and _trim_outside_tire_domain(trim, model)
-        ):
-            # A load outside the tire fit stays invalid. Skip the grid in the infeasible ay tail.
-            return None
     return None
 
 

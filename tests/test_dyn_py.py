@@ -813,3 +813,56 @@ def test_chassis_and_wheel_moments_conserve_applied_pitch_torque(parameters):
     spin_axes = np.column_stack((-np.sin(output.toe_rad), np.cos(output.toe_rad), np.zeros(4)))
     spin = output.generalized_acceleration[-4:]*parameters.wheel_inertia_kg_m2
     np.testing.assert_allclose(output.body_moment_nm+np.sum(spin[:, None]*spin_axes, axis=0), external, atol=1e-10)
+
+
+@pytest.mark.parametrize("bounds", [("ALPMIN", "ALPMAX"), ("KPUMIN", "KPUMAX")])
+def test_qss_rejects_equilibrium_outside_tire_slip_fit(parameters, bounds):
+    from engines.dynpy import MF52Tire
+
+    reference = solve_steady_state(create_model(14, parameters), speed_mps=12.0)
+    assert reference.success
+    narrowed = {
+        name: MF52Tire({**getattr(parameters, name).coefficients,
+                       bounds[0]: -1e-7, bounds[1]: 1e-7})
+        for name in ("front_tire", "rear_tire")
+    }
+    result = solve_steady_state(
+        create_model(14, replace(parameters, **narrowed)),
+        speed_mps=12.0, initial_unknowns=reference.unknowns,
+    )
+
+    assert result.residual_norm < 1e-6
+    assert not result.success
+    assert "Outside tire slip fit" in result.message
+
+
+@pytest.mark.parametrize("first_failure", ["load_range", "geometry"])
+def test_racing_trim_retries_rejected_root(parameters, monkeypatch, first_failure):
+    from simulations.envelope.GGV import ggv_generation as ggv
+
+    model = create_model(14, parameters)
+    valid = solve_steady_state(model, speed_mps=12.0)
+    assert valid.success
+    invalid = replace(valid, output=replace(
+        valid.output, normal_loads_n=np.full(4, parameters.front_tire.fz_max_n + 1),
+    ))
+    attempts = []
+
+    def solve(*args, **kwargs):
+        attempts.append(kwargs["initial_unknowns"])
+        if len(attempts) == 1:
+            if first_failure == "geometry":
+                raise ValueError("Corner geometry constraint residual")
+            return invalid
+        return valid
+
+    monkeypatch.setattr(ggv, "solve_acceleration_trim", solve)
+    result = ggv._solve_racing_trim(
+        model, speed_mps=12.0, longitudinal_acceleration_mps2=0.0,
+        lateral_acceleration_mps2=0.0, initial_unknowns=valid.unknowns,
+        max_abs_beta_rad=0.25, max_abs_steering_rad=0.5,
+        enforce_tire_load_range=True, trim_multistart=True,
+    )
+    assert result is valid
+    assert len(attempts) == 2
+    assert attempts[1] is None

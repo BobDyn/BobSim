@@ -18,7 +18,11 @@ FloatArray = NDArray[np.float64]
 
 @dataclass(frozen=True)
 class QSSResult:
-    """A steady circular-running trim point."""
+    """A steady circular-running trim point.
+
+    Success requires equation and wheel-force closure within the tire slip fits.
+    Workflows separately enforce load, steering and sideslip limits.
+    """
 
     success: bool
     message: str
@@ -231,10 +235,11 @@ def _solve_trim(
             lateral_mps2=target_acceleration_mps2[1],
         )
     physical_norm = float(np.linalg.norm(physical_residual))
+    tire_error = _tire_state_error(model, inputs, output)
     return QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
-                     and _wheel_force_balance_valid(model, inputs, output)),
-        message=str(solution.message),
+                     and not tire_error),
+        message=f"{solution.message} {tire_error}".strip(),
         residual_norm=physical_norm,
         state=state,
         inputs=inputs,
@@ -324,10 +329,11 @@ def solve_moment_state(
     state, inputs = build(solution.x)
     output = model.evaluate(state, inputs)
     physical_residual = output.generalized_acceleration[indices]
+    tire_error = _tire_state_error(model, inputs, output)
     return QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
-                     and _wheel_force_balance_valid(model, inputs, output)),
-        message=str(solution.message),
+                     and not tire_error),
+        message=f"{solution.message} {tire_error}".strip(),
         residual_norm=float(np.linalg.norm(physical_residual)),
         state=state,
         inputs=inputs,
@@ -484,3 +490,19 @@ def _wheel_force_balance_valid(
         np.asarray(inputs.wheel_torques_nm) + output.wheel_moments_tire_nm[:, 1]
     ) / np.asarray(model.parameters.wheel_radius_m)
     return bool(np.allclose(actual, requested, rtol=2e-3, atol=1.0))
+
+
+def _tire_state_error(
+    model: ReducedVehicleModel, inputs: ModelInputs, output: ModelOutput,
+) -> str:
+    outside = [
+        corner for corner, tire, alpha, slip in zip(
+            ("FL", "FR", "RL", "RR"), model.parameters.tires,
+            output.slip_angles_rad, output.slip_ratios,
+        ) if not bool(tire.slip_in_fit_range(alpha, slip))
+    ]
+    if outside:
+        return f"Outside tire slip fit at {', '.join(outside)}."
+    if not _wheel_force_balance_valid(model, inputs, output):
+        return "Wheel force does not balance applied torque and rolling moment."
+    return ""
