@@ -39,6 +39,10 @@ jobs:
       - name: Run full regression baseline
         run: make regression-baseline
 
+      - name: Make generated reports readable
+        if: always()
+        run: sudo chmod -R a+rX simulations/mbd
+
       - name: Upload regenerated reports
         if: always()
         uses: actions/upload-artifact@v4
