@@ -1720,10 +1720,10 @@ function vehicleComponentEditorHtml(area) {
   return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
     ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : ""}
     <div class="component-editor-selectors" data-setup-filter>
-      <label>${area.id === "mass" ? "Assembly" : "Axle"}<select data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
-      </select></label>
-      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", "Select a pickup in the diagram or choose a component. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.") : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+      </select></div>
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", "Select a pickup or choose a component. Drag the point along the highlighted axis. Drag empty space to rotate, Ctrl-drag to pan. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.") : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
         ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}
       </select></div>
     </div>

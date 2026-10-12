@@ -1771,12 +1771,6 @@ body.resizing-panes * {
   text-align: right;
 }
 
-.geometry-point-editor p {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 0;
-}
-
 .mass-property-editor {
   position: absolute;
   top: 58px;
@@ -4688,7 +4682,7 @@ summary:focus-visible {
   gap: 12px;
   margin-bottom: 18px;
 }
-.component-editor-selectors label { display: grid; gap: 6px; }
+.component-editor-selectors > .form-field { grid-template-rows: 24px 34px; gap: 6px; }
 .component-editor-selectors select {
   width: 100%;
   min-width: 0;
