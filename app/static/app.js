@@ -825,6 +825,7 @@ async function refresh() {
   }
   await refreshSelectedSimConfig();
   render();
+  if (!state.tirePayloadUpdating) queueTirePayloadRefresh();
 }
 
 async function refreshStatus() {
