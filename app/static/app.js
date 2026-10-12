@@ -118,6 +118,7 @@ const state = {
   vehiclePreviewYaw: DEFAULT_VEHICLE_YAW,
   vehiclePreviewPitch: DEFAULT_VEHICLE_PITCH,
   vehiclePreviewZoom: 1,
+  vehiclePreviewFit: null,
   vehiclePreviewPanX: 0,
   vehiclePreviewPanY: 0,
   tireSurfaceYaw: DEFAULT_TIRE_SURFACE_YAW,
@@ -3356,6 +3357,7 @@ async function loadVehicleSourceById(sourceId) {
     body: JSON.stringify({ source_id: sourceId }),
   });
   acceptCleanVehiclePayload();
+  state.vehiclePreviewFit = null;
   await refreshStatus();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshSavedResults();
@@ -3408,6 +3410,7 @@ async function createVehicleFromStart() {
       }),
     });
     acceptCleanVehiclePayload();
+    state.vehiclePreviewFit = null;
     await refreshStatus();
     state.vehicleLibrary = await api("/api/vehicles/save", {
       method: "POST",
@@ -3484,6 +3487,7 @@ async function applyVehicleTemplate(templateId) {
     body: JSON.stringify({ template_id: templateId }),
   });
   acceptCleanVehiclePayload();
+  state.vehiclePreviewFit = null;
   await refreshStatus();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshSavedResults();
@@ -11539,22 +11543,34 @@ function projectVehicleModel(model, width, height, view) {
 }
 
 function projectVehicleModelInRect(model, viewport, view) {
-  const frame = projectedViewFrame(model, view);
-  const baseScale = Math.min(
-    Math.max(1, viewport.width - 48) / frame.spanU,
-    Math.max(1, viewport.height - 48) / frame.spanV,
-  );
-  const scale = baseScale * state.vehiclePreviewZoom;
+  const key = `${state.activeParamGroup}:${view}:${model.points.map((point) => point.id).join(",")}`;
+  if (state.vehiclePreviewFit?.key !== key) {
+    const frame = projectedViewFrame(model, view);
+    const depth = model.points.reduce((total, point) => total + projectPoint(point, view).depth, 0) / Math.max(1, model.points.length);
+    const axes = [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }];
+    const center = axes.map((axis) => {
+      const basis = projectPoint(axis, view);
+      return frame.centerU * basis.u + frame.centerV * basis.v + depth * basis.depth;
+    });
+    state.vehiclePreviewFit = {
+      key, center: { x: center[0], y: center[1], z: center[2] },
+      scale: Math.min(Math.max(1, viewport.width - 48) / frame.spanU,
+        Math.max(1, viewport.height - 48) / frame.spanV),
+    };
+  }
+  const fit = state.vehiclePreviewFit;
+  const center = projectPoint(fit.center, view);
+  const scale = fit.scale * state.vehiclePreviewZoom;
   const map = new Map((model.points || []).map((point) => {
     const projected = projectPoint(point, view);
     return [point.id, {
       ...point,
       ...projected,
-      x2: (projected.u - frame.centerU) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
-      y2: viewport.y + viewport.height / 2 - (projected.v - frame.centerV) * scale + state.vehiclePreviewPanY,
+      x2: (projected.u - center.u) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
+      y2: viewport.y + viewport.height / 2 - (projected.v - center.v) * scale + state.vehiclePreviewPanY,
     }];
   }));
-  return { map, scale, frame };
+  return { map, scale };
 }
 
 function clampPreviewCamera() {
@@ -12664,6 +12680,7 @@ function finishSetupResize(pointerId) {
 }
 
 function resetVehicleView() {
+  state.vehiclePreviewFit = null;
   state.vehiclePreviewView = "iso";
   state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;
   state.vehiclePreviewPitch = DEFAULT_VEHICLE_PITCH;
@@ -12922,6 +12939,7 @@ function wireEvents() {
   });
   document.querySelectorAll(".view-button[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
+      state.vehiclePreviewFit = null;
       state.vehiclePreviewView = button.dataset.view;
       if (state.vehiclePreviewView === "iso") {
         state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;

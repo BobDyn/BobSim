@@ -42,6 +42,21 @@ for (const [width,height] of [[900,500],[400,700]]) {
     assert.ok(panel.views.every(v=>v.y>=panel.y && v.y+v.height<=panel.y+panel.height));
   }
 }
+state.vehiclePreviewFit=null;
+state.vehiclePreviewYaw=DEFAULT_VEHICLE_YAW;
+state.vehiclePreviewPitch=DEFAULT_VEHICLE_PITCH;
+const initialFit=projectVehicleModel(fitModel,900,500,'iso');
+const fixedCenter=JSON.stringify(state.vehiclePreviewFit.center);
+state.vehiclePreviewYaw+=0.6; state.vehiclePreviewPitch+=0.2;
+assert.equal(projectVehicleModel(fitModel,900,500,'iso').scale,initialFit.scale);
+const editedModel={points:fitModel.points.map(p=>({...p,x:p.x*2}))};
+assert.equal(projectVehicleModel(editedModel,900,500,'iso').scale,initialFit.scale);
+assert.equal(JSON.stringify(state.vehiclePreviewFit.center),fixedCenter);
+assert.equal(projectVehicleModel(editedModel,500,300,'iso').scale,initialFit.scale);
+state.vehiclePreviewZoom=2;
+assert.equal(projectVehicleModel(editedModel,900,500,'iso').scale,initialFit.scale*2);
+state.vehiclePreviewZoom=1; state.vehiclePreviewFit=null;
+assert.notEqual(projectVehicleModel(editedModel,900,500,'iso').scale,initialFit.scale);
 const driverLeft = projectPointWithAngles({x:0,y:1,z:0},'iso',-Math.PI/2,0);
 assert.ok(driverLeft.u < 0);
 assert.ok(projectPointWithAngles({x:0,y:0,z:1},'iso',-Math.PI/2,0).v > 0);
