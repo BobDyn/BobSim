@@ -4613,3 +4613,36 @@ summary:focus-visible {
   cursor: pointer;
   margin-bottom: 12px;
 }
+
+/* Vehicle component editors */
+.component-editor-selectors {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.component-editor-selectors label { display: grid; gap: 6px; }
+.component-editor-selectors select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px;
+}
+.component-editor-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.vehicle-component-editor [data-component-panel][hidden] { display: none; }
+.vehicle-component-editor .field-grid { grid-template-columns: minmax(0, 1fr); }
+.vehicle-component-editor .coordinate-input .array-bracket { display: none; }
+.vehicle-component-editor .coordinate-input .array-inline-cells { width: 100%; }
+.vehicle-component-editor .coordinate-input { grid-template-columns: minmax(0, 1fr); }
+.vehicle-component-editor .coordinate-cell { min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.vehicle-component-editor .coordinate-cell input { width: 100%; min-width: 0; }
+.component-inertia { margin-top: 20px; }
+.component-inertia summary { cursor: pointer; margin-bottom: 12px; }
+.vehicle-mass-summary { display: grid; gap: 10px; margin-bottom: 20px; }
+.vehicle-mass-summary > div { display: flex; justify-content: space-between; gap: 12px; }
+.vehicle-mass-summary span { color: var(--muted); }
+.vehicle-mass-summary strong { font-variant-numeric: tabular-nums; }

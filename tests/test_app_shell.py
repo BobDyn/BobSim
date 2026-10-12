@@ -1843,3 +1843,54 @@ assert.deepEqual(bellcrankOutlineOrder({}, ['rod', 'shock']), ['rod', 'shock']);
 """
     assert cases
     subprocess.run([node, "-e", script], input=json.dumps(cases), text=True, check=True)
+
+
+def test_component_editor_keeps_every_field_and_defaults_to_body():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the component editor check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    start = source.index("function vehicleFieldComponent(")
+    helpers = source[start:source.index("function wireVehicleComponentEditors(")]
+    script = """
+const assert = require('node:assert/strict');
+const state = {};
+const humanizeToken = value => value.replaceAll('_', ' ').replace(/^./, char => char.toUpperCase());
+const escapeHtml = value => String(value);
+const fieldPathString = field => field.path.join('.');
+const fieldControl = field => `<input name="${field.path.join('.')}">`;
+""" + helpers + """
+const fields = [
+  ['front', 'masses', 'unsprung', 'mass_kg'],
+  ['driver_mass', 'mass_kg'],
+  ['sprung_mass', 'mass_kg'],
+  ['sprung_mass', 'cg_m'],
+  ['sprung_mass', 'inertia_kg_m2'],
+  ['body', 'torsional_stiff_n_m_per_rad'],
+].map(path => ({path}));
+const html = vehicleComponentEditorHtml({id: 'mass', fields});
+assert.equal(state.vehicleComponentSelection.mass, 'body');
+for (const field of fields) assert.equal(html.split(`name="${field.path.join('.')}"`).length, 2);
+assert(html.includes('<details class="component-inertia">'));
+assert(!html.includes('<details class="component-inertia" open'));
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'upper_o_m']}, 'hardpoints').key,
+  'front.Upper wishbone');
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'tie_o_m']}, 'hardpoints').key,
+  vehicleFieldComponent({path: ['front', 'steering', 'rack_pickup_m']}, 'hardpoints').key);
+assert.equal(vehicleFieldComponent({path: ['rear', 'wheel', 'toe_deg']}, 'hardpoints').label, 'Alignment');
+"""
+    start = source.index("function updateVehicleMassSummary(")
+    summary = source[start:source.index("function tireSectionHtml(")]
+    script += summary + """
+const output = {};
+const document = {querySelector: () => output};
+const buildVehicleGeometry = () => ({points: [{aggregate: true, massKg: 100, x: -0.5, y: 0, z: 0.2}]});
+const formatMassValue = value => `${value} kg`;
+const formatVector = value => value.join(', ');
+updateVehicleMassSummary({front: {suspension: {wheel_center_m: [0, 1, 0]}},
+  rear: {suspension: {wheel_center_m: [-2, 1, 0]}}});
+assert(output.innerHTML.includes('75.0 / 25.0%'));
+"""
+    subprocess.run([node, "-e", script], check=True)

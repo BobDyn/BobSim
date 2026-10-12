@@ -1284,6 +1284,7 @@ function renderVehicleEditor() {
   wireTireTools();
   wireTirParameterFields();
   wireFieldSubsections();
+  wireVehicleComponentEditors();
   applyArchitectureVisibility();
   syncArchitectureDependentControls();
   renderArchitectureTemplateMatches();
@@ -1634,6 +1635,7 @@ function parameterAreaFields(area) {
     const fields = area.fields.filter((field) => !isArchitectureField(field) && !isArchitectureVisualOnlyField(field) && !fieldPathString(field).startsWith("vehicle."));
     return `${identity.map((field) => `<div hidden>${fieldControl(field)}</div>`).join("")}${architectureToolsHtml(area.fields)}${fieldGroupSections(fields, area.id)}<details class="vehicle-details"><summary>Vehicle details</summary>${details.map(fieldControl).join("")}</details>`;
   }
+  if (["hardpoints", "mass"].includes(area.id)) return vehicleComponentEditorHtml(area);
   if (area.id === "tires") return tireSectionHtml(area);
   if (area.id === "powertrain") return powertrainSectionHtml(area);
   const extra = area.id === "tires"
@@ -1650,6 +1652,112 @@ function parameterAreaFields(area) {
     return `${extra}<div class="area-empty">${escapeHtml(emptyAreaCopy(area.id))}</div>`;
   }
   return `${extra}${fieldGroupSections(fields, area.id)}`;
+}
+
+function vehicleFieldComponent(field, areaId) {
+  const path = field.path || [];
+  if (areaId === "mass") {
+    if (path[0] === "sprung_mass" || path[0] === "body") return { key: "body", group: "Vehicle", label: "Body" };
+    if (path[0] === "driver_mass") return { key: "driver", group: "Vehicle", label: "Driver" };
+    return { key: path.slice(0, 3).join("."), group: `${humanizeToken(path[0])} suspension`, label: humanizeToken(path[2] || path[0]) };
+  }
+  let component = path[1];
+  if (component === "suspension") {
+    component = path[2]?.startsWith("upper_") ? "Upper wishbone"
+      : path[2]?.startsWith("lower_") ? "Lower wishbone"
+        : path[2]?.startsWith("tie_") ? "Steering" : "Wheel center";
+  } else if (component === "actuation") {
+    component = path[2] === "rod_mount_m" ? "Rod" : humanizeToken(path[2]);
+  } else if (component === "wheel") component = "Alignment";
+  else component = humanizeToken(component || "Geometry");
+  return { key: `${path[0]}.${component}`, group: humanizeToken(path[0]), label: component };
+}
+
+function vehicleComponentEditorHtml(area) {
+  const components = new Map();
+  area.fields.forEach((field) => {
+    const component = vehicleFieldComponent(field, area.id);
+    if (!components.has(component.key)) components.set(component.key, { ...component, fields: [] });
+    components.get(component.key).fields.push(field);
+  });
+  const entries = [...components.values()];
+  if (area.id === "mass") entries.sort((a, b) => {
+    const order = (key) => key === "body" ? 0 : key === "driver" ? 1 : 2;
+    return order(a.key) - order(b.key);
+  });
+  state.vehicleComponentSelection ||= {};
+  const selected = entries.find((entry) => entry.key === state.vehicleComponentSelection[area.id]) || entries[0];
+  state.vehicleComponentSelection[area.id] = selected?.key;
+  const groups = [...new Set(entries.map((entry) => entry.group))];
+  return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
+    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : '<p class="component-editor-note">Select a pickup in the diagram or choose a component below. Left side coordinates are mirrored to the right. X forward, Y left, Z up.</p>'}
+    <div class="component-editor-selectors" data-setup-filter>
+      <label>${area.id === "mass" ? "Assembly" : "Axle"}<select data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
+        ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
+      </select></label>
+      <label>Component<select data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+        ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}
+      </select></label>
+    </div>
+    ${entries.map((entry) => {
+      const inertia = entry.fields.filter((field) => fieldPathString(field).includes("inertia"));
+      const regular = entry.fields.filter((field) => !inertia.includes(field));
+      return `<section data-component-panel="${escapeHtml(entry.key)}"${entry.key === selected?.key ? "" : " hidden"}>
+        <div class="field-grid">${regular.map(fieldControl).join("")}</div>
+        ${inertia.length ? `<details class="component-inertia"><summary>Inertia tensor · kg·m²</summary><div class="field-grid">${inertia.map(fieldControl).join("")}</div></details>` : ""}
+      </section>`;
+    }).join("")}
+  </div>`;
+}
+
+function wireVehicleComponentEditors() {
+  document.querySelectorAll("[data-component-editor]").forEach((editor) => {
+    const group = editor.querySelector("[data-component-group]");
+    const select = editor.querySelector("[data-component-select]");
+    group.onchange = () => {
+      const option = [...select.options].find((item) => item.dataset.componentGroupName === group.value);
+      if (option) select.value = option.value;
+      syncVehicleComponentEditor(editor);
+    };
+    select.onchange = () => syncVehicleComponentEditor(editor);
+    syncVehicleComponentEditor(editor);
+  });
+  updateVehicleMassSummary(state.vehiclePayload?.data);
+}
+
+function syncVehicleComponentEditor(editor) {
+  const group = editor.querySelector("[data-component-group]");
+  const select = editor.querySelector("[data-component-select]");
+  [...select.options].forEach((option) => {
+    option.hidden = option.dataset.componentGroupName !== group.value;
+    option.disabled = option.hidden;
+  });
+  editor.querySelectorAll("[data-component-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.componentPanel !== select.value;
+  });
+  state.vehicleComponentSelection[editor.dataset.componentEditor] = select.value;
+}
+
+function revealVehicleComponentField(container) {
+  const panel = container?.closest("[data-component-panel]");
+  const editor = panel?.closest("[data-component-editor]");
+  if (!editor) return;
+  const select = editor.querySelector("[data-component-select]");
+  select.value = panel.dataset.componentPanel;
+  editor.querySelector("[data-component-group]").value = select.selectedOptions[0].dataset.componentGroupName;
+  syncVehicleComponentEditor(editor);
+}
+
+function updateVehicleMassSummary(data) {
+  const summary = document.querySelector("[data-mass-summary]");
+  if (!summary || !data) return;
+  const point = buildVehicleGeometry(data).points.find((item) => item.aggregate);
+  const frontX = Number(data.front?.suspension?.wheel_center_m?.[0]);
+  const rearX = Number(data.rear?.suspension?.wheel_center_m?.[0]);
+  const frontShare = point && frontX !== rearX ? 100 * (point.x - rearX) / (frontX - rearX) : NaN;
+  summary.innerHTML = point ? `<div><span>Total mass</span><strong>${escapeHtml(formatMassValue(point.massKg))}</strong></div>
+    ${Number.isFinite(frontShare) ? `<div><span>Static front / rear</span><strong>${frontShare.toFixed(1)} / ${(100 - frontShare).toFixed(1)}%</strong></div>` : ""}
+    <div><span>Combined CG · m</span><strong>${escapeHtml(formatVector([point.x, point.y, point.z], ""))}</strong></div>` : "";
 }
 
 function tireSectionHtml(area) {
@@ -5691,7 +5799,10 @@ function currentVehicleFormData() {
 
 function drawVehicleFromForm() {
   const data = currentVehicleFormData();
-  if (data) drawVehiclePreview(data);
+  if (data) {
+    updateVehicleMassSummary(data);
+    drawVehiclePreview(data);
+  }
 }
 
 function setNestedValue(data, path, value) {
@@ -6507,6 +6618,7 @@ function syncGeometryPointEditor() {
 function selectGeometryPoint(point, { scroll = false } = {}) {
   if (!editableGeometryPoint(point)) return;
   state.geometrySelectedPointId = point.id;
+  revealVehicleComponentField(geometrySourceContainer(point));
   syncGeometryPointEditor();
   if (scroll) {
     geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.scrollIntoView({
@@ -6614,6 +6726,11 @@ function updateMassHover(event) {
 }
 
 function selectMassPoint(point) {
+  if (point?.sourcePath) {
+    const key = JSON.stringify([...point.sourcePath, "mass_kg"]);
+    const input = [...document.querySelectorAll("[data-config-path]")].find((item) => item.dataset.configPath === key);
+    revealVehicleComponentField(input);
+  }
   state.massSelectedPointId = point?.id || null;
   syncMassPropertyEditor();
   drawVehicleFromForm();
