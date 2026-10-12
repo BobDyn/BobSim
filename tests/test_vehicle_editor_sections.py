@@ -21,7 +21,7 @@ def test_aero_and_powertrain_editors_preserve_fields() -> None:
         "aeroSectionHtml", "aeroTableControl", "aeroSurfaceRowsFromTable", "aeroCellControl",
         "powertrainSubsystemFieldsHtml", "powertrainSubsystems", "powertrainFieldSubsystem",
         "arrayScalarControl", "arrayCellInputHtml", "numericDisplayAttrs", "numericDisplayValue",
-        "formatNumber", "escapeHtml",
+        "formatNumber", "escapeHtml", "infoIcon", "infoHint",
     )
     helpers = []
     for name in names:
@@ -80,8 +80,10 @@ for (const field of fields.filter(field => field.path[1] !== 'implementation')) 
   assert.equal(rendered.split(`<field key='${field.key}'>`).length - 1, 1, field.key);
 }
 const motor = powertrainSubsystemFieldsHtml(sections.find(section => section.id === 'pMotor'));
-assert(motor.indexOf('T_peak') < motor.indexOf('<details'));
-assert(motor.indexOf('rotorJ') > motor.indexOf('<details'));
+const torque = motor.match(/<details[^>]* open><summary>Torque and power<\/summary>(.*?)<\/details>/s);
+assert(torque && torque[1].includes('T_peak'));
+const inertia = motor.match(/<details[^>]*><summary>Inertia<\/summary>(.*?)<\/details>/s);
+assert(inertia && inertia[1].includes('rotorJ'));
 const driveline = powertrainSubsystemFieldsHtml(sections.find(section => section.id === 'pDriveline'));
 assert(driveline.indexOf('diff_T_preload') < driveline.indexOf('<details'));
 assert(driveline.includes('<summary>Halfshafts</summary>'));
