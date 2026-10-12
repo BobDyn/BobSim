@@ -6777,6 +6777,8 @@ function setGeometrySourceValues(point, values, { syncEditor = true, renderMini 
 
 function markGeometryDirty({ renderMini = true } = {}) {
   updateDirtyState();
+  const data = currentVehicleFormData();
+  if (data) applyVehicleDataToPayload(data);
   drawVehicleFromForm();
   if (renderMini) renderParameterTabCanvases();
   queueKinematicsRefresh();
