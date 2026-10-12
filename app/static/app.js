@@ -158,7 +158,6 @@ const state = {
   massScene: null,
   massHoverPointId: null,
   massSelectedPointId: null,
-  massEditorPositionFrame: null,
   suspensionAxle: "front",
   suspensionComponent: "spring",
   suspensionPlotScene: null,
@@ -1429,7 +1428,7 @@ function isUndoableVehicleTarget(target) {
 
 function shouldUseNativeUndo(event) {
   const editable = event.target?.closest?.("textarea, input:not([type='checkbox']), [contenteditable='true']");
-  return Boolean(editable && !editable.closest("#config-form, #geometry-point-editor, #mass-property-editor, #vehicle-name-input"));
+  return Boolean(editable && !editable.closest("#config-form, #geometry-point-editor, #vehicle-name-input"));
 }
 
 function updateDirtyState() {
@@ -6177,7 +6176,6 @@ function clearMassInteractionScene() {
   state.massHoverPointId = null;
   state.massSelectedPointId = null;
   document.getElementById("vehicle-canvas")?.classList.remove("mass-hot");
-  syncMassPropertyEditor();
 }
 
 function clearSuspensionPlotInteractionScene() {
@@ -6921,11 +6919,6 @@ function isSurfaceMapPreviewArea(area = activeParameterArea()) {
   return (area.visual === "aero" && !state.aeroReferenceView) || (area.visual === "tires" && state.activeTireTab === "load-maps");
 }
 
-function selectedMassPoint() {
-  if (!state.massScene) return null;
-  return state.massScene.uniquePoints.find((point) => point.id === state.massSelectedPointId) || null;
-}
-
 function hitTestMassPoint(event) {
   if (!isMassPreviewArea() || !state.massScene) return null;
   const canvasPoint = pointerCanvasPoint(event);
@@ -6958,64 +6951,7 @@ function selectMassPoint(point) {
     revealVehicleComponentField(input);
   }
   state.massSelectedPointId = point?.id || null;
-  syncMassPropertyEditor();
   drawVehicleFromForm();
-}
-
-function syncMassPropertyEditor() {
-  const editor = document.getElementById("mass-property-editor");
-  if (!editor) return;
-  const point = selectedMassPoint();
-  if (!isMassPreviewArea() || !point) {
-    editor.hidden = true;
-    editor.style.transform = "";
-    return;
-  }
-  editor.hidden = false;
-  positionMassPropertyEditor();
-  document.getElementById("mass-property-name").textContent = massDisplayName(point);
-  document.getElementById("mass-property-role").textContent = point.aggregate ? "Effective" : "Source";
-  const grid = document.getElementById("mass-property-grid");
-  if (!grid) return;
-  grid.innerHTML = massPropertyRows(point).map(([label, value]) => `
-    <div class="mass-property-row">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </div>
-  `).join("");
-}
-
-function positionMassPropertyEditor() {
-  const editor = document.getElementById("mass-property-editor");
-  if (!editor || editor.hidden) return;
-  const stage = document.querySelector(".visual-stage");
-  editor.style.transform = `translateY(${stage?.scrollTop || 0}px)`;
-}
-
-function queueMassPropertyEditorPosition() {
-  if (state.massEditorPositionFrame) return;
-  state.massEditorPositionFrame = requestAnimationFrame(() => {
-    state.massEditorPositionFrame = null;
-    positionMassPropertyEditor();
-  });
-}
-
-function massPropertyRows(point) {
-  const radius = massGyrationRadius(point);
-  return [
-    ["Name", massDisplayName(point)],
-    ["Mass", formatMassValue(point.massKg)],
-    ["CG", formatVector([point.x, point.y, point.z], "m")],
-    ["Inertia", formatInertia(point.inertiaKgM2) || "Not set"],
-    ["Rg", Number.isFinite(radius) ? `${formatNumber(radius)} m` : "Not set"],
-    ["Axle", point.axle ? humanizeToken(point.axle) : "Vehicle"],
-    ["Side", point.side ? humanizeToken(point.side) : "Both"],
-    ["Source", massSourceLabel(point)],
-  ];
-}
-
-function massDisplayName(point) {
-  return (point.sourceLabel || humanizeToken(point.id)).replace(/\s+mass$/i, "");
 }
 
 function formatMassValue(value) {
@@ -7027,29 +6963,6 @@ function formatVector(values, unit = "") {
   if (!Array.isArray(values)) return "";
   const formatted = values.slice(0, 3).map((value) => formatNumber(value)).join(", ");
   return unit ? `[${formatted}] ${unit}` : `[${formatted}]`;
-}
-
-function formatInertia(inertia) {
-  const diagonal = inertiaDiagonal(inertia);
-  return diagonal.some((value) => value > 0) ? formatVector(diagonal, "kg m2") : "";
-}
-
-function massGyrationRadius(point) {
-  if (Number.isFinite(point?.shellRadiusM) && point.shellRadiusM > 0) return point.shellRadiusM;
-  const mass = Number(point?.massKg);
-  if (!Number.isFinite(mass) || mass <= 0) return null;
-  const diagonal = inertiaDiagonal(point?.inertiaKgM2).filter((value) => value > 0);
-  if (!diagonal.length) return null;
-  const meanInertia = diagonal.reduce((sum, value) => sum + value, 0) / diagonal.length;
-  return Math.sqrt(meanInertia / mass);
-}
-
-function massSourceLabel(point) {
-  if (point.aggregate) {
-    const count = Number(point.sourceCount);
-    return Number.isFinite(count) && count > 0 ? `${count} mass blocks` : "Computed";
-  }
-  return Array.isArray(point.sourcePath) ? point.sourcePath.join(".") : "Config";
 }
 
 function pointerCanvasPoint(event) {
@@ -11647,9 +11560,9 @@ function projectVehicleModelToViewFrame(model, viewport, view, frame) {
 function drawMassPreview(ctx, width, height, data) {
   const fullModel = buildVehicleGeometry(data);
   const massModel = filterVehicleModel(fullModel, sectionFocus("mass"));
+  massModel.points = massModel.points.filter((point) => !point.aggregate);
   if (!massModel.points.length) {
     state.massScene = null;
-    syncMassPropertyEditor();
     drawPreviewGrid(ctx, width, height);
     drawCanvasText(ctx, "No mass properties are available.", width / 2, height / 2, {
       align: "center",
@@ -11666,7 +11579,6 @@ function drawMassPreview(ctx, width, height, data) {
     points: scenePoints,
     uniquePoints: uniqueMassPoints(scenePoints),
   };
-  syncMassPropertyEditor();
 }
 
 function massViewPanels(width, height) {
@@ -11718,10 +11630,6 @@ function drawMassViewPanel(ctx, panel, fullModel, massModel) {
   massPoints
     .sort((a, b) => a.depth - b.depth)
     .forEach((point) => drawSphere(ctx, point));
-  massPoints
-    .sort((a, b) => a.depth - b.depth)
-    .filter(shouldDrawMassLabel)
-    .forEach((point) => drawMassLabel(ctx, point));
   ctx.restore();
   return massPoints;
 }
@@ -11738,35 +11646,6 @@ function isSelectedMassComponent(point) {
   if (point.group !== "mass" || !point.sourcePath) return false;
   const component = vehicleFieldComponent({ path: point.sourcePath }, "mass");
   return component.key === state.vehicleComponentSelection?.mass;
-}
-
-function shouldDrawMassLabel(point) {
-  return point.id === state.massHoverPointId || point.id === state.massSelectedPointId || isSelectedMassComponent(point);
-}
-
-function drawMassLabel(ctx, point) {
-  const label = massDisplayName(point);
-  const palette = canvasPalette();
-  const x = point.x2 + (point.role === "effective-mass" ? 16 : 10);
-  const y = point.y2 - (point.role === "effective-mass" ? 17 : 12);
-  const paddingX = 7;
-  ctx.save();
-  ctx.font = "760 10px Inter, sans-serif";
-  const width = Math.min(170, Math.ceil(ctx.measureText(label).width) + paddingX * 2);
-  const height = 20;
-  ctx.fillStyle = state.dark ? "rgba(24,30,42,0.88)" : "rgba(248,250,252,0.9)";
-  ctx.strokeStyle = colorWithAlpha(point.color, point.id === state.massSelectedPointId ? 0.72 : 0.36);
-  ctx.lineWidth = point.id === state.massSelectedPointId ? 1.5 : 1;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y - height / 2, width, height, 6);
-  else ctx.rect(x, y - height / 2, width, height);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = palette.ink;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x + paddingX, y, width - paddingX * 2);
-  ctx.restore();
 }
 
 function massViewFrame(fullModel, massModel, view) {
@@ -12948,9 +12827,6 @@ function wireEvents() {
       syncViewButtons();
       drawVehicleFromForm();
     });
-  });
-  document.querySelector(".visual-stage")?.addEventListener("scroll", () => {
-    if (state.massSelectedPointId) queueMassPropertyEditorPosition();
   });
   wireSetupSplitter();
   document.querySelectorAll("[data-geometry-tab]").forEach((button) => {
