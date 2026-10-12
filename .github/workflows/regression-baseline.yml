@@ -41,7 +41,7 @@ jobs:
 
       - name: Make generated reports readable
         if: always()
-        run: sudo chmod -R a+rX simulations/mbd/results simulations/mbd/generated_results
+        run: sudo chmod -R a+rX simulations/mbd/generated_results
 
       - name: Upload regenerated reports
         if: always()
@@ -49,8 +49,6 @@ jobs:
         with:
           name: standard-sim-reports
           path: |
-            simulations/mbd/results/*_report_metrics.csv
-            simulations/mbd/results/*_report.pdf
             simulations/mbd/generated_results/*_report_metrics.csv
             simulations/mbd/generated_results/*_report.pdf
           if-no-files-found: warn
