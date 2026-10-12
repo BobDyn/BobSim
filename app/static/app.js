@@ -8024,10 +8024,10 @@ function drawArchitecturePreview(ctx, width, height, data) {
 }
 
 function architectureAxlePanels(width, height) {
-  const top = 16;
-  const margin = 16;
-  const gap = 16;
-  const availableHeight = Math.max(1, height - top - 40);
+  const top = 8;
+  const margin = 8;
+  const gap = 8;
+  const availableHeight = Math.max(1, height - top - 32);
   const panelHeight = (availableHeight - gap) / 2;
   return ["front", "rear"].map((axle, index) => (
     architectureAxlePanel(axle, margin, top + index * (panelHeight + gap), width - margin * 2, panelHeight)
@@ -8035,8 +8035,8 @@ function architectureAxlePanels(width, height) {
 }
 
 function architectureAxlePanel(axle, x, y, width, height) {
-  const inset = 12;
-  const headerHeight = 34;
+  const inset = 4;
+  const headerHeight = 28;
   const viewHeight = Math.max(1, height - headerHeight - inset * 2);
   const viewWidth = width - inset * 2;
   const viewX = x + inset;
