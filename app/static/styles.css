@@ -3860,8 +3860,12 @@ body.resizing-panes * {
 }
 
 .model-label {
-  color: var(--muted);
-  font-size: 11px;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-radius: var(--radius-sm);
+  padding: 4px 7px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .simulation-details summary,
@@ -4330,4 +4334,46 @@ summary:focus-visible {
   .replay-side {
     flex: 0 0 auto;
   }
+}
+
+.simulation-group {
+  display: grid;
+  gap: 10px;
+}
+
+.simulation-group-title {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 8px 24px 0;
+}
+
+.model-guide {
+  margin: 16px 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.model-guide summary {
+  cursor: pointer;
+}
+
+.model-guide dl {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.model-guide dl > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.model-guide dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.model-guide dd {
+  margin: 0;
 }

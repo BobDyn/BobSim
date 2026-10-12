@@ -580,7 +580,7 @@ function fmtBytes(value) {
 }
 
 function standardWorkflows() {
-  return (state.status?.workflows || []).filter((workflow) => workflow.group === "standard");
+  return (state.status?.workflows || []).filter((workflow) => ["standard", "response", "envelope", "lap"].includes(workflow.group));
 }
 
 function activeVehicleWorkspace() {
@@ -674,7 +674,8 @@ function canUseStandardSim() {
 }
 
 function canRunStandardWorkflow(workflow = selectedWorkflow()) {
-  return canUseStandardSim() && workflowAvailable(workflow);
+  if (!workflow || !activeVehicleConfigReady() || state.dirtyVehicle) return false;
+  return (!workflow.requires_mbd || canUseStandardSim()) && workflowAvailable(workflow);
 }
 
 function canSaveActiveResults() {
@@ -1107,7 +1108,9 @@ function simulationLockedMessage() {
 }
 
 function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
-  if (!canUseStandardSim()) return simulationLockedMessage();
+  if (!activeVehicleConfigReady()) return "Save this vehicle to your library first.";
+  if (state.dirtyVehicle) return "Save your vehicle changes first.";
+  if (workflow?.requires_mbd && !canUseStandardSim()) return simulationLockedMessage();
   if (!workflowAvailable(workflow)) return workflowUnavailableMessage(workflow);
   return "";
 }
@@ -2408,12 +2411,12 @@ function fieldControl(field) {
     return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
   }
   if (field.kind === "select") {
-    const choices = field.choices.includes(value) ? field.choices : [value, ...field.choices].filter(Boolean);
+    const choices = field.choices.some((choice) => String(choice) === String(value)) ? field.choices : [value, ...field.choices].filter(Boolean);
     return `
       <div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>
         ${label}
         <select ${attrs}>
-          ${choices.map((choice) => `<option value="${escapeHtml(choice)}"${choice === value ? " selected" : ""}>${escapeHtml(choice)}</option>`).join("")}
+          ${choices.map((choice) => `<option value="${escapeHtml(choice)}"${String(choice) === String(value) ? " selected" : ""}>${escapeHtml(choice)}</option>`).join("")}
         </select>
         ${fieldHelpHtml(field)}
       </div>
@@ -3194,7 +3197,10 @@ async function applySimConfigEdits() {
   });
   state.simConfigPayload = payload;
   acceptCleanSimConfigPayload();
+  state.status = await api("/api/status");
   renderSimSetup(selectedWorkflow());
+  renderWorkflows();
+  renderSimulationModal();
   return payload;
 }
 
@@ -3779,17 +3785,16 @@ async function resetOpenModelicaToolchain() {
 }
 
 function renderStandard() {
-  if (canUseStandardSim()) ensureSelectedSimConfigLoaded();
+  if (canRunStandardWorkflow()) ensureSelectedSimConfigLoaded();
   const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
     activeVehicleName();
   const notice = document.getElementById("simulation-notice");
-  notice.hidden = canUseStandardSim();
-  notice.textContent = notice.hidden ? "" : simulationLockedMessage();
+  notice.hidden = activeVehicleConfigReady() && !state.dirtyVehicle;
+  notice.textContent = notice.hidden ? "" : "Save your vehicle before running a simulation.";
   const nextStep = document.getElementById("simulation-next-btn");
   nextStep.hidden = notice.hidden;
-  nextStep.textContent = activeVehicleConfigReady() && vehicleDefinitionCurrent()
-    ? "OpenModelica settings" : "Go to setup";
+  nextStep.textContent = "Go to setup";
   syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
@@ -3812,7 +3817,16 @@ function renderWorkflows() {
   const grid = document.getElementById("workflow-grid");
   const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
     (details) => details.closest("[data-workflow]").dataset.workflow));
-  grid.innerHTML = workflows.map(workflowCard).join("");
+  grid.innerHTML = [
+    ["Response", ["standard", "response"]],
+    ["Envelopes", ["envelope"]],
+    ["Laps", ["lap"]],
+  ].map(([label, groups]) => `
+    <section class="simulation-group">
+      <h3 class="simulation-group-title">${label}</h3>
+      ${workflows.filter((workflow) => groups.includes(workflow.group)).map(workflowCard).join("")}
+    </section>
+  `).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
     card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
   });
@@ -3863,7 +3877,7 @@ function firstExistingWorkflowOutput(workflow) {
 
 function savedReviewForWorkflow(workflowId) {
   const key = activeVehicleKey();
-  if (!key || !vehicleDefinitionCurrent()) return null;
+  if (!key || state.dirtyVehicle) return null;
   return savedResults().find((result) => result.workflow?.id === workflowId && result.vehicle_key === key) || null;
 }
 
@@ -3888,7 +3902,7 @@ async function reviewSimulationWorkflow(workflowId) {
 function renderSimulationModal(workflow = selectedWorkflow()) {
   const modal = document.getElementById("simulation-config-modal");
   if (!modal) return;
-  if (!canUseStandardSim()) state.simModalOpen = false;
+  if (!canRunStandardWorkflow(workflow)) state.simModalOpen = false;
   modal.hidden = !state.simModalOpen;
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
@@ -3914,6 +3928,7 @@ function workflowCard(workflow) {
           <span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
+        ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
         <details class="simulation-details">
           <summary>Run details</summary>
           <div class="simulation-detail-grid">
@@ -3955,6 +3970,41 @@ function simWorkflowMeta(workflow) {
     outputs: ["Job log", "Registered reports and CSV files"],
   };
   return {
+    "ggv": {
+      title: "GGV",
+      summary: "Longitudinal and lateral acceleration limits across speed.",
+      sequence: ["Solve quasi-steady trim points"],
+      parameters: ["Speed grid and acceleration bounds"],
+      outputs: ["Envelope CSV and PDF report"],
+    },
+    "ymd": {
+      title: "Yaw moment diagram",
+      summary: "Yaw moment and lateral acceleration across sideslip and steering.",
+      sequence: ["Sweep quasi-steady sideslip and steering states"],
+      parameters: ["Speed, sideslip and steering grids"],
+      outputs: ["Yaw moment CSV and PDF report"],
+    },
+    "reduced-step-steer": {
+      title: "Step steer",
+      summary: "Time response to a roadwheel steering step.",
+      sequence: ["Trim at the initial speed, then integrate the steering step"],
+      parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
+      outputs: ["Signals CSV and summary"],
+    },
+    "lap-qss": {
+      title: "QSS lap",
+      summary: "Racing line and speed profile from a vehicle acceleration envelope.",
+      sequence: ["Generate or verify the GGV, then solve the line and speed profile"],
+      parameters: ["DOF, track, racing line and power cap"],
+      outputs: ["Lap CSV and summary"],
+    },
+    "lap-transient": {
+      title: "Transient lap",
+      summary: "Driver-controlled lap following a QSS reference line and speed profile.",
+      sequence: ["Solve the QSS reference, then integrate the vehicle and driver"],
+      parameters: ["DOF, track, racing line, power cap and driver lookahead"],
+      outputs: ["QSS and transient lap CSVs and summary"],
+    },
     "ramp-steer": {
       title: "Ramp Steer",
       summary: "Steering ramp across a range of speeds.",
@@ -4118,7 +4168,17 @@ function studyMetrics(workflow, data) {
 
 function workflowModelLabel(workflow) {
   const model = workflow?.model;
-  return model ? [model.engine, model.fidelity, model.runtime].filter(Boolean).join(" | ") : "";
+  if (!model) return "";
+  let dofs = model.model_dofs || [];
+  if (state.simModalOpen && workflow.id === state.selectedWorkflowId
+      && state.simConfigPayload?.id === workflow.config_id) {
+    const dofInput = Array.from(document.querySelectorAll("#sim-config-form [data-config-path]"))
+      .find((input) => JSON.parse(input.dataset.configPath).at(-1) === "model_dof");
+    if (dofInput) dofs = [Number(dofInput.value)];
+  }
+  const fidelity = dofs.length ? `${dofs.join("/")} DOF` : model.fidelity;
+  const method = dofs.length ? model.method : "";
+  return [model.engine, fidelity, method, model.runtime].filter(Boolean).join(" · ");
 }
 
 function studyDiagnosticHtml(workflow, data) {
@@ -5120,6 +5180,8 @@ function renderSimConfigForm() {
 function markSimConfigDirty() {
   state.dirtySimConfig = true;
   updateSimConfigStatus();
+  renderSimulationModal();
+  renderJobs();
 }
 
 function updateSimConfigStatus() {

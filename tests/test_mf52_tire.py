@@ -204,3 +204,13 @@ def test_slip_fit_bounds_are_inclusive_and_tire_specific(coefficients):
                                [-0.08, 0.12, 0, 0, -0.09, 0.13, 0]),
         [True, True, False, False, False, False, False],
     )
+
+
+def test_algebraic_slip_brackets_from_zero_when_force_curve_reverses(coefficients):
+    tire = MF52Tire(coefficients)
+    load, alpha, camber = 7943.49860211, -0.60235989, -0.02546611
+    demand = np.array([0.0, 100.0, -100.0])
+    slip = tire.slip_for_force(load, alpha, camber, demand)
+    np.testing.assert_allclose(tire.forces(load, alpha, slip, camber)[0], demand, atol=1e-7)
+    assert slip[0] == 0.0
+    assert np.all(np.abs(slip) < 0.01)

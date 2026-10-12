@@ -15,7 +15,7 @@ Open `http://127.0.0.1:8765`.
 | View | Contents |
 | --- | --- |
 | Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
-| Simulation | Workflows, run configs, and job logs |
+| Simulation | Response, envelope and lap workflows with model labels, run configs and job logs |
 | Replay | Captured 3D scenes, tire data, and metrics |
 | Archive | Saved run packages and downloads |
 
@@ -53,6 +53,7 @@ in `static/app.js`.
   and outputs.
 - `registry.py`: declarative workflow/action/build-target/config-field
   registry.
+- `python_simulations.py`: app entry point for DynPy step-steer and lap runs.
 - `runtime.py`: packaged-app runtime seeding, manifests, and cache invalidation.
 - `toolchain.py`: OpenModelica discovery, verification, and environment setup.
 - `server.py`: HTTP routing, JSON/file responses, and static/repo file serving.

@@ -229,6 +229,17 @@
 
           <div class="standard-workspace simulation-workspace">
             <section class="workflow-list simulation-catalog">
+              <details class="model-guide">
+                <summary>Model fidelity</summary>
+                <dl>
+                  <div><dt>3 DOF</dt><dd>Longitudinal, lateral and yaw motion</dd></div>
+                  <div><dt>6 DOF</dt><dd>Adds body heave, roll and pitch</dd></div>
+                  <div><dt>10 DOF</dt><dd>Adds four wheel rotations</dd></div>
+                  <div><dt>14 DOF</dt><dd>Adds four unsprung vertical motions</dd></div>
+                  <div><dt>MBD</dt><dd>BobLib multibody model in OpenModelica</dd></div>
+                </dl>
+                <p>QSS solves equilibrium points. Transient integrates motion over time.</p>
+              </details>
               <div id="workflow-grid" class="workflow-grid"></div>
             </section>
           </div>

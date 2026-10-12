@@ -727,6 +727,26 @@ def config_payload(config_id: str) -> dict[str, Any]:
     }
 
 
+def _validate_model_dof(data: Any) -> None:
+    """## Validate Model DOF
+
+    Normalize a configured DynPy DOF and reject unsupported model sizes.
+
+    Parameters
+    ----------
+    data : Any
+        Simulation configuration mapping, updated in place.
+    """
+    if not isinstance(data, dict):
+        return
+    for section in (data, data.get("generation", {})):
+        if isinstance(section, dict) and "model_dof" in section:
+            value = section["model_dof"]
+            if str(value) not in {"3", "6", "10", "14"}:
+                raise ValueError("Model DOF must be 3, 6, 10, or 14.")
+            section["model_dof"] = int(value)
+
+
 def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
     spec = _config_spec(config_id)
     path, _, data = _load_yaml_config(spec)
@@ -746,6 +766,7 @@ def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
     if spec.id == "vehicle":
         data = _vehicle_with_powertrain_defaults(data)
         data = _vehicle_with_architecture_defaults(data, prune_inactive=True)
+    _validate_model_dof(data)
     _write_yaml_config(path, data)
     return config_payload(config_id)
 
@@ -756,6 +777,7 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     data = yaml.safe_load(text) or {}
     if not isinstance(data, (dict, list)):
         raise TypeError("Config must contain a YAML mapping or list")
+    _validate_model_dof(data)
     path.write_text(text if text.endswith("\n") else f"{text}\n", encoding="utf-8")
     return config_payload(config_id)
 
@@ -1382,18 +1404,20 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
         if workflow.id == "vehicle-review":
             configs = [root / f"simulations/envelope/{name}/{name}_config.yml" for name in ("ggv", "ymd")]
         for path in configs:
+            if workflow.id in {"reduced-step-steer", "lap-qss", "lap-transient"}:
+                path = config_io.resolve(path, root=root)
             if not path.is_file():
                 continue
             config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             if workflow.id == "envelope-sens":
                 path = path.parent / config["ggv_config"]
                 config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            dofs.add(int(config.get("generation", {}).get("model_dof", 3)))
+            dofs.add(int(config.get("model_dof", config.get("generation", {}).get("model_dof", 3))))
     fidelity = workflow.fidelity
     if dofs:
         fidelity = f"{'/'.join(str(dof) for dof in sorted(dofs))} DOF {fidelity}"
     return {"engine": workflow.engine, "fidelity": fidelity, "runtime": workflow.runtime,
-            "model_dofs": sorted(dofs)}
+            "model_dofs": sorted(dofs), "method": workflow.fidelity}
 
 
 def capture_workflow_inputs(workflow_id: str) -> dict[str, Any]:
