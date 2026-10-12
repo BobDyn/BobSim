@@ -850,7 +850,8 @@ def test_frontend_renders_aero_maps_as_interactive_3d_surfaces() -> None:
     app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function aeroSurfaceRowsFromTable" in app_js
-    assert 'area.visual === "aero" || (area.visual === "tires"' in app_js
+    assert 'area.visual === "aero" && !state.aeroReferenceView' in app_js
+    assert 'area.visual === "hardpoints" || (area.visual === "aero" && state.aeroReferenceView)' in app_js
     assert "state.tireSurfaceScene = {" in app_js
     assert '"Front ride height (mm)"' in app_js
     assert '"Rear ride height (mm)"' in app_js
