@@ -3956,7 +3956,6 @@ async function reviewSimulationWorkflow(workflowId) {
     state.selectedResultId = review.id;
     state.view = "studies";
     render();
-    expandResultReport();
     return;
   }
 }
@@ -4792,9 +4791,7 @@ function renderSavedResultCatalog() {
     card.addEventListener("click", () => {
       state.selectedResultId = card.dataset.resultId;
       state.activeStudyTab = "saved";
-      card.closest("details").open = false;
       renderStudies();
-      expandResultReport();
     });
   });
   grid.querySelectorAll("[data-delete-result]").forEach((button) => {
@@ -5383,10 +5380,6 @@ function pdfPreviewHtml(path) {
   `;
 }
 
-function expandResultReport() {
-  document.querySelector('#study-preview [data-expand-pdf][aria-expanded="false"]')?.click();
-}
-
 function wirePdfPreview(preview) {
   const shell = preview.querySelector(".pdf-preview-shell");
   const button = shell.querySelector("[data-expand-pdf]");
@@ -5437,7 +5430,8 @@ function outputItem(output) {
         <div class="output-name">${escapeHtml(output.label)}</div>
         <div class="output-meta">${meta}</div>
       </div>
-      <div class="output-actions">${previewButton}${downloadButton}</div>
+      <div class="output-actions">${previewButton}${output.exists && output.kind === "pdf"
+        ? `<a class="file-button" href="${fileDownloadUrl(output.path)}" target="_blank" rel="noreferrer">Open PDF</a>` : ""}${downloadButton}</div>
     </div>
   `;
 }
@@ -5449,8 +5443,12 @@ async function previewFile(path, kind, targetId = "preview") {
   preview.collapsePdf?.();
   preview.dataset.filePath = path;
   if (kind === "pdf") {
-    preview.innerHTML = pdfPreviewHtml(path);
-    wirePdfPreview(preview);
+    if (targetId === "study-preview") {
+      preview.innerHTML = `<iframe class="pdf-preview-frame" title="Simulation report" src="${fileDownloadUrl(path)}#view=FitH&navpanes=0"></iframe>`;
+    } else {
+      preview.innerHTML = pdfPreviewHtml(path);
+      wirePdfPreview(preview);
+    }
     return;
   }
   if (kind === "csv") {
