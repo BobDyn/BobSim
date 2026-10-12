@@ -1,0 +1,66 @@
+standard: TransientEval
+simulation:
+  backend: modelica
+  build_dir: simulations/mbd/BuildBobLib/VehicleSim
+  exec_name: BobLib.Experiments.Standards.VehicleSim
+  start_time: 0.0
+  solver: dassl
+  output_format: csv
+  log_level: LOG_STATS
+  extra_args:
+  - -jacobian=internalNumerical
+  no_grid: true
+  no_event_emit: true
+execution:
+  parallel: true
+  max_workers: 8
+  cleanup: false
+  stream_logs: false
+test:
+  testVel:
+  - 15.0
+  - 20.0
+  stepTime: 1.0
+  directions:
+  - left
+  steerStep_deg:
+  - 5.0
+  stepDuration: 0.02
+  run_step: true
+  run_continuous_sine: false
+report:
+  enabled: true
+  brand: BobSim
+  title: Step-steer response
+  subtitle: BobLib | MBD | Transient | OpenModelica
+  output_path: simulations/mbd/generated_results/step_steer_report.pdf
+  metric_target_velocity_mps: 15.0
+  notes:
+  - Step steer with a finite rise time.
+plots:
+  step_response:
+    layout: triple
+    title: Step Steer Response (TransientEval)
+    subplots:
+    - title: Steering Wheel Angle $\delta_H$
+      x:
+        key: step_time
+        label: Time [s]
+      y:
+        key: step_steer
+        label: $\delta_{HWA}$ [deg]
+        scale: 57.3
+    - title: Lateral Acceleration $a_y$
+      x:
+        key: step_time
+        label: Time [s]
+      y:
+        key: step_ay
+        label: $a_y$ [$\mathrm{m/s^2}$]
+    - title: Yaw Velocity $r$
+      x:
+        key: step_time
+        label: Time [s]
+      y:
+        key: step_yaw
+        label: $r$ [rad/s]

@@ -12,7 +12,7 @@ from app import app, python_simulations
 from common import config_io
 
 
-PYTHON_WORKFLOWS = ("ggv", "ymd", "reduced-step-steer", "lap-qss", "lap-transient")
+PYTHON_WORKFLOWS = ("ggv", "ymd", "reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient")
 
 
 def test_python_workflows_do_not_require_openmodelica(monkeypatch):
@@ -27,7 +27,7 @@ def test_python_workflows_do_not_require_openmodelica(monkeypatch):
     assert not app.workflow_available(next(w for w in app.WORKFLOWS if w.id == "transient"))
 
 
-@pytest.mark.parametrize("workflow_id", ("reduced-step-steer", "lap-qss", "lap-transient"))
+@pytest.mark.parametrize("workflow_id", ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient"))
 def test_model_label_and_archive_use_active_dof(tmp_path, monkeypatch, workflow_id):
     monkeypatch.setattr(app, "ROOT", tmp_path)
     workflow = next(item for item in app.WORKFLOWS if item.id == workflow_id)
@@ -150,3 +150,60 @@ def test_lap_reports_include_reference_and_transient_pages(tmp_path, scenario, p
     ).read_bytes()
     assert report.startswith(b"%PDF")
     assert len(re.findall(rb"/Type /Page\b", report)) == pages
+
+
+def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch):
+    monkeypatch.setattr(python_simulations, "repo_root", lambda: tmp_path)
+    (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Ramp fixture\n")
+    active = config_io.active_config_path("ramp_steer_config.yml", root=tmp_path)
+    active.parent.mkdir(parents=True)
+    data = {"model_dof": 10, "speed_mps": 8, "roadwheel_rate_deg_s": -2,
+            "start_time_s": 0.1, "stop_time_s": 0.3, "sample_period_s": 0.1,
+            "kinematics_mode": "nonlinear"}
+    active.write_text(yaml.safe_dump(data))
+    seen = {}
+
+    def simulate(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(time_s=np.array([0, 0.1, 0.2, 0.3]), success=True,
+                               signals={"yawVel": [0, 0, -0.1, -0.2], "accY": [0, 0, -0.5, -1],
+                                        "velX": [8] * 4, "handwheelAngle": [0, 0, -0.0035, -0.007]})
+
+    monkeypatch.setattr(python_simulations, "run_ramp_steer", simulate)
+    python_simulations.run("reduced-ramp-steer")
+    assert seen["dof"] == 10
+    assert seen["roadwheel_rate_deg_s"] == -2
+    assert seen["start_time_s"] == 0.1
+    assert seen["kinematics_mode"] == "nonlinear"
+    output = tmp_path / "app/user_data/results/reduced-ramp-steer"
+    assert (output / "report.pdf").read_bytes().startswith(b"%PDF")
+    assert json.loads((output / "summary.json").read_text())["model_dof"] == 10
+    assert not (tmp_path / "app/user_data/results/reduced-step-steer").exists()
+
+
+def test_mbd_step_dispatch_uses_its_active_config(tmp_path, monkeypatch):
+    from simulations.response.mbd.transient import transient_eval_sim
+
+    monkeypatch.setattr(python_simulations, "repo_root", lambda: tmp_path)
+    active = config_io.active_config_path("step_steer_config.yml", root=tmp_path)
+    active.parent.mkdir(parents=True)
+    active.write_text("test:\n  run_step: true\n  run_continuous_sine: false\n")
+    seen = []
+    monkeypatch.setattr(transient_eval_sim, "main", lambda config: seen.append(config))
+    python_simulations.run("mbd-step-steer")
+    assert seen == [active]
+
+
+def test_mbd_step_builds_only_step_cases(monkeypatch):
+    from simulations.response.mbd.transient.transient_eval_sim import ModelicaRunner, TransientEvalSim
+
+    monkeypatch.setattr(ModelicaRunner, "from_config", lambda config: None)
+    path = app.ROOT / app.BASE_CONFIG_SPECS["mbd-step-steer"].path
+    config = yaml.safe_load(path.read_text())
+    cases, metadata = TransientEvalSim(config).build_cases()
+    assert cases
+    assert len(cases) == len(config["test"]["testVel"])
+    assert all(item["mode"] == "step" for item in metadata)
+    assert all(case["useMode"] == 2 for case in cases)
+    assert config["report"]["output_path"].endswith("/step_steer_report.pdf")
+    assert app.MODELICA_RUN_TARGETS_BY_ACTION["run-mbd-step-steer"].id == "vehicle"

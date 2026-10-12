@@ -70,6 +70,58 @@ def run_step_steer(
     )
 
 
+def run_ramp_steer(
+    *,
+    dof: DOFModel,
+    speed_mps: float = 15.0,
+    roadwheel_rate_deg_s: float = 1.0,
+    start_time_s: float = 1.0,
+    stop_time_s: float = 5.0,
+    sample_period_s: float = 0.01,
+    vehicle_path: str | Path | None = None,
+    kinematics_mode: KinematicsMode = "lookup",
+) -> TransientResult:
+    """## Ramp Steer
+
+    Apply a constant roadwheel steering rate after straight-line trim.
+    Drive torque stays at its initial trim value, as in the step response.
+
+    Parameters
+    ----------
+    dof : DOFModel
+        Model fidelity: 3, 6, 10 or 14 DOF.
+    speed_mps : float
+        Initial longitudinal speed in m/s.
+    roadwheel_rate_deg_s : float
+        Signed steering rate in degrees per second.
+    start_time_s : float
+        Time at which the ramp begins.
+    stop_time_s : float
+        End of the simulation in seconds.
+    sample_period_s : float
+        Output sampling interval in seconds.
+    vehicle_path : str or Path, optional
+        Vehicle YAML path.
+    kinematics_mode : KinematicsMode
+        Lookup or nonlinear KinPy evaluation.
+
+    Returns
+    -------
+    TransientResult
+        Time history and solver status.
+    """
+    if not 0 <= start_time_s < stop_time_s:
+        raise ValueError("Ramp start must be nonnegative and before the end of the run.")
+    duration = stop_time_s - start_time_s
+    return run_step_steer(
+        dof=dof, speed_mps=speed_mps,
+        roadwheel_step_deg=roadwheel_rate_deg_s * duration,
+        step_time_s=start_time_s, rise_time_s=duration,
+        stop_time_s=stop_time_s, sample_period_s=sample_period_s,
+        vehicle_path=vehicle_path, kinematics_mode=kinematics_mode,
+    )
+
+
 def compare_with_boblib_csv(
     path: str | Path,
     candidate: TransientResult,

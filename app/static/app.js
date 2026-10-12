@@ -3812,8 +3812,47 @@ function syncSimTabs() {
   });
 }
 
-function renderWorkflows() {
+const RESPONSE_MODEL_VARIANTS = {
+  "ramp-steer": ["reduced-ramp-steer", "ramp-steer"],
+  "step-steer": ["reduced-step-steer", "mbd-step-steer"],
+};
+const responseModelSelections = {};
+const responseModelErrors = {};
+
+function responseFamily(workflow) {
+  return Object.keys(RESPONSE_MODEL_VARIANTS).find((family) => RESPONSE_MODEL_VARIANTS[family].includes(workflow.id));
+}
+
+function simulationCards() {
   const workflows = standardWorkflows();
+  const emitted = new Set();
+  return workflows.flatMap((workflow) => {
+    const family = responseFamily(workflow);
+    if (!family) return [workflow];
+    if (emitted.has(family)) return [];
+    emitted.add(family);
+    const id = responseModelSelections[family] || (family === "ramp-steer" ? "ramp-steer" : "reduced-step-steer");
+    return [workflows.find((item) => item.id === id) || workflow];
+  });
+}
+
+function responseModelPicker(workflow) {
+  const family = responseFamily(workflow);
+  if (!family) return `<span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>`;
+  const [reduced, mbd] = RESPONSE_MODEL_VARIANTS[family];
+  const current = workflow.id === mbd ? mbd : `${reduced}:${workflow.model.model_dofs[0]}`;
+  const options = [3, 6, 10, 14].map((dof) => [`${reduced}:${dof}`, `DynPy · ${dof} DOF`]);
+  options.push([mbd, "BobLib · MBD"]);
+  return `<label class="simulation-model-picker">Model
+    <select data-response-model="${family}" aria-label="${family === 'ramp-steer' ? 'Ramp steer' : 'Step steer'} model">
+      ${options.map(([value, label]) => `<option value="${value}"${value === current ? ' selected' : ''}>${label}</option>`).join('')}
+    </select><span class="card-meta">${escapeHtml(workflow.model.runtime)}</span>
+    ${responseModelErrors[family] ? `<span role="alert">${escapeHtml(responseModelErrors[family])}</span>` : ""}
+  </label>`;
+}
+
+function renderWorkflows() {
+  const workflows = simulationCards();
   const grid = document.getElementById("workflow-grid");
   const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
     (details) => details.closest("[data-workflow]").dataset.workflow));
@@ -3829,6 +3868,28 @@ function renderWorkflows() {
   `).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
     card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
+  });
+  grid.querySelectorAll("[data-response-model]").forEach((select) => {
+    select.addEventListener("change", async () => {
+      const [workflowId, dof] = select.value.split(":");
+      select.disabled = true;
+      try {
+        if (dof) {
+          await api(`/api/configs/${workflowId}`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({
+            values: {[JSON.stringify(["model_dof"])]: Number(dof)},
+          })});
+        }
+        responseModelSelections[select.dataset.responseModel] = workflowId;
+        state.selectedWorkflowId = workflowId;
+        await refreshSelectedSimConfig();
+        delete responseModelErrors[select.dataset.responseModel];
+        await refreshStatus();
+        renderStandard();
+      } catch (error) {
+        responseModelErrors[select.dataset.responseModel] = error.message;
+        renderWorkflows();
+      }
+    });
   });
   grid.querySelectorAll("[data-configure-workflow]").forEach((button) => {
     button.addEventListener("click", async (event) => {
@@ -3925,7 +3986,7 @@ function workflowCard(workflow) {
       <div class="simulation-card-body">
         <div class="simulation-card-heading">
           <h3>${escapeHtml(meta.title || workflow.label)}</h3>
-          <span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>
+          ${responseModelPicker(workflow)}
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
         ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
@@ -4024,6 +4085,17 @@ function simDetailBlock(title, items = []) {
 }
 
 function simWorkflowMeta(workflow) {
+  if (workflow?.id === "mbd-step-steer") return {
+    title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
+    sequence: ["Initialize the MBD vehicle", "Apply a finite-rise steering step", "Integrate the vehicle response"],
+    parameters: ["Speed, steering step and rise time"], outputs: ["Response PDF and metrics CSV"],
+  };
+  if (workflow?.id === "reduced-ramp-steer") return {
+    title: "Ramp steer", summary: "Constant-rate roadwheel steering from straight-line trim.",
+    sequence: ["Trim at the initial speed", "Hold the trim drive torque", "Increase roadwheel steer at a constant rate"],
+    parameters: ["Model DOF, initial speed, steering rate and duration"],
+    outputs: ["Response PDF, signal CSV and run summary"],
+  };
   const fallback = {
     title: workflow?.label || "Simulation",
     summary: "Configure the run, execute it against the active vehicle definition, then inspect generated logs and outputs.",
