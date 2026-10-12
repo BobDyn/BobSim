@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+import re
 
 import numpy as np
 import pytest
@@ -61,6 +62,7 @@ def test_invalid_dof_is_rejected_without_changing_config(tmp_path, monkeypatch):
 
 def test_step_steer_uses_active_config_and_exports_signals(tmp_path, monkeypatch):
     monkeypatch.setattr(python_simulations, "repo_root", lambda: tmp_path)
+    (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Report fixture\n")
     active = config_io.active_config_path("reduced_order_eval_config.yml", root=tmp_path)
     active.parent.mkdir(parents=True)
     data = {"model_dof": 14, "speed_mps": 8, "roadwheel_step_deg": 2,
@@ -71,7 +73,9 @@ def test_step_steer_uses_active_config_and_exports_signals(tmp_path, monkeypatch
 
     def simulate(**kwargs):
         seen.update(kwargs)
-        return SimpleNamespace(time_s=np.array([0, 0.1]), signals={"yawVel": [0, 0.2]}, success=True)
+        return SimpleNamespace(time_s=np.array([0, 0.1]),
+                               signals={"yawVel": [0, 0.2], "accY": [0, 1.5],
+                                        "velX": [8, 8], "handwheelAngle": [0, 0.03]}, success=True)
 
     monkeypatch.setattr(python_simulations, "run_step_steer", simulate)
     python_simulations.run("reduced-step-steer")
@@ -81,6 +85,9 @@ def test_step_steer_uses_active_config_and_exports_signals(tmp_path, monkeypatch
     assert seen["roadwheel_step_deg"] == 2
     output = tmp_path / "app/user_data/results/reduced-step-steer"
     assert "yawVel" in (output / "signals.csv").read_text()
+    report = (output / "report.pdf").read_bytes()
+    assert report.startswith(b"%PDF")
+    assert len(re.findall(rb"/Type /Page\b", report)) == 3
     assert json.loads((output / "summary.json").read_text())["model_dof"] == 14
 
 
@@ -89,15 +96,57 @@ def test_lap_dispatches_selected_scenario_and_rejects_incomplete_run(tmp_path, m
     monkeypatch.setattr(python_simulations, "repo_root", lambda: tmp_path)
     active = config_io.active_config_path("lap_time_eval_config.yml", root=tmp_path)
     active.parent.mkdir(parents=True)
-    active.write_text("model_dof: 6\n")
+    active.write_text("model_dof: 6\noutput:\n  directory: results\n")
+    (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Fixture\n")
+    reports = []
+    monkeypatch.setattr(python_simulations, "build_dynpy_report", lambda *args, **kwargs: reports.append(args))
     seen = []
 
     def simulate(config, **kwargs):
         seen.append((config, kwargs))
-        return {"qss_converged": scenario == "transient", "transient_success": True,
+        return {"model_dof": 6, "qss_converged": scenario == "transient", "transient_success": True,
                 "transient_completed_lap": False}
 
     monkeypatch.setattr(python_simulations, "run_lap_time_evaluation", simulate)
     with pytest.raises(RuntimeError):
         python_simulations.run(f"lap-{scenario}")
     assert seen == [(active, {"scenario": scenario})]
+    assert reports[0][0] == f"lap-{scenario}"
+    assert reports[0][1] == tmp_path / "results"
+
+
+def test_every_simulation_registers_a_pdf_report():
+    for workflow in app.WORKFLOWS:
+        if workflow.group in {"standard", "response", "envelope", "lap"}:
+            assert any(output.kind == "pdf" for output in workflow.outputs), workflow.id
+
+
+@pytest.mark.parametrize("scenario, pages", (("qss", 4), ("transient", 5)))
+def test_lap_reports_include_reference_and_transient_pages(tmp_path, scenario, pages):
+    import pandas as pd
+
+    from common.reporting.dynpy_report import build_dynpy_report
+
+    pd.DataFrame({
+        "station_m": [0, 10, 20], "x_m": [0, 10, 0], "y_m": [0, 5, 0],
+        "speed_mps": [8, 9, 8], "ax_mps2": [0, 1, -1], "ay_mps2": [1, 2, 1],
+        "curvature_per_m": [0.01, 0.02, 0.01],
+    }).to_csv(tmp_path / "qss_lap.csv", index=False)
+    pd.DataFrame({
+        "time_s": [0, 1, 2], "speed_mps": [8, 8.5, 8], "steering_rad": [0, 0.02, 0.01],
+        "lateral_error_m": [0, 0.1, 0.05], "yaw_rate_radps": [0, 0.1, 0.05],
+    }).to_csv(tmp_path / "transient_lap.csv", index=False)
+    summary = {
+        "model_dof": 6, "qss_converged": True, "line_optimizer_converged": True,
+        "line_mode": "minimum_curvature", "track_length_m": 20,
+        "optimized_qss_lap_time_s": 2, "effective_drive_power_limit_w": 80000,
+        "ggv_provenance": {"status": "verified"}, "transient_success": True,
+        "transient_completed_lap": False, "transient_lap_time_s": 2.2,
+        "transient_lap_delta_s": 0.2, "transient_max_abs_lateral_error_m": 0.1,
+    }
+    report = build_dynpy_report(
+        f"lap-{scenario}", tmp_path, {"track": {"boundary_csv": "fixture.csv"}}, summary,
+        vehicle_name="Report layout fixture",
+    ).read_bytes()
+    assert report.startswith(b"%PDF")
+    assert len(re.findall(rb"/Type /Page\b", report)) == pages

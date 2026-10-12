@@ -3929,6 +3929,7 @@ function workflowCard(workflow) {
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
         ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
+        ${simulationVisualHtml(workflow)}
         <details class="simulation-details">
           <summary>Run details</summary>
           <div class="simulation-detail-grid">
@@ -3944,6 +3945,67 @@ function workflowCard(workflow) {
       </div>
     </article>
   `;
+}
+
+function simulationVisualHtml(workflow) {
+  const id = workflow.id;
+  const stroke = 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+  const text = (x, y, value, size = 12) => `<text x="${x}" y="${y}" fill="currentColor" font-size="${size}">${value}</text>`;
+  const axes = `<path d="M26 14V100H234" ${stroke} opacity=".3"/>${text(223, 116, 't')}${text(10, 20, 'δ')}`;
+  let drawing;
+  let caption;
+  if (id.includes('ramp-steer') || id.includes('step-steer')) {
+    const ramp = id.includes('ramp-steer');
+    drawing = `${axes}<path d="${ramp ? 'M27 94H70L217 24' : 'M27 94H91V26H224'}" ${stroke} stroke-width="2.5"/>`;
+    caption = ramp ? 'Steering increases at a constant rate.' : 'Steering changes to a new value and holds.';
+  } else if (id === 'steady-state' || id === 'transient') {
+    const steady = id === 'steady-state';
+    drawing = `${text(15, 70, 'ẋ =', 25)}<path d="M93 18H85V108H93M137 18H145V108H137" ${stroke}/>`
+      + text(106, 40, 'u̇', 21) + text(106, 66, 'v̇', 21) + text(107, 91, 'ṙ', 21)
+      + text(166, 70, steady ? '= 0' : '≠ 0', 25);
+    caption = steady ? 'Body-state derivatives vanish at equilibrium.' : 'The state evolves through time: ẋ = f(x, u).';
+  } else if (id === 'four-post') {
+    drawing = `<path d="M30 106H227M55 72V102M97 49V102M162 78V102M205 55V102" ${stroke} opacity=".45"/>`
+      + `<path d="M45 92H65V104H45ZM87 69H107V101H87ZM152 98H172V105H152ZM195 75H215V102H195Z" ${stroke}/>`
+      + `<path d="M37 62L81 36L211 44L167 72ZM81 36L93 17L156 22L178 42M93 17L137 31L156 22M137 31L130 48" ${stroke}/>`
+      + [[55, 68], [97, 45], [162, 75], [205, 51]].map(([x,y]) => `<ellipse cx="${x}" cy="${y}" rx="9" ry="13" fill="var(--surface)" stroke="currentColor" stroke-width="2"/>`).join('');
+    caption = 'Four hydraulic posts move the wheels independently.';
+  } else if (id === 'ggv') {
+    drawing = `<path d="M127 112V7M127 105L34 119M127 105L225 119" ${stroke} opacity=".35"/>`
+      + [[92, 30, 9], [70, 42, 12], [45, 58, 16], [20, 76, 20]].map(([y,rx,ry]) => `<ellipse cx="127" cy="${y}" rx="${rx}" ry="${ry}" ${stroke}/>`).join('')
+      + text(136, 12, 'v') + text(17, 116, 'aₓ') + text(230, 116, 'aᵧ');
+    caption = 'Acceleration envelopes at successive speeds.';
+  } else if (id === 'ymd') {
+    drawing = `<path d="M17 62H234M126 8V112" ${stroke} opacity=".3"/>${text(234, 77, 'aᵧ')}${text(132, 12, 'Mz')}`;
+    // A normalized saturating axle-force model gives the two families of isolines.
+    const curve = (fixed, steerFamily) => Array.from({length: 65}, (_, i) => {
+      const swept = -1.8 + 3.6 * i / 64;
+      const steer = steerFamily ? fixed : swept;
+      const beta = steerFamily ? swept : fixed;
+      const front = Math.tanh(steer - beta);
+      const rear = Math.tanh(-beta);
+      return `${i ? 'L' : 'M'}${(126 + 52 * (front + rear)).toFixed(2)} ${(62 - 30 * (front - rear)).toFixed(2)}`;
+    }).join(' ');
+    for (const fixed of [-1.8, -1.2, -.6, 0, .6, 1.2, 1.8]) {
+      drawing += `<path d="${curve(fixed, true)}" ${stroke}/><path d="${curve(fixed, false)}" ${stroke} opacity=".5"/>`;
+    }
+    caption = 'Constant-steer and constant-sideslip curves in yaw moment versus lateral acceleration.';
+  } else {
+    const track = 'M54 30C84 2 131 12 153 32C169 47 199 28 216 48C244 83 200 112 173 91C151 74 125 80 97 97C58 120 17 90 30 62Z';
+    drawing = `<path d="${track}" fill="none" stroke="currentColor" stroke-width="19" opacity=".15"/>`
+      + `<path d="${track}" fill="none" stroke="currentColor" stroke-width="21" opacity=".25"/><path d="${track}" fill="none" stroke="var(--surface)" stroke-width="17"/>`;
+    if (id === 'lap-transient') {
+      drawing += '<g transform="translate(105 20) rotate(7)"><rect x="-12" y="-7" width="24" height="14" rx="4" fill="currentColor"/><path d="M-4-5H4V5H-4ZM-8-9V-6M8-9V-6M-8 6V9M8 6V9" fill="none" stroke="var(--surface)" stroke-width="2"/></g>';
+      caption = 'Driver inputs move the vehicle around the track.';
+    } else {
+      drawing += '<path d="M49 37C83 5 121 15 151 37C174 56 194 34 211 49C235 76 202 102 178 88C153 71 121 81 96 94C56 113 23 85 36 63Z" fill="none" stroke="currentColor" stroke-width="2"/>';
+      caption = 'A racing line and speed profile from the track and grip envelope.';
+    }
+  }
+  return `<figure class="simulation-visual">
+    <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg>
+    <figcaption><span>Schematic</span>${escapeHtml(caption)}</figcaption>
+  </figure>`;
 }
 
 function workflowDescription(workflow) {
@@ -3989,21 +4051,21 @@ function simWorkflowMeta(workflow) {
       summary: "Time response to a roadwheel steering step.",
       sequence: ["Trim at the initial speed, then integrate the steering step"],
       parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
-      outputs: ["Signals CSV and summary"],
+      outputs: ["PDF report, signals CSV and summary"],
     },
     "lap-qss": {
       title: "QSS lap",
       summary: "Racing line and speed profile from a vehicle acceleration envelope.",
       sequence: ["Generate or verify the GGV, then solve the line and speed profile"],
       parameters: ["DOF, track, racing line and power cap"],
-      outputs: ["Lap CSV and summary"],
+      outputs: ["PDF report, lap CSV and summary"],
     },
     "lap-transient": {
       title: "Transient lap",
       summary: "Driver-controlled lap following a QSS reference line and speed profile.",
       sequence: ["Solve the QSS reference, then integrate the vehicle and driver"],
       parameters: ["DOF, track, racing line, power cap and driver lookahead"],
-      outputs: ["QSS and transient lap CSVs and summary"],
+      outputs: ["PDF report, QSS and transient lap CSVs and summary"],
     },
     "ramp-steer": {
       title: "Ramp Steer",
