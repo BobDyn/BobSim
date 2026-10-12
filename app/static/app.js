@@ -1259,7 +1259,6 @@ function renderVehicleEditor() {
       ${parameterAreaFields(area)}
     </section>
   `).join("");
-  form.onfocusin = (event) => cacheUndoBaseline(event.target);
   form.onpointerdown = (event) => cacheUndoBaseline(event.target);
   form.onkeydown = (event) => {
     if (!event.repeat && ["Enter", " "].includes(event.key)) cacheUndoBaseline(event.target);
@@ -1475,12 +1474,12 @@ function restoreVehicleEdit(source, destination) {
   state.geometrySelectedPointId = snapshot.geometrySelectedPointId || null;
   state.geometryAxis = snapshot.geometryAxis || state.geometryAxis;
   state.pendingUndoSnapshot = null;
-  state.suppressUndo = false;
   state.dirtyVehicle = vehicleDataSignature(snapshot.data) !== state.cleanVehicleSignature;
   if (state.dirtyVehicle) state.vehicleDefinitionState = "invalid";
   else if (state.vehicleDefinitionState === "invalid") state.vehicleDefinitionState = "pending";
   renderSetup();
-  queueTirePayloadRefresh();
+  state.suppressUndo = false;
+  if (isTirePreviewArea()) queueTirePayloadRefresh();
   queueKinematicsRefresh();
   return true;
 }
@@ -9372,6 +9371,13 @@ function drawTirePreview(ctx, width, height, data) {
     color: palette.muted,
   });
 
+  if (!state.tirePayload?.sides?.length) {
+    drawCanvasText(ctx, state.tirePayloadUpdating ? "Loading tire plots..." : "Tire plots unavailable. Check the selected tire files.", width / 2, height / 2, {
+      align: "center", size: 16, color: palette.muted,
+    });
+    return;
+  }
+
   if (state.activeTireTab !== "load-maps") {
     drawTireSetupPreview(ctx, width, height, data);
     return;
@@ -12952,6 +12958,7 @@ function syncViewButtons() {
 }
 
 function wireEvents() {
+  document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
   document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
     if (!event.target.value.trim()) {
       event.target.value = activeVehicleName();
