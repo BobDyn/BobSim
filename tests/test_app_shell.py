@@ -850,17 +850,20 @@ def test_frontend_renders_aero_maps_as_interactive_3d_surfaces() -> None:
     app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function aeroSurfaceRowsFromTable" in app_js
-    assert 'area.visual === "aero" || (area.visual === "tires"' in app_js
+    assert 'area.visual === "aero" && !state.aeroReferenceView' in app_js
+    assert (
+        'area.visual === "hardpoints" || area.visual === "mass" || '
+        '(area.visual === "aero" && state.aeroReferenceView)'
+    ) in app_js
     assert "state.tireSurfaceScene = {" in app_js
-    assert '"FRH m"' in app_js
-    assert '"RRH m"' in app_js
+    assert '"Front ride height (mm)"' in app_js
+    assert '"Rear ride height (mm)"' in app_js
 
 
 def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> None:
     app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function tireSetupCorners" in app_js
-    assert "function drawTireCornerSetupCard" in app_js
     assert "function drawTireFrictionEllipse" in app_js
     assert "function tireSetupForceMap" in app_js
     assert "force_map_nominal" in app_js
@@ -869,15 +872,10 @@ def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> Non
     assert "function interpolateTireForceMapAtAlpha" in app_js
     assert "function drawTireForceMapIsolines" in app_js
     assert "function tireForceMapPointAt" in app_js
-    assert "function drawTireAlphaOffsetVector" in app_js
-    assert "function drawTireInclinationGlyph" in app_js
     assert 'return side === "right" ? -numeric : numeric;' in app_js
-    assert "x: -Math.sin(alphaRad)" in app_js
-    assert "Friction Ellipses" in app_js
-    assert "Shared scale" in app_js
-    assert "FzNom" in app_js
+    assert "friction ellipse" in app_js
+    assert "Scale ${formatNumber(maxForce)} (N)" in app_js
     assert "skipInvalid: true" in app_js
-    assert "IA ${formatSignedNumber(corner.inclinationDeg)} deg  Fy" in app_js
     assert "function queueTirePayloadRefresh" in app_js
     assert 'await api("/api/tires/eval", {' in app_js
     assert "function isTireSetupFieldTarget" in app_js
@@ -1843,3 +1841,76 @@ assert.deepEqual(bellcrankOutlineOrder({}, ['rod', 'shock']), ['rod', 'shock']);
 """
     assert cases
     subprocess.run([node, "-e", script], input=json.dumps(cases), text=True, check=True)
+
+
+def test_component_editor_keeps_every_field_and_defaults_to_body():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the component editor check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    start = source.index("function vehicleFieldComponent(")
+    helpers = source[start:source.index("function wireVehicleComponentEditors(")]
+    script = """
+const assert = require('node:assert/strict');
+const state = {};
+const humanizeToken = value => value.replaceAll('_', ' ').replace(/^./, char => char.toUpperCase());
+const escapeHtml = value => String(value);
+const fieldPathString = field => field.path.join('.');
+const fieldControl = field => `<input name="${field.path.join('.')}">`;
+""" + helpers + """
+const fields = [
+  ['front', 'masses', 'unsprung', 'mass_kg'],
+  ['driver_mass', 'mass_kg'],
+  ['sprung_mass', 'mass_kg'],
+  ['sprung_mass', 'cg_m'],
+  ['sprung_mass', 'inertia_kg_m2'],
+].map(path => ({path}));
+const html = vehicleComponentEditorHtml({id: 'mass', fields});
+assert.equal(state.vehicleComponentSelection.mass, 'body');
+for (const field of fields) assert.equal(html.split(`name="${field.path.join('.')}"`).length, 2);
+assert(html.includes('<div class="component-inertia">'));
+assert(!html.includes('data-component-group aria-label'));
+assert(!html.includes('<details class="component-inertia"'));
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'upper_o_m']}, 'hardpoints').key,
+  'front.Upper wishbone');
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'tie_o_m']}, 'hardpoints').key,
+  vehicleFieldComponent({path: ['front', 'steering', 'rack_pickup_m']}, 'hardpoints').key);
+assert.equal(vehicleFieldComponent({path: ['rear', 'wheel', 'toe_deg']}, 'hardpoints').label, 'Alignment');
+"""
+    start = source.index("function updateVehicleMassSummary(")
+    summary = source[start:source.index("function tireSectionHtml(")]
+    script += summary + """
+const output = {};
+const document = {querySelector: () => output};
+const buildVehicleGeometry = () => ({points: [{aggregate: true, massKg: 100, x: -0.5, y: 0, z: 0.2}]});
+const formatMassValue = value => `${value} kg`;
+const formatVector = value => value.join(', ');
+updateVehicleMassSummary({front: {suspension: {wheel_center_m: [0, 1, 0]}},
+  rear: {suspension: {wheel_center_m: [-2, 1, 0]}}});
+assert(output.innerHTML.includes('75.0 / 25.0%'));
+"""
+    subprocess.run([node, "-e", script], check=True)
+
+
+def test_tire_parameter_groups():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the setup controls check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    helpers = source[source.index("function parseTirParameterText("):source.index("function tirParameterPanelHtml(")]
+    subprocess.run([node, "-e", helpers + """
+const assert = require('node:assert/strict');
+const text = '[OVERTURNING_COEFFICIENTS]\\nQSX1 = 0.01 $Moment coefficient\\n[ALIGNING_COEFFICIENTS]\\nQBZ1 = 8';
+const parsed = parseTirParameterText(text);
+assert.equal(parsed.params.get('QSX1').description, 'Moment coefficient');
+assert.equal(parsed.lines.join('\\n'), text);
+assert.equal(tirParameterGroup(parsed.params.get('QSX1')), 'Mx');
+assert.equal(tirParameterGroup(parsed.params.get('QBZ1')), 'Mz');
+assert.equal(tirParameterGroup({key: 'QSY1'}), 'My');
+assert.equal(tirParameterGroup({key: 'LMUX'}, 'Fx friction scale'), 'Fx');
+assert.equal(tirParameterGroup({key: 'FITTYP'}), 'Reference');
+"""], check=True)

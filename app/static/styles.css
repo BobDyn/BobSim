@@ -1246,23 +1246,6 @@ body.resizing-panes * {
   padding: 10px;
 }
 
-.visual-stage.mass-scroll-stage {
-  grid-template-rows: auto auto;
-  align-content: start;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
-}
-
-.visual-stage.mass-scroll-stage .preview-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 13;
-  background: var(--surface);
-}
-
 .preview-toolbar {
   justify-content: space-between;
   min-height: 38px;
@@ -1367,13 +1350,6 @@ body.resizing-panes * {
   touch-action: none;
 }
 
-#vehicle-canvas.mass-scroll-canvas {
-  flex: none;
-  min-height: 900px;
-  cursor: default;
-  touch-action: pan-y;
-}
-
 #vehicle-canvas.geometry-hot {
   cursor: pointer;
 }
@@ -1412,10 +1388,6 @@ body.resizing-panes * {
 
 #vehicle-canvas:active {
   cursor: grabbing;
-}
-
-#vehicle-canvas.mass-scroll-canvas:active {
-  cursor: default;
 }
 
 #vehicle-canvas.diagnostic-canvas {
@@ -1578,19 +1550,17 @@ body.resizing-panes * {
 }
 
 .reference-button {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .reference-button.active {
@@ -1801,85 +1771,6 @@ body.resizing-panes * {
   text-align: right;
 }
 
-.geometry-point-editor p {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 0;
-}
-
-.mass-property-editor {
-  position: absolute;
-  top: 58px;
-  right: 24px;
-  z-index: 14;
-  width: min(360px, calc(100% - 48px));
-  display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--ink) 18%, var(--line));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: var(--shadow);
-  padding: 10px;
-  backdrop-filter: blur(8px);
-}
-
-.mass-property-editor[hidden] {
-  display: none;
-}
-
-.mass-editor-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mass-editor-head div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.mass-editor-head strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mass-property-grid {
-  display: grid;
-  gap: 6px;
-}
-
-.mass-property-row {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, var(--line));
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 6px 8px;
-}
-
-.mass-property-row span {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.mass-property-row strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .bellcrank-role-button {
   min-height: 32px;
@@ -1958,6 +1849,10 @@ body.resizing-panes * {
 .tire-load-row {
   display: grid;
   gap: 6px;
+}
+
+.tire-load-row[hidden] {
+  display: none;
 }
 
 .tire-load-head,
@@ -2614,6 +2509,103 @@ body.resizing-panes * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.aero-config-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.aero-config-panel > * {
+  min-width: 0;
+}
+
+.aero-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.aero-view-controls .form-field {
+  flex: 1 1 180px;
+}
+
+.aero-view-controls button[aria-pressed="true"] {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+
+.component-details {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.component-details > summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  padding-bottom: 12px;
+}
+
+.aero-table-scroll {
+  overflow-x: auto;
+}
+
+.aero-map-table {
+  min-width: 600px;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.aero-map-table caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 12px;
+  line-height: 1.5;
+}
+
+.aero-map-table th,
+.aero-map-table td {
+  padding: 4px;
+  text-align: right;
+}
+
+.aero-map-table th {
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aero-map-table input {
+  width: 100%;
+  min-width: 86px;
+}
+
+.aero-map-table th input {
+  background: var(--surface-2);
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.aero-map-table tbody th {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+}
+
+.powertrain-model-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.powertrain-brakes h3 {
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .powertrain-config-panel {
@@ -4578,3 +4570,255 @@ summary:focus-visible {
     grid-template-rows: minmax(100px, 25%) minmax(0, 1fr);
   }
 }
+
+#vehicle-name-input {
+  width: min(540px, 44vw);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 3px 0;
+}
+
+#vehicle-name-input:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+
+.vehicle-model-label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.vehicle-model-label span,
+.vehicle-details summary {
+  color: var(--muted);
+}
+
+.vehicle-details {
+  margin-top: 16px;
+}
+
+.vehicle-details summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+/* Vehicle component editors */
+.component-editor-selectors {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.component-editor-selectors > .form-field { grid-template-rows: 24px 34px; gap: 6px; }
+.component-editor-selectors select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px;
+}
+.component-editor-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.vehicle-component-editor [data-component-panel][hidden] { display: none; }
+.vehicle-component-editor .field-grid { grid-template-columns: minmax(0, 1fr); }
+.vehicle-component-editor .coordinate-input .array-bracket { display: none; }
+.vehicle-component-editor .coordinate-input .array-inline-cells { width: 100%; }
+.vehicle-component-editor .coordinate-input { grid-template-columns: minmax(0, 1fr); }
+.vehicle-component-editor .coordinate-cell { min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.vehicle-component-editor .coordinate-cell input { width: 100%; min-width: 0; }
+.component-inertia { margin-top: 12px; }
+.vehicle-mass-summary { display: grid; gap: 10px; margin-bottom: 20px; }
+.vehicle-mass-summary > div { display: flex; justify-content: space-between; gap: 12px; }
+.vehicle-mass-summary span { color: var(--muted); }
+.vehicle-mass-summary strong { font-variant-numeric: tabular-nums; }
+.tire-model-editor,
+.tir-param-panel > details {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+.tire-model-editor > summary,
+.tir-param-panel > details > summary {
+  cursor: pointer;
+  font-weight: 650;
+  padding-bottom: 10px;
+}
+.tire-preview-conditions > p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+
+.tire-model-editor .tir-param-row {
+  grid-template-columns: minmax(64px, 1fr) minmax(72px, 1fr) 24px;
+}
+.tire-model-editor .tir-param-label {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+
+.camera-home-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.camera-home-button[hidden] { display: none; }
+
+/* Views use tabs. Component choices use equal-width segments. */
+.tire-subtabs {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.view-tabs {
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+.view-tabs .tire-subtab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+.view-tabs .tire-subtab.active {
+  border-bottom-color: var(--blue);
+}
+.inspector-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.info-hint {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.info-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.info-button:hover { color: var(--ink); background: var(--surface-2); }
+.info-button:focus-visible { outline: 2px solid var(--blue); }
+.info-popup {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: 0 8px 24px #0003;
+}
+
+.vehicle-component-editor .field-object-label,
+.powertrain-subsystem-panel .field-object-label {
+  display: none;
+}
+.sim-config-status:empty,
+#sim-readiness:empty {
+  display: none;
+}
+
+.field-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.field-heading-name { min-width: 0; }
+.field-heading .field-label-meta { margin-left: auto; }
+.reference-button:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.field-heading,
+.inspector-label {
+  flex-wrap: wrap;
+}
+
+#geometry-deselect-btn {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+.aero-map-table th { white-space: normal; }
+
+.matrix-input { min-width: max-content; }
+.matrix-heading,
+.matrix-array-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.matrix-heading { margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+.matrix-input .matrix-array-cells {
+  display: grid;
+  grid-template-columns: repeat(var(--matrix-cols), minmax(14ch, 1fr));
+  gap: 6px;
+}
+.matrix-array-row .array-bracket { display: none; }
+.matrix-array-cell > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.matrix-array-cell input { width: 100%; box-sizing: border-box; }
+.curve-table .matrix-heading,
+.curve-table .matrix-array-row { grid-template-columns: minmax(0, 1fr) 30px; }
+.curve-table .matrix-row-label { display: none; }
+.info-popup p { margin: 0; }
+.info-popup dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+.info-popup dt { color: var(--muted); }
+.info-popup dd { margin: 0; }
+
+.mass-component-selector { grid-template-columns: minmax(0, 1fr); margin-bottom: 8px; }
+.inertia-matrix { min-width: 0; }
+.inertia-matrix .matrix-heading,
+.inertia-matrix .matrix-array-row { grid-template-columns: 18px minmax(0, 1fr); }
+.inertia-matrix .matrix-heading > span:last-child { display: none; }
+.inertia-matrix .matrix-array-cells { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.inertia-matrix input { min-width: 0; }

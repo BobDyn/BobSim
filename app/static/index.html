@@ -19,7 +19,7 @@
           <button class="rail-item active" data-view="setup" type="button">Setup</button>
           <button class="rail-item" data-view="standard" type="button">Simulation</button>
           <button class="rail-item" data-view="replay" type="button">Replay</button>
-          <button class="rail-item" data-view="studies" type="button">Archive</button>
+          <button class="rail-item" data-view="studies" type="button">Results</button>
         </nav>
         <details class="model-menu settings-menu">
           <summary>Settings</summary>
@@ -56,17 +56,17 @@
         <section id="setup-view" class="screen active">
           <div class="screen-head setup-head">
             <div>
-              <h2 id="setup-title">Vehicle</h2>
+              <h2 id="setup-title"><input id="vehicle-name-input" aria-label="Vehicle name" placeholder="Vehicle name" type="text"></h2>
               <p id="setup-focus" class="setup-focus">Vehicle setup</p>
             </div>
             <div class="setup-head-actions">
               <div class="rail-actions">
                 <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
-                <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
               </div>
               <details class="model-menu">
                 <summary>Files</summary>
                 <div class="model-menu-body">
+                  <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
                   <button id="open-vehicle-start-btn" class="run-button menu-primary" type="button">Open / Create Vehicle</button>
                   <div class="vehicle-source">
                     <select id="vehicle-library-picker" class="config-picker"></select>
@@ -104,7 +104,7 @@
                 </div>
               </div>
               <div id="workflow-guide" class="workflow-guide" hidden></div>
-              <div id="geometry-tabs" class="tire-subtabs" aria-label="Geometry views" hidden>
+              <div id="geometry-tabs" class="tire-subtabs view-tabs" aria-label="Geometry views" hidden>
                 <button class="tire-subtab active" data-geometry-tab="setup" type="button" aria-pressed="true">Setup</button>
                 <button class="tire-subtab" data-geometry-tab="kinematics" type="button" aria-pressed="false">Kinematics</button>
               </div>
@@ -152,12 +152,6 @@
                     <input id="rotation-sensitivity" type="range" min="0.25" max="1.75" step="0.05">
                     <strong id="rotation-sensitivity-value">1x</strong>
                   </label>
-                  <div class="view-buttons">
-                    <button class="view-button active" data-view="iso" type="button">Iso</button>
-                    <button class="view-button" data-view="side" type="button">Side</button>
-                    <button class="view-button" data-view="top" type="button">Top</button>
-                    <button id="reset-view-btn" class="view-button" type="button">Reset</button>
-                  </div>
                 </div>
                 <div id="geometry-axle-toggles" class="geometry-axle-toggles" hidden>
                   <label>
@@ -169,14 +163,18 @@
                     <span>Show Rear</span>
                   </label>
                 </div>
+                <button id="camera-home-btn" class="ghost-button camera-home-button" type="button" aria-label="Reset camera to home view" title="Camera home" hidden>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/>
+                  </svg>
+                </button>
               </div>
               <div id="geometry-point-editor" class="geometry-point-editor" hidden>
                 <div class="geometry-editor-head">
                   <div>
-                    <span class="tool-label">Selected point</span>
                     <strong id="geometry-point-name"></strong>
                   </div>
-                  <span id="geometry-axis-label" class="mini-pill">X</span>
+                  <button id="geometry-deselect-btn" class="ghost-button" type="button" title="Deselect (Esc)" aria-label="Deselect pickup">×</button>
                 </div>
                 <div class="geometry-axis-picker" aria-label="Drag axis">
                   <button class="axis-button active" data-geometry-axis="x" type="button">X</button>
@@ -185,29 +183,18 @@
                 </div>
                 <div class="geometry-coordinate-grid">
                   <label>
-                    <span>X</span>
-                    <input data-geometry-coordinate="x" type="number" step="0.001">
+                    <span>X (mm)</span>
+                    <input data-geometry-coordinate="x" type="number" step="any">
                   </label>
                   <label>
-                    <span>Y</span>
-                    <input data-geometry-coordinate="y" type="number" step="0.001">
+                    <span>Y (mm)</span>
+                    <input data-geometry-coordinate="y" type="number" step="any">
                   </label>
                   <label>
-                    <span>Z</span>
-                    <input data-geometry-coordinate="z" type="number" step="0.001">
+                    <span>Z (mm)</span>
+                    <input data-geometry-coordinate="z" type="number" step="any">
                   </label>
                 </div>
-                <p>Drag point moves axis. Empty drag rotates. Ctrl-drag pans.</p>
-              </div>
-              <div id="mass-property-editor" class="mass-property-editor" hidden>
-                <div class="mass-editor-head">
-                  <div>
-                    <span class="tool-label">Selected mass</span>
-                    <strong id="mass-property-name"></strong>
-                  </div>
-                  <span id="mass-property-role" class="mini-pill">Mass</span>
-                </div>
-                <div id="mass-property-grid" class="mass-property-grid"></div>
               </div>
               <canvas id="vehicle-canvas"></canvas>
 
@@ -324,7 +311,7 @@
         <section id="studies-view" class="screen">
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
             <aside class="workflow-list archive-sidebar">
-              <h2>Archive</h2>
+              <h2>Results</h2>
               <p id="studies-context"></p>
               <details class="study-catalog archive-catalog" open>
                 <summary>Saved runs</summary>
@@ -428,7 +415,7 @@
         <div id="setup-panel" class="panel active">
           <div class="sim-setup-shell">
             <details class="sim-config-tools">
-              <summary>Saved run configs</summary>
+              <summary>Presets</summary>
               <div class="sim-config-library">
                 <div class="sim-config-row">
                   <select id="sim-config-picker" class="config-picker"></select>
@@ -437,12 +424,16 @@
                 </div>
                 <div class="sim-config-row">
                   <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
-                  <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
-                  <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
+                  <button id="save-sim-config-btn" class="run-button" type="button">Save preset</button>
                 </div>
               </div>
             </details>
 
+            <div class="sim-config-row">
+              <button id="apply-sim-config-btn" class="ghost-button" type="button" hidden>Apply edits</button>
+              <button id="sim-prepare-mbd" class="ghost-button" type="button" hidden>Prepare MBD model</button>
+            </div>
+            <p id="sim-readiness" class="field-help" role="status"></p>
             <span id="sim-config-status" class="sim-config-status" role="status"></span>
             <form id="sim-config-form" class="sim-config-form"></form>
           </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -317,9 +318,16 @@ class BobSimHandler(BaseHTTPRequestHandler):
         return data
 
     def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        encoded = json.dumps(payload, indent=2).encode("utf-8")
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        accepts_gzip = "gzip" in {part.strip() for part in self.headers.get("Accept-Encoding", "").split(",")}
+        compressed = len(encoded) > 1024 and accepts_gzip
+        if compressed:
+            encoded = gzip.compress(encoded, compresslevel=1)
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Vary", "Accept-Encoding")
+        if compressed:
+            self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)

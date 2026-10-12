@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
+from functools import lru_cache
 import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import yaml
 
 from common.vehicle_io import parse_tir, tire_template_name
+from engines.dynpy.tire import MF52Tire
 
 
 def _num(values: dict[str, Any], key: str, default: float = 0.0) -> float:
@@ -283,6 +287,33 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
         *(math.radians(value) for value in (-8.0, -6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0)),
         gamma,
     })
+    try:
+        moment_model = MF52Tire(tire)
+        moment_error = ""
+    except ValueError as error:
+        moment_model = None
+        moment_error = str(error)
+    moment_speed = _num(tire, "LONGVL")
+    moment_curves: dict[str, Any] = {}
+    if moment_model is not None:
+        for index, name in enumerate(("mx", "my", "mz")):
+            longitudinal = name == "my"
+            slips = np.asarray(kappa_values if longitudinal else alpha_values)
+            surfaces = []
+            for camber in gamma_values:
+                rows = []
+                for load in load_values:
+                    values = moment_model.moments(
+                        load, 0.0 if longitudinal else slips,
+                        slips if longitudinal else 0.0, camber, moment_speed,
+                    )[index]
+                    rows.append({"fz_n": load, "points": [
+                        {"kappa" if longitudinal else "alpha_deg": float(slip) if longitudinal else math.degrees(slip),
+                         "fz_n": load, f"{name}_nm": float(value)}
+                        for slip, value in zip(slips, values, strict=True)
+                    ]})
+                surfaces.append({"gamma_deg": math.degrees(camber), "rows": rows})
+            moment_curves[name] = surfaces
     fx = [
         {
             "kappa": value,
@@ -398,6 +429,12 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
     fz_nom = max(_num(tire, "FNOMIN", fz_eval), 1e-8)
 
     def force_map_at(load: float, gamma_value: float) -> list[dict[str, Any]]:
+        moment_values = None
+        if moment_model is not None:
+            moment_values = moment_model.moments(
+                load, np.asarray(surface_alpha_values)[:, None],
+                np.asarray(surface_kappa_values)[None, :], gamma_value, moment_speed,
+            )
         return [
             {
                 "alpha_rad": alpha,
@@ -409,13 +446,15 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
                         "alpha_deg": math.degrees(alpha),
                         "kappa": kappa,
                         "fz_n": load,
+                        **({f"{name}_nm": float(moment_values[index][alpha_index, kappa_index])
+                            for index, name in enumerate(("mx", "my", "mz"))} if moment_values is not None else {}),
                         "fx_n": _mf52_fx_combined(tire, load, kappa, alpha, gamma_value),
                         "fy_n": -_mf52_fy_combined(tire, load, alpha, kappa, gamma_value),
                     }
-                    for kappa in surface_kappa_values
+                    for kappa_index, kappa in enumerate(surface_kappa_values)
                 ],
             }
-            for alpha in surface_alpha_values
+            for alpha_index, alpha in enumerate(surface_alpha_values)
         ]
 
     nominal_force_map = force_map_at(fz_nom, gamma)
@@ -443,6 +482,9 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
         for value in gamma_values
     ]
     return {
+        "moments": moment_curves,
+        "moment_error": moment_error,
+        "moment_speed_mps": moment_speed,
         "pure": {
             "longitudinal": fx,
             "lateral": fy,
@@ -516,6 +558,13 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
     }
 
 
+@lru_cache(maxsize=2)
+def _cached_mf52_curves(
+    coefficients: tuple[tuple[str, float | str], ...], fz: float, gamma: float,
+) -> dict[str, Any]:
+    return _mf52_curves(dict(coefficients), fz, gamma)
+
+
 def tire_eval_payload(
     root: Path,
     vehicle: dict[str, Any] | None = None,
@@ -575,11 +624,11 @@ def tire_eval_payload(
                         "lgay": _num(tire, "LGAY", 1.0),
                     },
                 },
-                "curves": _mf52_curves(tire, fz, math.radians(camber_deg)),
+                "curves": deepcopy(_cached_mf52_curves(tuple(sorted(tire.items())), fz, math.radians(camber_deg))),
             }
         )
     return {
-        "model": "BobLib MF52 pure-slip equations from active .tir coefficients",
+        "model": "BobLib MF52 forces and moments from active .tir coefficients",
         "load_summary": load_summary,
         "sides": sides,
     }

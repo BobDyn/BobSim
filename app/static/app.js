@@ -30,8 +30,8 @@ const savedGeometryPlotSelections = (() => {
     return [];
   }
 })();
-const DEFAULT_VEHICLE_YAW = Math.PI - 0.72;
-const DEFAULT_VEHICLE_PITCH = 0.46;
+const DEFAULT_VEHICLE_YAW = Math.PI / 4;
+const DEFAULT_VEHICLE_PITCH = Math.atan(1 / Math.sqrt(2));
 const DEFAULT_TIRE_SURFACE_YAW = -0.72;
 const DEFAULT_TIRE_SURFACE_PITCH = 0.68;
 const MIN_TIRE_SURFACE_ZOOM = 0.62;
@@ -42,7 +42,6 @@ const MAX_SETUP_PANE_WIDTH = 620;
 const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
-const MAX_PREVIEW_PAN_FRACTION = 0.42;
 const MAX_UNDO_STEPS = 80;
 const MAX_GEOMETRY_PLOTS = 3;
 const TIRE_LIVE_WHEEL_FIELDS = new Set(["camber_deg", "toe_deg", "radius_m"]);
@@ -119,6 +118,7 @@ const state = {
   vehiclePreviewYaw: DEFAULT_VEHICLE_YAW,
   vehiclePreviewPitch: DEFAULT_VEHICLE_PITCH,
   vehiclePreviewZoom: 1,
+  vehiclePreviewFit: null,
   vehiclePreviewPanX: 0,
   vehiclePreviewPanY: 0,
   tireSurfaceYaw: DEFAULT_TIRE_SURFACE_YAW,
@@ -130,6 +130,8 @@ const state = {
   tireSurfaceScene: null,
   tireSurfaceHover: null,
   activeTireTab: "setup",
+  tireFitSlip: "pure",
+  tireFitDirection: "longitudinal",
   tireCombinedFzN: null,
   tireLoadCamberDeg: null,
   activePowertrainSubsystem: "pBattery",
@@ -146,7 +148,6 @@ const state = {
   geometrySelectedPointId: null,
   geometryDrag: null,
   geometryAxis: "x",
-  geometryShiftActive: false,
   geometryShowFront: savedGeometryShowFront === null ? true : savedGeometryShowFront === "true",
   geometryShowRear: savedGeometryShowRear === null ? true : savedGeometryShowRear === "true",
   geometryPlotSelections: savedGeometryPlotSelections,
@@ -157,7 +158,8 @@ const state = {
   massScene: null,
   massHoverPointId: null,
   massSelectedPointId: null,
-  massEditorPositionFrame: null,
+  suspensionAxle: "front",
+  suspensionComponent: "spring",
   suspensionPlotScene: null,
   suspensionPlotHover: null,
   suspensionPlotModalKey: null,
@@ -174,6 +176,7 @@ const state = {
   architectureDrag: null,
   setupResize: null,
   undoStack: [],
+  redoStack: [],
   pendingUndoSnapshot: null,
   cleanVehicleSignature: "",
   suppressUndo: false,
@@ -190,7 +193,7 @@ const PARAMETER_AREAS = [
   { id: "hardpoints", label: "Geometry", visual: "hardpoints", always: true },
   { id: "mass", label: "Mass", visual: "mass", always: true },
   { id: "suspension", label: "Suspension", visual: "suspension", always: true },
-  { id: "compliances", label: "Compliances", visual: "compliances", always: true },
+  { id: "compliances", label: "Compliance", visual: "compliances" },
   { id: "tires", label: "Tires", visual: "tires", always: true },
   { id: "aero", label: "Aero", visual: "aero", always: true },
   { id: "powertrain", label: "Powertrain", visual: "powertrain", always: true },
@@ -198,7 +201,7 @@ const PARAMETER_AREAS = [
 
 const TIRE_TABS = [
   { id: "setup", label: "Setup" },
-  { id: "load-maps", label: "Load Maps" },
+  { id: "load-maps", label: "Tire curves" },
 ];
 
 const POWERTRAIN_SUBSYSTEMS = [
@@ -357,7 +360,7 @@ const SETUP_GUIDE = {
     title: "Aero",
     focus: "Ride-height load maps.",
     purpose: "Map attitude to aero loads.",
-    figure: "Aero heatmaps.",
+    figure: "Aero.",
     check: "Map signs and magnitudes are sane.",
   },
   powertrain: {
@@ -823,6 +826,7 @@ async function refresh() {
   }
   await refreshSelectedSimConfig();
   render();
+  if (!state.tirePayloadUpdating) queueTirePayloadRefresh();
 }
 
 async function refreshStatus() {
@@ -1256,7 +1260,6 @@ function renderVehicleEditor() {
       ${parameterAreaFields(area)}
     </section>
   `).join("");
-  form.onfocusin = (event) => cacheUndoBaseline(event.target);
   form.onpointerdown = (event) => cacheUndoBaseline(event.target);
   form.onkeydown = (event) => {
     if (!event.repeat && ["Enter", " "].includes(event.key)) cacheUndoBaseline(event.target);
@@ -1278,12 +1281,15 @@ function renderVehicleEditor() {
   form.onclick = handleArrayEditorClick;
   wireArchitectureTools();
   wireTireTabs();
+  wireSuspensionSelection();
   wireTireAssignments();
   wireTireLoadControls();
   wirePowertrainSubsystems();
+  wireAeroControls();
   wireTireTools();
   wireTirParameterFields();
   wireFieldSubsections();
+  wireVehicleComponentEditors();
   applyArchitectureVisibility();
   syncArchitectureDependentControls();
   renderArchitectureTemplateMatches();
@@ -1313,7 +1319,8 @@ function setupGuide(areaId = state.activeParamGroup) {
 
 function renderSetupFocus() {
   const guide = setupGuide();
-  document.getElementById("setup-title").textContent = activeVehicleName();
+  const nameInput = document.getElementById("vehicle-name-input");
+  if (nameInput && document.activeElement !== nameInput) nameInput.value = activeVehicleName();
   document.getElementById("vehicle-preview-title").textContent = guide.figure.replace(/\.$/, "");
   document.getElementById("editor-title").textContent = guide.title;
   renderWorkflowGuide(guide);
@@ -1353,7 +1360,13 @@ function renderWorkflowGuide(guide = setupGuide()) {
     <div class="guide-row"><span>Check</span><strong>${escapeHtml(guide.check || "")}</strong></div>
   `;
   panel.hidden = !state.referenceOpen;
-  document.getElementById("reference-toggle-btn")?.classList.toggle("active", state.referenceOpen);
+  const button = document.getElementById("reference-toggle-btn");
+  if (button) {
+    button.innerHTML = infoIcon();
+    button.setAttribute("aria-label", "Section information");
+    button.setAttribute("aria-expanded", String(state.referenceOpen));
+    button.classList.toggle("active", state.referenceOpen);
+  }
 }
 
 function cloneData(data) {
@@ -1370,7 +1383,10 @@ function acceptCleanVehiclePayload({ resetUndo = true, definitionState = "pendin
   state.dirtyVehicle = false;
   state.vehicleDefinitionState = definitionState;
   state.pendingUndoSnapshot = null;
-  if (resetUndo) state.undoStack = [];
+  if (resetUndo) {
+    state.undoStack = [];
+    state.redoStack = [];
+  }
 }
 
 function snapshotVehicleState(label = "") {
@@ -1412,12 +1428,13 @@ function isUndoableVehicleTarget(target) {
 
 function shouldUseNativeUndo(event) {
   const editable = event.target?.closest?.("textarea, input:not([type='checkbox']), [contenteditable='true']");
-  return Boolean(editable?.closest?.("#config-form, #geometry-point-editor, #config-text, #tir-editor"));
+  return Boolean(editable && !editable.closest("#config-form, #geometry-point-editor, #vehicle-name-input"));
 }
 
 function updateDirtyState() {
   const data = currentVehicleFormData();
   const signature = data ? vehicleDataSignature(data) : "";
+  if (!state.suppressUndo && signature !== vehicleDataSignature(state.vehiclePayload?.data)) state.redoStack = [];
   state.dirtyVehicle = Boolean(signature && signature !== state.cleanVehicleSignature);
   if (state.dirtyVehicle) state.vehicleDefinitionState = "invalid";
   else if (state.vehicleDefinitionState === "invalid") state.vehicleDefinitionState = "pending";
@@ -1451,29 +1468,44 @@ function valueArrayShape(value) {
   return [value.length, Math.max(0, ...value.map((row) => Array.isArray(row) ? row.length : 0))];
 }
 
-function undoVehicleEdit() {
-  const snapshot = state.undoStack.pop();
+function restoreVehicleEdit(source, destination) {
+  const current = snapshotVehicleState();
+  if (!current) return false;
+  let snapshot = source.pop();
+  while (snapshot && vehicleDataSignature(snapshot.data) === vehicleDataSignature(current.data)) snapshot = source.pop();
   if (!snapshot) return false;
+  destination.push(current);
   state.suppressUndo = true;
   applyVehicleDataToPayload(snapshot.data);
   state.activeParamGroup = snapshot.activeParamGroup || state.activeParamGroup;
   state.geometrySelectedPointId = snapshot.geometrySelectedPointId || null;
   state.geometryAxis = snapshot.geometryAxis || state.geometryAxis;
   state.pendingUndoSnapshot = null;
-  state.suppressUndo = false;
   state.dirtyVehicle = vehicleDataSignature(snapshot.data) !== state.cleanVehicleSignature;
   if (state.dirtyVehicle) state.vehicleDefinitionState = "invalid";
   else if (state.vehicleDefinitionState === "invalid") state.vehicleDefinitionState = "pending";
   renderSetup();
+  state.suppressUndo = false;
+  if (isTirePreviewArea()) queueTirePayloadRefresh();
+  queueKinematicsRefresh();
   return true;
 }
 
+function undoVehicleEdit() {
+  return restoreVehicleEdit(state.undoStack, state.redoStack);
+}
+
+function redoVehicleEdit() {
+  return restoreVehicleEdit(state.redoStack, state.undoStack);
+}
+
 function handleUndoShortcut(event) {
-  if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== "z") return;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "z") return;
   if (shouldUseNativeUndo(event)) return;
-  if (state.view !== "setup") return;
-  if (!undoVehicleEdit()) return;
+  if (state.view !== "setup" || document.querySelector('[role="dialog"]:not([hidden])')) return;
   event.preventDefault();
+  if (event.shiftKey) redoVehicleEdit();
+  else undoVehicleEdit();
 }
 
 function markVehicleDirty(target = null) {
@@ -1529,7 +1561,7 @@ function isTirePayloadRefreshTarget(target) {
 
 function buildParameterAreas(fields) {
   const buckets = Object.fromEntries(PARAMETER_AREAS.map((area) => [area.id, []]));
-  fields.forEach((field) => {
+  fields.filter((field) => !field.disabled).forEach((field) => {
     buckets[parameterAreaForField(field)].push(field);
   });
   return PARAMETER_AREAS
@@ -1542,6 +1574,8 @@ function parameterAreaForField(field) {
   const group = String(field.group || "").toLowerCase();
   const label = String(field.label || "").toLowerCase();
   if (path.startsWith("aero.")) return "aero";
+  if (path === "body.torsional_stiff_n_m_per_rad") return "suspension";
+  if (path.startsWith("brake.")) return "powertrain";
   if (fieldMatchesPowertrain(path, group, label)) return "powertrain";
   if (
     path.includes(".wheel.")
@@ -1624,8 +1658,22 @@ function fieldMatchesCompliance(path, group, label) {
 }
 
 function parameterAreaFields(area) {
+  if (area.id === "vehicle") {
+    const identity = area.fields.filter((field) => fieldPathString(field) === "vehicle.name");
+    const details = area.fields.filter((field) => fieldPathString(field) === "vehicle.version");
+    const fields = area.fields.filter((field) => !isArchitectureField(field) && !isArchitectureVisualOnlyField(field) && !fieldPathString(field).startsWith("vehicle."));
+    return `${identity.map((field) => `<div hidden>${fieldControl(field)}</div>`).join("")}${architectureToolsHtml(area.fields)}${fieldGroupSections(fields, area.id)}<details class="vehicle-details"><summary>Vehicle details</summary>${details.map(fieldControl).join("")}</details>`;
+  }
+  if (["hardpoints", "mass"].includes(area.id)) return vehicleComponentEditorHtml(area);
+  if (area.id === "suspension") {
+    const chassis = area.fields.filter((field) => field.path?.[0] === "body");
+    const suspension = area.fields.filter((field) => field.path?.[0] !== "body");
+    return fieldGroupSections(suspension, area.id)
+      + (chassis.length ? `<details class="component-details"><summary>Chassis</summary>${chassis.map(fieldControl).join("")}</details>` : "");
+  }
   if (area.id === "tires") return tireSectionHtml(area);
   if (area.id === "powertrain") return powertrainSectionHtml(area);
+  if (area.id === "aero") return aeroSectionHtml(area);
   const extra = area.id === "tires"
     ? tireToolsHtml()
     : area.id === "vehicle"
@@ -1642,21 +1690,151 @@ function parameterAreaFields(area) {
   return `${extra}${fieldGroupSections(fields, area.id)}`;
 }
 
+function vehicleFieldComponent(field, areaId) {
+  const path = field.path || [];
+  if (areaId === "mass") {
+    if (path[0] === "sprung_mass" || path[0] === "body") return { key: "body", group: "Vehicle", label: "Body" };
+    if (path[0] === "driver_mass") return { key: "driver", group: "Vehicle", label: "Driver" };
+    return { key: path.slice(0, 3).join("."), group: `${humanizeToken(path[0])} suspension`, label: humanizeToken(path[2] || path[0]) };
+  }
+  let component = path[1];
+  if (component === "suspension") {
+    component = path[2]?.startsWith("upper_") ? "Upper wishbone"
+      : path[2]?.startsWith("lower_") ? "Lower wishbone"
+        : path[2]?.startsWith("tie_") ? "Steering" : "Wheel center";
+  } else if (component === "actuation") {
+    component = path[2] === "rod_mount_m" ? "Rod" : humanizeToken(path[2]);
+  } else if (component === "wheel") component = "Alignment";
+  else component = humanizeToken(component || "Geometry");
+  return { key: `${path[0]}.${component}`, group: humanizeToken(path[0]), label: component };
+}
+
+function vehicleComponentEditorHtml(area) {
+  const components = new Map();
+  area.fields.forEach((field) => {
+    const component = vehicleFieldComponent(field, area.id);
+    if (!components.has(component.key)) components.set(component.key, { ...component, fields: [] });
+    components.get(component.key).fields.push(field);
+  });
+  const entries = [...components.values()];
+  if (area.id === "mass") entries.sort((a, b) => {
+    const order = (key) => key === "body" ? 0 : key === "driver" ? 1 : 2;
+    return order(a.key) - order(b.key);
+  });
+  state.vehicleComponentSelection ||= {};
+  const selected = entries.find((entry) => entry.key === state.vehicleComponentSelection[area.id]) || entries[0];
+  state.vehicleComponentSelection[area.id] = selected?.key;
+  const groups = [...new Set(entries.map((entry) => entry.group))];
+  return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
+    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : ""}
+    <div class="component-editor-selectors${area.id === "mass" ? " mass-component-selector" : ""}" data-setup-filter>
+      ${area.id === "mass" ? "" : `<div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
+        ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
+      </select></div>`}
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", [["Move point", "Drag along the highlighted axis"], ["Change axis", "Tab"], ["Deselect", "Esc or click empty space"], ["Rotate / pan", "Drag empty space / Ctrl-drag"], ["Undo / redo", "Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z"], ["Coordinates", "+X forward, +Y left, +Z up"], ["Mirroring", "Left-side points define the right side"]]) : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+        ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(area.id === "mass" && entry.group !== "Vehicle" ? `${entry.group.replace(" suspension", "")} ${entry.label.toLowerCase()}` : entry.label)}</option>`).join("")}
+      </select></div>
+    </div>
+    ${entries.map((entry) => {
+      const inertia = entry.fields.filter((field) => fieldPathString(field).includes("inertia"));
+      const regular = entry.fields.filter((field) => !inertia.includes(field));
+      return `<section data-component-panel="${escapeHtml(entry.key)}"${entry.key === selected?.key ? "" : " hidden"}>
+        <div class="field-grid">${regular.map(fieldControl).join("")}</div>
+        ${inertia.length ? `<div class="component-inertia">${inertia.map(fieldControl).join("")}</div>` : ""}
+      </section>`;
+    }).join("")}
+  </div>`;
+}
+
+function wireVehicleComponentEditors() {
+  document.querySelectorAll("[data-component-editor]").forEach((editor) => {
+    const group = editor.querySelector("[data-component-group]");
+    const select = editor.querySelector("[data-component-select]");
+    if (group) group.onchange = () => {
+      const option = [...select.options].find((item) => item.dataset.componentGroupName === group.value);
+      if (option) select.value = option.value;
+      syncVehicleComponentEditor(editor);
+    };
+    select.onchange = () => {
+      syncVehicleComponentEditor(editor);
+      if (editor.dataset.componentEditor === "mass") {
+        state.massSelectedPointId = null;
+        drawVehicleFromForm();
+      }
+    };
+    syncVehicleComponentEditor(editor);
+  });
+  updateVehicleMassSummary(state.vehiclePayload?.data);
+}
+
+function syncVehicleComponentEditor(editor) {
+  const group = editor.querySelector("[data-component-group]");
+  const select = editor.querySelector("[data-component-select]");
+  [...select.options].forEach((option) => {
+    option.hidden = Boolean(group && option.dataset.componentGroupName !== group.value);
+    option.disabled = option.hidden;
+  });
+  editor.querySelectorAll("[data-component-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.componentPanel !== select.value;
+  });
+  state.vehicleComponentSelection[editor.dataset.componentEditor] = select.value;
+}
+
+function revealVehicleComponentField(container) {
+  const panel = container?.closest("[data-component-panel]");
+  const editor = panel?.closest("[data-component-editor]");
+  if (!editor) return;
+  const select = editor.querySelector("[data-component-select]");
+  select.value = panel.dataset.componentPanel;
+  const group = editor.querySelector("[data-component-group]");
+  if (group) group.value = select.selectedOptions[0].dataset.componentGroupName;
+  syncVehicleComponentEditor(editor);
+}
+
+function updateVehicleMassSummary(data) {
+  const summary = document.querySelector("[data-mass-summary]");
+  if (!summary || !data) return;
+  const point = buildVehicleGeometry(data).points.find((item) => item.aggregate);
+  const frontX = Number(data.front?.suspension?.wheel_center_m?.[0]);
+  const rearX = Number(data.rear?.suspension?.wheel_center_m?.[0]);
+  const frontShare = point && frontX !== rearX ? 100 * (point.x - rearX) / (frontX - rearX) : NaN;
+  summary.innerHTML = point ? `<div><span>Total mass</span><strong>${escapeHtml(formatMassValue(point.massKg))}</strong></div>
+    ${Number.isFinite(frontShare) ? `<div><span>Static front / rear</span><strong>${frontShare.toFixed(1)} / ${(100 - frontShare).toFixed(1)}%</strong></div>` : ""}
+    <div><span>Combined CG (mm)</span><strong>${escapeHtml(formatVector([point.x * 1000, point.y * 1000, point.z * 1000], ""))}</strong></div>` : "";
+}
+
 function tireSectionHtml(area) {
   if (!TIRE_TABS.some((tab) => tab.id === state.activeTireTab)) state.activeTireTab = "setup";
   const tabs = `
-    <div class="tire-subtabs" role="tablist" aria-label="Tire setup views">
+    <div class="tire-subtabs view-tabs" role="group" aria-label="Tire setup views">
       ${TIRE_TABS.map((tab) => `
-        <button class="tire-subtab ${state.activeTireTab === tab.id ? "active" : ""}" data-tire-tab="${escapeHtml(tab.id)}" type="button">
+        <button class="tire-subtab ${state.activeTireTab === tab.id ? "active" : ""}" data-tire-tab="${escapeHtml(tab.id)}" aria-pressed="${state.activeTireTab === tab.id}" type="button">
           ${escapeHtml(tab.label)}
         </button>
       `).join("")}
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}${tireLoadMapControlsHtml()}${tireParameterToolsHtml()}${tirParameterPanelHtml()}`;
+    return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
-  return `${tabs}${tireAssignmentHtml()}${tireSetupFieldsHtml(area.fields)}`;
+  return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
+      ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "").replace(/^./, (letter) => letter.toUpperCase()) })))}
+    </section>`).join("")}`;
+}
+
+function axleSelectorHtml(selected, attribute) {
+  return `<label class="form-field"><span>Axle</span><select ${attribute}>
+    ${["front", "rear"].map((axle) => `<option value="${axle}"${axle === selected ? " selected" : ""}>${humanizeToken(axle)}</option>`).join("")}
+  </select></label>`;
+}
+
+function tireFitSelectorsHtml() {
+  return `<div class="field-grid">${[
+    ["tireFitSlip", "Slip", ["pure", "combined"]],
+    ["tireFitDirection", "Output", ["longitudinal", "lateral", "mx", "my", "mz"]],
+  ].map(([key, label, options]) => `<label class="form-field"><span>${label}</span>
+    <select data-tire-fit="${key}">${options.map((value) => `<option value="${value}"${value === (state[key] || options[0]) ? " selected" : ""}>${({longitudinal: "Fx · Longitudinal", lateral: "Fy · Lateral", mx: "Mx · Overturning", my: "My · Rolling", mz: "Mz · Aligning"})[value] || humanizeToken(value)}</option>`).join("")}</select>
+  </label>`).join("")}</div>`;
 }
 
 function tireSetupFieldsHtml(fields) {
@@ -1665,10 +1843,13 @@ function tireSetupFieldsHtml(fields) {
     return path !== "front.tire.template" && path !== "rear.tire.template";
   });
   if (!setupFields.length) return "";
-  return fieldGroupSections(setupFields, "tires");
+  const drawing = setupFields.filter((field) => fieldPathString(field).includes(".rim_"));
+  const physical = setupFields.filter((field) => !drawing.includes(field));
+  return `<h4>Wheel and tire properties</h4><div class="field-grid">${physical.map(fieldControl).join("")}</div>
+    ${drawing.length ? `<details class="tire-model-editor"><summary>Drawing settings</summary>${fieldGroupSections(drawing, "tires")}</details>` : ""}`;
 }
 
-function tireAssignmentHtml() {
+function tireAssignmentHtml(axle) {
   const templates = state.tireTemplates?.templates || [];
   const options = (selected) => templates.length
     ? templates.map((template) => `
@@ -1676,28 +1857,11 @@ function tireAssignmentHtml() {
     `).join("")
     : `<option value="">No tire templates</option>`;
   const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
-  return `
-    <div class="tire-assignment-grid">
-      ${["front", "rear"].map((side) => {
-        const selected = data?.[side]?.tire?.template || "";
-        const evalSide = (state.tirePayload?.sides || []).find((item) => item.side === side);
-        return `
-          <section class="tire-assignment-card">
-            <h4>${escapeHtml(humanizeToken(side))}</h4>
-            <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([side, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
-            <select class="config-picker" data-tire-assignment="${escapeHtml(side)}">
-              ${options(selected)}
-            </select>
-            <dl>
-              <div><dt>Active</dt><dd>${escapeHtml(selected || "none")}</dd></div>
-              <div><dt>Fz</dt><dd>${formatNumber(evalSide?.fz_n)} N</dd></div>
-              <div><dt>Camber</dt><dd>${formatNumber(evalSide?.camber_deg)} deg</dd></div>
-            </dl>
-          </section>
-        `;
-      }).join("")}
-    </div>
-  `;
+  const selected = data?.[axle]?.tire?.template || "";
+  return `<label class="form-field"><span>Tire model</span>
+    <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([axle, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
+    <select class="config-picker" data-tire-assignment="${axle}" aria-label="${humanizeToken(axle)} tire model">${options(selected)}</select>
+  </label>`;
 }
 
 function tireLoadMapControlsHtml() {
@@ -1718,9 +1882,9 @@ function tireLoadMapControlsHtml() {
     : "No active camber";
   return `
     <div class="tire-load-controls" data-tire-load-controls>
-      <div class="tire-load-row">
+      <div class="tire-load-row" data-tire-fit-load${state.tireFitSlip === "combined" ? "" : " hidden"}>
         <div class="tire-load-head">
-          <span>Combined Fz</span>
+          <span>Normal load (N)</span>
           <strong id="tire-combined-fz-value">${formatNumber(value)} N</strong>
         </div>
         <input
@@ -1740,7 +1904,7 @@ function tireLoadMapControlsHtml() {
       </div>
       <div class="tire-load-row">
         <div class="tire-load-head">
-          <span>Camber / IA</span>
+          <span>Camber</span>
           <strong id="tire-load-camber-value">${formatSignedNumber(camberValue)} deg</strong>
         </div>
         <input
@@ -1897,18 +2061,59 @@ function fieldGroupSections(fields, areaId = "") {
   return sections.join("");
 }
 
+function suspensionComponentForField(field) {
+  const path = fieldPathString(field);
+  if (path.includes("stabar")) return "stabar";
+  if (path.includes("damper") || path.includes("dyno_reference")) return "damper";
+  return "spring";
+}
+
 function suspensionFieldSections(grouped) {
-  const order = ["Front spring", "Front damper", "Front actuation", "Rear spring", "Rear damper", "Rear actuation"];
-  const entries = Object.entries(grouped);
-  return entries
-    .sort(([left], [right]) => {
-      const leftIndex = order.indexOf(left);
-      const rightIndex = order.indexOf(right);
-      return (leftIndex === -1 ? order.length : leftIndex) - (rightIndex === -1 ? order.length : rightIndex)
-        || left.localeCompare(right);
-    })
-    .map(([group, groupFields]) => fieldSubsectionHtml(group, groupFields))
-    .join("");
+  const fields = Object.values(grouped).flat();
+  const components = [["spring", "Spring"], ["damper", "Damper"], ["stabar", "Anti-roll bar"]];
+  return `${axleSelectorHtml(state.suspensionAxle, "data-suspension-axle")}
+    <div class="inspector-label">Component</div><div class="tire-subtabs" role="group" aria-label="Suspension component">${components.map(([key, label]) =>
+      `<button type="button" class="tire-subtab" data-suspension-component="${key}">${label}</button>`).join("")}</div>
+    ${["front", "rear"].map((axle) => components.map(([key, label]) => {
+      const selected = fields.filter((field) => fieldPathString(field).startsWith(`${axle}.`) && suspensionComponentForField(field) === key);
+      return `<div data-suspension-panel="${axle}-${key}">${selected.length ? fieldSubsectionHtml(label, selected) : '<p class="area-empty">No properties for this component.</p>'}</div>`;
+    }).join("")).join("")}`;
+}
+
+function syncSuspensionSelection() {
+  const data = currentVehicleFormData() || {};
+  const hasStabar = String(data.architecture?.[state.suspensionAxle] || "").includes("stabar");
+  if (state.suspensionComponent === "stabar" && !hasStabar) state.suspensionComponent = "spring";
+  document.querySelectorAll("[data-suspension-axle]").forEach((select) => {
+    select.value = state.suspensionAxle;
+  });
+  document.querySelectorAll("[data-suspension-component]").forEach((button) => {
+    const selected = button.dataset.suspensionComponent === state.suspensionComponent;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    button.hidden = button.dataset.suspensionComponent === "stabar" && !hasStabar;
+  });
+  document.querySelectorAll("[data-suspension-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.suspensionPanel !== `${state.suspensionAxle}-${state.suspensionComponent}`;
+  });
+}
+
+function wireSuspensionSelection() {
+  document.querySelectorAll("[data-suspension-axle]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.suspensionAxle = select.value;
+      syncSuspensionSelection();
+      drawVehicleFromForm();
+    });
+  });
+  document.querySelectorAll("[data-suspension-component]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.suspensionComponent) state.suspensionComponent = button.dataset.suspensionComponent;
+      syncSuspensionSelection();
+      drawVehicleFromForm();
+    });
+  });
+  syncSuspensionSelection();
 }
 
 function axleFieldBlock(axle, grouped) {
@@ -1976,14 +2181,14 @@ function architectureToolsHtml(fields) {
       <div class="architecture-control-grid">
         ${architectureSelectHtml(frontField, "architecture-front-select", "Front")}
         ${architectureSelectHtml(rearField, "architecture-rear-select", "Rear")}
-        <label class="form-field compact-field">
+        ${powertrains.length > 1 ? `<label class="form-field compact-field">
           <span>Powertrain</span>
           <select id="architecture-powertrain-select" data-config-path="${escapeHtml(JSON.stringify(["powertrain", "implementation"]))}" data-kind="select">
             ${powertrains.map((item) => `
               <option value="${escapeHtml(item.id)}"${item.id === activePowertrain ? " selected" : ""}>${escapeHtml(item.label)}</option>
             `).join("")}
           </select>
-        </label>
+        </label>` : `<div class="vehicle-model-label"><span>Powertrain</span><strong>Electric drivetrain</strong></div>`}
       </div>
       <div class="architecture-match-head">
         <span>Templates</span>
@@ -2003,11 +2208,103 @@ function architectureSelectHtml(field, id, label) {
       <span>${escapeHtml(label)}</span>
       <select id="${escapeHtml(id)}" data-config-path="${escapeHtml(field.key)}" data-kind="${escapeHtml(field.kind)}">
         ${choices.map((choice) => `
-          <option value="${escapeHtml(choice)}"${choice === field.value ? " selected" : ""}>${escapeHtml(humanizeToken(choice))}</option>
+          <option value="${escapeHtml(choice)}"${choice === field.value ? " selected" : ""}>${escapeHtml(({direct: "Direct acting", bellcrank: "Bellcrank", bellcrank_stabar: "Bellcrank + anti-roll bar"})[choice] || humanizeToken(choice))}</option>
         `).join("")}
       </select>
     </label>
   `;
+}
+
+const AERO_MAPS = [
+  { key: "downforce_table_n", label: "Downforce", unit: "N", color: "green" },
+  { key: "drag_table_n", label: "Drag", unit: "N", color: "red" },
+  { key: "mx_table_nm", label: "Roll moment", unit: "N·m", color: "blue" },
+  { key: "my_table_nm", label: "Pitch moment", unit: "N·m", color: "amber" },
+  { key: "mz_table_nm", label: "Yaw moment", unit: "N·m", color: "magenta" },
+];
+
+function aeroSectionHtml(area) {
+  if (!AERO_MAPS.some((map) => map.key === state.activeAeroMap)) state.activeAeroMap = AERO_MAPS[0].key;
+  const data = state.vehiclePayload?.data || {};
+  const maps = new Set(AERO_MAPS.map((map) => map.key));
+  const fields = area.fields.filter((field) => !maps.has(field.path?.[1]));
+  const grids = fields.filter((field) => field.path?.[1]?.includes("_grid_m"));
+  const references = fields.filter((field) => field.path?.[1]?.endsWith("_ref_m"));
+  const fallback = fields.find((field) => field.path?.[1] === "tire_template");
+  const settings = fields.filter((field) => !grids.includes(field) && !references.includes(field) && field !== fallback);
+  return `
+    <div class="aero-config-panel">
+      <div class="field-grid">${settings.map(fieldControl).join("")}</div>
+      ${fallback ? `<details class="component-details"${data.front?.tire?.template && data.rear?.tire?.template ? " hidden" : ""}><summary>Legacy tire fallback</summary>${fieldControl(fallback)}</details>` : ""}
+      <div class="tire-subtabs view-tabs" role="group" aria-label="Aero view" data-setup-filter>
+        <button type="button" class="tire-subtab ${!state.aeroReferenceView ? "active" : ""}" data-aero-view="maps" aria-pressed="${!state.aeroReferenceView}">Maps</button>
+        <button type="button" class="tire-subtab ${state.aeroReferenceView ? "active" : ""}" data-aero-view="references" aria-pressed="${state.aeroReferenceView}">Reference points</button>
+      </div>
+      <div data-aero-map-editor${state.aeroReferenceView ? " hidden" : ""}>
+      <div class="aero-view-controls" data-setup-filter>
+        <label class="form-field"><span>Map</span>
+          <select data-aero-map aria-label="Aero map">
+            ${AERO_MAPS.map((map) => `<option value="${map.key}"${map.key === state.activeAeroMap ? " selected" : ""}>${map.label} (${map.unit})</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
+      </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
+        ${infoHint("Aero coordinates and controls", [["Coordinates", "+X forward, +Y left, +Z up"], ["Origin", "Average of the front contact patches"], ["Input", "Left-side points. Right side mirrors Y"], ["Rotate", "Drag"], ["Zoom", "Scroll"], ["Pan", "Ctrl-drag"], ["Reset", "Double-click"]])}
+        <div class="field-grid">${references.map(fieldControl).join("")}</div>
+      </section>
+    </div>
+  `;
+}
+
+function aeroTableControl(fields) {
+  const front = fields.find((field) => field.path?.[1] === "front_ride_height_grid_m");
+  const rear = fields.find((field) => field.path?.[1] === "rear_ride_height_grid_m");
+  const maps = AERO_MAPS.map((map) => ({ ...map, field: fields.find((field) => field.path?.[1] === map.key) }))
+    .filter((map) => map.field);
+  if (!front || !rear) return '<p class="area-empty">No ride-height grid.</p>';
+  const rows = Math.max(rear.value.length, ...maps.map((map) => map.field.value.length));
+  const cols = Math.max(front.value.length, ...maps.flatMap((map) => map.field.value.map((row) => row.length)));
+  return `<div class="aero-table-scroll form-field">
+    <table class="aero-map-table">
+      <caption>Ride-height headers (mm)</caption>
+      <thead><tr><th scope="col">Rear / Front</th>${Array.from({ length: cols }, (_, col) => `<th scope="col">${col < front.value.length ? aeroCellControl(front, [col], front.value[col], `Front ride height ${col + 1} (mm)`) : ""}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: rows }, (_, row) => `<tr>
+        <th scope="row">${row < rear.value.length ? aeroCellControl(rear, [row], rear.value[row], `Rear ride height ${row + 1} (mm)`) : ""}</th>
+        ${Array.from({ length: cols }, (_, col) => `<td>${maps.map((map) => `<span data-aero-map-panel="${map.key}"${map.key === state.activeAeroMap ? "" : " hidden"}>${col < (map.field.value[row]?.length || 0) ? aeroCellControl(map.field, [row, col], map.field.value[row][col], `${map.label} (${map.unit}), row ${row + 1}, column ${col + 1}`) : ""}</span>`).join("")}</td>`).join("")}
+      </tr>`).join("")}</tbody>
+    </table>
+  </div>`;
+}
+
+function aeroCellControl(field, indices, value, label) {
+  const path = JSON.stringify([...field.path, ...indices]);
+  return `<input data-config-path="${escapeHtml(path)}" data-kind="number" type="number" step="any" required style="min-width: ${Math.max(12, String(numericDisplayValue(value, field.display_scale)).length + 4)}ch" aria-label="${escapeHtml(label)}" ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"${field.disabled ? " disabled" : ""}>`;
+}
+
+function wireAeroControls() {
+  const panel = document.querySelector(".aero-config-panel");
+  if (!panel) return;
+  panel.querySelector("[data-aero-map]").addEventListener("change", (event) => {
+    state.activeAeroMap = event.target.value;
+    panel.querySelectorAll("[data-aero-map-panel]").forEach((section) => {
+      section.hidden = section.dataset.aeroMapPanel !== state.activeAeroMap;
+    });
+    drawVehicleFromForm();
+  });
+  panel.querySelectorAll("[data-aero-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.aeroReferenceView = button.dataset.aeroView === "references";
+      panel.querySelectorAll("[data-aero-view]").forEach((item) => {
+        const active = (item.dataset.aeroView === "references") === state.aeroReferenceView;
+        item.setAttribute("aria-pressed", String(active));
+        item.classList.toggle("active", active);
+      });
+      panel.querySelector("[data-aero-map-editor]").hidden = state.aeroReferenceView;
+      panel.querySelector("[data-aero-reference-editor]").hidden = !state.aeroReferenceView;
+      drawVehicleFromForm();
+    });
+  });
 }
 
 function powertrainToolsHtml() {
@@ -2051,7 +2348,7 @@ function powertrainSectionHtml(area) {
         ${subsystems.map((subsystem) => `
           <section class="powertrain-subsystem-panel" data-powertrain-panel="${escapeHtml(subsystem.id)}"${state.activePowertrainSubsystem === subsystem.id ? "" : " hidden"}>
             ${subsystem.fields.length
-              ? `<div class="field-grid">${subsystem.fields.map(fieldControl).join("")}</div>`
+              ? powertrainSubsystemFieldsHtml(subsystem)
               : `<div class="area-empty">No ${escapeHtml(subsystem.label.toLowerCase())} specs are exposed for this architecture.</div>`}
           </section>
         `).join("")}
@@ -2060,8 +2357,38 @@ function powertrainSectionHtml(area) {
   `;
 }
 
+function powertrainSubsystemFieldsHtml(subsystem) {
+  if (subsystem.id === "pMotor") {
+    const groups = [
+      ["Torque and power", ["T_peak", "T_cont", "rpm_max_peak", "P_mech_peak", "P_cont_low", "P_cont_high", "peakTime"]],
+      ["Electrical", ["Vdc_max", "I_peak_2min", "I_cont", "Kt_Nm_per_A", "eta_mot", "eta_reg"]],
+      ["Inertia", ["rotorJ"]],
+    ];
+    const grouped = new Set(groups.flatMap(([, names]) => names));
+    const numerical = subsystem.fields.filter((field) => !grouped.has(field.path?.[2]));
+    return groups.map(([label, names], index) => `<details class="component-details"${index === 0 ? " open" : ""}><summary>${label}</summary><div class="field-grid">${subsystem.fields.filter((field) => names.includes(field.path?.[2])).map(fieldControl).join("")}</div></details>`).join("")
+      + (numerical.length ? `<details class="component-details"><summary>Numerical settings</summary>${numerical.map(fieldControl).join("")}</details>` : "");
+  }
+  const primary = {
+    pBattery: ["Ns", "Np", "SOC_start"],
+    pVCU: ["tau_max", "P_max_mot", "regenTorqueLimit"],
+    pInverter: ["P_max_mot", "P_max_reg", "V_dc_max"],
+    pMotor: ["T_peak", "T_cont", "rpm_max_peak", "P_mech_peak", "P_cont_low", "P_cont_high"],
+    pDriveline: ["finalDriveRatio", "diff_use_lsd", "diff_T_preload", "diff_lockFractionAccel", "diff_lockFractionDecel"],
+  }[subsystem.id] || [];
+  const basics = subsystem.fields.filter((field) => primary.includes(field.path?.[2]));
+  const halfshafts = subsystem.fields.filter((field) => field.path?.[2]?.startsWith("halfshaft"));
+  const brakes = subsystem.fields.filter((field) => field.path?.[0] === "brake");
+  const advanced = subsystem.fields.filter((field) => !basics.includes(field) && !halfshafts.includes(field) && !brakes.includes(field));
+  return `<div class="field-grid">${basics.map(fieldControl).join("")}</div>
+    ${brakes.length ? `<section class="powertrain-brakes"><h3>Brakes</h3><div class="field-grid">${brakes.map(fieldControl).join("")}</div></section>` : ""}
+    ${halfshafts.length ? `<details class="component-details"><summary>Halfshafts</summary><div class="field-grid">${halfshafts.map(fieldControl).join("")}</div></details>` : ""}
+    ${advanced.length ? `<details class="component-details"><summary>Advanced properties</summary><div class="field-grid">${advanced.map(fieldControl).join("")}</div></details>` : ""}`;
+}
+
 function powertrainImplementationHtml(profile, field) {
   const choices = availablePowertrains();
+  if (choices.length === 1) return `<div class="powertrain-model-label">${escapeHtml(profile.label)}</div>`;
   const key = field?.key || JSON.stringify(["powertrain", "implementation"]);
   return `
     <label class="powertrain-implementation-card">
@@ -2079,7 +2406,7 @@ function powertrainSubsystems(profile, fields) {
   const components = new Set((profile.components || []).map((item) => String(item).toLowerCase()));
   const specs = fields.filter((field) => {
     const path = fieldPathString(field);
-    return path.startsWith("powertrain.") && path !== "powertrain.implementation";
+    return (path.startsWith("powertrain.") && path !== "powertrain.implementation") || path.startsWith("brake.");
   });
   return POWERTRAIN_SUBSYSTEMS
     .filter((subsystem) => subsystem.always || components.has(String(subsystem.component).toLowerCase()))
@@ -2090,6 +2417,7 @@ function powertrainSubsystems(profile, fields) {
 }
 
 function powertrainFieldSubsystem(field) {
+  if (field.path?.[0] === "brake") return "pDriveline";
   return String(field.path?.[1] || "pVCU");
 }
 
@@ -2199,54 +2527,47 @@ function tireToolsHtml() {
 function parseTirParameterText(text) {
   const params = new Map();
   const lines = String(text || "").split(/\r?\n/);
+  let section = "";
   lines.forEach((line, index) => {
+    const heading = line.match(/^\s*\[([^\]]+)\]/);
+    if (heading) section = heading[1].toUpperCase();
     const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*([^$!#;]+)/);
     if (!match) return;
     const key = match[1].toUpperCase();
     const value = match[2].trim();
-    if (!params.has(key)) params.set(key, { key, value, lineIndex: index });
+    if (!params.has(key)) params.set(key, { key, value, lineIndex: index, section, description: line.split("$").slice(1).join("$").trim() });
   });
   return { params, lines };
 }
 
+function tirParameterGroup(param, label = "") {
+  const sections = { LONGITUDINAL_COEFFICIENTS: "Fx", LATERAL_COEFFICIENTS: "Fy",
+    OVERTURNING_COEFFICIENTS: "Mx", ROLLING_COEFFICIENTS: "My", ALIGNING_COEFFICIENTS: "Mz" };
+  if (sections[param.section]) return sections[param.section];
+  if (/^(QSX|LMX|LVMX)/.test(param.key)) return "Mx";
+  if (/^(QSY|LMY)/.test(param.key)) return "My";
+  if (/^(Q[BCDEHZ]Z|SSZ|LTR|LRES|LS|LGAZ)/.test(param.key)) return "Mz";
+  return /^(Fx|Fy)\b/.exec(label)?.[1] || "Reference";
+}
+
 function tirParameterPanelHtml() {
   const parsed = parseTirParameterText(state.activeTir?.text || "");
-  const knownKeys = new Set(KNOWN_TIR_PARAMETERS.map(([key]) => key));
-  const knownRows = KNOWN_TIR_PARAMETERS.map(([key, label, unit]) => {
-    const param = parsed.params.get(key);
-    const missing = !param;
-    return `
-      <label class="tir-param-row ${missing ? "missing" : ""}">
-        <span class="tir-param-key">${escapeHtml(key)}</span>
-        <span class="tir-param-label">${escapeHtml(label)}</span>
-        <input
-          class="tir-param-input"
-          data-tir-param="${escapeHtml(key)}"
-          value="${escapeHtml(param?.value || "")}"
-          placeholder="not in .tir"
-          ${missing ? "disabled" : ""}
-        >
-        <span class="tir-param-unit">${escapeHtml(unit || "")}</span>
-      </label>
-    `;
-  }).join("");
-  const unknownRows = [...parsed.params.values()]
-    .filter((param) => !knownKeys.has(param.key))
-    .sort((left, right) => left.key.localeCompare(right.key))
-    .map((param) => `
-      <div class="tir-param-row unknown">
-        <span class="tir-param-key">${escapeHtml(param.key)}</span>
-        <span class="tir-param-label">Unknown parameter</span>
-        <input class="tir-param-input" value="${escapeHtml(param.value)}" disabled>
-        <span class="tir-param-unit">!</span>
-      </div>
-    `).join("");
-  return `
-    <div class="tir-param-panel" data-tir-param-panel>
-      <div class="tir-param-grid">${knownRows}</div>
-      ${unknownRows ? `<div class="tir-param-unknown">${unknownRows}</div>` : ""}
-    </div>
-  `;
+  const metadata = new Map(KNOWN_TIR_PARAMETERS.map(([key, label, unit]) => [key, { label, unit }]));
+  const groups = { Reference: [], Fx: [], Fy: [], Mx: [], My: [], Mz: [] };
+  parsed.params.forEach((param) => {
+    const known = metadata.get(param.key);
+    const label = known?.label || param.description || "No description in this file";
+    const group = tirParameterGroup(param, known?.label);
+    const editable = Boolean(known) || group !== "Reference";
+    groups[group].push(`<label class="tir-param-row">
+      <span class="tir-param-key">${escapeHtml(param.key)}</span>
+      <span class="tir-param-label">${escapeHtml(label)}</span>
+      <input class="tir-param-input" ${editable ? `data-tir-param="${escapeHtml(param.key)}"` : "readonly"} value="${escapeHtml(param.value)}">
+      <span class="tir-param-unit">${escapeHtml(known?.unit || "")}</span>
+    </label>`);
+  });
+  return `<div class="tir-param-panel" data-tir-param-panel>${Object.entries(groups).filter(([, rows]) => rows.length)
+    .map(([group, rows]) => `<details><summary>${group}</summary><div class="tir-param-grid">${rows.join("")}</div></details>`).join("")}</div>`;
 }
 
 function emptyAreaCopy(areaId) {
@@ -2395,6 +2716,21 @@ function renderParameterTabCanvases() {
   });
 }
 
+function numericDisplayValue(value, scale = 1) {
+  if (value === null || value === undefined || value === "") return "";
+  return Number((Number(value) * scale).toPrecision(12));
+}
+
+function numericDisplayAttrs(value, scale = 1) {
+  return `data-display-scale="${scale || 1}" data-original-value="${escapeHtml(value ?? "")}" data-original-display="${escapeHtml(numericDisplayValue(value, scale))}"`;
+}
+
+function setNumericInputValue(input, value) {
+  input.value = String(numericDisplayValue(value, Number(input.dataset.displayScale || 1)));
+  input.dataset.originalValue = String(value);
+  input.dataset.originalDisplay = input.value;
+}
+
 function fieldControl(field) {
   const disabled = Boolean(field.disabled);
   const disabledAttr = disabled ? " disabled" : "";
@@ -2404,11 +2740,11 @@ function fieldControl(field) {
   const wrapperAttrs = fieldWrapperAttrs(field);
   if (isArrayField(field)) return arrayFieldControl(field, label);
   if (field.kind === "boolean") {
-    return `<div class="form-field toggle-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}>${fieldHelpHtml(field)}</div>`;
+    return `<div class="form-field toggle-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}></div>`;
   }
   if (field.kind === "number" || field.kind === "integer") {
     const step = field.kind === "integer" ? "1" : "any";
-    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
+    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"></div>`;
   }
   if (field.kind === "select") {
     const choices = field.choices.some((choice) => String(choice) === String(value)) ? field.choices : [value, ...field.choices].filter(Boolean);
@@ -2418,7 +2754,7 @@ function fieldControl(field) {
         <select ${attrs}>
           ${choices.map((choice) => `<option value="${escapeHtml(choice)}"${String(choice) === String(value) ? " selected" : ""}>${escapeHtml(choice)}</option>`).join("")}
         </select>
-        ${fieldHelpHtml(field)}
+
       </div>
     `;
   }
@@ -2427,33 +2763,58 @@ function fieldControl(field) {
       <div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>
         ${label}
         <textarea ${attrs}>${escapeHtml(JSON.stringify(value, null, 2))}</textarea>
-        ${fieldHelpHtml(field)}
+
       </div>
     `;
   }
-  return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
+  return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}"></div>`;
 }
 
 function fieldLabelHtml(field) {
-  const unit = field.unit ? `<span>${escapeHtml(field.unit)}</span>` : "";
+  const displayUnit = /\.(spring|damper)_table\.table$/.test(fieldPathString(field)) ? "" : field.display_unit || field.unit;
+  const unit = displayUnit ? `<span>(${escapeHtml(displayUnit)})</span>` : "";
   const planned = field.disabled ? `<span class="field-status-pill">Planned</span>` : "";
   const meta = unit || planned ? `<span class="field-label-meta">${unit}${planned}</span>` : "";
   const objectLabel = fieldObjectLabel(field);
   const object = objectLabel ? `<span class="field-object-label">${escapeHtml(objectLabel)}</span>` : "";
-  return `${object}<label><span>${escapeHtml(fieldPropertyLabel(field))}</span>${meta}</label>`;
+  return `${object}<div class="field-heading"><span class="field-heading-name">${escapeHtml(fieldPropertyLabel(field))}</span>${fieldHelpHtml(field)}${meta}</div>`;
+}
+
+function infoIcon() {
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="7.5" r=".8" fill="currentColor" stroke="none"/></svg>';
+}
+
+let infoHintId = 0;
+
+function infoHint(label, text) {
+  const id = `info-popup-${++infoHintId}`;
+  const rows = Array.isArray(text) ? text : null;
+  const plain = rows ? rows.map(([key, value]) => `${key}: ${value}`).join(". ") : text;
+  const content = rows ? `<dl>${rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : `<p>${escapeHtml(text)}</p>`;
+  return `<span class="info-hint"><button type="button" class="info-button" popovertarget="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><div id="${id}" class="info-popup" popover aria-label="${escapeHtml(label)}">${content}</div>`;
+}
+
+function positionInfoPopup(event) {
+  const popup = event.target;
+  if (!popup.matches?.(".info-popup") || event.newState !== "open") return;
+  const button = document.querySelector(`[popovertarget="${popup.id}"]`);
+  if (!button) return;
+  const anchor = button.getBoundingClientRect();
+  const box = popup.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8))}px`;
+  const top = anchor.bottom + 6 + box.height <= window.innerHeight - 8
+    ? anchor.bottom + 6 : anchor.top - box.height - 6;
+  popup.style.top = `${Math.max(8, top)}px`;
 }
 
 function fieldHelpHtml(field) {
   const help = field.disabled ? field.placeholder : fieldHelpText(field);
   return help
-    ? `<small class="field-placeholder-note">${escapeHtml(help)}</small>`
+    ? infoHint(`${field.label} information`, help)
     : "";
 }
 
 function fieldHelpText(field) {
-  const path = fieldPathString(field);
-  if (path.includes(".actuation.shock.spring_table.table")) return "Rows map shock deflection to spring force.";
-  if (path.includes(".actuation.shock.damper_table.table")) return "Rows map shock shaft velocity to damper force.";
   return field.help;
 }
 
@@ -2499,9 +2860,9 @@ function arrayFieldControl(field, label) {
   const rank = field.array_shape.length;
   const elementKind = field.array_element_kind || "string";
   const choices = JSON.stringify(Array.isArray(field.choices) ? field.choices : []);
-  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-array-element-kind="${escapeHtml(elementKind)}" data-array-choices="${escapeHtml(choices)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
+  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-display-scale="${field.display_scale || 1}" data-array-element-kind="${escapeHtml(elementKind)}" data-array-choices="${escapeHtml(choices)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
   const control = rank === 2 ? matrixControl(field) : vectorControl(field);
-  return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}${fieldHelpHtml(field)}</div>`;
+  return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}</div>`;
 }
 
 function vectorControl(field) {
@@ -2548,38 +2909,14 @@ function vectorSupportsQueueControls(field, coordinate) {
 function matrixControl(field) {
   const rows = Array.isArray(field.value) ? field.value : [];
   const cols = Math.max(1, ...rows.map((row) => Array.isArray(row) ? row.length : 0));
+  const curve = /\.(spring|damper)_table\.table$/.test(fieldPathString(field));
   const fixed = matrixHasFixedShape(field);
-  const body = rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, cols, fixed)).join("");
-  return `
-    ${matrixPurposeHtml(field)}
-    <div class="matrix-scroll">
-      <div class="matrix-input" data-matrix-cols="${cols}">
-        <div class="matrix-array-body">${body}</div>
-      </div>
+  return `<div class="matrix-scroll${curve ? " curve-table" : ""}">
+    <div class="matrix-input${fieldPathString(field).endsWith("inertia_kg_m2") ? " inertia-matrix" : ""}" data-matrix-cols="${cols}" style="--matrix-cols: ${cols}">
+      <div class="matrix-heading"><span class="matrix-row-label"></span><div class="matrix-array-cells">${Array.from({length: cols}, (_, index) => `<span>${escapeHtml(matrixColumnLabel(field, index))}</span>`).join("")}</div><span></span></div>
+      <div class="matrix-array-body">${rows.map((row, index) => matrixRowControl(field, row, index, cols, fixed)).join("")}</div>
     </div>
-    ${fixed ? "" : `<button class="array-action" type="button" data-array-action="add-row">Add row</button>`}
-  `;
-}
-
-function matrixPurposeHtml(field) {
-  const path = fieldPathString(field);
-  if (path.includes(".actuation.shock.spring_table.table")) {
-    return `
-      <div class="table-purpose">
-        <strong>Spring table</strong>
-        <span>Shock deflection (m) -> spring force (N)</span>
-      </div>
-    `;
-  }
-  if (path.includes(".actuation.shock.damper_table.table")) {
-    return `
-      <div class="table-purpose">
-        <strong>Damper table</strong>
-        <span>Shock shaft velocity (m/s) -> damper force (N)</span>
-      </div>
-    `;
-  }
-  return "";
+  </div>${fixed ? "" : `<button class="array-action" type="button" data-array-action="add-row">${curve ? "Add point" : "Add row"}</button>`}`;
 }
 
 function matrixRowControl(field, row, rowIndex, cols, fixed) {
@@ -2634,10 +2971,10 @@ function isNumericArrayKind(kind) {
 }
 
 function arrayScalarControl(field, value, position) {
-  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : []);
+  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : [], field.display_scale, fieldPathString(field).endsWith("inertia_kg_m2"));
 }
 
-function arrayCellInputHtml(kind, position, value = "", choices = []) {
+function arrayCellInputHtml(kind, position, value = "", choices = [], displayScale = 1, compact = false) {
   const positionAttrs = position.col === undefined
     ? `data-index="${position.index}"`
     : `data-row="${position.row}" data-col="${position.col}"`;
@@ -2653,7 +2990,7 @@ function arrayCellInputHtml(kind, position, value = "", choices = []) {
   }
   if (kind === "number" || kind === "integer") {
     const step = kind === "integer" ? "1" : "any";
-    return `<input ${attrs} type="number" step="${step}" required value="${escapeHtml(value ?? "")}">`;
+    return `<input ${attrs} type="number" step="${step}" required ${compact ? "" : `style="min-width: ${Math.max(12, String(numericDisplayValue(value, displayScale)).length + 4)}ch"`} ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
   }
   return `<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">`;
 }
@@ -2694,7 +3031,7 @@ function addArrayItem(container) {
   cells.insertAdjacentHTML("beforeend", `
     <label class="array-list-row array-cell">
       <span>#${index + 1}</span>
-      ${arrayCellInputHtml(kind, { index }, choices[0] ?? defaultArrayValue(kind), choices)}
+      ${arrayCellInputHtml(kind, { index }, choices[0] ?? defaultArrayValue(kind), choices, Number(container.dataset.displayScale || 1))}
     </label>
   `);
 }
@@ -2878,7 +3215,8 @@ function collectScalarValue(input, kind, reportInvalid) {
       if (reportInvalid) input.reportValidity();
       throw new Error("Fix invalid numeric entries before saving.");
     }
-    return kind === "integer" ? Number.parseInt(rawValue, 10) : number;
+    if (input.dataset.originalDisplay === rawValue) return Number(input.dataset.originalValue);
+    return number / Number(input.dataset.displayScale || 1);
   }
   return input.value;
 }
@@ -3024,6 +3362,7 @@ async function loadVehicleSourceById(sourceId) {
     body: JSON.stringify({ source_id: sourceId }),
   });
   acceptCleanVehiclePayload();
+  state.vehiclePreviewFit = null;
   await refreshStatus();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshSavedResults();
@@ -3076,6 +3415,7 @@ async function createVehicleFromStart() {
       }),
     });
     acceptCleanVehiclePayload();
+    state.vehiclePreviewFit = null;
     await refreshStatus();
     state.vehicleLibrary = await api("/api/vehicles/save", {
       method: "POST",
@@ -3152,6 +3492,7 @@ async function applyVehicleTemplate(templateId) {
     body: JSON.stringify({ template_id: templateId }),
   });
   acceptCleanVehiclePayload();
+  state.vehiclePreviewFit = null;
   await refreshStatus();
   state.vehicleLibrary = await api("/api/vehicles");
   await refreshSavedResults();
@@ -3515,14 +3856,32 @@ function renderTirEditorContent() {
     picker.innerHTML = `<option value="${escapeHtml(state.activeTir.id)}" selected>${escapeHtml(state.activeTir.label)}</option>${picker.innerHTML}`;
   }
   if (editor) editor.value = state.activeTir?.text || "";
-  const metadata = state.activeTir?.metadata || {};
+  const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
+  const users = ["front", "rear"].filter((side) => data[side]?.tire?.template === state.activeTir?.id).map(humanizeToken);
   meta.textContent = state.activeTir
-    ? `${state.activeTir.path} | FNOMIN ${formatNumber(metadata.fznom_n)} N | R0 ${formatNumber(metadata.unloaded_radius_m)} m`
+    ? `Editing ${state.activeTir.label || state.activeTir.id}. ${users.length ? `Used by ${users.join(" and ")}. Saving updates this shared tire file.` : "Not assigned to this vehicle."}`
     : "No .tir template loaded";
   renderTirActionState();
 }
 
 function wireTireTabs() {
+  document.querySelectorAll("[data-tire-fit]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state[select.dataset.tireFit] = select.value;
+      const loadRow = document.querySelector("[data-tire-fit-load]");
+      if (loadRow) loadRow.hidden = state.tireFitSlip !== "combined";
+      drawVehicleFromForm();
+    });
+  });
+  document.querySelectorAll("[data-tire-axle]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.activeTireAxle = select.value;
+      document.querySelectorAll("[data-tire-axle-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.tireAxlePanel !== state.activeTireAxle;
+      });
+      drawVehicleFromForm();
+    });
+  });
   document.querySelectorAll("[data-tire-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeTireTab = button.dataset.tireTab || "setup";
@@ -3945,7 +4304,7 @@ async function selectStandardWorkflow(workflowId) {
 
 async function configureSimulationWorkflow(workflowId) {
   const workflow = standardWorkflows().find((item) => item.id === workflowId);
-  if (!workflow || !canRunStandardWorkflow(workflow)) return;
+  if (!workflow) return;
   if (workflowId !== state.selectedWorkflowId) {
     await selectStandardWorkflow(workflowId);
   }
@@ -3990,7 +4349,6 @@ async function reviewSimulationWorkflow(workflowId) {
 function renderSimulationModal(workflow = selectedWorkflow()) {
   const modal = document.getElementById("simulation-config-modal");
   if (!modal) return;
-  if (!canRunStandardWorkflow(workflow)) state.simModalOpen = false;
   modal.hidden = !state.simModalOpen;
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
@@ -4007,7 +4365,7 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
 function workflowCard(workflow) {
   const meta = simWorkflowMeta(workflow);
   const canReview = workflowReviewAvailable(workflow);
-  const canConfigure = canRunStandardWorkflow(workflow);
+  const canConfigure = Boolean(workflow.config_id);
   return `
     <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
       <div class="simulation-card-body">
@@ -4016,7 +4374,6 @@ function workflowCard(workflow) {
           ${responseModelPicker(workflow)}
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
-        ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
         ${simulationVisualHtml(workflow)}
         <details class="simulation-details">
           <summary>Run details</summary>
@@ -4029,7 +4386,7 @@ function workflowCard(workflow) {
       </div>
       <div class="card-actions">
         ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
-        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(standardWorkflowLockedMessage(workflow) || "Configure simulation")}">Configure</button>
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Configure simulation">Configure</button>
       </div>
     </article>
   `;
@@ -4098,8 +4455,7 @@ function simulationVisualHtml(workflow) {
     }
   }
   return `<figure class="simulation-visual">
-    <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg>
-    <figcaption><span>Schematic</span>${escapeHtml(caption)}</figcaption>
+    <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}"><title>${escapeHtml(caption)}</title>${drawing}</svg>
   </figure>`;
 }
 
@@ -4837,22 +5193,19 @@ function renderSavedResultCatalog() {
 }
 
 function resultArchiveCard(result) {
-  const fileCount = result.files?.filter((file) => file.exists).length || 0;
   const workflow = result.workflow?.label || "Simulation";
   const runCount = Number(result.analysis?.run_count || result.run_count || 0);
-  const deleting = state.deletingResultId === result.id;
   return `
     <article class="workflow-card study-card result-card ${result.id === state.selectedResultId ? "active" : ""}" data-result-id="${escapeHtml(result.id)}">
       <div class="card-head">
         <div class="card-title">${escapeHtml(result.label || workflow)}</div>
         <div class="archive-card-actions">
           <span class="mini-pill">${escapeHtml(workflow)}</span>
-          <button class="ghost-button danger-button archive-delete-button" type="button" data-delete-result="${escapeHtml(result.id)}"${deleting ? " disabled" : ""}>${deleting ? "Deleting" : "Delete"}</button>
         </div>
       </div>
       <div class="card-meta">${escapeHtml(result.created_label || "")}</div>
       <div class="signal-row">
-        <span class="mini-pill ok">${fileCount} files</span>
+        <span class="mini-pill">${escapeHtml(workflowModelLabel(result) || "Model not recorded")}</span>
         ${runCount ? `<span class="mini-pill ok">${runCount} runs</span>` : ""}
         <span class="mini-pill">${escapeHtml(result.vehicle_name || activeVehicleName())}</span>
       </div>
@@ -5331,7 +5684,10 @@ function renderSimConfigLibrary() {
     deleteButton.disabled = !canDelete;
   }
   const saveName = document.getElementById("save-sim-config-name");
-  if (saveName && !saveName.value && selectedWorkflow()) saveName.value = `${selectedWorkflow().label} setup`;
+  if (saveName && selectedWorkflow() && saveName.dataset.workflow !== selectedWorkflow().id) {
+    saveName.value = `${simWorkflowMeta(selectedWorkflow()).title || selectedWorkflow().label} setup`;
+    saveName.dataset.workflow = selectedWorkflow().id;
+  }
   updateSimConfigStatus();
 }
 
@@ -5367,9 +5723,8 @@ function updateSimConfigStatus() {
     status.textContent = "Loading run configuration.";
     return;
   }
-  status.textContent = state.dirtySimConfig
-    ? "Run config has unapplied edits."
-    : `Editing ${state.simConfigPayload.label || workflow.label} config.`;
+  status.textContent = state.dirtySimConfig ? "Unsaved changes" : "";
+  document.getElementById("apply-sim-config-btn").hidden = !state.dirtySimConfig;
 }
 
 function renderOutputs(workflow) {
@@ -5524,9 +5879,14 @@ function renderJobs() {
   runButton.textContent = !canRun
     ? "Simulation locked"
     : workflow
-    ? state.dirtySimConfig ? "Apply + run" : runVerb
+    ? runVerb
     : "No Workflow";
   runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  const readiness = document.getElementById("sim-readiness");
+  readiness.textContent = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  const prepare = document.getElementById("sim-prepare-mbd");
+  prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
+  prepare.disabled = !canWriteMbd();
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
@@ -5664,7 +6024,10 @@ function currentVehicleFormData() {
 
 function drawVehicleFromForm() {
   const data = currentVehicleFormData();
-  if (data) drawVehiclePreview(data);
+  if (data) {
+    updateVehicleMassSummary(data);
+    drawVehiclePreview(data);
+  }
 }
 
 function setNestedValue(data, path, value) {
@@ -5757,8 +6120,7 @@ function drawVehiclePreview(data) {
     clearGeometryInteractionScene();
     return;
   }
-  const frame = vehicleModelFrame(model);
-  const scene = projectVehicleModel(model, width, height, state.vehiclePreviewView, frame);
+  const scene = projectVehicleModel(model, width, height, state.vehiclePreviewView);
   const { map, scale } = scene;
   state.geometryScene = {
     width,
@@ -5816,7 +6178,6 @@ function clearMassInteractionScene() {
   state.massHoverPointId = null;
   state.massSelectedPointId = null;
   document.getElementById("vehicle-canvas")?.classList.remove("mass-hot");
-  syncMassPropertyEditor();
 }
 
 function clearSuspensionPlotInteractionScene() {
@@ -6390,7 +6751,8 @@ function setPrimitiveConfigValue(path, value) {
     .find((item) => item.dataset.configPath === key);
   if (!input) return;
   pushUndoSnapshot(snapshotVehicleState("primitive"));
-  input.value = value;
+  if (["number", "integer"].includes(input.dataset.kind)) setNumericInputValue(input, value);
+  else input.value = value;
   markVehicleDirty();
 }
 
@@ -6421,7 +6783,7 @@ function geometrySourceContainer(point) {
 function geometrySourceValues(point) {
   const container = geometrySourceContainer(point);
   if (!container) return null;
-  const values = [0, 1, 2].map((index) => Number(container.querySelector(`[data-array-cell][data-index="${index}"]`)?.value));
+  const values = collectArrayValue(container, false);
   return values.every(Number.isFinite) ? values : null;
 }
 
@@ -6432,7 +6794,7 @@ function setGeometrySourceValues(point, values, { syncEditor = true, renderMini 
   [0, 1, 2].forEach((index) => {
     const input = container.querySelector(`[data-array-cell][data-index="${index}"]`);
     if (input && Number.isFinite(Number(values[index]))) {
-      input.value = Number(values[index]).toFixed(4).replace(/\.?0+$/, "");
+      setNumericInputValue(input, Number(values[index]));
     }
   });
   markGeometryDirty({ renderMini });
@@ -6441,6 +6803,8 @@ function setGeometrySourceValues(point, values, { syncEditor = true, renderMini 
 
 function markGeometryDirty({ renderMini = true } = {}) {
   updateDirtyState();
+  const data = currentVehicleFormData();
+  if (data) applyVehicleDataToPayload(data);
   drawVehicleFromForm();
   if (renderMini) renderParameterTabCanvases();
   queueKinematicsRefresh();
@@ -6462,14 +6826,14 @@ function syncGeometryPointEditor() {
   }
   editor.hidden = false;
   document.getElementById("geometry-point-name").textContent = point.sourceLabel || humanizeToken(point.id);
-  document.getElementById("geometry-axis-label").textContent = state.geometryAxis.toUpperCase();
   document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
     button.classList.toggle("active", button.dataset.geometryAxis === state.geometryAxis);
   });
   document.querySelectorAll("[data-geometry-coordinate]").forEach((input) => {
     const index = axisIndex(input.dataset.geometryCoordinate);
     if (index >= 0 && document.activeElement !== input) {
-      input.value = values[index].toFixed(4).replace(/\.?0+$/, "");
+      input.dataset.displayScale = "1000";
+      setNumericInputValue(input, values[index]);
     }
   });
   geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.classList.add("geometry-source-active");
@@ -6478,6 +6842,7 @@ function syncGeometryPointEditor() {
 function selectGeometryPoint(point, { scroll = false } = {}) {
   if (!editableGeometryPoint(point)) return;
   state.geometrySelectedPointId = point.id;
+  revealVehicleComponentField(geometrySourceContainer(point));
   syncGeometryPointEditor();
   if (scroll) {
     geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.scrollIntoView({
@@ -6490,6 +6855,7 @@ function selectGeometryPoint(point, { scroll = false } = {}) {
 
 function clearGeometrySelection() {
   if (!state.geometrySelectedPointId) return false;
+  if (state.geometryDrag) finishGeometryDrag(state.geometryDrag.pointerId);
   state.geometrySelectedPointId = null;
   syncGeometryPointEditor();
   drawVehicleFromForm();
@@ -6509,16 +6875,17 @@ function cycleGeometryAxis() {
   setGeometryAxis(axes[(axes.indexOf(state.geometryAxis) + 1) % axes.length]);
 }
 
-function canUseGeometryAxisShortcut(target = document.activeElement) {
-  if (!isSpatialPreviewArea()) return false;
-  if (!isTextEntryTarget(target)) return true;
-  return Boolean(target?.closest?.("#geometry-point-editor"));
+function canUseGeometryAxisShortcut() {
+  return state.view === "setup" && activeParameterArea().visual === "hardpoints"
+    && editableGeometryPoint(selectedGeometryPoint())
+    && !document.querySelector('[role="dialog"]:not([hidden])');
 }
 
-function handleGeometryAxisShortcut(event = null) {
-  if (!canUseGeometryAxisShortcut(event?.target)) return false;
-  event?.preventDefault?.();
-  cycleGeometryAxis();
+function handleGeometryAxisShortcut(event) {
+  if (event.key !== "Tab" || !canUseGeometryAxisShortcut()) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) cycleGeometryAxis();
   return true;
 }
 
@@ -6551,12 +6918,7 @@ function isTirePreviewArea(area = activeParameterArea()) {
 }
 
 function isSurfaceMapPreviewArea(area = activeParameterArea()) {
-  return area.visual === "aero" || (area.visual === "tires" && state.activeTireTab === "load-maps");
-}
-
-function selectedMassPoint() {
-  if (!state.massScene) return null;
-  return state.massScene.uniquePoints.find((point) => point.id === state.massSelectedPointId) || null;
+  return (area.visual === "aero" && !state.aeroReferenceView) || (area.visual === "tires" && state.activeTireTab === "load-maps");
 }
 
 function hitTestMassPoint(event) {
@@ -6585,65 +6947,13 @@ function updateMassHover(event) {
 }
 
 function selectMassPoint(point) {
-  state.massSelectedPointId = point?.id || null;
-  syncMassPropertyEditor();
-  drawVehicleFromForm();
-}
-
-function syncMassPropertyEditor() {
-  const editor = document.getElementById("mass-property-editor");
-  if (!editor) return;
-  const point = selectedMassPoint();
-  if (!isMassPreviewArea() || !point) {
-    editor.hidden = true;
-    editor.style.transform = "";
-    return;
+  if (point?.sourcePath) {
+    const key = JSON.stringify([...point.sourcePath, "mass_kg"]);
+    const input = [...document.querySelectorAll("[data-config-path]")].find((item) => item.dataset.configPath === key);
+    revealVehicleComponentField(input);
   }
-  editor.hidden = false;
-  positionMassPropertyEditor();
-  document.getElementById("mass-property-name").textContent = massDisplayName(point);
-  document.getElementById("mass-property-role").textContent = point.aggregate ? "Effective" : "Source";
-  const grid = document.getElementById("mass-property-grid");
-  if (!grid) return;
-  grid.innerHTML = massPropertyRows(point).map(([label, value]) => `
-    <div class="mass-property-row">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </div>
-  `).join("");
-}
-
-function positionMassPropertyEditor() {
-  const editor = document.getElementById("mass-property-editor");
-  if (!editor || editor.hidden) return;
-  const stage = document.querySelector(".visual-stage");
-  editor.style.transform = `translateY(${stage?.scrollTop || 0}px)`;
-}
-
-function queueMassPropertyEditorPosition() {
-  if (state.massEditorPositionFrame) return;
-  state.massEditorPositionFrame = requestAnimationFrame(() => {
-    state.massEditorPositionFrame = null;
-    positionMassPropertyEditor();
-  });
-}
-
-function massPropertyRows(point) {
-  const radius = massGyrationRadius(point);
-  return [
-    ["Name", massDisplayName(point)],
-    ["Mass", formatMassValue(point.massKg)],
-    ["CG", formatVector([point.x, point.y, point.z], "m")],
-    ["Inertia", formatInertia(point.inertiaKgM2) || "Not set"],
-    ["Rg", Number.isFinite(radius) ? `${formatNumber(radius)} m` : "Not set"],
-    ["Axle", point.axle ? humanizeToken(point.axle) : "Vehicle"],
-    ["Side", point.side ? humanizeToken(point.side) : "Both"],
-    ["Source", massSourceLabel(point)],
-  ];
-}
-
-function massDisplayName(point) {
-  return (point.sourceLabel || humanizeToken(point.id)).replace(/\s+mass$/i, "");
+  state.massSelectedPointId = point?.id || null;
+  drawVehicleFromForm();
 }
 
 function formatMassValue(value) {
@@ -6655,29 +6965,6 @@ function formatVector(values, unit = "") {
   if (!Array.isArray(values)) return "";
   const formatted = values.slice(0, 3).map((value) => formatNumber(value)).join(", ");
   return unit ? `[${formatted}] ${unit}` : `[${formatted}]`;
-}
-
-function formatInertia(inertia) {
-  const diagonal = inertiaDiagonal(inertia);
-  return diagonal.some((value) => value > 0) ? formatVector(diagonal, "kg m2") : "";
-}
-
-function massGyrationRadius(point) {
-  if (Number.isFinite(point?.shellRadiusM) && point.shellRadiusM > 0) return point.shellRadiusM;
-  const mass = Number(point?.massKg);
-  if (!Number.isFinite(mass) || mass <= 0) return null;
-  const diagonal = inertiaDiagonal(point?.inertiaKgM2).filter((value) => value > 0);
-  if (!diagonal.length) return null;
-  const meanInertia = diagonal.reduce((sum, value) => sum + value, 0) / diagonal.length;
-  return Math.sqrt(meanInertia / mass);
-}
-
-function massSourceLabel(point) {
-  if (point.aggregate) {
-    const count = Number(point.sourceCount);
-    return Number.isFinite(count) && count > 0 ? `${count} mass blocks` : "Computed";
-  }
-  return Array.isArray(point.sourcePath) ? point.sourcePath.join(".") : "Config";
 }
 
 function pointerCanvasPoint(event) {
@@ -6758,12 +7045,6 @@ function startGeometryDrag(event, point) {
 function updateGeometryDrag(event) {
   const drag = state.geometryDrag;
   if (!drag || drag.pointerId !== event.pointerId) return;
-  if (event.shiftKey && !state.geometryShiftActive) {
-    state.geometryShiftActive = true;
-    cycleGeometryAxis();
-  } else if (!event.shiftKey) {
-    state.geometryShiftActive = false;
-  }
   const point = geometryPointById(drag.pointId);
   if (!point) return;
   drag.lastX = event.clientX;
@@ -6798,7 +7079,6 @@ function finishGeometryDrag(pointerId) {
   const drag = state.geometryDrag;
   if (!drag || drag.pointerId !== pointerId) return false;
   state.geometryDrag = null;
-  state.geometryShiftActive = false;
   document.getElementById("vehicle-canvas")?.classList.remove("geometry-dragging");
   renderParameterTabCanvases();
   return true;
@@ -6870,13 +7150,12 @@ function updatePreviewDrag(event) {
   const dx = event.clientX - drag.x;
   const dy = event.clientY - drag.y;
   if (drag.mode === "pan") {
-    setPreviewPan(drag.panX + dx, drag.panY + dy, drag.width, drag.height);
+    setPreviewPan(drag.panX + dx, drag.panY + dy);
   } else {
     state.vehiclePreviewView = "iso";
     const sensitivity = 0.01 * state.rotationSensitivity;
-    state.vehiclePreviewYaw = drag.yaw - dx * sensitivity;
+    state.vehiclePreviewYaw = drag.yaw + dx * sensitivity;
     state.vehiclePreviewPitch = Math.max(-1.1, Math.min(1.1, drag.pitch + dy * sensitivity));
-    syncViewButtons();
   }
   drawVehicleFromForm();
   return true;
@@ -7495,9 +7774,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const geometryPlotPanel = document.getElementById("geometry-plot-panel");
   const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
-  const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
-  const usesMassScroll = area.id === "mass";
   const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
   geometryTabs.hidden = area.id !== "hardpoints";
   document.getElementById("config-form").hidden = usesGeometryPlots;
@@ -7507,6 +7784,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     button.setAttribute("aria-pressed", String(active));
   });
   const usesTireSurface = isSurfaceMapPreviewArea(area);
+  document.getElementById("camera-home-btn").hidden = !(usesSpatialView || usesTireSurface);
   if (controls) {
     controls.hidden = true;
     controls.style.display = "none";
@@ -7520,29 +7798,16 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     if (usesGeometryPlots) renderGeometryPlotControls();
     else clearGeometryPlotScene();
   }
-  if (stage) {
-    stage.classList.toggle("mass-scroll-stage", usesMassScroll);
-  }
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
-    canvas.classList.toggle("mass-scroll-canvas", usesMassScroll);
     canvas.classList.toggle("tire-surface-canvas", usesTireSurface);
     if (!usesTireSurface) canvas.classList.remove("tire-surface-hot", "tire-surface-dragging");
-    if (usesMassScroll) {
-      const stageHeight = Math.max(360, stage?.clientHeight || canvas.clientHeight || 360);
-      const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
-      const contentHeight = Math.max(360, stageHeight - toolbarHeight - 28);
-      const plotMinimumHeight = 900;
-      const targetHeight = contentHeight * 2 + 64;
-      canvas.style.height = `${Math.max(plotMinimumHeight, targetHeight)}px`;
-    } else {
-      canvas.style.height = "";
-    }
+    canvas.style.height = "";
   }
 }
 
 function isSpatialPreviewArea(area = activeParameterArea()) {
-  return area.visual === "hardpoints";
+  return area.visual === "hardpoints" || area.visual === "mass" || (area.visual === "aero" && state.aeroReferenceView);
 }
 
 function visibleGeometryAxles() {
@@ -7655,7 +7920,6 @@ function fitCanvasText(ctx, text, maxWidth, options = {}) {
 function drawArchitecturePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   const architecture = data.architecture || {};
-  const profile = powertrainProfile(data);
   const hoverId = state.architectureHoverId;
   const selectedId = state.architectureModalOpen && state.architectureModalAxle
     ? `architecture-${state.architectureModalAxle}`
@@ -7692,17 +7956,16 @@ function drawArchitecturePreview(ctx, width, height, data) {
       drawArchitectureAxle3d(ctx, scene.points, viewport.axle, architecture[viewport.axle] || "direct", data, null, null, null, viewport);
     });
   });
-  drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId);
   drawArchitectureLegend(ctx, width, height, data);
 
   state.architectureScene = { hotspots };
 }
 
 function architectureAxlePanels(width, height) {
-  const top = 78;
-  const margin = 28;
-  const gap = 16;
-  const availableHeight = Math.max(250, height - top - 48);
+  const top = 8;
+  const margin = 8;
+  const gap = 8;
+  const availableHeight = Math.max(1, height - top - 32);
   const panelHeight = (availableHeight - gap) / 2;
   return ["front", "rear"].map((axle, index) => (
     architectureAxlePanel(axle, margin, top + index * (panelHeight + gap), width - margin * 2, panelHeight)
@@ -7710,8 +7973,8 @@ function architectureAxlePanels(width, height) {
 }
 
 function architectureAxlePanel(axle, x, y, width, height) {
-  const inset = 12;
-  const headerHeight = 34;
+  const inset = 4;
+  const headerHeight = 28;
   const viewHeight = Math.max(1, height - headerHeight - inset * 2);
   const viewWidth = width - inset * 2;
   const viewX = x + inset;
@@ -7902,19 +8165,6 @@ function drawArchitecturePowertrain3d(ctx, points, profile, hotspots, hoverId, s
   hotspots.push({ id, type: "powertrain", view: viewport.view, rect });
   drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
   drawArchitecturePowertrainBlock(ctx, rect.x + rect.width / 2, rect.y + rect.height / 2 + 4, 78, 34);
-  drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
-}
-
-function drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId) {
-  const rect = {
-    x: Math.max(28, width - 238),
-    y: 18,
-    width: Math.min(210, width - 56),
-    height: 46,
-  };
-  const id = "architecture-powertrain";
-  hotspots.push({ id, type: "powertrain", rect });
-  drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
   drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
 }
 
@@ -8528,85 +8778,63 @@ function massPropertyBlocks(data) {
 }
 
 function drawAeroMapPreview(ctx, width, height, data) {
+  if (state.aeroReferenceView) return drawAeroReferencePreview(ctx, width, height, data);
+  const palette = canvasPalette();
+  const aero = data.aero || {};
+  const map = AERO_MAPS.find((entry) => entry.key === state.activeAeroMap) || AERO_MAPS[0];
+  drawPreviewGrid(ctx, width, height);
+  drawCanvasText(ctx, `${map.label} at ${formatNumber(aero.reference_speed_m_per_s)} m/s`, 28, 28, { size: 18, weight: 780 });
+  const rows = aeroSurfaceRowsFromTable(aero[map.key], aero.front_ride_height_grid_m, aero.rear_ride_height_grid_m, "value");
+  const panel = drawTireSurfacePanel(ctx, 24, 52, width - 48, height - 76, map.label, [{
+    label: map.label,
+    shortLabel: map.label,
+    color: palette[map.color],
+    rows,
+    xKey: "front_ride_height_mm",
+    yKey: "rear_ride_height_mm",
+    zKey: "value",
+  }], "Front ride height (mm)", "Rear ride height (mm)", `${map.label} (${map.unit})`, { emptyMessage: "No aero map data" });
+  state.tireSurfaceScene = { panels: panel ? [panel] : [] };
+}
+
+function aeroRideHeightReferences(aero = {}) {
+  return ["front", "rear"].flatMap((axle) => {
+    const point = toPoint(aero[`${axle}_left_ride_height_ref_m`]);
+    if (!point) return [];
+    return [
+      { id: `${axle}-aero-left`, label: axle === "front" ? "FL" : "RL", axle, point, mirrored: false },
+      { id: `${axle}-aero-right`, label: axle === "front" ? "FR" : "RR", axle, point: [point[0], -point[1], point[2]], mirrored: true },
+    ];
+  });
+}
+
+function drawAeroReferencePreview(ctx, width, height, data) {
+  state.tireSurfaceScene = null;
   const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Aero Maps", 28, 28, { size: 18, weight: 780 });
-  drawCanvasText(ctx, `Reference speed ${formatNumber(data.aero?.reference_speed_m_per_s)} m/s`, 28, 50, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
+  drawCanvasText(ctx, "Aero reference points", 28, 28, { size: 18, weight: 780 });
+  const model = filterVehicleModel(buildVehicleGeometry(data), sectionFocus("geometry"));
+  const refs = [
+    { id: "origin", label: "Origin", point: [0, 0, 0], color: palette.muted },
+    { id: "wrench", label: "Wrench reference", point: data.aero?.aero_ref_m, color: palette.magenta },
+    ...aeroRideHeightReferences(data.aero).map((ref) => ({
+      ...ref, color: ref.axle === "front" ? palette.green : palette.amber,
+    })),
+  ].filter((ref) => toPoint(ref.point)).map((ref) => ({ ...ref, x: ref.point[0], y: ref.point[1], z: ref.point[2], radius: ref.mirrored ? 5 : 7 }));
+  model.points.push(...refs);
+  const { map } = projectVehicleModelInRect(model, { x: 12, y: 48, width: width - 24, height: height - 60 }, "iso");
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  model.links.forEach((link) => drawCylinder(ctx, map.get(link.from), map.get(link.to), link));
+  ctx.restore();
+  refs.forEach((ref) => {
+    const point = map.get(ref.id);
+    ctx.save();
+    ctx.globalAlpha = ref.mirrored ? 0.5 : 1;
+    drawSphere(ctx, point);
+    drawCanvasText(ctx, ref.label, clamp(point.x2 + 12, 12, width - 130), clamp(point.y2 - 12, 44, height - 16), { color: ref.color, size: 12, weight: 700 });
+    ctx.restore();
   });
-
-  const aero = data.aero || {};
-  const panels = [
-    {
-      title: "Downforce",
-      table: aero.downforce_table_n,
-      zKey: "downforce_n",
-      unit: "N",
-      color: palette.green,
-    },
-    {
-      title: "Drag",
-      table: aero.drag_table_n,
-      zKey: "drag_n",
-      unit: "N",
-      color: palette.red,
-    },
-    {
-      title: "Pitch moment",
-      table: aero.my_table_nm,
-      zKey: "pitch_moment_nm",
-      unit: "Nm",
-      color: palette.amber,
-    },
-    {
-      title: "Yaw moment",
-      table: aero.mz_table_nm,
-      zKey: "yaw_moment_nm",
-      unit: "Nm",
-      color: palette.magenta,
-    },
-  ];
-  const gap = 14;
-  const top = 76;
-  const panelWidth = (width - 56 - gap) / 2;
-  const panelHeight = (height - top - 28 - gap) / 2;
-  const surfacePanels = [];
-  panels.forEach((panelDef, index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const rows = aeroSurfaceRowsFromTable(
-      panelDef.table,
-      aero.front_ride_height_grid_m,
-      aero.rear_ride_height_grid_m,
-      panelDef.zKey,
-    );
-    surfacePanels.push(drawTireSurfacePanel(
-      ctx,
-      28 + col * (panelWidth + gap),
-      top + row * (panelHeight + gap),
-      panelWidth,
-      panelHeight,
-      panelDef.title,
-      [{
-        label: `${panelDef.title} map`,
-        shortLabel: panelDef.title,
-        color: panelDef.color,
-        rows,
-        xKey: "front_ride_height_m",
-        yKey: "rear_ride_height_m",
-        zKey: panelDef.zKey,
-      }],
-      "FRH m",
-      "RRH m",
-      `${panelDef.title} ${panelDef.unit}`,
-      { emptyMessage: "No aero map data" },
-    ));
-  });
-  state.tireSurfaceScene = {
-    panels: surfacePanels.filter(Boolean),
-  };
 }
 
 function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {
@@ -8616,22 +8844,22 @@ function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {
   return table
     .map((row, rowIndex) => {
       if (!Array.isArray(row)) return null;
-      const rearRideHeight = Number(yValues[rowIndex] ?? rowIndex);
+      const rearRideHeight = Number(yValues[rowIndex] ?? rowIndex) * 1000;
       const points = row
         .map((value, colIndex) => {
-          const frontRideHeight = Number(xValues[colIndex] ?? colIndex);
+          const frontRideHeight = Number(xValues[colIndex] ?? colIndex) * 1000;
           const z = Number(value);
           if (!Number.isFinite(frontRideHeight) || !Number.isFinite(rearRideHeight) || !Number.isFinite(z)) return null;
           return {
-            front_ride_height_m: frontRideHeight,
-            rear_ride_height_m: rearRideHeight,
+            front_ride_height_mm: frontRideHeight,
+            rear_ride_height_mm: rearRideHeight,
             [zKey]: z,
           };
         })
         .filter(Boolean);
       return points.length
         ? {
-            rear_ride_height_m: rearRideHeight,
+            rear_ride_height_mm: rearRideHeight,
             points,
           }
         : null;
@@ -9074,78 +9302,64 @@ function drawTirePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   state.tireSurfaceScene = null;
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Tires", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, state.tirePayload?.model || `${data.front?.tire?.template || "front tire"} / ${data.rear?.tire?.template || "rear tire"}`, 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
-  if (state.activeTireTab !== "load-maps") {
+  if (state.tirePayload?.sides?.length && state.activeTireTab !== "load-maps") {
     drawTireSetupPreview(ctx, width, height, data);
     return;
   }
+  if (!state.tirePayload?.sides?.length) {
+    drawCanvasText(ctx, state.tirePayloadUpdating ? "Loading tire plots..." : "Tire plots unavailable. Check the selected tire files.", width / 2, height / 2, {
+      align: "center", size: 16, color: palette.muted,
+    });
+    return;
+  }
 
-  const chartX = 28;
-  const chartW = width - chartX - 28;
-  const chartGap = 12;
-  const chartH = (height - 78 - 28 - chartGap) / 2;
-  const chartW2 = (chartW - chartGap) / 2;
-  const sides = state.tirePayload?.sides || [];
-  const combinedFzLabel = `@ ${formatNumber(currentTireCombinedFz())} N`;
-  const camberLabel = `IA ${formatSignedNumber(currentTireLoadCamberDeg())} deg`;
-  const surfacePanels = [];
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX,
-    78,
-    chartW2,
-    chartH,
-    `Pure Fx Load Map, ${camberLabel}`,
-    pureLongitudinalLoadSurfaces(sides, palette),
-    "kappa",
-    "Fz N",
-    "Fx N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX + chartW2 + chartGap,
-    78,
-    chartW2,
-    chartH,
-    `Pure Fy Load Map, ${camberLabel}`,
-    pureLateralLoadSurfaces(sides, palette),
-    "alpha deg",
-    "Fz N",
-    "Fy N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX,
-    78 + chartH + chartGap,
-    chartW2,
-    chartH,
-    `Combined Fx ${combinedFzLabel}, ${camberLabel}`,
-    combinedFxSurfaces(sides, palette),
-    "kappa",
-    "alpha deg",
-    "Fx N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX + chartW2 + chartGap,
-    78 + chartH + chartGap,
-    chartW2,
-    chartH,
-    `Combined Fy ${combinedFzLabel}, ${camberLabel}`,
-    combinedFySurfaces(sides, palette),
-    "alpha deg",
-    "kappa",
-    "Fy N",
-  ));
-  state.tireSurfaceScene = {
-    panels: surfacePanels.filter(Boolean),
-  };
+  const sides = state.tirePayload.sides.filter((side) => side.side === (state.activeTireAxle || "front"));
+  const combined = state.tireFitSlip === "combined";
+  const output = state.tireFitDirection;
+  const moment = ["mx", "my", "mz"].includes(output);
+  const lateral = output === "lateral" || output === "mx" || output === "mz";
+  const surfaces = moment ? tireMomentSurfaces(sides, output, combined, palette)
+    : combined
+      ? (lateral ? combinedFySurfaces : combinedFxSurfaces)(sides, palette)
+      : (lateral ? pureLateralLoadSurfaces : pureLongitudinalLoadSurfaces)(sides, palette);
+  const symbol = moment ? `M${output[1]}` : lateral ? "Fy" : "Fx";
+  const speed = moment ? ` · ${formatNumber(sides[0]?.curves?.moment_speed_mps)} m/s` : "";
+  const title = `${humanizeToken(state.activeTireAxle || "front")} · ${combined ? "Combined" : "Pure"} ${symbol}${speed}`;
+  const panel = drawTireSurfacePanel(
+    ctx, 16, 16, width - 32, height - 32, title, surfaces,
+    lateral ? "Slip angle (deg)" : "Slip ratio",
+    combined ? (lateral ? "Slip ratio" : "Slip angle (deg)") : "Normal load (N)",
+    `${symbol} (${moment ? "N m" : "N"})`,
+    { emptyMessage: moment && sides[0]?.curves?.moment_error
+      ? "Moment coefficients are missing or invalid in this tire file." : "No surface data" },
+  );
+  state.tireSurfaceScene = { panels: panel ? [panel] : [] };
+}
+
+function tireMomentSurfaces(sides, output, combined, palette) {
+  const zKey = `${output}_nm`;
+  const lateral = output !== "my";
+  return sides.map((side) => {
+    let gammaSurfaces = side.curves?.moments?.[output] || [];
+    if (combined) {
+      gammaSurfaces = (side.curves?.combined?.force_maps_by_gamma_fz || []).map((surface) => ({
+        gamma_deg: surface.gamma_deg,
+        rows: interpolateTireSurfaceRowsByFz(surface.maps, currentTireCombinedFz(), zKey) || [],
+      }));
+    }
+    let rows = interpolateTireSurfaceRowsByGamma(gammaSurfaces, currentTireLoadCamberDeg(), zKey) || [];
+    if (combined && lateral && rows.length) {
+      rows = rows[0].points.map((point, index) => ({
+        kappa: point.kappa, points: rows.map((row) => row.points[index]),
+      }));
+    }
+    return {
+      label: tireSurfaceLayerLabel(side.side), shortLabel: humanizeToken(side.side),
+      color: tireSurfaceLayerColor(side.side, palette), dash: tireSurfaceLayerDash(side.side),
+      rows, xKey: lateral ? "alpha_deg" : "kappa",
+      yKey: combined ? (lateral ? "kappa" : "alpha_deg") : "fz_n", zKey,
+    };
+  });
 }
 
 function drawTirePreviewError(ctx, width, height, error, data) {
@@ -9181,7 +9395,7 @@ function drawTirePreviewError(ctx, width, height, error, data) {
 }
 
 function drawTireSetupPreview(ctx, width, height, data) {
-  drawTireStancePanel(ctx, 28, 78, width - 56, height - 106, data);
+  drawTireStancePanel(ctx, 16, 16, width - 32, height - 32, data);
 }
 
 function pureLongitudinalLoadSurfaces(sides, palette) {
@@ -9878,41 +10092,20 @@ function drawProjectedPolyline(ctx, points) {
 
 function drawTireStancePanel(ctx, x, y, width, height, data) {
   const palette = canvasPalette();
-  const corners = tireSetupCorners(data);
-  const maxForce = Math.max(
-    100,
-    ...corners
-      .flatMap((corner) => [corner.fxPeakN, corner.fyPeakN, corner.forceMapMaxN])
-      .map(Number)
-      .filter((value) => Number.isFinite(value) && value > 0),
-  );
+  const axle = state.activeTireAxle || "front";
+  const corner = tireSetupCorners(data).find((item) => item.axle === axle && item.side === "left");
+  const maxForce = Math.max(100, ...[corner.fxPeakN, corner.fyPeakN, corner.forceMapMaxN]
+    .map(Number).filter((value) => Number.isFinite(value) && value > 0));
   drawPanel(ctx, x, y, width, height, palette.surface);
-  drawCanvasText(ctx, "Friction Ellipses", x + 14, y + 18, { size: 13, weight: 780 });
-  drawCanvasText(ctx, `Shared scale ${formatNumber(maxForce)} N`, x + width - 14, y + 18, {
-    size: 11,
-    weight: 650,
-    align: "right",
-    color: palette.muted,
+  drawCanvasText(ctx, `${humanizeToken(axle)} friction ellipse`, x + 14, y + 18, { size: 13, weight: 780 });
+  drawCanvasText(ctx, `Fz ${formatNumber(corner.fzN)} (N)`, x + width - 14, y + 18, {
+    size: 11, align: "right", color: palette.muted,
   });
-
-  const inset = 14;
-  const gap = clamp(width * 0.02, 10, 16);
-  const innerX = x + inset;
-  const innerY = y + 36;
-  const innerW = Math.max(140, width - inset * 2);
-  const innerH = Math.max(140, height - 50);
-  const cardW = Math.max(96, (innerW - gap) / 2);
-  const cardH = Math.max(70, (innerH - gap) / 2);
-  const positions = {
-    FL: { x: innerX, y: innerY },
-    FR: { x: innerX + cardW + gap, y: innerY },
-    RL: { x: innerX, y: innerY + cardH + gap },
-    RR: { x: innerX + cardW + gap, y: innerY + cardH + gap },
-  };
-  drawTireSetupCenterline(ctx, innerX, innerY, innerW, innerH);
-  corners.forEach((corner) => {
-    const position = positions[corner.id];
-    drawTireCornerSetupCard(ctx, corner, position.x, position.y, cardW, cardH, maxForce);
+  const radius = Math.max(1, Math.min((width - 96) / 2, (height - 120) / 2));
+  drawTireFrictionEllipse(ctx, corner, x + width / 2, y + height / 2, radius, maxForce);
+  drawTireForceMapLegend(ctx, x + 14, y + height - 30, corner.color);
+  drawCanvasText(ctx, `Scale ${formatNumber(maxForce)} (N)`, x + width - 14, y + height - 16, {
+    size: 11, align: "right", color: palette.muted,
   });
 }
 
@@ -10266,101 +10459,6 @@ function cornerAlphaOffsetDeg(toeDeg, side) {
   return side === "right" ? -numeric : numeric;
 }
 
-function drawTireSetupCenterline(ctx, x, y, width, height) {
-  const palette = canvasPalette();
-  const midX = x + width / 2;
-  const midY = y + height / 2;
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.5 : 0.7);
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 6]);
-  ctx.beginPath();
-  ctx.moveTo(midX, y + 6);
-  ctx.lineTo(midX, y + height - 6);
-  ctx.moveTo(x + 6, midY);
-  ctx.lineTo(x + width - 6, midY);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawTireCornerSetupCard(ctx, corner, x, y, width, height, maxForce) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  drawPanel(ctx, x, y, width, height, colorWithAlpha(accent, state.dark ? 0.12 : 0.07));
-  ctx.save();
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(x + 1.5, y + 11);
-  ctx.lineTo(x + 1.5, y + height - 11);
-  ctx.stroke();
-  ctx.restore();
-
-  drawCanvasText(ctx, corner.id, x + 12, y + 17, { size: 13, weight: 820, color: palette.ink });
-  const template = fitCanvasText(ctx, corner.template, Math.max(54, width - 78), { size: 10, weight: 650 });
-  drawCanvasText(ctx, template, x + width - 12, y + 17, {
-    size: 10,
-    weight: 650,
-    align: "right",
-    color: palette.muted,
-  });
-
-  const compact = height < 112 || width < 170;
-  const statsH = 38;
-  const plot = {
-    x: x + 12,
-    y: y + 30,
-    width: Math.max(64, width - 24),
-    height: Math.max(38, height - 36 - statsH),
-  };
-  const center = {
-    x: plot.x + plot.width / 2,
-    y: plot.y + plot.height / 2,
-  };
-  const maxRadius = Math.max(20, Math.min(plot.width * 0.42, plot.height * 0.43));
-  drawTireFrictionEllipse(ctx, corner, center.x, center.y, maxRadius, maxForce);
-  drawTireAlphaOffsetVector(ctx, corner, center.x, center.y, maxRadius);
-  if (!compact) {
-    drawTireInclinationGlyph(
-      ctx,
-      plot.x + plot.width - 52,
-      plot.y + plot.height - 30,
-      44,
-      25,
-      corner.inclinationDeg,
-      corner.side,
-      accent,
-    );
-  }
-
-  const leftX = x + 12;
-  const rightX = x + width - 12;
-  const statY = y + height - 29;
-  drawCanvasText(ctx, `FzNom ${formatNumber(corner.fzN)} N`, leftX, statY, {
-    size: compact ? 9 : 10,
-    weight: 760,
-    color: palette.ink,
-  });
-  drawCanvasText(ctx, `alpha0 ${formatSignedNumber(corner.alphaOffsetDeg)} deg`, rightX, statY, {
-    size: compact ? 9 : 10,
-    weight: 760,
-    align: "right",
-    color: palette.ink,
-  });
-  drawCanvasText(ctx, `Fy0 ${formatSignedNumber(corner.zeroFyN)} N`, leftX, statY + 15, {
-    size: compact ? 9 : 10,
-    weight: 650,
-    color: palette.muted,
-  });
-  drawCanvasText(ctx, `IA ${formatSignedNumber(corner.inclinationDeg)} deg  Fy ${formatSignedNumber(corner.camberFyN)} N`, rightX, statY + 15, {
-    size: compact ? 9 : 10,
-    weight: 650,
-    align: "right",
-    color: corner.camberThrustEnabled ? palette.muted : palette.amber,
-  });
-}
-
 function drawTireFrictionEllipse(ctx, corner, cx, cy, maxRadius, maxForce) {
   const palette = canvasPalette();
   const accent = corner.color || palette.blue;
@@ -10393,7 +10491,6 @@ function drawTireFrictionEllipse(ctx, corner, cx, cy, maxRadius, maxForce) {
       color: palette.muted,
     });
   }
-  if (maxRadius >= 30) drawTireForceMapLegend(ctx, cx - maxRadius, cy - maxRadius, accent);
 }
 
 function drawTireForceMapIsolines(ctx, rows, project, color) {
@@ -10462,170 +10559,14 @@ function drawTireForceMapLegend(ctx, x, y, color) {
   ctx.lineTo(x + 18, y + 18);
   ctx.stroke();
   ctx.restore();
-  drawCanvasText(ctx, "alpha", x + 23, y + 5, {
+  drawCanvasText(ctx, "Slip angle", x + 23, y + 5, {
     size: 8,
     weight: 700,
     color: palette.muted,
   });
-  drawCanvasText(ctx, "kappa", x + 23, y + 18, {
+  drawCanvasText(ctx, "Slip ratio", x + 23, y + 18, {
     size: 8,
     weight: 700,
-    color: palette.muted,
-  });
-}
-
-function drawTireAlphaOffsetVector(ctx, corner, cx, cy, maxRadius) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  const alphaRad = corner.alphaOffsetDeg * Math.PI / 180;
-  const heading = {
-    x: -Math.sin(alphaRad),
-    y: -Math.cos(alphaRad),
-  };
-  const length = clamp(maxRadius * 0.72, 16, 42);
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(accent, 0.72);
-  ctx.lineWidth = 1.5;
-  ctx.lineCap = "round";
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + heading.x * length, cy + heading.y * length);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  const angle = Math.atan2(heading.y, heading.x);
-  const arrow = projectArrowHead(cx + heading.x * length, cy + heading.y * length, angle);
-  ctx.beginPath();
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.left.x, arrow.left.y);
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.right.x, arrow.right.y);
-  ctx.stroke();
-  ctx.fillStyle = colorWithAlpha(palette.surface, state.dark ? 0.86 : 0.92);
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.56 : 0.72);
-  ctx.lineWidth = 1;
-  const badgeW = 42;
-  const badgeH = 16;
-  const badgeX = cx - maxRadius - 4;
-  const badgeY = cy + maxRadius - badgeH + 4;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
-  else ctx.rect(badgeX, badgeY, badgeW, badgeH);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-  drawCanvasText(ctx, "alpha0", badgeX + badgeW / 2, badgeY + badgeH / 2, {
-    size: 8,
-    weight: 760,
-    align: "center",
-    color: palette.muted,
-  });
-}
-
-function drawTireToeFootprint(ctx, corner, cx, cy, maxRadius) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  const alphaRad = corner.alphaOffsetDeg * Math.PI / 180;
-  const heading = {
-    x: -Math.sin(alphaRad),
-    y: -Math.cos(alphaRad),
-  };
-  const lateral = {
-    x: -heading.y,
-    y: heading.x,
-  };
-  const halfLong = clamp(maxRadius * 0.42, 15, 34);
-  const halfWide = clamp(maxRadius * 0.15, 5, 11);
-  const corners = [
-    { h: 1, l: 1 },
-    { h: 1, l: -1 },
-    { h: -1, l: -1 },
-    { h: -1, l: 1 },
-  ].map((point) => ({
-    x: cx + heading.x * halfLong * point.h + lateral.x * halfWide * point.l,
-    y: cy + heading.y * halfLong * point.h + lateral.y * halfWide * point.l,
-  }));
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.5 : 0.42);
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy + halfLong + 7);
-  ctx.lineTo(cx, cy - halfLong - 7);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = state.dark ? "#0b0e14" : "#f6f8fa";
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  corners.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-  });
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = colorWithAlpha(accent, 0.86);
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(cx - heading.x * halfLong * 0.74, cy - heading.y * halfLong * 0.74);
-  ctx.lineTo(cx + heading.x * (halfLong + 8), cy + heading.y * (halfLong + 8));
-  ctx.stroke();
-  const angle = Math.atan2(heading.y, heading.x);
-  const arrow = projectArrowHead(cx + heading.x * (halfLong + 8), cy + heading.y * (halfLong + 8), angle);
-  ctx.beginPath();
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.left.x, arrow.left.y);
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.right.x, arrow.right.y);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawTireInclinationGlyph(ctx, x, y, width, height, inclinationDeg, side, color) {
-  const palette = canvasPalette();
-  const centerX = x + width * 0.52;
-  const groundY = y + height - 5;
-  const topY = y + 6;
-  const lean = clamp((Number(inclinationDeg) || 0) * 2.4, -13, 13);
-  const topX = centerX + lean;
-  const carSideX = side === "left" ? x + width - 5 : x + 5;
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.7 : 0.8);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x + 5, groundY);
-  ctx.lineTo(x + width - 5, groundY);
-  ctx.stroke();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.5 : 0.46);
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(centerX, groundY);
-  ctx.lineTo(centerX, topY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.strokeStyle = color || palette.magenta;
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(centerX, groundY);
-  ctx.lineTo(topX, topY);
-  ctx.stroke();
-  ctx.fillStyle = colorWithAlpha(color || palette.magenta, state.dark ? 0.78 : 0.9);
-  ctx.beginPath();
-  ctx.arc(topX, topY, 2.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.56 : 0.48);
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(carSideX, groundY - 3);
-  ctx.lineTo(carSideX, topY + 3);
-  ctx.stroke();
-  ctx.restore();
-  drawCanvasText(ctx, "car", carSideX, topY - 4, {
-    size: 8,
-    weight: 760,
-    align: side === "left" ? "right" : "left",
     color: palette.muted,
   });
 }
@@ -10733,46 +10674,22 @@ function drawWheelGlyph(ctx, x, y, radius, angle, color) {
 }
 
 function drawSuspensionPreview(ctx, width, height, data) {
-  const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Suspension Rates", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Spring and damper tables feeding the force-based run.", 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-  const maps = [
-    ["front-spring", "Front spring", nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["front-damper", "Front damper", nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
-    ["rear-spring", "Rear spring", nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["rear-damper", "Rear damper", nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
-  ];
-  const gap = 14;
-  const top = 76;
-  const plotCharts = [];
-  const rateTop = top;
-  const rateHeight = Math.max(260, height - rateTop - 28);
-  const panelWidth = (width - 56 - gap) / 2;
-  const panelHeight = Math.max(82, (rateHeight - gap) / 2);
-  maps.forEach(([key, title, table, xLabel, xUnit, yLabel, yUnit], index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const chart = drawLinePanel(
-      ctx,
-      28 + col * (panelWidth + gap),
-      rateTop + row * (panelHeight + gap),
-      panelWidth,
-      panelHeight,
-      title,
-      table,
-      xLabel,
-      xUnit,
-      yLabel,
-      yUnit,
-      { key },
-    );
-    if (chart) plotCharts.push(chart);
-  });
+  const axle = state.suspensionAxle;
+  const component = state.suspensionComponent;
+  const title = `${humanizeToken(axle)} ${component === "stabar" ? "anti-roll bar" : component}`;
+  drawCanvasText(ctx, title, 28, 30, { size: 18, weight: 780 });
+  let table = nestedValue(data, [axle, "actuation", "shock", `${component}_table`, "table"]);
+  if (component === "stabar") {
+    const rate = Number(nestedValue(data, [axle, "actuation", "stabar", "rate_n_m_per_rad"]));
+    table = Number.isFinite(rate) ? [[-0.1, -0.1 * rate], [0, 0], [0.1, 0.1 * rate]] : [];
+  }
+  const chart = drawLinePanel(ctx, 28, 62, width - 56, height - 90, title, table,
+    component === "spring" ? "Deflection" : component === "damper" ? "Shaft velocity" : "Twist",
+    component === "spring" ? "m" : component === "damper" ? "m/s" : "rad",
+    component === "stabar" ? "Torque" : "Force", component === "stabar" ? "N·m" : "N",
+    { key: `${axle}-${component}` });
+  const plotCharts = chart ? [chart] : [];
   state.suspensionPlotScene = plotCharts.length ? { charts: plotCharts } : null;
 }
 
@@ -10814,11 +10731,14 @@ function kinematicCurveDescriptors(payload) {
       y_label: humanizeKinematicCurve(id),
     });
   });
-  return descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES;
+  return (descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES).map((item) => ({
+    ...item,
+    label: item.label.replace(/^(Bump|Roll|Steer) /, ""),
+  }));
 }
 
 function humanizeKinematicCurve(id) {
-  return humanizeToken(String(id).replace(/_(deg|mm|m|rad)$/i, ""));
+  return humanizeToken(String(id).replace(/^(bump|roll|steer)_/, "").replace(/_(deg|mm|m|rad)$/i, ""));
 }
 
 function inferCurveUnit(id) {
@@ -11487,7 +11407,7 @@ function projectPoint(point, view) {
 
 function projectPointWithAngles(point, view, yaw, pitch) {
   const { x, y, z } = point;
-  if (view === "side") return { u: x, v: z, depth: y };
+  if (view === "side") return { u: x, v: z, depth: -y };
   if (view === "top") return { u: x, v: y, depth: z };
   const cy = Math.cos(yaw);
   const sy = Math.sin(yaw);
@@ -11495,91 +11415,61 @@ function projectPointWithAngles(point, view, yaw, pitch) {
   const sp = Math.sin(pitch);
   const xr = x * cy - y * sy;
   const yr = x * sy + y * cy;
-  return { u: xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
+  return { u: -xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
 }
 
-function vehicleModelFrame(model) {
-  const points = model.points || [];
-  if (!points.length) return { center: { x: 0, y: 0, z: 0 }, radius: 1 };
-  const bounds = points.reduce(
-    (acc, point) => {
-      const shell = point.shellRadiusM || 0;
-      return {
-        minX: Math.min(acc.minX, point.x - shell),
-        maxX: Math.max(acc.maxX, point.x + shell),
-        minY: Math.min(acc.minY, point.y - shell),
-        maxY: Math.max(acc.maxY, point.y + shell),
-        minZ: Math.min(acc.minZ, point.z - shell),
-        maxZ: Math.max(acc.maxZ, point.z + shell),
-      };
-    },
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
-  );
-  const center = {
-    x: (bounds.minX + bounds.maxX) / 2,
-    y: (bounds.minY + bounds.maxY) / 2,
-    z: (bounds.minZ + bounds.maxZ) / 2,
-  };
-  const radius = points.reduce((maxRadius, point) => {
-    const shell = point.shellRadiusM || 0;
-    return Math.max(maxRadius, Math.hypot(point.x - center.x, point.y - center.y, point.z - center.z) + shell);
-  }, 0.1);
-  return { center, radius: Math.max(0.1, radius) };
+function projectVehicleModel(model, width, height, view) {
+  clampPreviewCamera();
+  return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view);
 }
 
-function projectVehicleModel(model, width, height, view, frame = vehicleModelFrame(model)) {
-  clampPreviewCamera(width, height);
-  return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view, frame);
-}
-
-function projectVehicleModelInRect(model, viewport, view, frame = vehicleModelFrame(model)) {
-  const centerProjection = projectPoint(frame.center, view);
-  const baseScale = Math.min(
-    Math.max(40, viewport.width - 70) / (frame.radius * 2),
-    Math.max(40, viewport.height - 70) / (frame.radius * 2),
-  );
-  const scale = baseScale * state.vehiclePreviewZoom;
+function projectVehicleModelInRect(model, viewport, view) {
+  const key = `${state.activeParamGroup}:${view}:${model.points.map((point) => point.id).join(",")}`;
+  if (state.vehiclePreviewFit?.key !== key) {
+    const frame = projectedViewFrame(model, view);
+    const depth = model.points.reduce((total, point) => total + projectPoint(point, view).depth, 0) / Math.max(1, model.points.length);
+    const axes = [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }];
+    const center = axes.map((axis) => {
+      const basis = projectPoint(axis, view);
+      return frame.centerU * basis.u + frame.centerV * basis.v + depth * basis.depth;
+    });
+    state.vehiclePreviewFit = {
+      key, center: { x: center[0], y: center[1], z: center[2] },
+      scale: Math.min(Math.max(1, viewport.width - 48) / frame.spanU,
+        Math.max(1, viewport.height - 48) / frame.spanV),
+    };
+  }
+  const fit = state.vehiclePreviewFit;
+  const center = projectPoint(fit.center, view);
+  const scale = fit.scale * state.vehiclePreviewZoom;
   const map = new Map((model.points || []).map((point) => {
     const projected = projectPoint(point, view);
-    return [
-      point.id,
-      {
-        ...point,
-        ...projected,
-        x2: (projected.u - centerProjection.u) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
-        y2: viewport.y + viewport.height / 2 - (projected.v - centerProjection.v) * scale + state.vehiclePreviewPanY,
-      },
-    ];
+    return [point.id, {
+      ...point,
+      ...projected,
+      x2: (projected.u - center.u) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
+      y2: viewport.y + viewport.height / 2 - (projected.v - center.v) * scale + state.vehiclePreviewPanY,
+    }];
   }));
-  return { map, scale, frame };
+  return { map, scale };
 }
 
-function previewPanLimit(width, height) {
-  return {
-    x: Math.max(80, width * MAX_PREVIEW_PAN_FRACTION),
-    y: Math.max(80, height * MAX_PREVIEW_PAN_FRACTION),
-  };
-}
-
-function clampPreviewCamera(width = state.geometryScene?.width || 800, height = state.geometryScene?.height || 600) {
+function clampPreviewCamera() {
   state.vehiclePreviewZoom = clamp(Number(state.vehiclePreviewZoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
-  const limit = previewPanLimit(width, height);
-  state.vehiclePreviewPanX = clamp(Number(state.vehiclePreviewPanX) || 0, -limit.x, limit.x);
-  state.vehiclePreviewPanY = clamp(Number(state.vehiclePreviewPanY) || 0, -limit.y, limit.y);
+  setPreviewPan(state.vehiclePreviewPanX, state.vehiclePreviewPanY);
 }
 
-function setPreviewPan(x, y, width = state.geometryScene?.width, height = state.geometryScene?.height) {
-  const limit = previewPanLimit(width || 800, height || 600);
-  state.vehiclePreviewPanX = clamp(Number(x) || 0, -limit.x, limit.x);
-  state.vehiclePreviewPanY = clamp(Number(y) || 0, -limit.y, limit.y);
+function setPreviewPan(x, y) {
+  state.vehiclePreviewPanX = Number.isFinite(Number(x)) ? Number(x) : 0;
+  state.vehiclePreviewPanY = Number.isFinite(Number(y)) ? Number(y) : 0;
 }
 
 function setPreviewZoom(zoom, anchor = null) {
   const oldZoom = state.vehiclePreviewZoom;
   const nextZoom = clamp(Number(zoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
   if (Math.abs(nextZoom - oldZoom) < 0.001) return;
-  const width = state.geometryScene?.width || 800;
-  const height = state.geometryScene?.height || 600;
+  const width = state.geometryScene?.width || state.massScene?.width || 800;
+  const height = state.geometryScene?.height || state.massScene?.height || 600;
   if (anchor) {
     const ratio = nextZoom / oldZoom;
     const anchorX = anchor.x - width / 2;
@@ -11587,12 +11477,10 @@ function setPreviewZoom(zoom, anchor = null) {
     setPreviewPan(
       anchorX - (anchorX - state.vehiclePreviewPanX) * ratio,
       anchorY - (anchorY - state.vehiclePreviewPanY) * ratio,
-      width,
-      height,
     );
   }
   state.vehiclePreviewZoom = nextZoom;
-  clampPreviewCamera(width, height);
+  clampPreviewCamera();
 }
 
 function projectedViewFrame(model, view) {
@@ -11617,32 +11505,12 @@ function projectedViewFrame(model, view) {
   };
 }
 
-function projectVehicleModelToViewFrame(model, viewport, view, frame) {
-  const scale = Math.min(
-    Math.max(40, viewport.width - 34) / frame.spanU,
-    Math.max(40, viewport.height - 34) / frame.spanV,
-  );
-  const map = new Map((model.points || []).map((point) => {
-    const projected = projectPoint(point, view);
-    return [
-      point.id,
-      {
-        ...point,
-        ...projected,
-        x2: (projected.u - frame.centerU) * scale + viewport.x + viewport.width / 2,
-        y2: viewport.y + viewport.height / 2 - (projected.v - frame.centerV) * scale,
-      },
-    ];
-  }));
-  return { map, scale, frame };
-}
-
 function drawMassPreview(ctx, width, height, data) {
   const fullModel = buildVehicleGeometry(data);
   const massModel = filterVehicleModel(fullModel, sectionFocus("mass"));
+  massModel.points = massModel.points.filter((point) => !point.aggregate);
   if (!massModel.points.length) {
     state.massScene = null;
-    syncMassPropertyEditor();
     drawPreviewGrid(ctx, width, height);
     drawCanvasText(ctx, "No mass properties are available.", width / 2, height / 2, {
       align: "center",
@@ -11656,20 +11524,20 @@ function drawMassPreview(ctx, width, height, data) {
     scenePoints.push(...drawMassViewPanel(ctx, panel, fullModel, massModel));
   });
   state.massScene = {
+    width, height,
     points: scenePoints,
     uniquePoints: uniqueMassPoints(scenePoints),
   };
-  syncMassPropertyEditor();
 }
 
 function massViewPanels(width, height) {
-  const margin = 24;
-  const gap = 16;
-  const panelHeight = Math.max(130, (height - margin * 2 - gap) / 2);
-  return [
-    { label: "Top", axis: "X / Y", view: "top", x: margin, y: margin, width: width - margin * 2, height: panelHeight },
-    { label: "Side", axis: "X / Z", view: "side", x: margin, y: margin + panelHeight + gap, width: width - margin * 2, height: panelHeight },
-  ];
+  const margin = 16;
+  const view = state.vehiclePreviewView;
+  return [{
+    label: view === "top" ? "Top" : view === "side" ? "Side" : "3D",
+    axis: view === "top" ? "X / Y" : view === "side" ? "X / Z" : "",
+    view, x: margin, y: margin, width: width - margin * 2, height: height - margin * 2,
+  }];
 }
 
 function drawMassViewPanel(ctx, panel, fullModel, massModel) {
@@ -11692,13 +11560,16 @@ function drawMassViewPanel(ctx, panel, fullModel, massModel) {
     width: panel.width - 20,
     height: panel.height - 40,
   };
-  const frame = massViewFrame(fullModel, massModel, panel.view);
+  const scene = projectVehicleModelInRect({
+    points: [...massContextPoints(fullModel), ...massModel.points],
+  }, viewport, panel.view);
   ctx.save();
   ctx.beginPath();
   ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height);
   ctx.clip();
-  drawMassContext(ctx, fullModel, viewport, panel.view, frame);
-  const { map, scale } = projectVehicleModelToViewFrame(massModel, viewport, panel.view, frame);
+  drawMassContext(ctx, fullModel, scene);
+  const map = new Map(massModel.points.map((point) => [point.id, scene.map.get(point.id)]));
+  const { scale } = scene;
   const massPoints = [...map.values()].map((point) => ({
     ...point,
     massView: panel.view,
@@ -11711,10 +11582,6 @@ function drawMassViewPanel(ctx, panel, fullModel, massModel) {
   massPoints
     .sort((a, b) => a.depth - b.depth)
     .forEach((point) => drawSphere(ctx, point));
-  massPoints
-    .sort((a, b) => a.depth - b.depth)
-    .filter(shouldDrawMassLabel)
-    .forEach((point) => drawMassLabel(ctx, point));
   ctx.restore();
   return massPoints;
 }
@@ -11727,49 +11594,20 @@ function uniqueMassPoints(points) {
   return [...byId.values()];
 }
 
-function shouldDrawMassLabel(point) {
-  return point.id === state.massHoverPointId || point.id === state.massSelectedPointId;
+function isSelectedMassComponent(point) {
+  if (point.group !== "mass" || !point.sourcePath) return false;
+  const component = vehicleFieldComponent({ path: point.sourcePath }, "mass");
+  return component.key === state.vehicleComponentSelection?.mass;
 }
 
-function drawMassLabel(ctx, point) {
-  const label = massDisplayName(point);
-  const palette = canvasPalette();
-  const x = point.x2 + (point.role === "effective-mass" ? 16 : 10);
-  const y = point.y2 - (point.role === "effective-mass" ? 17 : 12);
-  const paddingX = 7;
-  ctx.save();
-  ctx.font = "760 10px Inter, sans-serif";
-  const width = Math.min(170, Math.ceil(ctx.measureText(label).width) + paddingX * 2);
-  const height = 20;
-  ctx.fillStyle = state.dark ? "rgba(24,30,42,0.88)" : "rgba(248,250,252,0.9)";
-  ctx.strokeStyle = colorWithAlpha(point.color, point.id === state.massSelectedPointId ? 0.72 : 0.36);
-  ctx.lineWidth = point.id === state.massSelectedPointId ? 1.5 : 1;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y - height / 2, width, height, 6);
-  else ctx.rect(x, y - height / 2, width, height);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = palette.ink;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, x + paddingX, y, width - paddingX * 2);
-  ctx.restore();
-}
-
-function massViewFrame(fullModel, massModel, view) {
-  const contextPoints = massContextPoints(fullModel);
-  const massCenters = massModel.points.map((point) => ({ ...point, shellRadiusM: 0 }));
-  return projectedViewFrame({ points: [...contextPoints, ...massCenters] }, view);
-}
-
-function drawMassContext(ctx, fullModel, viewport, view, frame) {
+function drawMassContext(ctx, fullModel, scene) {
   const contextPoints = massContextPoints(fullModel);
   const pointIds = new Set(contextPoints.map((point) => point.id));
   const contextModel = {
     points: contextPoints,
     links: fullModel.links.filter((link) => pointIds.has(link.from) && pointIds.has(link.to)),
   };
-  const { map } = projectVehicleModelToViewFrame(contextModel, viewport, view, frame);
+  const map = new Map(contextPoints.map((point) => [point.id, scene.map.get(point.id)]));
   [...contextModel.links]
     .sort((a, b) => ((map.get(a.from)?.depth || 0) + (map.get(a.to)?.depth || 0))
       - ((map.get(b.from)?.depth || 0) + (map.get(b.to)?.depth || 0)))
@@ -12117,7 +11955,8 @@ function drawCylinder(ctx, from, to, link) {
 function drawSphere(ctx, point) {
   const radius = point.radius || 5;
   if (radius <= 0) return;
-  const selected = point.id === state.geometrySelectedPointId || point.id === state.massSelectedPointId;
+  const selected = point.id === state.geometrySelectedPointId || point.id === state.massSelectedPointId
+    || (isMassPreviewArea() && isSelectedMassComponent(point));
   const hovered = point.id === state.geometryHoverPointId || point.id === state.massHoverPointId;
   const opacity = Number.isFinite(point.opacity) ? clamp(point.opacity, 0.12, 1) : 1;
   const gradient = ctx.createRadialGradient(point.x2 - radius * 0.35, point.y2 - radius * 0.45, 1, point.x2, point.y2, radius);
@@ -12483,12 +12322,18 @@ function wireVehicleCanvas() {
       return;
     }
     if (isMassPreviewArea()) {
+      if (isPanClick(event)) {
+        startPreviewDrag(event, "pan");
+        return;
+      }
+      if (event.button !== 0) return;
       const hit = hitTestMassPoint(event);
       if (hit) {
         selectMassPoint(hit);
         event.preventDefault();
       } else {
         selectMassPoint(null);
+        startPreviewDrag(event, "rotate");
       }
       return;
     }
@@ -12509,6 +12354,7 @@ function wireVehicleCanvas() {
       event.preventDefault();
       return;
     }
+    if (event.button === 0) clearGeometrySelection();
     startPreviewDrag(event, "rotate");
   });
   canvas.addEventListener("mousedown", startMiddleCanvasPan);
@@ -12519,6 +12365,7 @@ function wireVehicleCanvas() {
       return;
     }
     if (isMassPreviewArea()) {
+      if (updatePreviewDrag(event)) return;
       updateMassHover(event);
       return;
     }
@@ -12568,16 +12415,11 @@ function wireVehicleCanvas() {
     canvas.classList.remove("tire-surface-dragging");
     drawVehicleFromForm();
   });
-  canvas.addEventListener("dblclick", () => {
-    if (isSurfaceMapPreviewArea()) {
-      resetTireSurfaceView();
-      return;
-    }
-    if (isSpatialPreviewArea()) resetVehicleView();
-  });
+  canvas.addEventListener("dblclick", resetPreviewCamera);
 }
 
 function wireGeometryEditor() {
+  document.getElementById("geometry-deselect-btn").addEventListener("click", clearGeometrySelection);
   document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
     button.addEventListener("click", () => setGeometryAxis(button.dataset.geometryAxis));
   });
@@ -12585,7 +12427,9 @@ function wireGeometryEditor() {
     input.addEventListener("input", () => {
       const point = selectedGeometryPoint();
       if (!point) return;
-      const values = ["x", "y", "z"].map((axis) => Number(document.querySelector(`[data-geometry-coordinate="${axis}"]`)?.value));
+      const coordinates = ["x", "y", "z"].map((axis) => document.querySelector(`[data-geometry-coordinate="${axis}"]`));
+      if (coordinates.some((entry) => !entry.value.trim() || !entry.checkValidity())) return;
+      const values = coordinates.map((entry) => collectScalarValue(entry, "number", false));
       if (!values.every(Number.isFinite)) return;
       setGeometrySourceValues(point, values, { syncEditor: false });
     });
@@ -12595,16 +12439,11 @@ function wireGeometryEditor() {
       event.preventDefault();
       return;
     }
-    if (event.key === "Escape" && isSpatialPreviewArea() && clearGeometrySelection()) {
+    if (event.key === "Escape" && canUseGeometryAxisShortcut() && clearGeometrySelection()) {
       event.preventDefault();
       return;
     }
-    if (event.key === "Shift" && !event.repeat && handleGeometryAxisShortcut(event)) {
-      state.geometryShiftActive = true;
-    }
-  });
-  window.addEventListener("keyup", (event) => {
-    if (event.key === "Shift") state.geometryShiftActive = false;
+    handleGeometryAxisShortcut(event);
   });
 }
 
@@ -12667,23 +12506,31 @@ function finishSetupResize(pointerId) {
 }
 
 function resetVehicleView() {
+  state.vehiclePreviewFit = null;
   state.vehiclePreviewView = "iso";
   state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;
   state.vehiclePreviewPitch = DEFAULT_VEHICLE_PITCH;
   state.vehiclePreviewZoom = 1;
   state.vehiclePreviewPanX = 0;
   state.vehiclePreviewPanY = 0;
-  syncViewButtons();
   drawVehicleFromForm();
 }
 
-function syncViewButtons() {
-  document.querySelectorAll(".view-button[data-view]").forEach((item) => {
-    item.classList.toggle("active", item.dataset.view === state.vehiclePreviewView);
-  });
+function resetPreviewCamera() {
+  if (isSurfaceMapPreviewArea()) resetTireSurfaceView();
+  else if (isSpatialPreviewArea()) resetVehicleView();
 }
 
 function wireEvents() {
+  document.addEventListener("toggle", positionInfoPopup, true);
+  document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
+  document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
+    if (!event.target.value.trim()) {
+      event.target.value = activeVehicleName();
+      return;
+    }
+    setPrimitiveConfigValue(["vehicle", "name"], event.target.value.trim());
+  });
   document.getElementById("refresh-btn").addEventListener("click", refresh);
   document.getElementById("theme-toggle-btn").addEventListener("click", toggleTheme);
   document.getElementById("reference-toggle-btn").addEventListener("click", toggleReferencePanel);
@@ -12847,6 +12694,7 @@ function wireEvents() {
   document.getElementById("run-study-btn")?.addEventListener("click", saveActiveResults);
   document.getElementById("add-processing-btn")?.addEventListener("click", addProcessingWorkflow);
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
+  document.getElementById("sim-prepare-mbd").addEventListener("click", () => generateModelicaFromVehicle());
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
   document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
   document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);
@@ -12880,7 +12728,7 @@ function wireEvents() {
   document.getElementById("geometry-show-rear").addEventListener("change", (event) => {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
-  document.getElementById("reset-view-btn").addEventListener("click", resetVehicleView);
+  document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
@@ -12910,20 +12758,6 @@ function wireEvents() {
       state.activeStudyTab = button.dataset.studyTab;
       syncStudyTabs();
     });
-  });
-  document.querySelectorAll(".view-button[data-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.vehiclePreviewView = button.dataset.view;
-      if (state.vehiclePreviewView === "iso") {
-        state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;
-        state.vehiclePreviewPitch = DEFAULT_VEHICLE_PITCH;
-      }
-      syncViewButtons();
-      drawVehicleFromForm();
-    });
-  });
-  document.querySelector(".visual-stage")?.addEventListener("scroll", () => {
-    if (state.massSelectedPointId) queueMassPropertyEditorPosition();
   });
   wireSetupSplitter();
   document.querySelectorAll("[data-geometry-tab]").forEach((button) => {
