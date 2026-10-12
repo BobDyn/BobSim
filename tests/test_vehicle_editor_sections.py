@@ -7,6 +7,7 @@ import shutil
 import subprocess
 
 import pytest
+import yaml
 
 from app import app
 
@@ -89,3 +90,41 @@ assert(driveline.includes('<summary>Halfshafts</summary>'));
         [node, "-e", script], input=json.dumps(app.config_payload("vehicle")),
         text=True, check=True,
     )
+
+
+def test_vehicle_patch_updates_aero_cells_without_replacing_arrays(tmp_path, monkeypatch) -> None:
+    from copy import deepcopy
+    from app import data_services
+
+    original = app.config_payload("vehicle")["data"]
+    path = tmp_path / "vehicle.yml"
+    path.write_text(yaml.safe_dump(original))
+    monkeypatch.setattr(data_services, "_config_file_path", lambda spec: path)
+    monkeypatch.setattr(data_services, "config_summary", lambda spec: {"id": spec.id})
+    result = data_services.patch_config("vehicle", {
+        '["aero","front_ride_height_grid_m",0]': .037125,
+        '["aero","rear_ride_height_grid_m",1]': .06475,
+        '["aero","downforce_table_n",1,2]': 321.987654,
+    })
+    expected = deepcopy(original["aero"])
+    expected["front_ride_height_grid_m"][0] = .037125
+    expected["rear_ride_height_grid_m"][1] = .06475
+    expected["downforce_table_n"][1][2] = 321.987654
+    assert result["data"]["aero"] == expected
+    assert yaml.safe_load(path.read_text())["aero"] == expected
+
+
+@pytest.mark.parametrize("index", [-1, 5, "0", True, 1.5])
+def test_vehicle_patch_rejects_invalid_array_indices_without_writing(tmp_path, monkeypatch, index) -> None:
+    from app import data_services
+
+    original = app.config_payload("vehicle")["data"]
+    path = tmp_path / "vehicle.yml"
+    text = yaml.safe_dump(original)
+    path.write_text(text)
+    monkeypatch.setattr(data_services, "_config_file_path", lambda spec: path)
+    with pytest.raises(IndexError, match="Config array index"):
+        data_services.patch_config("vehicle", {
+            json.dumps(["aero", "front_ride_height_grid_m", index]): .04,
+        })
+    assert path.read_text() == text

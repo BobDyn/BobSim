@@ -363,7 +363,7 @@ def _decode_field_key(raw_key: str) -> tuple[PathPart, ...]:
         parts = json.loads(raw_key)
         if not isinstance(parts, list):
             raise TypeError("Config field path must be a list")
-        return tuple(int(part) if isinstance(part, int) else str(part) for part in parts)
+        return tuple(int(part) if type(part) is int else str(part) for part in parts)
     return tuple(raw_key.split("."))
 
 
@@ -642,15 +642,18 @@ def _set_nested(data: Any, path: tuple[PathPart, ...], value: Any) -> None:
     if not path:
         raise ValueError("Cannot replace config root through patch mode")
     current = data
-    for part in path[:-1]:
-        if not isinstance(current, dict):
-            raise TypeError("Cannot patch through a non-mapping value")
-        next_value = current.get(part)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            current[part] = next_value
-        current = next_value
-    current[path[-1]] = value
+    for index, part in enumerate(path):
+        if isinstance(current, list):
+            if type(part) is not int or not 0 <= part < len(current):
+                raise IndexError("Config array index must be an integer within the existing array")
+        elif not isinstance(current, dict):
+            raise TypeError("Cannot patch through a scalar value")
+        if index == len(path) - 1:
+            current[part] = value
+            return
+        if isinstance(current, dict) and not isinstance(current.get(part), (dict, list)):
+            current[part] = {}
+        current = current[part]
 
 
 def _field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:

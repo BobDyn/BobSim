@@ -2270,7 +2270,6 @@ function wireAeroControls() {
     event.currentTarget.setAttribute("aria-pressed", String(state.aeroReferenceView));
     drawVehicleFromForm();
   });
-
 }
 
 function powertrainToolsHtml() {
