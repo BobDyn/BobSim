@@ -1713,7 +1713,7 @@ function vehicleComponentEditorHtml(area) {
   state.vehicleComponentSelection[area.id] = selected?.key;
   const groups = [...new Set(entries.map((entry) => entry.group))];
   return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
-    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : '<p class="component-editor-note">Select a pickup in the diagram or choose a component below. Left side coordinates are mirrored to the right. X forward, Y left, Z up.</p>'}
+    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : infoHint("Geometry controls and coordinates", "Select a pickup in the diagram or choose a component. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.")}
     <div class="component-editor-selectors" data-setup-filter>
       <label>${area.id === "mass" ? "Assembly" : "Axle"}<select data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
@@ -1786,21 +1786,21 @@ function updateVehicleMassSummary(data) {
 function tireSectionHtml(area) {
   if (!TIRE_TABS.some((tab) => tab.id === state.activeTireTab)) state.activeTireTab = "setup";
   const tabs = `
-    <div class="tire-subtabs" role="tablist" aria-label="Tire setup views">
+    <div class="tire-subtabs view-tabs" role="group" aria-label="Tire setup views">
       ${TIRE_TABS.map((tab) => `
-        <button class="tire-subtab ${state.activeTireTab === tab.id ? "active" : ""}" data-tire-tab="${escapeHtml(tab.id)}" type="button">
+        <button class="tire-subtab ${state.activeTireTab === tab.id ? "active" : ""}" data-tire-tab="${escapeHtml(tab.id)}" aria-pressed="${state.activeTireTab === tab.id}" type="button">
           ${escapeHtml(tab.label)}
         </button>
       `).join("")}
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}<section class="tire-preview-conditions"><h4>Preview conditions</h4><p>Plot inputs only. Vehicle properties are unchanged.</p>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
+    return `${tabs}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
-  return `${tabs}<div class="tire-subtabs" role="group" aria-label="Tire axle">
+  return `${tabs}<div class="inspector-label">Axle</div><div class="tire-subtabs" role="group" aria-label="Tire axle">
     ${["front", "rear"].map((side) => `<button type="button" class="tire-subtab ${side === (state.activeTireAxle || "front") ? "active" : ""}" data-tire-axle="${side}" aria-pressed="${side === (state.activeTireAxle || "front")}">${humanizeToken(side)}</button>`).join("")}
     </div>${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
-      ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "") })))}
+      ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "").replace(/^./, (letter) => letter.toUpperCase()) })))}
     </section>`).join("")}`;
 }
 
@@ -2038,9 +2038,9 @@ function suspensionComponentForField(field) {
 function suspensionFieldSections(grouped) {
   const fields = Object.values(grouped).flat();
   const components = [["spring", "Spring"], ["damper", "Damper"], ["stabar", "Anti-roll bar"]];
-  return `<div class="tire-subtabs" aria-label="Suspension axle">${["front", "rear"].map((axle) =>
+  return `<div class="inspector-label">Axle</div><div class="tire-subtabs" role="group" aria-label="Suspension axle">${["front", "rear"].map((axle) =>
     `<button type="button" class="tire-subtab" data-suspension-axle="${axle}">${humanizeToken(axle)}</button>`).join("")}</div>
-    <div class="tire-subtabs" aria-label="Suspension component">${components.map(([key, label]) =>
+    <div class="inspector-label">Component</div><div class="tire-subtabs" role="group" aria-label="Suspension component">${components.map(([key, label]) =>
       `<button type="button" class="tire-subtab" data-suspension-component="${key}">${label}</button>`).join("")}</div>
     ${["front", "rear"].map((axle) => components.map(([key, label]) => {
       const selected = fields.filter((field) => fieldPathString(field).startsWith(`${axle}.`) && suspensionComponentForField(field) === key);
@@ -2219,7 +2219,7 @@ function aeroSectionHtml(area) {
     <div class="aero-config-panel">
       <div class="field-grid">${settings.map(fieldControl).join("")}</div>
       ${fallback ? `<details class="component-details"${data.front?.tire?.template && data.rear?.tire?.template ? " hidden" : ""}><summary>Legacy tire fallback</summary>${fieldControl(fallback)}</details>` : ""}
-      <div class="tire-subtabs" role="group" aria-label="Aero view" data-setup-filter>
+      <div class="tire-subtabs view-tabs" role="group" aria-label="Aero view" data-setup-filter>
         <button type="button" class="tire-subtab ${!state.aeroReferenceView ? "active" : ""}" data-aero-view="maps" aria-pressed="${!state.aeroReferenceView}">Maps</button>
         <button type="button" class="tire-subtab ${state.aeroReferenceView ? "active" : ""}" data-aero-view="references" aria-pressed="${state.aeroReferenceView}">Reference points</button>
       </div>
@@ -2233,7 +2233,7 @@ function aeroSectionHtml(area) {
       </div>
       <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
       </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
-        <p class="field-help">Vehicle coordinates. Origin: average of the front contact patches. Right ride-height points mirror the left.</p>
+        ${infoHint("Aero coordinates and controls", "Origin: average of the front contact patches. Right ride-height points mirror the left. Drag to rotate, scroll to zoom, Ctrl-drag to pan. Double-click resets the view.")}
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
       </section>
     </div>
@@ -2763,10 +2763,14 @@ function fieldLabelHtml(field) {
   return `${object}<label><span>${escapeHtml(fieldPropertyLabel(field))}</span>${meta}</label>`;
 }
 
+function infoHint(label, text) {
+  return `<details class="info-hint"><summary aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">i</summary><div class="info-hint-content">${escapeHtml(text)}</div></details>`;
+}
+
 function fieldHelpHtml(field) {
   const help = field.disabled ? field.placeholder : fieldHelpText(field);
   return help
-    ? `<small class="field-placeholder-note">${escapeHtml(help)}</small>`
+    ? infoHint(`${field.label} information`, help)
     : "";
 }
 
@@ -4374,7 +4378,6 @@ function workflowCard(workflow) {
           ${responseModelPicker(workflow)}
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
-        ${!canRunStandardWorkflow(workflow) && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
         ${simulationVisualHtml(workflow)}
         <details class="simulation-details">
           <summary>Run details</summary>
@@ -4457,7 +4460,7 @@ function simulationVisualHtml(workflow) {
   }
   return `<figure class="simulation-visual">
     <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg>
-    <figcaption><span>Schematic</span>${escapeHtml(caption)}</figcaption>
+    <figcaption>${infoHint("About this analysis", caption)}</figcaption>
   </figure>`;
 }
 
@@ -5725,9 +5728,8 @@ function updateSimConfigStatus() {
     status.textContent = "Loading run configuration.";
     return;
   }
-  status.textContent = state.dirtySimConfig
-    ? "Run config has unapplied edits."
-    : `Editing ${state.simConfigPayload.label || workflow.label} config.`;
+  status.textContent = state.dirtySimConfig ? "Unsaved changes" : "";
+  document.getElementById("apply-sim-config-btn").hidden = !state.dirtySimConfig;
 }
 
 function renderOutputs(workflow) {
@@ -5882,7 +5884,7 @@ function renderJobs() {
   runButton.textContent = !canRun
     ? "Simulation locked"
     : workflow
-    ? state.dirtySimConfig ? "Apply + run" : runVerb
+    ? runVerb
     : "No Workflow";
   runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
@@ -8909,7 +8911,6 @@ function drawAeroReferencePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
   drawCanvasText(ctx, "Aero reference points", 28, 28, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Drag to rotate · Scroll to zoom · Ctrl-drag to pan · Double-click to reset", 28, 49, { size: 11, color: palette.muted });
   const model = filterVehicleModel(buildVehicleGeometry(data), sectionFocus("geometry"));
   const refs = [
     { id: "origin", label: "Origin", point: [0, 0, 0], color: palette.muted },

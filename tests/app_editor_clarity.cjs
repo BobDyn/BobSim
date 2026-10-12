@@ -5,6 +5,12 @@ const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents(
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
+const hint = infoHint('Geometry help', '<script> & coordinates');
+assert.match(hint, /<details class="info-hint">/);
+assert.match(hint, /aria-label="Geometry help"/);
+assert.match(hint, /&lt;script&gt; &amp; coordinates/);
+assert.equal(hint.includes('<script>'),false);
+assert.equal(hint.includes('<details class="info-hint" open'),false);
 fieldControl = f => '<input data-field="'+ f.path.join('.') +'">';
 currentVehicleFormData = () => ({front:{tire:{template:'front.tir'}},rear:{tire:{template:'rear.tir'}}});
 state.tireTemplates = {templates:[{id:'front.tir',label:'Front tire'},{id:'rear.tir',label:'Rear tire'}]};

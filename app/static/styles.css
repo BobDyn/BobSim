@@ -4760,3 +4760,75 @@ summary:focus-visible {
 }
 
 #mass-view-buttons[hidden] { display: none; }
+
+/* Views use tabs. Component choices use equal-width segments. */
+.tire-subtabs {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+.view-tabs {
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+.view-tabs .tire-subtab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+.view-tabs .tire-subtab.active {
+  border-bottom-color: var(--blue);
+}
+.inspector-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.info-hint {
+  position: relative;
+  display: inline-block;
+  width: fit-content;
+}
+.info-hint summary {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.info-hint summary::-webkit-details-marker { display: none; }
+.info-hint summary:focus-visible { outline: 2px solid var(--blue); }
+.info-hint-content {
+  position: absolute;
+  top: 25px;
+  left: 0;
+  z-index: 20;
+  width: 240px;
+  max-width: 60vw;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 5px 16px #0003;
+}
+
+.vehicle-component-editor .field-object-label,
+.powertrain-subsystem-panel .field-object-label {
+  display: none;
+}
+.sim-config-status:empty,
+#sim-readiness:empty {
+  display: none;
+}

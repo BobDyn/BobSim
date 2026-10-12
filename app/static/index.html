@@ -104,7 +104,7 @@
                 </div>
               </div>
               <div id="workflow-guide" class="workflow-guide" hidden></div>
-              <div id="geometry-tabs" class="tire-subtabs" aria-label="Geometry views" hidden>
+              <div id="geometry-tabs" class="tire-subtabs view-tabs" aria-label="Geometry views" hidden>
                 <button class="tire-subtab active" data-geometry-tab="setup" type="button" aria-pressed="true">Setup</button>
                 <button class="tire-subtab" data-geometry-tab="kinematics" type="button" aria-pressed="false">Kinematics</button>
               </div>
@@ -436,7 +436,7 @@
         <div id="setup-panel" class="panel active">
           <div class="sim-setup-shell">
             <details class="sim-config-tools">
-              <summary>Saved run configs</summary>
+              <summary>Presets</summary>
               <div class="sim-config-library">
                 <div class="sim-config-row">
                   <select id="sim-config-picker" class="config-picker"></select>
@@ -445,13 +445,13 @@
                 </div>
                 <div class="sim-config-row">
                   <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
-                  <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
+                  <button id="save-sim-config-btn" class="run-button" type="button">Save preset</button>
                 </div>
               </div>
             </details>
 
             <div class="sim-config-row">
-              <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply edits</button>
+              <button id="apply-sim-config-btn" class="ghost-button" type="button" hidden>Apply edits</button>
               <button id="sim-prepare-mbd" class="ghost-button" type="button" hidden>Prepare MBD model</button>
             </div>
             <p id="sim-readiness" class="field-help" role="status"></p>
