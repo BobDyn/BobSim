@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
+from functools import lru_cache
 import math
 from pathlib import Path
 from typing import Any
@@ -516,6 +518,13 @@ def _mf52_curves(tire: dict[str, Any], fz: float, gamma: float) -> dict[str, Any
     }
 
 
+@lru_cache(maxsize=2)
+def _cached_mf52_curves(
+    coefficients: tuple[tuple[str, float | str], ...], fz: float, gamma: float,
+) -> dict[str, Any]:
+    return _mf52_curves(dict(coefficients), fz, gamma)
+
+
 def tire_eval_payload(
     root: Path,
     vehicle: dict[str, Any] | None = None,
@@ -575,7 +584,7 @@ def tire_eval_payload(
                         "lgay": _num(tire, "LGAY", 1.0),
                     },
                 },
-                "curves": _mf52_curves(tire, fz, math.radians(camber_deg)),
+                "curves": deepcopy(_cached_mf52_curves(tuple(sorted(tire.items())), fz, math.radians(camber_deg))),
             }
         )
     return {
