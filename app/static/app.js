@@ -12464,11 +12464,31 @@ function addAxleSide(axleName, sideName, axle, architecture, addPoint, addLink) 
     }
   }
   if (hasBellcrank) {
-    addLink(`${prefix}-bellcrank-pivot`, `${prefix}-bellcrank-rod`, "bellcrank", 5, linkMeta("bellcrank", true));
-    addLink(`${prefix}-bellcrank-rod`, `${prefix}-bellcrank-shock`, "bellcrank", 5, linkMeta("bellcrank", true));
-    addLink(`${prefix}-bellcrank-shock`, `${prefix}-bellcrank-stabar`, "bellcrank", 5, linkMeta("bellcrank", true));
-    addLink(`${prefix}-bellcrank-stabar`, `${prefix}-bellcrank-pivot`, "bellcrank", 5, linkMeta("bellcrank", true));
+    const outline = ["pivot", ...bellcrankOutlineOrder(bellcrank, bellcrankSocketRoles), "pivot"];
+    for (let i = 1; i < outline.length; i++) {
+      addLink(`${prefix}-bellcrank-${outline[i-1]}`, `${prefix}-bellcrank-${outline[i]}`, "bellcrank", 5, linkMeta("bellcrank", true));
+    }
   }
+
+}
+
+function bellcrankOutlineOrder(bellcrank, roles) {
+  // Match modelica_generator._pickup_order on the left geometry before mirroring.
+  if (!toPoint(bellcrank.pivot_m) || !toPoint(bellcrank.axis) || !Math.hypot(...bellcrank.axis)
+      || roles.some(role => !toPoint(bellcrank.pickups_m?.[role]))) return roles;
+  const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+  const normal = bellcrank.axis.map(value => value / Math.hypot(...bellcrank.axis));
+  const reference = Math.abs(normal[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1];
+  const projected = reference.map((value, i) => value - dot(reference, normal) * normal[i]);
+  const e1 = projected.map(value => value / Math.hypot(...projected));
+  const e2 = [normal[1]*e1[2] - normal[2]*e1[1], normal[2]*e1[0] - normal[0]*e1[2], normal[0]*e1[1] - normal[1]*e1[0]];
+  const angle = Object.fromEntries(roles.map(role => {
+    const offset = bellcrank.pickups_m[role].map((value, i) => value - bellcrank.pivot_m[i]);
+    return [role, Math.atan2(dot(offset, e2), dot(offset, e1))];
+  }));
+  const anchor = roles.reduce((a, b) => bellcrank.pickups_m[a][2] <= bellcrank.pickups_m[b][2] ? a : b);
+  const sweep = role => ((angle[role] - angle[anchor]) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI);
+  return [...roles].sort((a, b) => sweep(a) - sweep(b));
 }
 
 function toPoint(raw) {

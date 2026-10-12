@@ -1813,3 +1813,33 @@ def test_architecture_defaults_read_templates_once(monkeypatch):
     for axle in ("front", "rear"):
         assert data[axle]["suspension"]["wheel_center_m"]
         assert "bellcrank" in data[axle]["actuation"]
+
+
+def test_bellcrank_visual_order_matches_modelica_pickup_order():
+    import subprocess
+    from app.modelica_generator import _pickup_order
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the geometry preview check")
+    cases = []
+    for path in (app.ROOT / "common/vehicle_templates").glob("*.yml"):
+        vehicle = yaml.safe_load(path.read_text())
+        for axle in ("front", "rear"):
+            bellcrank = vehicle[axle]["actuation"].get("bellcrank")
+            if not bellcrank:
+                continue
+            roles = list(bellcrank["pickups_m"])
+            expected = _pickup_order(bellcrank["pickups_m"], bellcrank["pivot_m"], bellcrank["axis"], axle)
+            cases.append([bellcrank, roles, sorted(roles, key=expected.get)])
+    source = (app.ROOT / "app/static/app.js").read_text()
+    helpers = source[source.index("function bellcrankOutlineOrder("):source.index("function pointColor(")]
+    script = helpers + """
+const assert = require('node:assert/strict');
+for (const [bellcrank, roles, expected] of JSON.parse(require('node:fs').readFileSync(0, 'utf8'))) {
+  assert.deepEqual(bellcrankOutlineOrder(bellcrank, roles), expected);
+}
+assert.deepEqual(bellcrankOutlineOrder({}, ['rod', 'shock']), ['rod', 'shock']);
+"""
+    assert cases
+    subprocess.run([node, "-e", script], input=json.dumps(cases), text=True, check=True)
