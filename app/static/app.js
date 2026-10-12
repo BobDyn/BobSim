@@ -1,6 +1,5 @@
 const savedRotationSensitivity = Number(localStorage.getItem("bobsim-rotation-sensitivity"));
 const savedSetupPaneWidth = Number(localStorage.getItem("bobsim-setup-pane-width"));
-const savedGeometryPlotHeight = Number(localStorage.getItem("bobsim-geometry-plot-height"));
 const savedGeometryShowFront = localStorage.getItem("bobsim-geometry-show-front");
 const savedGeometryShowRear = localStorage.getItem("bobsim-geometry-show-rear");
 const savedGeometryPlotSelections = (() => {
@@ -40,9 +39,6 @@ const MAX_TIRE_SURFACE_ZOOM = 7.5;
 const DEFAULT_SETUP_PANE_WIDTH = 320;
 const MIN_SETUP_PANE_WIDTH = 260;
 const MAX_SETUP_PANE_WIDTH = 620;
-const DEFAULT_GEOMETRY_PLOT_HEIGHT = 252;
-const MIN_GEOMETRY_PLOT_HEIGHT = 150;
-const MAX_GEOMETRY_PLOT_HEIGHT = 560;
 const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
@@ -112,6 +108,9 @@ const state = {
   loadingStudyConfigFor: null,
   activeParamGroup: null,
   vehicleStartOpen: true,
+  vehicleStartError: "",
+  vehicleStartLoading: true,
+  vehicleStartLoadFailed: false,
   dirtyVehicle: false,
   vehicleSaving: false,
   saveStatusMessage: "",
@@ -140,9 +139,7 @@ const state = {
   setupPaneWidth: Number.isFinite(savedSetupPaneWidth) && savedSetupPaneWidth > 0
     ? savedSetupPaneWidth
     : DEFAULT_SETUP_PANE_WIDTH,
-  geometryPlotHeight: Number.isFinite(savedGeometryPlotHeight) && savedGeometryPlotHeight > 0
-    ? savedGeometryPlotHeight
-    : DEFAULT_GEOMETRY_PLOT_HEIGHT,
+  activeGeometryTab: "setup",
   vehicleDrag: null,
   geometryScene: null,
   geometryHoverPointId: null,
@@ -176,7 +173,6 @@ const state = {
   architectureModalHoverId: null,
   architectureDrag: null,
   setupResize: null,
-  geometryPlotResize: null,
   undoStack: [],
   pendingUndoSnapshot: null,
   cleanVehicleSignature: "",
@@ -798,7 +794,7 @@ function setSaveStatus(message) {
   state.saveStatusMessage = message || "";
   const saveStatus = document.getElementById("save-status");
   if (saveStatus) {
-    saveStatus.textContent = state.saveStatusMessage || (state.dirtyVehicle ? "Unsaved" : "Saved");
+    saveStatus.textContent = state.saveStatusMessage || (state.dirtyVehicle ? "Unsaved changes" : activeVehicleConfigReady() ? "Saved" : "Save to library");
   }
 }
 
@@ -849,8 +845,6 @@ function render() {
 }
 
 function renderTopbar() {
-  const repo = state.status?.repo;
-  document.getElementById("repo-root").textContent = repo?.root ? "Local BobSim workspace" : "";
   const toolchainButton = document.getElementById("toolchain-settings-btn");
   if (toolchainButton) {
     const toolchain = openmodelicaToolchain();
@@ -913,7 +907,7 @@ function modelicaDefinitionTone(stack) {
 }
 
 function renderThemeButton() {
-  document.getElementById("theme-toggle-btn").textContent = state.dark ? "Light" : "Dark";
+  document.getElementById("theme-toggle-btn").textContent = state.dark ? "Light theme" : "Dark theme";
 }
 
 function actionBusy(actionKey) {
@@ -964,8 +958,25 @@ function renderVehicleControls() {
 function renderVehicleStartModal() {
   const modal = document.getElementById("vehicle-start-modal");
   if (!modal) return;
+  const wasOpen = !modal.hidden;
   modal.hidden = !state.vehicleStartOpen;
-  if (!state.vehicleStartOpen) return;
+  document.querySelector(".app-shell").inert = state.vehicleStartOpen;
+  document.body.classList.toggle("vehicle-start-open", state.vehicleStartOpen);
+  if (!state.vehicleStartOpen) {
+    if (wasOpen) document.querySelector(".rail-item.active")?.focus();
+    return;
+  }
+  modal.setAttribute("aria-busy", String(state.vehicleStartLoading));
+  document.getElementById("start-loading").hidden = !state.vehicleStartLoading;
+  const content = document.getElementById("start-content");
+  content.hidden = state.vehicleStartLoading || state.vehicleStartLoadFailed;
+  content.inert = content.hidden;
+  const status = document.getElementById("start-status");
+  status.textContent = state.vehicleStartError;
+  status.hidden = !state.vehicleStartError;
+  document.getElementById("start-retry-btn").hidden = !state.vehicleStartLoadFailed || state.vehicleStartLoading;
+  document.getElementById("start-current-name").textContent = state.vehiclePayload
+    ? activeVehicleName() : state.vehicleStartError ? "Vehicle unavailable" : "Loading vehicle…";
 
   const loadPicker = document.getElementById("start-load-picker");
   const templatePicker = document.getElementById("start-template-picker");
@@ -1005,14 +1016,14 @@ function renderVehicleStartModal() {
   if (nameInput && !nameInput.value) nameInput.value = nextVehicleName();
   if (nameInput) nameInput.disabled = startBusy;
   setActionButton(importButton, {
-    label: "Import YAML",
+    label: "Import vehicle YAML",
     busy: actionBusy("start-import"),
     busyLabel: "Importing",
     disabled: startBusy,
   });
   setActionButton(activeButton, {
-    label: "Continue Active File",
-    disabled: startBusy,
+    label: "Open vehicle",
+    disabled: startBusy || !state.vehiclePayload,
   });
 }
 
@@ -1089,8 +1100,8 @@ function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
 }
 
 function simulationLockedMessage() {
-  if (!activeVehicleConfigReady()) return "Save this vehicle config before viewing Simulation.";
-  if (!vehicleDefinitionCurrent()) return "Write the saved vehicle definition to MBD before viewing Simulation.";
+  if (!activeVehicleConfigReady()) return "Save this vehicle to your library before running a simulation.";
+  if (!vehicleDefinitionCurrent()) return "Prepare the multibody (MBD) model from your saved vehicle before running a simulation.";
   if (!externalToolchainAvailable()) return state.status?.external_toolchain?.reason || "Simulation runner unavailable.";
   return "Simulation is available.";
 }
@@ -1101,53 +1112,12 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
   return "";
 }
 
-function geometryPlotHeightBounds() {
-  const stage = document.querySelector(".visual-stage");
-  const height = stage?.getBoundingClientRect().height || 0;
-  const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
-  const maxByViewport = height > 0
-    ? height - toolbarHeight - 260
-    : MAX_GEOMETRY_PLOT_HEIGHT;
-  const max = Math.max(
-    MIN_GEOMETRY_PLOT_HEIGHT,
-    Math.min(MAX_GEOMETRY_PLOT_HEIGHT, maxByViewport),
-  );
-  return { min: MIN_GEOMETRY_PLOT_HEIGHT, max };
-}
-
-function setGeometryPlotHeight(height, { persist = false, redraw = true } = {}) {
-  const { min, max } = geometryPlotHeightBounds();
-  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, min, max);
-  state.geometryPlotHeight = clamped;
-  applyGeometryPlotHeight(clamped, min, max);
-  if (persist) localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(clamped)));
-  if (redraw) requestAnimationFrame(drawVehicleFromForm);
-}
-
-function applyGeometryPlotHeight(height = state.geometryPlotHeight, min, max) {
-  const stage = document.querySelector(".visual-stage");
-  if (!stage) return;
-  const bounds = min === undefined || max === undefined ? geometryPlotHeightBounds() : { min, max };
-  const clamped = clamp(Number(height) || DEFAULT_GEOMETRY_PLOT_HEIGHT, bounds.min, bounds.max);
-  state.geometryPlotHeight = clamped;
-  stage.style.setProperty("--geometry-plot-height", `${Math.round(clamped)}px`);
-  const splitter = document.getElementById("geometry-plot-splitter");
-  if (splitter) {
-    splitter.setAttribute("aria-valuemin", String(Math.round(bounds.min)));
-    splitter.setAttribute("aria-valuemax", String(Math.round(bounds.max)));
-    splitter.setAttribute("aria-valuenow", String(Math.round(clamped)));
-  }
-}
-
 function renderMode() {
   document.querySelectorAll(".rail-item").forEach((button) => {
-    const disabled = button.dataset.view === "standard" && !canUseStandardSim();
-    button.disabled = disabled;
-    button.classList.toggle("disabled", disabled);
-    button.classList.toggle("active", button.dataset.view === state.view && !disabled);
-    if (button.dataset.view === "standard") {
-      button.title = disabled ? simulationLockedMessage() : "";
-    }
+    const active = button.dataset.view === state.view;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   document.querySelectorAll(".screen").forEach((screen) => {
     screen.classList.toggle("active", screen.id === `${state.view}-view`);
@@ -1158,8 +1128,8 @@ function renderRailActions() {
   const primary = document.getElementById("rail-primary-btn");
   const secondary = document.getElementById("rail-secondary-btn");
   if (state.view === "setup") {
-    secondary.classList.add("run-button");
-    secondary.classList.remove("ghost-button");
+    secondary.classList.add("ghost-button");
+    secondary.classList.remove("run-button");
     const needsVehicleConfig = !activeVehicleConfigReady();
     const canSaveVehicle = Boolean(state.vehiclePayload) && (state.dirtyVehicle || needsVehicleConfig);
     setActionButton(primary, {
@@ -1240,8 +1210,10 @@ function renderVehicleLibrary() {
 
 function openVehicleStartModal() {
   state.vehicleStartOpen = true;
-  document.querySelector(".model-menu")?.removeAttribute("open");
+  state.vehicleStartError = "";
+  document.querySelectorAll(".model-menu[open]").forEach((menu) => { menu.open = false; });
   renderVehicleStartModal();
+  document.getElementById("start-active-btn").focus();
 }
 
 function selectedVehicleLibraryItem() {
@@ -1339,17 +1311,9 @@ function setupGuide(areaId = state.activeParamGroup) {
 
 function renderSetupFocus() {
   const guide = setupGuide();
-  const stepLabel = document.getElementById("setup-step-label");
-  const setupTitle = document.getElementById("setup-title");
-  const setupFocus = document.getElementById("setup-focus");
-  if (stepLabel) stepLabel.textContent = `Step ${guide.step} of ${guide.total}`;
-  if (setupTitle) setupTitle.textContent = guide.title;
-  if (setupFocus) setupFocus.textContent = guide.focus;
-  document.getElementById("vehicle-preview-title").textContent = guide.figure || guide.title;
-  document.getElementById("vehicle-preview-subtitle").textContent = guide.purpose || "";
-  const heading = document.getElementById("editor-title");
-  if (heading) heading.textContent = `${String(guide.step).padStart(2, "0")} ${guide.title}`;
-  renderSetupStepActions();
+  document.getElementById("setup-title").textContent = activeVehicleName();
+  document.getElementById("vehicle-preview-title").textContent = guide.figure.replace(/\.$/, "");
+  document.getElementById("editor-title").textContent = guide.title;
   renderWorkflowGuide(guide);
 }
 
@@ -1362,23 +1326,6 @@ function activeParameterIndex(areas = setupAreas()) {
   return index >= 0 ? index : 0;
 }
 
-function renderSetupStepActions() {
-  const areas = setupAreas();
-  const index = activeParameterIndex(areas);
-  const previous = areas[index - 1];
-  const next = areas[index + 1];
-  const previousButton = document.getElementById("setup-prev-btn");
-  const nextButton = document.getElementById("setup-next-btn");
-  if (previousButton) {
-    previousButton.disabled = !previous;
-    previousButton.textContent = previous ? `Previous: ${setupGuide(previous.id).title}` : "Previous";
-  }
-  if (nextButton) {
-    nextButton.disabled = !next;
-    nextButton.textContent = next ? `Next: ${setupGuide(next.id).title}` : "Next";
-  }
-}
-
 function navigateParameterStep(delta) {
   const areas = setupAreas();
   const index = activeParameterIndex(areas);
@@ -1389,7 +1336,7 @@ function navigateParameterStep(delta) {
 function handleSetupStageKeys(event) {
   if (state.view !== "setup") return;
   if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter, #geometry-plot-splitter")) return;
+  if (isTextEntryTarget(event.target) || event.target?.closest?.("#setup-splitter")) return;
   if (state.architectureModalOpen || state.vehicleStartOpen || document.querySelector(".model-menu[open]")) return;
   event.preventDefault();
   navigateParameterStep(event.key === "ArrowRight" ? 1 : -1);
@@ -1963,12 +1910,10 @@ function suspensionFieldSections(grouped) {
 }
 
 function axleFieldBlock(axle, grouped) {
-  const count = grouped.reduce((total, [, fields]) => total + fields.length, 0);
   return `
     <section class="axle-field-block field-group-${axle}" data-axle-block="${escapeHtml(axle)}">
       <div class="axle-field-title">
         <span>${humanizeToken(axle)} axle</span>
-        <small>${count}</small>
       </div>
       <div class="axle-field-groups">
         ${grouped.map(([group, fields]) => fieldSubsectionHtml(group, fields, { nested: true })).join("")}
@@ -1982,7 +1927,6 @@ function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
     <section class="field-subsection expanded ${fieldGroupClass(group)}${nested ? " nested-subsection" : ""}">
       <div class="field-subsection-title">
         <span>${escapeHtml(humanizeToken(group))}</span>
-        <small>${fields.length}</small>
       </div>
       <div class="field-grid">${fields.map(fieldControl).join("")}</div>
     </section>
@@ -2098,17 +2042,12 @@ function powertrainSectionHtml(area) {
             type="button"
           >
             <span>${escapeHtml(subsystem.label)}</span>
-            <small>${subsystem.fields.length}</small>
           </button>
         `).join("")}
       </div>
       <div class="powertrain-subsystem-panels">
         ${subsystems.map((subsystem) => `
           <section class="powertrain-subsystem-panel" data-powertrain-panel="${escapeHtml(subsystem.id)}"${state.activePowertrainSubsystem === subsystem.id ? "" : " hidden"}>
-            <div class="powertrain-subsystem-head">
-              <span>${escapeHtml(subsystem.label)}</span>
-              <small>${escapeHtml(profile.id)}</small>
-            </div>
             ${subsystem.fields.length
               ? `<div class="field-grid">${subsystem.fields.map(fieldControl).join("")}</div>`
               : `<div class="area-empty">No ${escapeHtml(subsystem.label.toLowerCase())} specs are exposed for this architecture.</div>`}
@@ -2123,18 +2062,14 @@ function powertrainImplementationHtml(profile, field) {
   const choices = availablePowertrains();
   const key = field?.key || JSON.stringify(["powertrain", "implementation"]);
   return `
-    <div class="powertrain-implementation-card">
-      <div>
-        <span class="tool-label">Implementation</span>
-        <strong>${escapeHtml(profile.label)}</strong>
-      </div>
+    <label class="powertrain-implementation-card">
+      <span class="tool-label">Powertrain model</span>
       <select class="config-picker" data-config-path="${escapeHtml(key)}" data-kind="select" data-powertrain-implementation>
         ${choices.map((item) => `
           <option value="${escapeHtml(item.id)}"${item.id === profile.id ? " selected" : ""}>${escapeHtml(item.label)}</option>
         `).join("")}
       </select>
-      <span class="mini-pill ok">${escapeHtml(humanizeToken(profile.status))}</span>
-    </div>
+    </label>
   `;
 }
 
@@ -2419,9 +2354,8 @@ function fieldDisplayGroup(field) {
 
 function renderParameterTabs(areas) {
   const tabs = document.getElementById("parameter-tabs");
-  tabs.innerHTML = areas.map((area, index) => `
+  tabs.innerHTML = areas.map((area) => `
     <button class="parameter-tab ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}" type="button" title="${escapeHtml(setupGuide(area.id).focus)}">
-      <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="step-name">${escapeHtml(setupGuide(area.id).title)}</span>
     </button>
   `).join("");
@@ -3101,13 +3035,15 @@ async function loadVehicleFromStart() {
   const sourceId = document.getElementById("start-load-picker")?.value;
   if (!sourceId || startActionBusy()) return;
   state.busyAction = "start-load";
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     await loadVehicleSourceById(sourceId);
     state.vehicleStartOpen = false;
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not load vehicle");
+    state.vehicleStartError = error.message || "Could not load vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === "start-load") state.busyAction = null;
@@ -3120,6 +3056,7 @@ async function createVehicleFromStart() {
   const name = document.getElementById("start-vehicle-name")?.value.trim() || nextVehicleName();
   if (!templateId || startActionBusy()) return;
   state.busyAction = "start-create";
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     state.vehiclePayload = await api("/api/vehicle-template", {
@@ -3157,7 +3094,8 @@ async function createVehicleFromStart() {
     if (saveName) saveName.value = name;
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not create vehicle");
+    state.vehicleStartError = error.message || "Could not create vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === "start-create") state.busyAction = null;
@@ -3168,6 +3106,7 @@ async function createVehicleFromStart() {
 async function importVehicleFile(file, { actionKey = "start-import" } = {}) {
   if (!file || startActionBusy()) return;
   state.busyAction = actionKey;
+  state.vehicleStartError = "";
   renderVehicleStartModal();
   try {
     const text = await file.text();
@@ -3193,7 +3132,8 @@ async function importVehicleFile(file, { actionKey = "start-import" } = {}) {
     document.getElementById("save-vehicle-name").value = file.name.replace(/\.(ya?ml)$/i, "");
     render();
   } catch (error) {
-    setSaveStatus(error.message || "Could not import vehicle");
+    state.vehicleStartError = error.message || "Could not import vehicle";
+    setSaveStatus(state.vehicleStartError);
     renderVehicleStartModal();
   } finally {
     if (state.busyAction === actionKey) state.busyAction = null;
@@ -3840,9 +3780,16 @@ async function resetOpenModelicaToolchain() {
 
 function renderStandard() {
   if (canUseStandardSim()) ensureSelectedSimConfigLoaded();
-  const workflow = canUseStandardSim() ? selectedWorkflow() : null;
+  const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
-    `${activeVehicleName()} | ${vehicleWorkspaceStatusLabel()} | ${workflow?.label || simulationLockedMessage()}`;
+    activeVehicleName();
+  const notice = document.getElementById("simulation-notice");
+  notice.hidden = canUseStandardSim();
+  notice.textContent = notice.hidden ? "" : simulationLockedMessage();
+  const nextStep = document.getElementById("simulation-next-btn");
+  nextStep.hidden = notice.hidden;
+  nextStep.textContent = activeVehicleConfigReady() && vehicleDefinitionCurrent()
+    ? "OpenModelica settings" : "Go to setup";
   syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
@@ -3852,7 +3799,7 @@ function renderStandard() {
 
 function syncSimTabs() {
   if (!["setup", "jobs"].includes(state.activeSimTab)) state.activeSimTab = "setup";
-  document.querySelectorAll(".tab").forEach((item) => {
+  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((item) => {
     item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
   });
   document.querySelectorAll(".panel").forEach((panel) => {
@@ -3863,15 +3810,11 @@ function syncSimTabs() {
 function renderWorkflows() {
   const workflows = standardWorkflows();
   const grid = document.getElementById("workflow-grid");
-  if (!canUseStandardSim()) {
-    grid.innerHTML = `<div class="empty-state">${escapeHtml(simulationLockedMessage())}</div>`;
-    return;
-  }
+  const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
+    (details) => details.closest("[data-workflow]").dataset.workflow));
   grid.innerHTML = workflows.map(workflowCard).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
-    card.addEventListener("click", async () => {
-      await selectStandardWorkflow(card.dataset.workflow);
-    });
+    card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
   });
   grid.querySelectorAll("[data-configure-workflow]").forEach((button) => {
     button.addEventListener("click", async (event) => {
@@ -3953,59 +3896,39 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
   if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
   if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
     ? "Run log"
-    : meta.summary || workflowDescription(workflow);
+    : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
   if (state.simModalOpen && workflow?.config_id && state.simConfigPayload?.id !== workflow.config_id) {
     ensureSelectedSimConfigLoaded();
   }
 }
 
 function workflowCard(workflow) {
-  const runLabel = workflow.actions.length > 1 ? "Build + run" : "Run";
   const meta = simWorkflowMeta(workflow);
   const canReview = workflowReviewAvailable(workflow);
-  const reviewTitle = canReview ? "Open archived simulation results" : "Run this simulation to create a local archive entry";
-  const canConfigure = workflowAvailable(workflow);
-  const configureTitle = canConfigure ? "Configure simulation" : workflowUnavailableMessage(workflow);
+  const canConfigure = canRunStandardWorkflow(workflow);
   return `
-    <article class="workflow-card simulation-card ${workflow.id === state.selectedWorkflowId ? "active" : ""} ${canConfigure ? "" : "disabled"}" data-workflow="${workflow.id}">
-      <div class="simulation-card-figure">
-        ${simFigureHtml(workflow)}
-      </div>
+    <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
       <div class="simulation-card-body">
-        <div class="card-head">
-          <div>
-            <div class="card-title">${escapeHtml(meta.title || workflow.label)}</div>
-            <div class="card-meta">${escapeHtml(workflowModelLabel(workflow))}</div>
-            <div class="card-meta">${escapeHtml(meta.summary || workflowDescription(workflow))}</div>
+        <div class="simulation-card-heading">
+          <h3>${escapeHtml(meta.title || workflow.label)}</h3>
+          <span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>
+        </div>
+        <p class="card-meta">${escapeHtml(meta.summary)}</p>
+        <details class="simulation-details">
+          <summary>Run details</summary>
+          <div class="simulation-detail-grid">
+            ${simDetailBlock("Procedure", meta.sequence)}
+            ${simDetailBlock("Parameters", meta.parameters)}
+            ${simDetailBlock("Outputs", meta.outputs)}
           </div>
-          <span class="mini-pill">${runLabel}</span>
-        </div>
-        <div class="simulation-explanation">
-          ${meta.explanation.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
-        </div>
-        <div class="simulation-detail-grid">
-          ${simDetailBlock("What happens", meta.sequence)}
-          ${simDetailBlock("Key parameters", meta.parameters)}
-          ${simDetailBlock("Outputs", meta.outputs)}
-        </div>
-        <div class="card-actions">
-          ${architectureStatusPill()}
-          <button class="ghost-button simulation-review-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}"${canReview ? "" : " disabled"} title="${escapeHtml(reviewTitle)}">Review</button>
-          <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(configureTitle)}">Configure</button>
-        </div>
+        </details>
+      </div>
+      <div class="card-actions">
+        ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(standardWorkflowLockedMessage(workflow) || "Configure simulation")}">Configure</button>
       </div>
     </article>
   `;
-}
-
-function architectureStatusPill() {
-  if (!activeVehicleConfigReady()) {
-    return `<span class="mini-pill missing" title="Save a vehicle before running simulations">No saved vehicle</span>`;
-  }
-  if (!vehicleDefinitionCurrent()) {
-    return `<span class="mini-pill missing" title="Save Vehicle and Write to MBD before running simulations">Architecture stale</span>`;
-  }
-  return `<span class="mini-pill ok" title="Current architecture is saved and written to MBD">${escapeHtml(activeArchitecture())}</span>`;
 }
 
 function workflowDescription(workflow) {
@@ -4027,120 +3950,40 @@ function simWorkflowMeta(workflow) {
   const fallback = {
     title: workflow?.label || "Simulation",
     summary: "Configure the run, execute it against the active vehicle definition, then inspect generated logs and outputs.",
-    explanation: [
-      "This workflow uses the active vehicle definition and run-specific YAML to produce a repeatable simulation case.",
-    ],
     sequence: ["Load active vehicle definition", "Apply run configuration", "Execute workflow actions"],
     parameters: ["Solver and stop time", "Case-specific sweep values", "Report output paths"],
     outputs: ["Job log", "Registered reports and CSV files"],
-    steps: ["Vehicle is selected", "Configure run", "Run"],
   };
   return {
     "ramp-steer": {
       title: "Ramp Steer",
-      summary: "Open-loop steering ramp across speed and lateral-acceleration operating points.",
-      explanation: [
-        "RampSteerEval builds the full VehicleSim model, applies a prescribed handwheel ramp, and sweeps the requested velocity cases.",
-        "The run is useful for checking steering response shape, lateral acceleration build-up, yaw-rate response, and whether the vehicle stays inside expected handling limits.",
-      ],
+      summary: "Steering ramp across a range of speeds.",
       sequence: ["Build VehicleSim if needed", "Initialize the active vehicle record", "Sweep speed cases", "Apply steering ramp", "Collect report metrics"],
       parameters: ["Velocity isolines", "Handwheel ramp timing and amplitude", "Nonlinearity cutoff", "Solver tolerance and stop time"],
       outputs: ["Ramp steer PDF report", "Metrics CSV", "Job log with build and run output"],
-      steps: ["Vehicle is selected", "Set speed sweep", "Build + run"],
     },
     "steady-state": {
       title: "Steady State",
-      summary: "Closed-loop lateral acceleration map for settled cornering operating points.",
-      explanation: [
-        "SteadyStateEval asks the model to converge to target lateral-acceleration points across the configured operating range.",
-        "It is the browser-side doorway into balance, understeer behavior, control demand, and tire utilization at settled conditions.",
-      ],
+      summary: "Settled cornering across lateral-acceleration targets.",
       sequence: ["Build VehicleSim if needed", "Initialize each target condition", "Close the control loop", "Converge settled states", "Export metrics"],
       parameters: ["Target lateral-acceleration grid", "Velocity-specific Ay caps", "Convergence criteria", "Report and solver controls"],
       outputs: ["Steady-state PDF report", "Metrics CSV", "Settled-point job log"],
-      steps: ["Vehicle is selected", "Set target grid", "Build + run"],
     },
     transient: {
       title: "Transient",
-      summary: "Time-domain response to steering inputs such as step and sine events.",
-      explanation: [
-        "TransientEval runs the full vehicle forward in time with configured steering inputs and records the dynamic response.",
-        "This is the place to inspect yaw-rate gain, phase, overshoot, settling, and how quickly the chassis responds after the input changes.",
-      ],
+      summary: "Response to step and sine steering inputs.",
       sequence: ["Build VehicleSim if needed", "Apply input schedule", "Integrate the time response", "Capture response channels", "Generate summary files"],
       parameters: ["Input type and amplitude", "Input timing/frequency", "Initial speed", "Stop time, step size, and solver"],
       outputs: ["Transient PDF report", "Metrics CSV", "Time-response job log"],
-      steps: ["Vehicle is selected", "Set input cases", "Build + run"],
     },
     "four-post": {
       title: "Four Post",
-      summary: "Heave, roll, and vertical-force procedures for suspension and chassis response.",
-      explanation: [
-        "FourPostEval builds the FourPostSim model and drives the corners with configured vertical procedures.",
-        "It is focused on ride/suspension behavior rather than the full powertrain loop, so it can isolate heave, roll, spring/damper, and tire vertical-load behavior.",
-      ],
+      summary: "Suspension response to heave, roll, and corner loads.",
       sequence: ["Build FourPostSim if needed", "Initialize corner positions", "Apply vertical actuator procedures", "Sweep heave/roll/force cases", "Collect suspension metrics"],
       parameters: ["Corner input magnitudes", "Heave and roll sweeps", "Override rates and initial conditions", "Solver and output controls"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
-      steps: ["Vehicle is selected", "Set procedure", "Build + run"],
     },
   }[workflow?.id] || fallback;
-}
-
-function simFigureHtml(workflow) {
-  const id = workflow?.id || "generic";
-  if (id === "steady-state") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Second-order steady-state response">
-        <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-        <path class="axis" d="M34 104 H226 M42 116 V30"></path>
-        <path class="target" d="M34 58 H226"></path>
-        <path class="accent" d="M34 104 C54 104, 59 58, 76 41 S105 65, 122 57 S151 54, 168 58 S202 58, 226 58"></path>
-        <path d="M34 104 H56 V58 H226"></path>
-        <text x="28" y="139">time</text>
-        <text x="154" y="40">settled output</text>
-      </svg>
-    `;
-  }
-  if (id === "transient") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Step and sine inputs about the x-axis">
-        <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-        <path class="axis" d="M34 72 H226 M42 116 V30"></path>
-        <path d="M34 94 H64 V52 H114"></path>
-        <path class="accent" d="M122 72 C132 46, 146 46, 156 72 S180 98, 190 72 S214 46, 226 72"></path>
-        <text x="28" y="139">time</text>
-        <text x="52" y="42">step</text>
-        <text x="168" y="42">sine</text>
-      </svg>
-    `;
-  }
-  if (id === "four-post") {
-    return `
-      <svg viewBox="0 0 260 150" role="img" aria-label="Kinematics and compliance rig with four vertical posts">
-        <rect x="42" y="42" width="176" height="62" rx="6"></rect>
-        <path class="fixture" d="M54 36 H206 M54 110 H206 M70 36 V116 M190 36 V116"></path>
-        <path d="M78 54 H182 M78 92 H182 M92 54 L168 92 M168 54 L92 92"></path>
-        <circle cx="70" cy="42" r="11"></circle>
-        <circle cx="190" cy="42" r="11"></circle>
-        <circle cx="70" cy="104" r="11"></circle>
-        <circle cx="190" cy="104" r="11"></circle>
-        <path class="post" d="M70 18 V32 M190 18 V32 M70 114 V136 M190 114 V136"></path>
-        <path class="accent" d="M60 24 H80 M180 24 H200 M60 130 H80 M180 130 H200"></path>
-        <text x="24" y="139">vertical posts</text>
-        <text x="153" y="28">KnC fixture</text>
-      </svg>
-    `;
-  }
-  return `
-    <svg viewBox="0 0 260 150" role="img" aria-label="Ramp input">
-      <rect x="18" y="18" width="224" height="106" rx="6"></rect>
-      <path class="axis" d="M34 104 H226 M42 116 V30"></path>
-      <path class="accent" d="M42 104 H78 L176 44 H222"></path>
-      <text x="28" y="139">time</text>
-      <text x="171" y="36">ramp</text>
-    </svg>
-  `;
 }
 
 function studyGroupMeta(groupId) {
@@ -4739,8 +4582,14 @@ function renderSavedResultCatalog() {
   const grid = document.getElementById("saved-result-list");
   if (!grid) return;
   const results = savedResults();
+  document.querySelector(".archive-workspace").classList.toggle("is-empty", !results.length);
   if (!results.length) {
-    grid.innerHTML = `<div class="empty-state">No archived simulation runs yet. Run a simulation to save the report, metrics, and signal archive locally.</div>`;
+    grid.innerHTML = `<div class="archive-empty-state">
+      <h3>No saved runs yet</h3>
+      <p>Completed simulation reports and data appear here.</p>
+      <button class="ghost-button" type="button" data-browse-simulations>Browse simulations</button>
+    </div>`;
+    grid.querySelector("[data-browse-simulations]").addEventListener("click", () => setView("standard"));
     return;
   }
   grid.innerHTML = results.map(resultArchiveCard).join("");
@@ -5223,19 +5072,7 @@ function renderStudyJobs() {
   loadJobLog("study-job-log");
 }
 
-function simWorkflowGuide(workflow) {
-  const meta = simWorkflowMeta(workflow);
-  return {
-    title: meta.title,
-    copy: meta.summary,
-    steps: meta.steps,
-  };
-}
-
-function renderSimSetup(workflow) {
-  const guide = simWorkflowGuide(workflow);
-  document.getElementById("sim-setup-title").textContent = guide.title;
-  document.getElementById("sim-setup-copy").textContent = guide.copy;
+function renderSimSetup() {
   renderSimConfigLibrary();
   renderSimConfigForm();
 }
@@ -5406,11 +5243,11 @@ function renderJobs() {
   const workflow = selectedWorkflow();
   const canRun = canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
-  const runVerb = workflow?.actions.length > 1 ? "Build + Run" : "Run";
+  const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
   runButton.textContent = !canRun
     ? "Simulation locked"
     : workflow
-    ? `${state.dirtySimConfig ? "Apply + " : ""}${runVerb} ${workflow.label}`
+    ? state.dirtySimConfig ? "Apply + run" : runVerb
     : "No Workflow";
   runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
   if (!jobs.length) {
@@ -5514,13 +5351,6 @@ async function startSelectedStudyWorkflow() {
 }
 
 function setView(view) {
-  if (view === "standard" && !canUseStandardSim()) {
-    state.view = "setup";
-    renderMode();
-    renderRailActions();
-    renderSetup();
-    return;
-  }
   state.view = view;
   renderMode();
   renderRailActions();
@@ -5579,9 +5409,8 @@ function drawVehiclePreview(data) {
   const area = activeParameterArea();
   syncPreviewModeControls(area);
   if (!isKinematicPlotArea(area)) clearSuspensionPlotInteractionScene();
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(420, Math.floor(rect.width));
-  const height = Math.max(360, Math.floor(rect.height));
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
@@ -6644,8 +6473,8 @@ function pointerCanvasPoint(event) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left - canvas.clientLeft,
+    y: event.clientY - rect.top - canvas.clientTop,
   };
 }
 
@@ -7157,8 +6986,8 @@ function pointerCanvasPointFor(event, canvas) {
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: event.clientX - rect.left - canvas.clientLeft,
+    y: event.clientY - rect.top - canvas.clientTop,
   };
 }
 
@@ -7346,9 +7175,9 @@ function drawGeometryPlotPanel() {
     clearGeometryPlotScene();
     return;
   }
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(420, Math.floor(rect.width));
-  const height = Math.max(120, Math.floor(rect.height));
+  canvas.style.height = `${Math.max(1, state.geometryPlotSelections.length) * 230}px`;
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
@@ -7452,12 +7281,19 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
   const geometryPlotPanel = document.getElementById("geometry-plot-panel");
-  const geometryPlotSplitter = document.getElementById("geometry-plot-splitter");
+  const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
   const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
   const usesMassScroll = area.id === "mass";
-  const usesGeometryPlots = area.id === "hardpoints";
+  const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
+  geometryTabs.hidden = area.id !== "hardpoints";
+  document.getElementById("config-form").hidden = usesGeometryPlots;
+  geometryTabs.querySelectorAll("[data-geometry-tab]").forEach((button) => {
+    const active = button.dataset.geometryTab === state.activeGeometryTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
   const usesTireSurface = isSurfaceMapPreviewArea(area);
   if (controls) {
     controls.hidden = true;
@@ -7472,13 +7308,8 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     if (usesGeometryPlots) renderGeometryPlotControls();
     else clearGeometryPlotScene();
   }
-  if (geometryPlotSplitter) {
-    geometryPlotSplitter.hidden = !usesGeometryPlots;
-    if (usesGeometryPlots) applyGeometryPlotHeight();
-  }
   if (stage) {
     stage.classList.toggle("mass-scroll-stage", usesMassScroll);
-    stage.classList.toggle("geometry-plot-stage", usesGeometryPlots);
   }
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
@@ -7619,13 +7450,6 @@ function drawArchitecturePreview(ctx, width, height, data) {
     : state.architectureSelectedId;
   const hotspots = [];
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Architecture Assembly", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Front views use the actual axle pickup points.", 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
   const fullModel = buildVehicleGeometry(data);
   const geometryModel = filterVehicleModel(fullModel, sectionFocus("geometry"));
   const referencePoints = fullModel.points.filter((point) => point.id === "vehicle-mass");
@@ -8677,35 +8501,7 @@ function heatColor(t) {
 }
 
 function drawPowertrainPreview(ctx, width, height, data) {
-  const palette = canvasPalette();
-  const profile = powertrainProfile(data);
-  const explicit = explicitPowertrainData(data);
-  const activeSubsystem = activePowertrainSubsystemId();
-  drawCanvasText(ctx, "Powertrain", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, profile.label, 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
-  const diagramTop = 82;
-  const diagramHeight = Math.min(300, Math.max(220, height * 0.42));
-  drawPowertrainArchitecture(ctx, 28, diagramTop, width - 56, diagramHeight, data, activeSubsystem);
-
-  const metricTop = diagramTop + diagramHeight + 16;
-  const metricGap = 12;
-  const metricWidth = (width - 56 - metricGap * 3) / 4;
-  const activeEntries = powertrainSubsystemEntries(explicit, activeSubsystem);
-  [
-    ["Selected", powertrainSubsystemLabel(activeSubsystem)],
-    ["Maturity", humanizeToken(profile.status)],
-    ["Inputs", `${activeEntries.length} scalar${activeEntries.length === 1 ? "" : "s"}`],
-    ["Loop", activeSubsystem === "pVCU" ? "Off-loop control" : "Main path"],
-  ].forEach(([label, value], index) => {
-    drawDiagnosticTile(ctx, 28 + index * (metricWidth + metricGap), metricTop, metricWidth, 78, label, value);
-  });
-
-  drawPowertrainStats(ctx, width, height, activeEntries, metricTop + 98, activeSubsystem);
+  drawPowertrainArchitecture(ctx, 16, 16, width - 32, height - 32, data, activePowertrainSubsystemId());
 }
 
 function activePowertrainSubsystemId() {
@@ -8720,26 +8516,18 @@ function powertrainSubsystemLabel(id) {
 
 function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsystem) {
   const palette = canvasPalette();
-  const fill = state.dark ? "rgba(19, 23, 32, 0.92)" : "rgba(255, 255, 255, 0.96)";
-  drawPanel(ctx, x, y, width, height, fill);
-  drawCanvasText(ctx, "Architecture", x + 14, y + 18, { size: 13, weight: 800 });
-  drawCanvasText(ctx, "VCU", x + width - 14, y + 18, {
-    size: 11,
-    weight: 760,
-    align: "right",
-    color: palette.muted,
-  });
-
   const nodes = powertrainMainLoopNodes(data);
-  const nodeWidth = clamp((width - 68 - 14 * (nodes.length - 1)) / nodes.length, 64, 136);
-  const nodeHeight = clamp(height * 0.33, 74, 92);
-  const gap = Math.max(12, (width - 68 - nodeWidth * nodes.length) / Math.max(1, nodes.length - 1));
+  const vertical = width < 620;
+  const pathWidth = width - 100;
+  const nodeWidth = vertical ? 110 : clamp((pathWidth - 28 - 20 * (nodes.length - 1)) / nodes.length, 64, 136);
+  const nodeHeight = vertical ? 76 : 92;
+  const gap = Math.max(12, (pathWidth - 28 - nodeWidth * nodes.length) / Math.max(1, nodes.length - 1));
   const totalWidth = nodeWidth * nodes.length + gap * (nodes.length - 1);
   const centerY = y + height * 0.64;
-  const startX = x + width / 2 - totalWidth / 2 + nodeWidth / 2;
+  const startX = x + pathWidth / 2 - totalWidth / 2 + nodeWidth / 2;
   nodes.forEach((node, index) => {
-    node.cx = startX + index * (nodeWidth + gap);
-    node.cy = centerY;
+    node.cx = vertical ? x + 65 : startX + index * (nodeWidth + gap);
+    node.cy = vertical ? y + 48 + index * ((height - 116) / 3) : centerY;
     node.width = nodeWidth;
     node.height = nodeHeight;
   });
@@ -8749,10 +8537,10 @@ function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsys
     label: "VCU",
     meta: powertrainNodeMetric(data, "pVCU"),
     color: palette.amber,
-    cx: (nodes[1].cx + nodes[2].cx) / 2,
-    cy: y + Math.max(66, height * 0.25),
+    cx: vertical ? x + width - 62 : (nodes[1].cx + nodes[2].cx) / 2,
+    cy: vertical ? (nodes[1].cy + nodes[2].cy) / 2 : y + Math.max(50, height * 0.25),
     width: clamp(nodeWidth * 0.95, 76, 116),
-    height: 58,
+    height: 84,
   };
 
   nodes.forEach((node, index) => {
@@ -8760,34 +8548,40 @@ function drawPowertrainArchitecture(ctx, x, y, width, height, data, activeSubsys
       const previous = nodes[index - 1];
       drawPowertrainConnection(
         ctx,
-        previous.cx + previous.width / 2,
-        previous.cy,
-        node.cx - node.width / 2,
-        node.cy,
+        vertical ? previous.cx : previous.cx + previous.width / 2,
+        vertical ? previous.cy + previous.height / 2 : previous.cy,
+        vertical ? node.cx : node.cx - node.width / 2,
+        vertical ? node.cy - node.height / 2 : node.cy,
         palette.blue,
       );
     }
   });
 
   const driveline = nodes[nodes.length - 1];
-  const splitX = Math.min(x + width - 64, driveline.cx + driveline.width / 2 + Math.max(38, gap * 0.72));
-  const wheelX = Math.min(x + width - 28, splitX + 36);
-  const wheelY = [centerY - Math.min(48, height * 0.18), centerY + Math.min(48, height * 0.18)];
-  drawPowertrainConnection(ctx, driveline.cx + driveline.width / 2, centerY, splitX, centerY, palette.green, {
+  const splitX = vertical
+    ? driveline.cx + driveline.width / 2 + 24
+    : Math.min(x + width - 64, driveline.cx + driveline.width / 2 + Math.max(38, gap * 0.72));
+  const wheelX = Math.min(x + width - 24, splitX + 36);
+  const wheelOffset = vertical ? 22 : Math.min(48, height * 0.18);
+  drawPowertrainConnection(ctx, driveline.cx + driveline.width / 2, driveline.cy, splitX, driveline.cy, palette.green, {
     arrow: false,
   });
-  wheelY.forEach((yPos) => {
-    drawPowertrainConnection(ctx, splitX, centerY, wheelX - 20, yPos, palette.green, { arrow: false });
+  [driveline.cy - wheelOffset, driveline.cy + wheelOffset].forEach((yPos) => {
+    drawPowertrainConnection(ctx, splitX, driveline.cy, wheelX - 20, yPos, palette.green, { arrow: false });
     drawWheelGlyph(ctx, wheelX, yPos, 20, 0, palette.green);
   });
 
   const signalTargets = [nodes[1], nodes[2], nodes[3]];
   signalTargets.forEach((node) => {
-    drawPowertrainConnection(ctx, vcu.cx, vcu.cy + vcu.height / 2, node.cx, node.cy - node.height / 2, palette.amber, {
-      dashed: true,
-      arrow: false,
-      width: 1.6,
-    });
+    drawPowertrainConnection(
+      ctx,
+      vertical ? vcu.cx - vcu.width / 2 : vcu.cx,
+      vertical ? vcu.cy : vcu.cy + vcu.height / 2,
+      vertical ? node.cx + node.width / 2 : node.cx,
+      vertical ? node.cy : node.cy - node.height / 2,
+      palette.amber,
+      { dashed: true, arrow: false, width: 1.6 },
+    );
   });
 
   nodes.forEach((node) => drawPowertrainNode(ctx, node, activeSubsystem === node.id));
@@ -9068,66 +8862,6 @@ function powertrainProfile(data) {
 function explicitPowertrainData(data) {
   const powertrain = data.powertrain || data.drivetrain || {};
   return typeof powertrain === "object" && !Array.isArray(powertrain) && powertrain ? powertrain : {};
-}
-
-function flattenedPowertrainEntries(value, prefix = "") {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  return Object.entries(value).flatMap(([key, item]) => {
-    const label = prefix ? `${prefix}.${key}` : key;
-    if (typeof item === "number" || typeof item === "string" || typeof item === "boolean") return [[label, item]];
-    if (item && typeof item === "object" && !Array.isArray(item)) return flattenedPowertrainEntries(item, label);
-    return [];
-  });
-}
-
-function powertrainSubsystemEntries(powertrain, subsystemId) {
-  const block = powertrain?.[subsystemId];
-  return flattenedPowertrainEntries(block);
-}
-
-function drawDiagnosticTile(ctx, x, y, width, height, label, value) {
-  const palette = canvasPalette();
-  drawPanel(ctx, x, y, width, height, palette.surface);
-  drawCanvasText(ctx, label, x + 12, y + 18, { size: 11, weight: 740, color: palette.muted });
-  drawCanvasText(ctx, value, x + 12, y + 48, { size: 13, weight: 780 });
-}
-
-function drawPowertrainStats(ctx, width, height, entries, top, subsystemId) {
-  const palette = canvasPalette();
-  const panelX = 28;
-  const panelY = top;
-  const panelW = width - 56;
-  const panelH = Math.max(110, height - top - 28);
-  drawPanel(ctx, panelX, panelY, panelW, panelH, palette.surface);
-  drawCanvasText(ctx, `${powertrainSubsystemLabel(subsystemId)} Parameters`, panelX + 14, panelY + 18, {
-    size: 13,
-    weight: 780,
-  });
-  if (!entries.length) {
-    drawCanvasText(ctx, "No parameters exposed for this subsystem", panelX + panelW / 2, panelY + panelH / 2, {
-      align: "center",
-      color: palette.muted,
-    });
-    return;
-  }
-  const columns = panelW > 650 ? 3 : 2;
-  const cellW = (panelW - 28 - 12 * (columns - 1)) / columns;
-  entries.slice(0, columns * 4).forEach(([key, value], index) => {
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const x = panelX + 14 + col * (cellW + 12);
-    const y = panelY + 48 + row * 42;
-    drawCanvasText(ctx, humanizeToken(key), x, y, { size: 10, weight: 700, color: palette.muted });
-    drawCanvasText(ctx, formatDisplayValue(value), x, y + 18, { size: 13, weight: 760 });
-  });
-  if (entries.length > columns * 4) {
-    drawCanvasText(ctx, `+${entries.length - columns * 4} more`, panelX + panelW - 14, panelY + panelH - 16, {
-      size: 10,
-      weight: 760,
-      align: "right",
-      color: palette.muted,
-    });
-  }
 }
 
 function drawTirePreview(ctx, width, height, data) {
@@ -11120,6 +10854,7 @@ function drawPlotGrid(ctx, chart) {
   ctx.lineWidth = 1;
   ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.42 : 0.68);
   xTicks.forEach((tick) => {
+    if (tick < chart.xDomain[0] || tick > chart.xDomain[1]) return;
     const px = toX(tick);
     ctx.beginPath();
     ctx.moveTo(px, plot.y);
@@ -11133,6 +10868,7 @@ function drawPlotGrid(ctx, chart) {
     });
   });
   yTicks.forEach((tick) => {
+    if (tick < chart.yDomain[0] || tick > chart.yDomain[1]) return;
     const py = toY(tick);
     ctx.beginPath();
     ctx.moveTo(plot.x, py);
@@ -12694,60 +12430,6 @@ function wireSetupSplitter() {
   });
 }
 
-function wireGeometryPlotSplitter() {
-  const splitter = document.getElementById("geometry-plot-splitter");
-  if (!splitter) return;
-  applyGeometryPlotHeight();
-  splitter.addEventListener("pointerdown", (event) => {
-    state.geometryPlotResize = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: state.geometryPlotHeight,
-    };
-    splitter.classList.add("active");
-    document.body.classList.add("resizing-plot-pane");
-    splitter.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  });
-  splitter.addEventListener("pointermove", (event) => {
-    const resize = state.geometryPlotResize;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-    setGeometryPlotHeight(resize.startHeight - (event.clientY - resize.startY), { redraw: false });
-    drawVehicleFromForm();
-  });
-  splitter.addEventListener("pointerup", (event) => finishGeometryPlotResize(event.pointerId));
-  splitter.addEventListener("pointercancel", (event) => finishGeometryPlotResize(event.pointerId));
-  splitter.addEventListener("keydown", (event) => {
-    const step = event.shiftKey ? 48 : 16;
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setGeometryPlotHeight(state.geometryPlotHeight + step, { persist: true });
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setGeometryPlotHeight(state.geometryPlotHeight - step, { persist: true });
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      setGeometryPlotHeight(MIN_GEOMETRY_PLOT_HEIGHT, { persist: true });
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      setGeometryPlotHeight(geometryPlotHeightBounds().max, { persist: true });
-    }
-  });
-}
-
-function finishGeometryPlotResize(pointerId) {
-  const resize = state.geometryPlotResize;
-  if (!resize || resize.pointerId !== pointerId) return;
-  state.geometryPlotResize = null;
-  document.getElementById("geometry-plot-splitter")?.classList.remove("active");
-  document.body.classList.remove("resizing-plot-pane");
-  localStorage.setItem("bobsim-geometry-plot-height", String(Math.round(state.geometryPlotHeight)));
-  drawVehicleFromForm();
-}
-
 function finishSetupResize(pointerId) {
   const resize = state.setupResize;
   if (!resize || resize.pointerId !== pointerId) return;
@@ -12780,6 +12462,7 @@ function wireEvents() {
   document.getElementById("theme-toggle-btn").addEventListener("click", toggleTheme);
   document.getElementById("reference-toggle-btn").addEventListener("click", toggleReferencePanel);
   document.getElementById("open-vehicle-start-btn").addEventListener("click", openVehicleStartModal);
+  document.getElementById("start-retry-btn").addEventListener("click", refreshFromStart);
   document.getElementById("start-load-btn").addEventListener("click", loadVehicleFromStart);
   document.getElementById("start-create-btn").addEventListener("click", createVehicleFromStart);
   document.getElementById("start-active-btn").addEventListener("click", () => {
@@ -12902,6 +12585,18 @@ function wireEvents() {
     }
     if (event.key === "Escape" && state.architectureModalOpen) closeArchitectureConnectionModal();
   });
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll(".model-menu[open]").forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    document.querySelectorAll(".model-menu[open]").forEach((menu) => {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    });
+  });
   window.addEventListener("keydown", handleUndoShortcut);
   window.addEventListener("keydown", handleSetupStageKeys);
   document.getElementById("vehicle-library-picker").addEventListener("change", syncVehicleLibraryActions);
@@ -12914,6 +12609,10 @@ function wireEvents() {
   document.getElementById("save-vehicle-btn").addEventListener("click", () => saveVehicleAs({ actionKey: "menu-save-vehicle" }));
   document.getElementById("save-raw-btn").addEventListener("click", saveRawVehicle);
   document.getElementById("run-workflow-btn").addEventListener("click", startSelectedWorkflow);
+  document.getElementById("simulation-next-btn").addEventListener("click", () => {
+    if (activeVehicleConfigReady() && vehicleDefinitionCurrent()) openModelicaToolchain();
+    else setView("setup");
+  });
   document.getElementById("run-study-btn")?.addEventListener("click", saveActiveResults);
   document.getElementById("add-processing-btn")?.addEventListener("click", addProcessingWorkflow);
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
@@ -12951,8 +12650,6 @@ function wireEvents() {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
   document.getElementById("reset-view-btn").addEventListener("click", resetVehicleView);
-  document.getElementById("setup-prev-btn")?.addEventListener("click", () => navigateParameterStep(-1));
-  document.getElementById("setup-next-btn")?.addEventListener("click", () => navigateParameterStep(1));
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
@@ -12971,7 +12668,7 @@ function wireEvents() {
   document.querySelectorAll(".rail-item").forEach((button) => {
     button.addEventListener("click", () => setView(button.dataset.view));
   });
-  document.querySelectorAll(".tab").forEach((button) => {
+  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeSimTab = button.dataset.tab;
       syncSimTabs();
@@ -12998,12 +12695,16 @@ function wireEvents() {
     if (state.massSelectedPointId) queueMassPropertyEditorPosition();
   });
   wireSetupSplitter();
-  wireGeometryPlotSplitter();
+  document.querySelectorAll("[data-geometry-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeGeometryTab = button.dataset.geometryTab;
+      drawVehicleFromForm();
+    });
+  });
   wireGeometryEditor();
   wireVehicleCanvas();
   window.addEventListener("resize", () => {
     applySetupPaneWidth();
-    applyGeometryPlotHeight();
     drawVehicleFromForm();
     drawArchitectureConnectionCanvas();
     drawSuspensionPlotModal();
@@ -13012,8 +12713,24 @@ function wireEvents() {
   });
 }
 
+async function refreshFromStart() {
+  state.vehicleStartLoading = true;
+  state.vehicleStartLoadFailed = false;
+  state.vehicleStartError = "";
+  renderVehicleStartModal();
+  try {
+    await refresh();
+  } catch (error) {
+    state.vehicleStartError = error.message || "Could not load the vehicle";
+    state.vehicleStartLoadFailed = true;
+  } finally {
+    state.vehicleStartLoading = false;
+    renderVehicleStartModal();
+  }
+}
+
 wireEvents();
-refresh();
+refreshFromStart();
 setInterval(async () => {
   if ((state.status?.jobs || []).some((job) => job.status === "running" || job.status === "queued")) {
     state.status = await api("/api/status");
