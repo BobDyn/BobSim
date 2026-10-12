@@ -1869,13 +1869,13 @@ const fields = [
   ['sprung_mass', 'mass_kg'],
   ['sprung_mass', 'cg_m'],
   ['sprung_mass', 'inertia_kg_m2'],
-  ['body', 'torsional_stiff_n_m_per_rad'],
 ].map(path => ({path}));
 const html = vehicleComponentEditorHtml({id: 'mass', fields});
 assert.equal(state.vehicleComponentSelection.mass, 'body');
 for (const field of fields) assert.equal(html.split(`name="${field.path.join('.')}"`).length, 2);
-assert(html.includes('<details class="component-inertia">'));
-assert(!html.includes('<details class="component-inertia" open'));
+assert(html.includes('<div class="component-inertia">'));
+assert(!html.includes('data-component-group aria-label'));
+assert(!html.includes('<details class="component-inertia"'));
 assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'upper_o_m']}, 'hardpoints').key,
   'front.Upper wishbone');
 assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'tie_o_m']}, 'hardpoints').key,

@@ -1572,7 +1572,7 @@ function parameterAreaForField(field) {
   const group = String(field.group || "").toLowerCase();
   const label = String(field.label || "").toLowerCase();
   if (path.startsWith("aero.")) return "aero";
-  if (path === "body.torsional_stiff_n_m_per_rad") return "mass";
+  if (path === "body.torsional_stiff_n_m_per_rad") return "suspension";
   if (path.startsWith("brake.")) return "powertrain";
   if (fieldMatchesPowertrain(path, group, label)) return "powertrain";
   if (
@@ -1663,6 +1663,12 @@ function parameterAreaFields(area) {
     return `${identity.map((field) => `<div hidden>${fieldControl(field)}</div>`).join("")}${architectureToolsHtml(area.fields)}${fieldGroupSections(fields, area.id)}<details class="vehicle-details"><summary>Vehicle details</summary>${details.map(fieldControl).join("")}</details>`;
   }
   if (["hardpoints", "mass"].includes(area.id)) return vehicleComponentEditorHtml(area);
+  if (area.id === "suspension") {
+    const chassis = area.fields.filter((field) => field.path?.[0] === "body");
+    const suspension = area.fields.filter((field) => field.path?.[0] !== "body");
+    return fieldGroupSections(suspension, area.id)
+      + (chassis.length ? `<details class="component-details"><summary>Chassis</summary>${chassis.map(fieldControl).join("")}</details>` : "");
+  }
   if (area.id === "tires") return tireSectionHtml(area);
   if (area.id === "powertrain") return powertrainSectionHtml(area);
   if (area.id === "aero") return aeroSectionHtml(area);
@@ -1719,12 +1725,12 @@ function vehicleComponentEditorHtml(area) {
   const groups = [...new Set(entries.map((entry) => entry.group))];
   return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
     ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : ""}
-    <div class="component-editor-selectors" data-setup-filter>
-      <div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
+    <div class="component-editor-selectors${area.id === "mass" ? " mass-component-selector" : ""}" data-setup-filter>
+      ${area.id === "mass" ? "" : `<div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
-      </select></div>
+      </select></div>`}
       <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", [["Move point", "Drag along the highlighted axis"], ["Change axis", "Tab"], ["Deselect", "Esc or click empty space"], ["Rotate / pan", "Drag empty space / Ctrl-drag"], ["Undo / redo", "Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z"], ["Coordinates", "+X forward, +Y left, +Z up"], ["Mirroring", "Left-side points define the right side"]]) : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
-        ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}
+        ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(area.id === "mass" && entry.group !== "Vehicle" ? `${entry.group.replace(" suspension", "")} ${entry.label.toLowerCase()}` : entry.label)}</option>`).join("")}
       </select></div>
     </div>
     ${entries.map((entry) => {
@@ -1732,7 +1738,7 @@ function vehicleComponentEditorHtml(area) {
       const regular = entry.fields.filter((field) => !inertia.includes(field));
       return `<section data-component-panel="${escapeHtml(entry.key)}"${entry.key === selected?.key ? "" : " hidden"}>
         <div class="field-grid">${regular.map(fieldControl).join("")}</div>
-        ${inertia.length ? `<details class="component-inertia"><summary>Inertia tensor (kg·m²)</summary><div class="field-grid">${inertia.map(fieldControl).join("")}</div></details>` : ""}
+        ${inertia.length ? `<div class="component-inertia">${inertia.map(fieldControl).join("")}</div>` : ""}
       </section>`;
     }).join("")}
   </div>`;
@@ -1742,7 +1748,7 @@ function wireVehicleComponentEditors() {
   document.querySelectorAll("[data-component-editor]").forEach((editor) => {
     const group = editor.querySelector("[data-component-group]");
     const select = editor.querySelector("[data-component-select]");
-    group.onchange = () => {
+    if (group) group.onchange = () => {
       const option = [...select.options].find((item) => item.dataset.componentGroupName === group.value);
       if (option) select.value = option.value;
       syncVehicleComponentEditor(editor);
@@ -1757,7 +1763,7 @@ function syncVehicleComponentEditor(editor) {
   const group = editor.querySelector("[data-component-group]");
   const select = editor.querySelector("[data-component-select]");
   [...select.options].forEach((option) => {
-    option.hidden = option.dataset.componentGroupName !== group.value;
+    option.hidden = Boolean(group && option.dataset.componentGroupName !== group.value);
     option.disabled = option.hidden;
   });
   editor.querySelectorAll("[data-component-panel]").forEach((panel) => {
@@ -1772,7 +1778,8 @@ function revealVehicleComponentField(container) {
   if (!editor) return;
   const select = editor.querySelector("[data-component-select]");
   select.value = panel.dataset.componentPanel;
-  editor.querySelector("[data-component-group]").value = select.selectedOptions[0].dataset.componentGroupName;
+  const group = editor.querySelector("[data-component-group]");
+  if (group) group.value = select.selectedOptions[0].dataset.componentGroupName;
   syncVehicleComponentEditor(editor);
 }
 
@@ -2881,7 +2888,7 @@ function matrixControl(field) {
   const curve = /\.(spring|damper)_table\.table$/.test(fieldPathString(field));
   const fixed = matrixHasFixedShape(field);
   return `<div class="matrix-scroll${curve ? " curve-table" : ""}">
-    <div class="matrix-input" data-matrix-cols="${cols}" style="--matrix-cols: ${cols}">
+    <div class="matrix-input${fieldPathString(field).endsWith("inertia_kg_m2") ? " inertia-matrix" : ""}" data-matrix-cols="${cols}" style="--matrix-cols: ${cols}">
       <div class="matrix-heading"><span class="matrix-row-label"></span><div class="matrix-array-cells">${Array.from({length: cols}, (_, index) => `<span>${escapeHtml(matrixColumnLabel(field, index))}</span>`).join("")}</div><span></span></div>
       <div class="matrix-array-body">${rows.map((row, index) => matrixRowControl(field, row, index, cols, fixed)).join("")}</div>
     </div>
@@ -2940,10 +2947,10 @@ function isNumericArrayKind(kind) {
 }
 
 function arrayScalarControl(field, value, position) {
-  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : [], field.display_scale);
+  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : [], field.display_scale, fieldPathString(field).endsWith("inertia_kg_m2"));
 }
 
-function arrayCellInputHtml(kind, position, value = "", choices = [], displayScale = 1) {
+function arrayCellInputHtml(kind, position, value = "", choices = [], displayScale = 1, compact = false) {
   const positionAttrs = position.col === undefined
     ? `data-index="${position.index}"`
     : `data-row="${position.row}" data-col="${position.col}"`;
@@ -2959,7 +2966,7 @@ function arrayCellInputHtml(kind, position, value = "", choices = [], displaySca
   }
   if (kind === "number" || kind === "integer") {
     const step = kind === "integer" ? "1" : "any";
-    return `<input ${attrs} type="number" step="${step}" required style="min-width: ${Math.max(12, String(numericDisplayValue(value, displayScale)).length + 4)}ch" ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
+    return `<input ${attrs} type="number" step="${step}" required ${compact ? "" : `style="min-width: ${Math.max(12, String(numericDisplayValue(value, displayScale)).length + 4)}ch"`} ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
   }
   return `<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">`;
 }

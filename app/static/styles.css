@@ -4701,8 +4701,7 @@ summary:focus-visible {
 .vehicle-component-editor .coordinate-input { grid-template-columns: minmax(0, 1fr); }
 .vehicle-component-editor .coordinate-cell { min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .vehicle-component-editor .coordinate-cell input { width: 100%; min-width: 0; }
-.component-inertia { margin-top: 20px; }
-.component-inertia summary { cursor: pointer; margin-bottom: 12px; }
+.component-inertia { margin-top: 12px; }
 .vehicle-mass-summary { display: grid; gap: 10px; margin-bottom: 20px; }
 .vehicle-mass-summary > div { display: flex; justify-content: space-between; gap: 12px; }
 .vehicle-mass-summary span { color: var(--muted); }
@@ -4877,3 +4876,11 @@ summary:focus-visible {
 }
 .info-popup dt { color: var(--muted); }
 .info-popup dd { margin: 0; }
+
+.mass-component-selector { grid-template-columns: minmax(0, 1fr); margin-bottom: 8px; }
+.inertia-matrix { min-width: 0; }
+.inertia-matrix .matrix-heading,
+.inertia-matrix .matrix-array-row { grid-template-columns: 18px minmax(0, 1fr); }
+.inertia-matrix .matrix-heading > span:last-child { display: none; }
+.inertia-matrix .matrix-array-cells { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.inertia-matrix input { min-width: 0; }
