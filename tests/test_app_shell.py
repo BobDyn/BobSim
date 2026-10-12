@@ -1894,3 +1894,30 @@ updateVehicleMassSummary({front: {suspension: {wheel_center_m: [0, 1, 0]}},
 assert(output.innerHTML.includes('75.0 / 25.0%'));
 """
     subprocess.run([node, "-e", script], check=True)
+
+
+def test_suspension_rate_and_tire_parameter_groups():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the setup controls check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    helpers = source[source.index("function linearSpringRate("):source.index("function springRateControl(")]
+    helpers += source[source.index("function parseTirParameterText("):source.index("function tirParameterPanelHtml(")]
+    subprocess.run([node, "-e", helpers + """
+const assert = require('node:assert/strict');
+assert.deepEqual(linearSpringRate([[0, 10], [0.01, 110], [0.03, 310]]), {rate: 10000, offset: 10});
+for (const table of [[], [[0, 0]], [[0, 0], [0, 1]], [[0, 0], [1, 1], [2, 3]], [[0, 0], [1, Infinity]]]) {
+  assert.equal(linearSpringRate(table), null);
+}
+const text = '[OVERTURNING_COEFFICIENTS]\\nQSX1 = 0.01 $Moment coefficient\\n[ALIGNING_COEFFICIENTS]\\nQBZ1 = 8';
+const parsed = parseTirParameterText(text);
+assert.equal(parsed.params.get('QSX1').description, 'Moment coefficient');
+assert.equal(parsed.lines.join('\\n'), text);
+assert.equal(tirParameterGroup(parsed.params.get('QSX1')), 'Mx');
+assert.equal(tirParameterGroup(parsed.params.get('QBZ1')), 'Mz');
+assert.equal(tirParameterGroup({key: 'QSY1'}), 'My');
+assert.equal(tirParameterGroup({key: 'LMUX'}, 'Fx friction scale'), 'Fx');
+assert.equal(tirParameterGroup({key: 'FITTYP'}), 'Reference');
+"""], check=True)

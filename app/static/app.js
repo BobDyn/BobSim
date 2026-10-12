@@ -158,6 +158,8 @@ const state = {
   massHoverPointId: null,
   massSelectedPointId: null,
   massEditorPositionFrame: null,
+  suspensionAxle: "front",
+  suspensionComponent: "spring",
   suspensionPlotScene: null,
   suspensionPlotHover: null,
   suspensionPlotModalKey: null,
@@ -198,7 +200,7 @@ const PARAMETER_AREAS = [
 
 const TIRE_TABS = [
   { id: "setup", label: "Setup" },
-  { id: "load-maps", label: "Load Maps" },
+  { id: "load-maps", label: "Tire curves" },
 ];
 
 const POWERTRAIN_SUBSYSTEMS = [
@@ -1278,6 +1280,7 @@ function renderVehicleEditor() {
   form.onclick = handleArrayEditorClick;
   wireArchitectureTools();
   wireTireTabs();
+  wireSuspensionSelection();
   wireTireAssignments();
   wireTireLoadControls();
   wirePowertrainSubsystems();
@@ -1772,7 +1775,7 @@ function tireSectionHtml(area) {
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}${tireLoadMapControlsHtml()}${tireParameterToolsHtml()}${tirParameterPanelHtml()}`;
+    return `${tabs}<section class="tire-preview-conditions"><h4>Preview conditions</h4><p>Plot inputs only. Vehicle properties are unchanged.</p>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
   return `${tabs}${tireAssignmentHtml()}${tireSetupFieldsHtml(area.fields)}`;
 }
@@ -1783,7 +1786,10 @@ function tireSetupFieldsHtml(fields) {
     return path !== "front.tire.template" && path !== "rear.tire.template";
   });
   if (!setupFields.length) return "";
-  return fieldGroupSections(setupFields, "tires");
+  const drawing = setupFields.filter((field) => fieldPathString(field).includes(".rim_"));
+  const physical = setupFields.filter((field) => !drawing.includes(field));
+  return `<h4>Wheel and tire properties</h4>${fieldGroupSections(physical, "tires")}
+    ${drawing.length ? `<details class="tire-model-editor"><summary>Drawing settings</summary>${fieldGroupSections(drawing, "tires")}</details>` : ""}`;
 }
 
 function tireAssignmentHtml() {
@@ -1798,19 +1804,15 @@ function tireAssignmentHtml() {
     <div class="tire-assignment-grid">
       ${["front", "rear"].map((side) => {
         const selected = data?.[side]?.tire?.template || "";
-        const evalSide = (state.tirePayload?.sides || []).find((item) => item.side === side);
+
         return `
           <section class="tire-assignment-card">
             <h4>${escapeHtml(humanizeToken(side))}</h4>
             <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([side, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
-            <select class="config-picker" data-tire-assignment="${escapeHtml(side)}">
+            <select class="config-picker" data-tire-assignment="${escapeHtml(side)}" aria-label="${escapeHtml(humanizeToken(side))} tire model">
               ${options(selected)}
             </select>
-            <dl>
-              <div><dt>Active</dt><dd>${escapeHtml(selected || "none")}</dd></div>
-              <div><dt>Fz</dt><dd>${formatNumber(evalSide?.fz_n)} N</dd></div>
-              <div><dt>Camber</dt><dd>${formatNumber(evalSide?.camber_deg)} deg</dd></div>
-            </dl>
+
           </section>
         `;
       }).join("")}
@@ -1838,7 +1840,7 @@ function tireLoadMapControlsHtml() {
     <div class="tire-load-controls" data-tire-load-controls>
       <div class="tire-load-row">
         <div class="tire-load-head">
-          <span>Combined Fz</span>
+          <span>Normal load · Fz</span>
           <strong id="tire-combined-fz-value">${formatNumber(value)} N</strong>
         </div>
         <input
@@ -1858,7 +1860,7 @@ function tireLoadMapControlsHtml() {
       </div>
       <div class="tire-load-row">
         <div class="tire-load-head">
-          <span>Camber / IA</span>
+          <span>Camber</span>
           <strong id="tire-load-camber-value">${formatSignedNumber(camberValue)} deg</strong>
         </div>
         <input
@@ -2015,18 +2017,75 @@ function fieldGroupSections(fields, areaId = "") {
   return sections.join("");
 }
 
+function suspensionComponentForField(field) {
+  const path = fieldPathString(field);
+  if (path.includes("stabar")) return "stabar";
+  if (path.includes("damper") || path.includes("dyno_reference")) return "damper";
+  return "spring";
+}
+
 function suspensionFieldSections(grouped) {
-  const order = ["Front spring", "Front damper", "Front actuation", "Rear spring", "Rear damper", "Rear actuation"];
-  const entries = Object.entries(grouped);
-  return entries
-    .sort(([left], [right]) => {
-      const leftIndex = order.indexOf(left);
-      const rightIndex = order.indexOf(right);
-      return (leftIndex === -1 ? order.length : leftIndex) - (rightIndex === -1 ? order.length : rightIndex)
-        || left.localeCompare(right);
-    })
-    .map(([group, groupFields]) => fieldSubsectionHtml(group, groupFields))
-    .join("");
+  const fields = Object.values(grouped).flat();
+  const components = [["spring", "Spring"], ["damper", "Damper"], ["stabar", "Anti-roll bar"]];
+  return `<div class="tire-subtabs" aria-label="Suspension axle">${["front", "rear"].map((axle) =>
+    `<button type="button" class="tire-subtab" data-suspension-axle="${axle}">${humanizeToken(axle)}</button>`).join("")}</div>
+    <div class="tire-subtabs" aria-label="Suspension component">${components.map(([key, label]) =>
+      `<button type="button" class="tire-subtab" data-suspension-component="${key}">${label}</button>`).join("")}</div>
+    ${["front", "rear"].map((axle) => components.map(([key, label]) => {
+      const selected = fields.filter((field) => fieldPathString(field).startsWith(`${axle}.`) && suspensionComponentForField(field) === key);
+      return `<div data-suspension-panel="${axle}-${key}">${selected.length ? fieldSubsectionHtml(label, selected) : '<p class="area-empty">No properties for this component.</p>'}</div>`;
+    }).join("")).join("")}`;
+}
+
+function syncSuspensionSelection() {
+  const data = currentVehicleFormData() || {};
+  const hasStabar = String(data.architecture?.[state.suspensionAxle] || "").includes("stabar");
+  if (state.suspensionComponent === "stabar" && !hasStabar) state.suspensionComponent = "spring";
+  document.querySelectorAll("[data-suspension-axle]").forEach((button) => {
+    const selected = button.dataset.suspensionAxle === state.suspensionAxle;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  document.querySelectorAll("[data-suspension-component]").forEach((button) => {
+    const selected = button.dataset.suspensionComponent === state.suspensionComponent;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    button.hidden = button.dataset.suspensionComponent === "stabar" && !hasStabar;
+  });
+  document.querySelectorAll("[data-suspension-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.suspensionPanel !== `${state.suspensionAxle}-${state.suspensionComponent}`;
+  });
+}
+
+function wireSuspensionSelection() {
+  document.querySelectorAll("[data-spring-rate]").forEach((input) => {
+    input.closest("[data-array-path]").addEventListener("input", (event) => {
+      if (event.target === input) return;
+      const rows = [...input.closest("[data-array-path]").querySelectorAll("[data-matrix-row]")];
+      const linear = linearSpringRate(rows.map((row) => [...row.querySelectorAll("[data-array-cell]")].map((cell) => cell.value === "" ? NaN : Number(cell.value))));
+      input.parentElement.hidden = !linear;
+      if (linear) input.value = linear.rate / 1000;
+    });
+    input.addEventListener("input", () => {
+      if (input.value === "" || !input.checkValidity()) return;
+      const rows = [...input.closest("[data-array-path]").querySelectorAll("[data-matrix-row]")];
+      const table = rows.map((row) => [...row.querySelectorAll("[data-array-cell]")].map((cell) => Number(cell.value)));
+      const linear = linearSpringRate(table);
+      if (!linear) return;
+      rows.forEach((row, index) => {
+        row.querySelector('[data-col="1"]').value = table[index][0] * Number(input.value) * 1000 + linear.offset;
+      });
+    });
+  });
+  document.querySelectorAll("[data-suspension-axle], [data-suspension-component]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.suspensionAxle) state.suspensionAxle = button.dataset.suspensionAxle;
+      if (button.dataset.suspensionComponent) state.suspensionComponent = button.dataset.suspensionComponent;
+      syncSuspensionSelection();
+      drawVehicleFromForm();
+    });
+  });
+  syncSuspensionSelection();
 }
 
 function axleFieldBlock(axle, grouped) {
@@ -2317,54 +2376,47 @@ function tireToolsHtml() {
 function parseTirParameterText(text) {
   const params = new Map();
   const lines = String(text || "").split(/\r?\n/);
+  let section = "";
   lines.forEach((line, index) => {
+    const heading = line.match(/^\s*\[([^\]]+)\]/);
+    if (heading) section = heading[1].toUpperCase();
     const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*([^$!#;]+)/);
     if (!match) return;
     const key = match[1].toUpperCase();
     const value = match[2].trim();
-    if (!params.has(key)) params.set(key, { key, value, lineIndex: index });
+    if (!params.has(key)) params.set(key, { key, value, lineIndex: index, section, description: line.split("$").slice(1).join("$").trim() });
   });
   return { params, lines };
 }
 
+function tirParameterGroup(param, label = "") {
+  const sections = { LONGITUDINAL_COEFFICIENTS: "Fx", LATERAL_COEFFICIENTS: "Fy",
+    OVERTURNING_COEFFICIENTS: "Mx", ROLLING_COEFFICIENTS: "My", ALIGNING_COEFFICIENTS: "Mz" };
+  if (sections[param.section]) return sections[param.section];
+  if (/^(QSX|LMX|LVMX)/.test(param.key)) return "Mx";
+  if (/^(QSY|LMY)/.test(param.key)) return "My";
+  if (/^(Q[BCDEHZ]Z|SSZ|LTR|LRES|LS|LGAZ)/.test(param.key)) return "Mz";
+  return /^(Fx|Fy)\b/.exec(label)?.[1] || "Reference";
+}
+
 function tirParameterPanelHtml() {
   const parsed = parseTirParameterText(state.activeTir?.text || "");
-  const knownKeys = new Set(KNOWN_TIR_PARAMETERS.map(([key]) => key));
-  const knownRows = KNOWN_TIR_PARAMETERS.map(([key, label, unit]) => {
-    const param = parsed.params.get(key);
-    const missing = !param;
-    return `
-      <label class="tir-param-row ${missing ? "missing" : ""}">
-        <span class="tir-param-key">${escapeHtml(key)}</span>
-        <span class="tir-param-label">${escapeHtml(label)}</span>
-        <input
-          class="tir-param-input"
-          data-tir-param="${escapeHtml(key)}"
-          value="${escapeHtml(param?.value || "")}"
-          placeholder="not in .tir"
-          ${missing ? "disabled" : ""}
-        >
-        <span class="tir-param-unit">${escapeHtml(unit || "")}</span>
-      </label>
-    `;
-  }).join("");
-  const unknownRows = [...parsed.params.values()]
-    .filter((param) => !knownKeys.has(param.key))
-    .sort((left, right) => left.key.localeCompare(right.key))
-    .map((param) => `
-      <div class="tir-param-row unknown">
-        <span class="tir-param-key">${escapeHtml(param.key)}</span>
-        <span class="tir-param-label">Unknown parameter</span>
-        <input class="tir-param-input" value="${escapeHtml(param.value)}" disabled>
-        <span class="tir-param-unit">!</span>
-      </div>
-    `).join("");
-  return `
-    <div class="tir-param-panel" data-tir-param-panel>
-      <div class="tir-param-grid">${knownRows}</div>
-      ${unknownRows ? `<div class="tir-param-unknown">${unknownRows}</div>` : ""}
-    </div>
-  `;
+  const metadata = new Map(KNOWN_TIR_PARAMETERS.map(([key, label, unit]) => [key, { label, unit }]));
+  const groups = { Reference: [], Fx: [], Fy: [], Mx: [], My: [], Mz: [] };
+  parsed.params.forEach((param) => {
+    const known = metadata.get(param.key);
+    const label = known?.label || param.description || "No description in this file";
+    const group = tirParameterGroup(param, known?.label);
+    const editable = Boolean(known) || group !== "Reference";
+    groups[group].push(`<label class="tir-param-row">
+      <span class="tir-param-key">${escapeHtml(param.key)}</span>
+      <span class="tir-param-label">${escapeHtml(label)}</span>
+      <input class="tir-param-input" ${editable ? `data-tir-param="${escapeHtml(param.key)}"` : "readonly"} value="${escapeHtml(param.value)}">
+      <span class="tir-param-unit">${escapeHtml(known?.unit || "")}</span>
+    </label>`);
+  });
+  return `<div class="tir-param-panel" data-tir-param-panel>${Object.entries(groups).filter(([, rows]) => rows.length)
+    .map(([group, rows]) => `<details><summary>${group}</summary><div class="tir-param-grid">${rows.join("")}</div></details>`).join("")}</div>`;
 }
 
 function emptyAreaCopy(areaId) {
@@ -2679,8 +2731,31 @@ function vectorSupportsQueueControls(field, coordinate) {
   return true;
 }
 
+function linearSpringRate(table) {
+  if (!Array.isArray(table) || table.length < 2 || table.some((row) => !Array.isArray(row) || row.length !== 2 || !row.every(Number.isFinite))) return null;
+  const [x0, y0] = table[0];
+  const distinct = table.find(([x]) => x !== x0);
+  if (!distinct) return null;
+  const rate = (distinct[1] - y0) / (distinct[0] - x0);
+  const offset = y0 - rate * x0;
+  if (rate < 0 || !Number.isFinite(rate) || !Number.isFinite(offset)) return null;
+  return table.every(([x, y]) => Math.abs(y - (rate * x + offset)) <= 1e-9 * Math.max(1, Math.abs(y))) ? { rate, offset } : null;
+}
+
+function springRateControl(field) {
+  if (!fieldPathString(field).includes(".spring_table.")) return "";
+  const linear = linearSpringRate(field.value);
+  if (!linear) return '<p class="field-help">Nonlinear spring curve</p>';
+  return `<label class="form-field"><span>Spring rate · N/mm</span><input type="number" min="0" step="any" data-spring-rate value="${linear.rate / 1000}"${field.disabled ? " disabled" : ""}></label>`;
+}
+
 function matrixControl(field) {
   const rows = Array.isArray(field.value) ? field.value : [];
+  if (/\.(spring|damper)_table\.table$/.test(fieldPathString(field))) {
+    return `${springRateControl(field)}<div class="matrix-scroll curve-table"><div class="curve-table-heading"><span>${escapeHtml(matrixColumnLabel(field, 0))}</span><span>${escapeHtml(matrixColumnLabel(field, 1))}</span></div><div class="matrix-input" data-matrix-cols="2"><div class="matrix-array-body">
+      ${rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, 2, false)).join("")}
+      </div></div></div><button class="array-action" type="button" data-array-action="add-row">Add point</button>`;
+  }
   const cols = Math.max(1, ...rows.map((row) => Array.isArray(row) ? row.length : 0));
   const fixed = matrixHasFixedShape(field);
   const body = rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, cols, fixed)).join("");
@@ -10879,46 +10954,22 @@ function drawWheelGlyph(ctx, x, y, radius, angle, color) {
 }
 
 function drawSuspensionPreview(ctx, width, height, data) {
-  const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Suspension Rates", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, "Spring and damper tables feeding the force-based run.", 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-  const maps = [
-    ["front-spring", "Front spring", nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["front-damper", "Front damper", nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
-    ["rear-spring", "Rear spring", nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]), "Deflection", "m", "Force", "N"],
-    ["rear-damper", "Rear damper", nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]), "Velocity", "m/s", "Force", "N"],
-  ];
-  const gap = 14;
-  const top = 76;
-  const plotCharts = [];
-  const rateTop = top;
-  const rateHeight = Math.max(260, height - rateTop - 28);
-  const panelWidth = (width - 56 - gap) / 2;
-  const panelHeight = Math.max(82, (rateHeight - gap) / 2);
-  maps.forEach(([key, title, table, xLabel, xUnit, yLabel, yUnit], index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const chart = drawLinePanel(
-      ctx,
-      28 + col * (panelWidth + gap),
-      rateTop + row * (panelHeight + gap),
-      panelWidth,
-      panelHeight,
-      title,
-      table,
-      xLabel,
-      xUnit,
-      yLabel,
-      yUnit,
-      { key },
-    );
-    if (chart) plotCharts.push(chart);
-  });
+  const axle = state.suspensionAxle;
+  const component = state.suspensionComponent;
+  const title = `${humanizeToken(axle)} ${component === "stabar" ? "anti-roll bar" : component}`;
+  drawCanvasText(ctx, title, 28, 30, { size: 18, weight: 780 });
+  let table = nestedValue(data, [axle, "actuation", "shock", `${component}_table`, "table"]);
+  if (component === "stabar") {
+    const rate = Number(nestedValue(data, [axle, "actuation", "stabar", "rate_n_m_per_rad"]));
+    table = Number.isFinite(rate) ? [[-0.1, -0.1 * rate], [0, 0], [0.1, 0.1 * rate]] : [];
+  }
+  const chart = drawLinePanel(ctx, 28, 62, width - 56, height - 90, title, table,
+    component === "spring" ? "Deflection" : component === "damper" ? "Shaft velocity" : "Twist",
+    component === "spring" ? "m" : component === "damper" ? "m/s" : "rad",
+    component === "stabar" ? "Torque" : "Force", component === "stabar" ? "N·m" : "N",
+    { key: `${axle}-${component}` });
+  const plotCharts = chart ? [chart] : [];
   state.suspensionPlotScene = plotCharts.length ? { charts: plotCharts } : null;
 }
 
