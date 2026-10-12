@@ -330,14 +330,21 @@
           </div>
 
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
-            <section class="workflow-list study-catalog results-catalog analysis-catalog archive-catalog">
+            <details class="workflow-list study-catalog results-catalog analysis-catalog archive-catalog">
+              <summary>Saved runs</summary>
               <div id="saved-result-list" class="study-catalog-grid"></div>
-            </section>
+            </details>
 
             <section class="sim-pane study-pane results-pane results-app-pane">
-              <div id="result-summary-panel" class="result-summary-panel"></div>
-              <h3 id="study-selected-title">Archived Files</h3>
-              <div id="study-output-list" class="output-list"></div>
+              <h3 id="study-selected-title">Results</h3>
+              <div class="archive-details">
+                <details><summary>Run details</summary>
+                  <div id="result-summary-panel" class="result-summary-panel"></div>
+                </details>
+                <details><summary>Files</summary>
+                  <div id="study-output-list" class="output-list"></div>
+                </details>
+              </div>
               <div id="study-preview" class="preview"></div>
             </section>
           </div>

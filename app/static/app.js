@@ -3956,6 +3956,7 @@ async function reviewSimulationWorkflow(workflowId) {
     state.selectedResultId = review.id;
     state.view = "studies";
     render();
+    expandResultReport();
     return;
   }
 }
@@ -4791,7 +4792,9 @@ function renderSavedResultCatalog() {
     card.addEventListener("click", () => {
       state.selectedResultId = card.dataset.resultId;
       state.activeStudyTab = "saved";
+      card.closest("details").open = false;
       renderStudies();
+      expandResultReport();
     });
   });
   grid.querySelectorAll("[data-delete-result]").forEach((button) => {
@@ -4883,8 +4886,9 @@ function renderSavedResultOutputs() {
   const preview = document.getElementById("study-preview");
   const result = selectedSavedResult();
   if (!title || !list || !preview) return;
-  title.textContent = result?.label ? `${result.label} Files` : "Archived Files";
+  title.textContent = result?.label ? result.label : "Results";
   if (!result?.files?.length) {
+    preview.collapsePdf?.();
     list.innerHTML = `<div class="empty-state">No archived files yet.</div>`;
     preview.innerHTML = `<div class="empty-state">Run a simulation to create downloadable archive files.</div>`;
     return;
@@ -4893,7 +4897,9 @@ function renderSavedResultOutputs() {
   list.querySelectorAll("[data-file-path]").forEach((button) => {
     button.addEventListener("click", () => previewFile(button.dataset.filePath, button.dataset.fileKind, "study-preview"));
   });
-  const first = result.files.find((file) => file.exists && isPreviewableFile(file.kind));
+  const first = result.files.find((file) => file.exists && file.path === preview.dataset.filePath)
+    || result.files.find((file) => file.exists && file.kind === "pdf")
+    || result.files.find((file) => file.exists && isPreviewableFile(file.kind));
   if (first) previewFile(first.path, first.kind, "study-preview");
   else preview.innerHTML = `<div class="empty-state">Download the archive files from the list.</div>`;
 }
@@ -5366,16 +5372,55 @@ function isPreviewableFile(kind) {
 function pdfPreviewHtml(path) {
   const url = fileDownloadUrl(path);
   return `
-    <div class="pdf-preview-shell">
+    <div class="pdf-preview-shell" role="region" aria-label="PDF report">
       <div class="pdf-preview-actions">
+        <button class="file-button" type="button" data-expand-pdf aria-expanded="false">Expand report</button>
         <a class="file-button" href="${url}" target="_blank" rel="noreferrer">Open PDF</a>
         <a class="file-button" href="${url}" download>Download</a>
       </div>
-      <object class="pdf-preview-frame" data="${url}" type="application/pdf">
-        <iframe src="${url}"></iframe>
-      </object>
+      <iframe class="pdf-preview-frame" title="Simulation report" src="${url}#view=FitH&navpanes=0"></iframe>
     </div>
   `;
+}
+
+function expandResultReport() {
+  document.querySelector('#study-preview [data-expand-pdf][aria-expanded="false"]')?.click();
+}
+
+function wirePdfPreview(preview) {
+  const shell = preview.querySelector(".pdf-preview-shell");
+  const button = shell.querySelector("[data-expand-pdf]");
+  let disabled = [];
+  const collapse = () => {
+    shell.classList.remove("is-expanded");
+    shell.setAttribute("role", "region");
+    shell.removeAttribute("aria-modal");
+    button.setAttribute("aria-expanded", "false");
+    button.textContent = "Expand report";
+    disabled.forEach((element) => { element.inert = false; });
+    disabled = [];
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") { collapse(); button.focus(); }
+  };
+  preview.collapsePdf = collapse;
+  button.addEventListener("click", () => {
+    if (shell.classList.contains("is-expanded")) { collapse(); return; }
+    shell.classList.add("is-expanded");
+    shell.setAttribute("role", "dialog");
+    shell.setAttribute("aria-modal", "true");
+    button.setAttribute("aria-expanded", "true");
+    button.textContent = "Close expanded view";
+    // Keep the iframe in place so expanding does not reset its page or zoom.
+    for (let node = shell; node.parentElement; node = node.parentElement) {
+      for (const sibling of node.parentElement.children) {
+        if (sibling !== node && !sibling.inert) { sibling.inert = true; disabled.push(sibling); }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    button.focus();
+  });
 }
 
 function outputItem(output) {
@@ -5400,8 +5445,12 @@ function outputItem(output) {
 async function previewFile(path, kind, targetId = "preview") {
   const preview = document.getElementById(targetId);
   if (!preview) return;
+  if (kind === "pdf" && preview.dataset.filePath === path && preview.querySelector(".pdf-preview-frame")) return;
+  preview.collapsePdf?.();
+  preview.dataset.filePath = path;
   if (kind === "pdf") {
     preview.innerHTML = pdfPreviewHtml(path);
+    wirePdfPreview(preview);
     return;
   }
   if (kind === "csv") {
