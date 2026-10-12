@@ -495,8 +495,10 @@ def _vehicle_template_data() -> list[dict[str, Any]]:
     return templates
 
 
-def _vehicle_template_for_architecture(front: str, rear: str) -> dict[str, Any] | None:
-    for data in _vehicle_template_data():
+def _vehicle_template_for_architecture(
+    front: str, rear: str, templates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    for data in _vehicle_template_data() if templates is None else templates:
         architecture = data.get("architecture", {})
         if not isinstance(architecture, dict):
             continue
@@ -505,8 +507,10 @@ def _vehicle_template_for_architecture(front: str, rear: str) -> dict[str, Any] 
     return None
 
 
-def _vehicle_template_for_axle_architecture(axle: str, architecture_id: str) -> dict[str, Any] | None:
-    for data in _vehicle_template_data():
+def _vehicle_template_for_axle_architecture(
+    axle: str, architecture_id: str, templates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    for data in _vehicle_template_data() if templates is None else templates:
         architecture = data.get("architecture", {})
         if isinstance(architecture, dict) and architecture.get(axle) == architecture_id:
             return data
@@ -590,7 +594,8 @@ def _vehicle_with_architecture_defaults(data: Any, *, prune_inactive: bool = Fal
     architecture["front"] = front
     architecture["rear"] = rear
 
-    combined_defaults = _vehicle_template_for_architecture(front, rear)
+    templates = _vehicle_template_data()
+    combined_defaults = _vehicle_template_for_architecture(front, rear, templates)
     if combined_defaults:
         for axle in ("front", "rear"):
             _merge_axle_defaults(data, axle, combined_defaults.get(axle))
@@ -598,7 +603,7 @@ def _vehicle_with_architecture_defaults(data: Any, *, prune_inactive: bool = Fal
     inactive_default_order = ("direct", "bellcrank_stabar", "bellcrank")
     for axle in ("front", "rear"):
         for architecture_id in inactive_default_order:
-            template = _vehicle_template_for_axle_architecture(axle, architecture_id)
+            template = _vehicle_template_for_axle_architecture(axle, architecture_id, templates)
             axle_defaults = template.get(axle) if isinstance(template, dict) else None
             if isinstance(axle_defaults, dict):
                 actuation_defaults = axle_defaults.get("actuation")
