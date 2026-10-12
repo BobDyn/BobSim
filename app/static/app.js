@@ -1569,7 +1569,6 @@ function parameterAreaForField(field) {
   if (path.startsWith("aero.")) return "aero";
   if (path === "body.torsional_stiff_n_m_per_rad") return "mass";
   if (path.startsWith("brake.")) return "powertrain";
-  if (/^(front|rear)\.wheel\.(toe_deg|camber_deg)$/.test(path)) return "hardpoints";
   if (fieldMatchesPowertrain(path, group, label)) return "powertrain";
   if (
     path.includes(".wheel.")
