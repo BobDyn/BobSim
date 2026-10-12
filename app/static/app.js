@@ -11090,11 +11090,14 @@ function kinematicCurveDescriptors(payload) {
       y_label: humanizeKinematicCurve(id),
     });
   });
-  return descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES;
+  return (descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES).map((item) => ({
+    ...item,
+    label: item.label.replace(/^(Bump|Roll|Steer) /, ""),
+  }));
 }
 
 function humanizeKinematicCurve(id) {
-  return humanizeToken(String(id).replace(/_(deg|mm|m|rad)$/i, ""));
+  return humanizeToken(String(id).replace(/^(bump|roll|steer)_/, "").replace(/_(deg|mm|m|rad)$/i, ""));
 }
 
 function inferCurveUnit(id) {

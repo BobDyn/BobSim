@@ -50,6 +50,12 @@ assert.match(hint, /popovertarget="info-popup-/);
 assert.match(hint, /&lt;script&gt; &amp; coordinates/);
 assert.equal(hint.includes('<script>'),false);
 assert.equal(hint.includes('<details class="info-hint" open'),false);
+const curveLabels = kinematicCurveDescriptors(null);
+for (const prefix of ['bump','roll','steer']) {
+  const descriptor = curveLabels.find(item=>item.id===prefix+'_camber_deg');
+  assert.equal(descriptor.label,'Camber');
+}
+assert.equal(humanizeKinematicCurve('bump_toe_deg'),'Toe');
 const curveField = {path:['front','actuation','shock','spring_table','table'],value:[[0,0],[0.01,150],[0.02,430]],array_element_kind:'number'};
 const originalCurve = JSON.stringify(curveField.value);
 const curveHtml = matrixControl(curveField);
