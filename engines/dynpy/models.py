@@ -285,7 +285,7 @@ class VehicleDynamicsSystem(ABC):
 
         body_mass, body_inertia = self._body_mass_properties()
         gravity_body = self._gravity_force_body(rotation, body_mass)
-        aero_force, aero_moment = self._aero_load(body_velocities)
+        aero_force, aero_moment = self._aero_load(body_velocities, body_coordinates)
         body_force = np.sum(body_wheel_forces, axis=0) + gravity_body + aero_force
         body_moment = (
             np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
@@ -575,32 +575,29 @@ class VehicleDynamicsSystem(ABC):
             forces[right] -= delta_force
         return forces
 
-    def _aero_downforce(self, speed_mps: float) -> float:
-        return 0.5 * self.parameters.rho_air_kg_m3 * speed_mps**2 * self.parameters.cl_area_m2
+    def _aero_load(
+        self, body_velocities: FloatArray, body_coordinates: FloatArray | None = None,
+    ) -> tuple[FloatArray, FloatArray]:
+        """## Aero Wrench
 
-    def _aero_load(self, body_velocities: FloatArray) -> tuple[FloatArray, FloatArray]:
-        horizontal = body_velocities[:2]
-        speed = float(np.linalg.norm(horizontal))
-        dynamic_pressure = 0.5 * self.parameters.rho_air_kg_m3 * speed**2
-        drag_force = np.zeros(3, dtype=float)
-        if speed > 1e-9:
-            drag_force[:2] = (
-                -dynamic_pressure * self.parameters.cd_area_m2 * horizontal / speed
-            )
-        downforce = dynamic_pressure * self.parameters.cl_area_m2
-        downforce_force = np.array([0.0, 0.0, -downforce], dtype=float)
-        force = drag_force + downforce_force
+        Parameters
+        ----------
+        body_velocities : FloatArray
+            Body linear and angular velocity. Air is stationary in the world frame.
+        body_coordinates : FloatArray, optional
+            Chassis position and attitude relative to the nominal pose.
 
-        # Drag stays at the CFD reference point. Only the downforce CoP absorbs
-        # the tabulated free pitch moment.
-        moment = np.cross(
-            np.asarray(self.parameters.aero_cop_m, dtype=float),
-            downforce_force,
-        ) + np.cross(
-            np.asarray(self.parameters.aero_drag_application_m, dtype=float),
-            drag_force,
-        )
-        return force, moment
+        Returns
+        -------
+        tuple[FloatArray, FloatArray]
+            Body-frame force and moment about the CG from the current ride heights.
+        """
+        aero = self.parameters.aero
+        if aero is None:
+            return np.zeros(3), np.zeros(3)
+        pose = np.zeros(6) if body_coordinates is None else body_coordinates
+        heights = aero.ride_heights(float(pose[2]), _body_to_world_rotation(pose[3:6]))
+        return aero.wrench(heights, body_velocities[:3], self.parameters.rho_air_kg_m3)
 
     @abstractmethod
     def _generalized_acceleration(
@@ -703,9 +700,9 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
     ) -> VerticalForceState:
         """Distribute weight and the full aero wrench to the four contact patches."""
 
-        del coordinates, velocities, body_coordinates, rotation, inputs
+        del coordinates, velocities, rotation, inputs
         static_loads = np.asarray(self.parameters.static_wheel_loads_n, dtype=float)
-        aero_force, aero_moment = self._aero_load(body_velocities)
+        aero_force, aero_moment = self._aero_load(body_velocities, body_coordinates)
         downforce = -float(aero_force[2])
         positions = self.parameters.corner_positions
         front_x = float(np.mean(positions[:2, 0]))
@@ -713,14 +710,13 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         wheelbase = front_x - rear_x
         front_aero = (-rear_x * downforce + aero_moment[1]) / wheelbase
         rear_aero = downforce - front_aero
-        loads = static_loads + np.array(
-            [front_aero / 2.0, front_aero / 2.0, rear_aero / 2.0, rear_aero / 2.0]
-        )
+        aero_loads = np.array([front_aero / 2.0, front_aero / 2.0, rear_aero / 2.0, rear_aero / 2.0])
+        loads = static_loads + aero_loads
 
-        # Aero roll moment uses the same roll-stiffness split as tire-force transfer.
+        # Include the axle reactions' roll moment when the CG is off the centerline.
         front_share = self._front_roll_stiffness_fraction()
         loads += self._roll_moment_load_transfer(
-            float(aero_moment[0]),
+            float(aero_moment[0] + np.dot(positions[:, 1], aero_loads)),
             front_share,
         )
         return VerticalForceState(

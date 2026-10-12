@@ -184,8 +184,8 @@ rear:
 aero:
   reference_speed_m_per_s: 15.0
   aero_ref_m: [1, 0, 0]
-  front_left_ride_height_ref_m: [0, 0.606110767456, 0.199898]
-  rear_left_ride_height_ref_m: [-1.5494, 0.60611077, 0.199898]
+  front_left_ride_height_ref_m: [0.0127, 0.226314, 0.08001]
+  rear_left_ride_height_ref_m: [-1.4070203, 0.2834894, 0.0870458]
 
   front_ride_height_grid_m: [0.03556, 0.05334, 0.07112, 0.0889, 0.10668]
   rear_ride_height_grid_m: [0.04191, 0.0635, 0.08382, 0.10414, 0.12573]

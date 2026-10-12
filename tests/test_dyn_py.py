@@ -201,39 +201,28 @@ def test_component_cg_move_recomputes_total_cg_and_yaw_inertia(
     )
 
 
-def test_dyn_py_applies_aero_at_projected_cop(parameters):
+def test_dyn_py_applies_full_aero_wrench_at_reference_point(parameters):
     model = create_model(6, parameters)
-    projection = project_vehicle_yaml(load_vehicle_yaml())
-    speed_mps = float(projection.summary["reference_speed_m_per_s"])
-    body_velocities = np.array([speed_mps, 0.0, 0.0, 0.0, 0.0, 0.0])
+    aero = parameters.aero
+    assert aero is not None
+    velocity = np.array([aero.reference_speed_mps, 0., 0., 0., 0., 0.])
+    force, moment = model._aero_load(velocity)
+    from engines.dynpy.parameters import _bilinear
 
-    force, moment = model._aero_load(body_velocities)
-
-    dynamic_pressure = 0.5 * parameters.rho_air_kg_m3 * speed_mps**2
-    drag_force = np.array(
-        [-dynamic_pressure * parameters.cd_area_m2, 0.0, 0.0]
-    )
-    downforce_force = np.array(
-        [0.0, 0.0, -dynamic_pressure * parameters.cl_area_m2]
-    )
-    expected_moment = np.cross(parameters.aero_cop_m, downforce_force)
-    expected_moment += np.cross(parameters.aero_drag_application_m, drag_force)
-
-    np.testing.assert_allclose(force, drag_force + downforce_force)
-    np.testing.assert_allclose(moment, expected_moment)
-
-    # Match BobLib: force at aero_ref_m plus the tabulated free pitch moment there.
-    free_moment = np.array([0.0, float(projection.summary["my_nm"]), 0.0])
-    source_wrench_moment = np.cross(
-        parameters.aero_drag_application_m,
-        drag_force + downforce_force,
-    ) + free_moment
-    np.testing.assert_allclose(moment, source_wrench_moment)
+    heights = aero.ride_heights(0., np.eye(3))
+    drag, downforce, mx, my, mz = [
+        _bilinear(aero.front_grid, aero.rear_grid, table, np.mean(heights[:2]), np.mean(heights[2:]))
+        for table in aero.loads
+    ]
+    expected_force = np.array([-drag, 0., -downforce])
+    np.testing.assert_allclose(force, expected_force)
+    np.testing.assert_allclose(moment, np.array([mx, my, mz]) + np.cross(aero.reference_m, expected_force))
 
 
 def test_3dof_and_6dof_initial_planar_response_remains_same_order(parameters):
     no_aero = replace(
         parameters,
+        aero=None,
         cl_area_m2=0.0,
         cd_area_m2=0.0,
     )

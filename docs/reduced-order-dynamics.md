@@ -76,13 +76,15 @@ acceleration rather than incorrectly imposing zero wheel acceleration. In the
 14DOF equations, longitudinal and lateral translation use total vehicle mass;
 sprung mass is used only for the independently released chassis heave equation.
 
-Aerodynamic downforce is applied at the center of pressure inferred directly
-from the nominal `vehicle.yml` downforce and free-pitch-moment maps. The rigid
-body receives the equivalent CG wrench
-`F_aero, r_CG_to_CoP x F_downforce`; drag remains applied at `aero_ref_m`.
-The reported front aero balance is derived from that CoP for the planar axle
-load closure. The CoP is not clipped to the wheelbase, because doing so would
-change the map's pitch moment.
+DynPy interpolates drag, downforce and all three CFD moments at the current
+front and rear axle ride heights. Heights come from the chassis-mounted
+reference points in `vehicle.yml`, mirrored for the right side, as in BobLib.
+Queries outside the CFD grids clamp to the grid edges. The force acts at
+`aero_ref_m`, with the interpolated free moment added to its moment about the CG.
+Loads scale with air density and full three-dimensional speed. DynPy currently
+assumes still air. The 3 DOF model keeps the nominal chassis pose and closes
+vertical aero loads algebraically. The 6, 10 and 14 DOF models update the aero
+map as the chassis moves.
 
 `vehicle.yml` supplies geometry, component mass/inertia, wheel/tire values,
 suspension tables, aero maps, and powertrain layout. Shock motion ratios and
