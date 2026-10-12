@@ -146,7 +146,6 @@ const state = {
   geometrySelectedPointId: null,
   geometryDrag: null,
   geometryAxis: "x",
-  geometryShiftActive: false,
   geometryShowFront: savedGeometryShowFront === null ? true : savedGeometryShowFront === "true",
   geometryShowRear: savedGeometryShowRear === null ? true : savedGeometryShowRear === "true",
   geometryPlotSelections: savedGeometryPlotSelections,
@@ -176,6 +175,7 @@ const state = {
   architectureDrag: null,
   setupResize: null,
   undoStack: [],
+  redoStack: [],
   pendingUndoSnapshot: null,
   cleanVehicleSignature: "",
   suppressUndo: false,
@@ -1377,7 +1377,10 @@ function acceptCleanVehiclePayload({ resetUndo = true, definitionState = "pendin
   state.dirtyVehicle = false;
   state.vehicleDefinitionState = definitionState;
   state.pendingUndoSnapshot = null;
-  if (resetUndo) state.undoStack = [];
+  if (resetUndo) {
+    state.undoStack = [];
+    state.redoStack = [];
+  }
 }
 
 function snapshotVehicleState(label = "") {
@@ -1419,12 +1422,13 @@ function isUndoableVehicleTarget(target) {
 
 function shouldUseNativeUndo(event) {
   const editable = event.target?.closest?.("textarea, input:not([type='checkbox']), [contenteditable='true']");
-  return Boolean(editable?.closest?.("#config-form, #geometry-point-editor, #config-text, #tir-editor"));
+  return Boolean(editable && !editable.closest("#config-form, #geometry-point-editor, #mass-property-editor, #vehicle-name-input"));
 }
 
 function updateDirtyState() {
   const data = currentVehicleFormData();
   const signature = data ? vehicleDataSignature(data) : "";
+  if (!state.suppressUndo && signature !== vehicleDataSignature(state.vehiclePayload?.data)) state.redoStack = [];
   state.dirtyVehicle = Boolean(signature && signature !== state.cleanVehicleSignature);
   if (state.dirtyVehicle) state.vehicleDefinitionState = "invalid";
   else if (state.vehicleDefinitionState === "invalid") state.vehicleDefinitionState = "pending";
@@ -1458,9 +1462,13 @@ function valueArrayShape(value) {
   return [value.length, Math.max(0, ...value.map((row) => Array.isArray(row) ? row.length : 0))];
 }
 
-function undoVehicleEdit() {
-  const snapshot = state.undoStack.pop();
+function restoreVehicleEdit(source, destination) {
+  const current = snapshotVehicleState();
+  if (!current) return false;
+  let snapshot = source.pop();
+  while (snapshot && vehicleDataSignature(snapshot.data) === vehicleDataSignature(current.data)) snapshot = source.pop();
   if (!snapshot) return false;
+  destination.push(current);
   state.suppressUndo = true;
   applyVehicleDataToPayload(snapshot.data);
   state.activeParamGroup = snapshot.activeParamGroup || state.activeParamGroup;
@@ -1472,15 +1480,26 @@ function undoVehicleEdit() {
   if (state.dirtyVehicle) state.vehicleDefinitionState = "invalid";
   else if (state.vehicleDefinitionState === "invalid") state.vehicleDefinitionState = "pending";
   renderSetup();
+  queueTirePayloadRefresh();
+  queueKinematicsRefresh();
   return true;
 }
 
+function undoVehicleEdit() {
+  return restoreVehicleEdit(state.undoStack, state.redoStack);
+}
+
+function redoVehicleEdit() {
+  return restoreVehicleEdit(state.redoStack, state.undoStack);
+}
+
 function handleUndoShortcut(event) {
-  if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== "z") return;
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "z") return;
   if (shouldUseNativeUndo(event)) return;
-  if (state.view !== "setup") return;
-  if (!undoVehicleEdit()) return;
+  if (state.view !== "setup" || document.querySelector('[role="dialog"]:not([hidden])')) return;
   event.preventDefault();
+  if (event.shiftKey) redoVehicleEdit();
+  else undoVehicleEdit();
 }
 
 function markVehicleDirty(target = null) {
@@ -6811,6 +6830,7 @@ function selectGeometryPoint(point, { scroll = false } = {}) {
 
 function clearGeometrySelection() {
   if (!state.geometrySelectedPointId) return false;
+  if (state.geometryDrag) finishGeometryDrag(state.geometryDrag.pointerId);
   state.geometrySelectedPointId = null;
   syncGeometryPointEditor();
   drawVehicleFromForm();
@@ -6830,16 +6850,17 @@ function cycleGeometryAxis() {
   setGeometryAxis(axes[(axes.indexOf(state.geometryAxis) + 1) % axes.length]);
 }
 
-function canUseGeometryAxisShortcut(target = document.activeElement) {
-  if (!isSpatialPreviewArea()) return false;
-  if (!isTextEntryTarget(target)) return true;
-  return Boolean(target?.closest?.("#geometry-point-editor"));
+function canUseGeometryAxisShortcut() {
+  return state.view === "setup" && activeParameterArea().visual === "hardpoints"
+    && editableGeometryPoint(selectedGeometryPoint())
+    && !document.querySelector('[role="dialog"]:not([hidden])');
 }
 
-function handleGeometryAxisShortcut(event = null) {
-  if (!canUseGeometryAxisShortcut(event?.target)) return false;
-  event?.preventDefault?.();
-  cycleGeometryAxis();
+function handleGeometryAxisShortcut(event) {
+  if (event.key !== "Tab" || !canUseGeometryAxisShortcut()) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) cycleGeometryAxis();
   return true;
 }
 
@@ -7084,12 +7105,6 @@ function startGeometryDrag(event, point) {
 function updateGeometryDrag(event) {
   const drag = state.geometryDrag;
   if (!drag || drag.pointerId !== event.pointerId) return;
-  if (event.shiftKey && !state.geometryShiftActive) {
-    state.geometryShiftActive = true;
-    cycleGeometryAxis();
-  } else if (!event.shiftKey) {
-    state.geometryShiftActive = false;
-  }
   const point = geometryPointById(drag.pointId);
   if (!point) return;
   drag.lastX = event.clientX;
@@ -7124,7 +7139,6 @@ function finishGeometryDrag(pointerId) {
   const drag = state.geometryDrag;
   if (!drag || drag.pointerId !== pointerId) return false;
   state.geometryDrag = null;
-  state.geometryShiftActive = false;
   document.getElementById("vehicle-canvas")?.classList.remove("geometry-dragging");
   renderParameterTabCanvases();
   return true;
@@ -12776,6 +12790,7 @@ function wireVehicleCanvas() {
       event.preventDefault();
       return;
     }
+    if (event.button === 0) clearGeometrySelection();
     startPreviewDrag(event, "rotate");
   });
   canvas.addEventListener("mousedown", startMiddleCanvasPan);
@@ -12845,6 +12860,7 @@ function wireVehicleCanvas() {
 }
 
 function wireGeometryEditor() {
+  document.getElementById("geometry-deselect-btn").addEventListener("click", clearGeometrySelection);
   document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
     button.addEventListener("click", () => setGeometryAxis(button.dataset.geometryAxis));
   });
@@ -12864,16 +12880,11 @@ function wireGeometryEditor() {
       event.preventDefault();
       return;
     }
-    if (event.key === "Escape" && isSpatialPreviewArea() && clearGeometrySelection()) {
+    if (event.key === "Escape" && canUseGeometryAxisShortcut() && clearGeometrySelection()) {
       event.preventDefault();
       return;
     }
-    if (event.key === "Shift" && !event.repeat && handleGeometryAxisShortcut(event)) {
-      state.geometryShiftActive = true;
-    }
-  });
-  window.addEventListener("keyup", (event) => {
-    if (event.key === "Shift") state.geometryShiftActive = false;
+    handleGeometryAxisShortcut(event);
   });
 }
 

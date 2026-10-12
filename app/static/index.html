@@ -177,6 +177,7 @@
                     <strong id="geometry-point-name"></strong>
                   </div>
                   <span id="geometry-axis-label" class="mini-pill">X</span>
+                  <button id="geometry-deselect-btn" class="ghost-button" type="button" title="Deselect (Esc)">Deselect</button>
                 </div>
                 <div class="geometry-axis-picker" aria-label="Drag axis">
                   <button class="axis-button active" data-geometry-axis="x" type="button">X</button>
@@ -186,18 +187,20 @@
                 <div class="geometry-coordinate-grid">
                   <label>
                     <span>X · mm</span>
-                    <input data-geometry-coordinate="x" type="number" step="0.001">
+                    <input data-geometry-coordinate="x" type="number" step="any">
                   </label>
                   <label>
                     <span>Y · mm</span>
-                    <input data-geometry-coordinate="y" type="number" step="0.001">
+                    <input data-geometry-coordinate="y" type="number" step="any">
                   </label>
                   <label>
                     <span>Z · mm</span>
-                    <input data-geometry-coordinate="z" type="number" step="0.001">
+                    <input data-geometry-coordinate="z" type="number" step="any">
                   </label>
                 </div>
-                <p>Drag point moves axis. Empty drag rotates. Ctrl-drag pans.</p>
+                <p>Drag the point along the selected axis. <b>Tab</b> cycles X / Y / Z.</p>
+                <p><b>Esc</b> or click empty space to deselect. Drag empty space to rotate. Ctrl-drag to pan.</p>
+                <p><b>Ctrl/Cmd + Z</b> undo. <b>Ctrl/Cmd + Shift + Z</b> redo.</p>
               </div>
               <div id="mass-property-editor" class="mass-property-editor" hidden>
                 <div class="mass-editor-head">
