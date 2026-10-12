@@ -852,8 +852,8 @@ def test_frontend_renders_aero_maps_as_interactive_3d_surfaces() -> None:
     assert "function aeroSurfaceRowsFromTable" in app_js
     assert 'area.visual === "aero" || (area.visual === "tires"' in app_js
     assert "state.tireSurfaceScene = {" in app_js
-    assert '"FRH m"' in app_js
-    assert '"RRH m"' in app_js
+    assert '"Front ride height (mm)"' in app_js
+    assert '"Rear ride height (mm)"' in app_js
 
 
 def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> None:

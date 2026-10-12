@@ -2616,6 +2616,100 @@ body.resizing-panes * {
   white-space: nowrap;
 }
 
+.aero-config-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.aero-config-panel > * {
+  min-width: 0;
+}
+
+.aero-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.aero-view-controls .form-field {
+  flex: 1 1 180px;
+}
+
+.aero-view-controls button[aria-pressed="true"] {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+
+.component-details {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.component-details > summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  padding-bottom: 12px;
+}
+
+.aero-table-scroll {
+  overflow-x: auto;
+}
+
+.aero-map-table {
+  min-width: 600px;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.aero-map-table caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 12px;
+  line-height: 1.5;
+}
+
+.aero-map-table th,
+.aero-map-table td {
+  padding: 4px;
+  text-align: right;
+}
+
+.aero-map-table th {
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.aero-map-table input {
+  width: 100%;
+  min-width: 86px;
+}
+
+.aero-map-table .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.powertrain-model-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.powertrain-brakes h3 {
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .powertrain-config-panel {
   display: grid;
   gap: 12px;

@@ -359,7 +359,7 @@ const SETUP_GUIDE = {
     title: "Aero",
     focus: "Ride-height load maps.",
     purpose: "Map attitude to aero loads.",
-    figure: "Aero heatmaps.",
+    figure: "Aero.",
     check: "Map signs and magnitudes are sane.",
   },
   powertrain: {
@@ -1284,6 +1284,7 @@ function renderVehicleEditor() {
   wireTireAssignments();
   wireTireLoadControls();
   wirePowertrainSubsystems();
+  wireAeroControls();
   wireTireTools();
   wireTirParameterFields();
   wireFieldSubsections();
@@ -1641,6 +1642,7 @@ function parameterAreaFields(area) {
   if (["hardpoints", "mass"].includes(area.id)) return vehicleComponentEditorHtml(area);
   if (area.id === "tires") return tireSectionHtml(area);
   if (area.id === "powertrain") return powertrainSectionHtml(area);
+  if (area.id === "aero") return aeroSectionHtml(area);
   const extra = area.id === "tires"
     ? tireToolsHtml()
     : area.id === "vehicle"
@@ -2187,6 +2189,93 @@ function architectureSelectHtml(field, id, label) {
   `;
 }
 
+const AERO_MAPS = [
+  { key: "downforce_table_n", label: "Downforce", unit: "N", color: "green" },
+  { key: "drag_table_n", label: "Drag", unit: "N", color: "red" },
+  { key: "mx_table_nm", label: "Roll moment", unit: "N·m", color: "blue" },
+  { key: "my_table_nm", label: "Pitch moment", unit: "N·m", color: "amber" },
+  { key: "mz_table_nm", label: "Yaw moment", unit: "N·m", color: "magenta" },
+];
+
+function aeroSectionHtml(area) {
+  if (!AERO_MAPS.some((map) => map.key === state.activeAeroMap)) state.activeAeroMap = AERO_MAPS[0].key;
+  const data = state.vehiclePayload?.data || {};
+  const maps = new Set(AERO_MAPS.map((map) => map.key));
+  const fields = area.fields.filter((field) => !maps.has(field.path?.[1]));
+  const grids = fields.filter((field) => field.path?.[1]?.includes("_grid_m"));
+  const references = fields.filter((field) => field.path?.[1]?.endsWith("_ref_m"));
+  const fallback = fields.find((field) => field.path?.[1] === "tire_template");
+  const settings = fields.filter((field) => !grids.includes(field) && !references.includes(field) && field !== fallback);
+  return `
+    <div class="aero-config-panel">
+      <div class="field-grid">${settings.map(fieldControl).join("")}</div>
+      ${fallback ? `<details class="component-details"${data.front?.tire?.template && data.rear?.tire?.template ? " hidden" : ""}><summary>Legacy tire fallback</summary>${fieldControl(fallback)}</details>` : ""}
+      <div class="aero-view-controls" data-setup-filter>
+        <label class="form-field"><span>Map</span>
+          <select data-aero-map aria-label="Aero map">
+            ${AERO_MAPS.map((map) => `<option value="${map.key}"${map.key === state.activeAeroMap ? " selected" : ""}>${map.label} · ${map.unit}</option>`).join("")}
+          </select>
+        </label>
+        <button type="button" class="ghost-button" data-aero-references aria-pressed="${state.aeroReferenceView ? "true" : "false"}">Reference points</button>
+      </div>
+      ${AERO_MAPS.map((map) => {
+        const field = area.fields.find((entry) => entry.path?.[1] === map.key);
+        return `<section data-aero-map-panel="${map.key}"${map.key === state.activeAeroMap ? "" : " hidden"}>
+          ${field ? `<details class="component-details"><summary>Edit ${map.label.toLowerCase()} table</summary>${aeroTableControl(field, map, data.aero || {})}</details>` : '<p class="area-empty">No map data.</p>'}
+        </section>`;
+      }).join("")}
+      <details class="component-details"><summary>Ride-height grid</summary><div class="field-grid">${grids.map(fieldControl).join("")}</div></details>
+      <details class="component-details"><summary>Reference points</summary>
+        <p class="field-help">Vehicle coordinates. Origin: average of the front contact patches. Right ride-height points mirror the left.</p>
+        <div class="field-grid">${references.map(fieldControl).join("")}</div>
+      </details>
+    </div>
+  `;
+}
+
+function aeroRideHeightLabel(value) {
+  const millimeters = Number(value) * 1000;
+  return Number.isFinite(millimeters) ? String(Number(millimeters.toFixed(3))) : "";
+}
+
+function aeroTableControl(field, map, aero) {
+  return `<div class="aero-table-scroll form-field" data-array-path="${escapeHtml(field.key)}" data-array-rank="2" data-array-element-kind="${escapeHtml(field.array_element_kind || "number")}"${field.disabled ? ' data-field-disabled="true"' : ""}>
+    <table class="aero-map-table">
+      <caption>${map.label} (${map.unit}). Columns: front ride height (mm). Rows: rear ride height (mm).</caption>
+      <thead><tr><th scope="col">Rear / Front</th>${(field.value[0] || []).map((_, col) => `<th scope="col" data-aero-front-height="${col}">${escapeHtml(aeroRideHeightLabel(aero.front_ride_height_grid_m?.[col]))}</th>`).join("")}</tr></thead>
+      <tbody>${field.value.map((row, rowIndex) => `<tr><th scope="row" data-aero-rear-height="${rowIndex}">${escapeHtml(aeroRideHeightLabel(aero.rear_ride_height_grid_m?.[rowIndex]))}</th>${row.map((value, col) => `<td><label><span class="sr-only">${map.label}, rear row ${rowIndex + 1}, front column ${col + 1}</span>${arrayScalarControl(field, value, { row: rowIndex, col })}</label></td>`).join("")}</tr>`).join("")}</tbody>
+    </table>
+  </div>`;
+}
+
+function wireAeroControls() {
+  const panel = document.querySelector(".aero-config-panel");
+  if (!panel) return;
+  panel.querySelector("[data-aero-map]").addEventListener("change", (event) => {
+    state.activeAeroMap = event.target.value;
+    state.aeroReferenceView = false;
+    panel.querySelector("[data-aero-references]").setAttribute("aria-pressed", "false");
+    panel.querySelectorAll("[data-aero-map-panel]").forEach((section) => {
+      section.hidden = section.dataset.aeroMapPanel !== state.activeAeroMap;
+    });
+    drawVehicleFromForm();
+  });
+  panel.querySelector("[data-aero-references]").addEventListener("click", (event) => {
+    state.aeroReferenceView = !state.aeroReferenceView;
+    event.currentTarget.setAttribute("aria-pressed", String(state.aeroReferenceView));
+    drawVehicleFromForm();
+  });
+  panel.addEventListener("input", () => {
+    const aero = currentVehicleFormData()?.aero || {};
+    panel.querySelectorAll("[data-aero-front-height]").forEach((cell) => {
+      cell.textContent = aeroRideHeightLabel(aero.front_ride_height_grid_m?.[cell.dataset.aeroFrontHeight]);
+    });
+    panel.querySelectorAll("[data-aero-rear-height]").forEach((cell) => {
+      cell.textContent = aeroRideHeightLabel(aero.rear_ride_height_grid_m?.[cell.dataset.aeroRearHeight]);
+    });
+  });
+}
+
 function powertrainToolsHtml() {
   const profile = powertrainProfile(state.vehiclePayload?.data || {});
   return `
@@ -2228,7 +2317,7 @@ function powertrainSectionHtml(area) {
         ${subsystems.map((subsystem) => `
           <section class="powertrain-subsystem-panel" data-powertrain-panel="${escapeHtml(subsystem.id)}"${state.activePowertrainSubsystem === subsystem.id ? "" : " hidden"}>
             ${subsystem.fields.length
-              ? `<div class="field-grid">${subsystem.fields.map(fieldControl).join("")}</div>`
+              ? powertrainSubsystemFieldsHtml(subsystem)
               : `<div class="area-empty">No ${escapeHtml(subsystem.label.toLowerCase())} specs are exposed for this architecture.</div>`}
           </section>
         `).join("")}
@@ -2237,8 +2326,27 @@ function powertrainSectionHtml(area) {
   `;
 }
 
+function powertrainSubsystemFieldsHtml(subsystem) {
+  const primary = {
+    pBattery: ["Ns", "Np", "SOC_start"],
+    pVCU: ["tau_max", "P_max_mot", "regenTorqueLimit"],
+    pInverter: ["P_max_mot", "P_max_reg", "V_dc_max"],
+    pMotor: ["T_peak", "T_cont", "rpm_max_peak", "P_mech_peak", "P_cont_low", "P_cont_high"],
+    pDriveline: ["finalDriveRatio", "diff_use_lsd", "diff_T_preload", "diff_lockFractionAccel", "diff_lockFractionDecel"],
+  }[subsystem.id] || [];
+  const basics = subsystem.fields.filter((field) => primary.includes(field.path?.[2]));
+  const halfshafts = subsystem.fields.filter((field) => field.path?.[2]?.startsWith("halfshaft"));
+  const brakes = subsystem.fields.filter((field) => field.path?.[0] === "brake");
+  const advanced = subsystem.fields.filter((field) => !basics.includes(field) && !halfshafts.includes(field) && !brakes.includes(field));
+  return `<div class="field-grid">${basics.map(fieldControl).join("")}</div>
+    ${brakes.length ? `<section class="powertrain-brakes"><h3>Brakes</h3><div class="field-grid">${brakes.map(fieldControl).join("")}</div></section>` : ""}
+    ${halfshafts.length ? `<details class="component-details"><summary>Halfshafts</summary><div class="field-grid">${halfshafts.map(fieldControl).join("")}</div></details>` : ""}
+    ${advanced.length ? `<details class="component-details"><summary>Advanced properties</summary><div class="field-grid">${advanced.map(fieldControl).join("")}</div></details>` : ""}`;
+}
+
 function powertrainImplementationHtml(profile, field) {
   const choices = availablePowertrains();
+  if (choices.length === 1) return `<div class="powertrain-model-label">${escapeHtml(profile.label)}</div>`;
   const key = field?.key || JSON.stringify(["powertrain", "implementation"]);
   return `
     <label class="powertrain-implementation-card">
@@ -2256,7 +2364,7 @@ function powertrainSubsystems(profile, fields) {
   const components = new Set((profile.components || []).map((item) => String(item).toLowerCase()));
   const specs = fields.filter((field) => {
     const path = fieldPathString(field);
-    return path.startsWith("powertrain.") && path !== "powertrain.implementation";
+    return (path.startsWith("powertrain.") && path !== "powertrain.implementation") || path.startsWith("brake.");
   });
   return POWERTRAIN_SUBSYSTEMS
     .filter((subsystem) => subsystem.always || components.has(String(subsystem.component).toLowerCase()))
@@ -2267,6 +2375,7 @@ function powertrainSubsystems(profile, fields) {
 }
 
 function powertrainFieldSubsystem(field) {
+  if (field.path?.[0] === "brake") return "pDriveline";
   return String(field.path?.[1] || "pVCU");
 }
 
@@ -8749,85 +8858,49 @@ function massPropertyBlocks(data) {
 }
 
 function drawAeroMapPreview(ctx, width, height, data) {
+  if (state.aeroReferenceView) return drawAeroReferencePreview(ctx, width, height, data);
+  const palette = canvasPalette();
+  const aero = data.aero || {};
+  const map = AERO_MAPS.find((entry) => entry.key === state.activeAeroMap) || AERO_MAPS[0];
+  drawPreviewGrid(ctx, width, height);
+  drawCanvasText(ctx, `${map.label} at ${formatNumber(aero.reference_speed_m_per_s)} m/s`, 28, 28, { size: 18, weight: 780 });
+  const rows = aeroSurfaceRowsFromTable(aero[map.key], aero.front_ride_height_grid_m, aero.rear_ride_height_grid_m, "value");
+  const panel = drawTireSurfacePanel(ctx, 24, 52, width - 48, height - 76, map.label, [{
+    label: map.label,
+    shortLabel: map.label,
+    color: palette[map.color],
+    rows,
+    xKey: "front_ride_height_mm",
+    yKey: "rear_ride_height_mm",
+    zKey: "value",
+  }], "Front ride height (mm)", "Rear ride height (mm)", `${map.label} (${map.unit})`, { emptyMessage: "No aero map data" });
+  state.tireSurfaceScene = { panels: panel ? [panel] : [] };
+}
+
+function drawAeroReferencePreview(ctx, width, height, data) {
+  state.tireSurfaceScene = null;
   const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
-  drawCanvasText(ctx, "Aero Maps", 28, 28, { size: 18, weight: 780 });
-  drawCanvasText(ctx, `Reference speed ${formatNumber(data.aero?.reference_speed_m_per_s)} m/s`, 28, 50, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
+  drawCanvasText(ctx, "Aero reference points", 28, 28, { size: 18, weight: 780 });
+  const model = filterVehicleModel(buildVehicleGeometry(data), sectionFocus("geometry"));
+  const refs = [
+    { id: "origin", label: "Origin", point: [0, 0, 0], color: palette.muted },
+    { id: "wrench", label: "Wrench reference", point: data.aero?.aero_ref_m, color: palette.magenta },
+    { id: "front", label: "Front ride height (left)", point: data.aero?.front_left_ride_height_ref_m, color: palette.green },
+    { id: "rear", label: "Rear ride height (left)", point: data.aero?.rear_left_ride_height_ref_m, color: palette.amber },
+  ].filter((ref) => toPoint(ref.point)).map((ref) => ({ ...ref, x: ref.point[0], y: ref.point[1], z: ref.point[2], radius: 7 }));
+  model.points.push(...refs);
+  const { map } = projectVehicleModelInRect(model, { x: 28, y: 66, width: width - 56, height: height - 136 }, "iso");
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  model.links.forEach((link) => drawCylinder(ctx, map.get(link.from), map.get(link.to), link));
+  ctx.restore();
+  refs.forEach((ref) => {
+    const point = map.get(ref.id);
+    drawSphere(ctx, point);
+    drawCanvasText(ctx, ref.label, point.x2 + 12, point.y2 - 12, { color: ref.color, size: 12, weight: 700 });
   });
-
-  const aero = data.aero || {};
-  const panels = [
-    {
-      title: "Downforce",
-      table: aero.downforce_table_n,
-      zKey: "downforce_n",
-      unit: "N",
-      color: palette.green,
-    },
-    {
-      title: "Drag",
-      table: aero.drag_table_n,
-      zKey: "drag_n",
-      unit: "N",
-      color: palette.red,
-    },
-    {
-      title: "Pitch moment",
-      table: aero.my_table_nm,
-      zKey: "pitch_moment_nm",
-      unit: "Nm",
-      color: palette.amber,
-    },
-    {
-      title: "Yaw moment",
-      table: aero.mz_table_nm,
-      zKey: "yaw_moment_nm",
-      unit: "Nm",
-      color: palette.magenta,
-    },
-  ];
-  const gap = 14;
-  const top = 76;
-  const panelWidth = (width - 56 - gap) / 2;
-  const panelHeight = (height - top - 28 - gap) / 2;
-  const surfacePanels = [];
-  panels.forEach((panelDef, index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const rows = aeroSurfaceRowsFromTable(
-      panelDef.table,
-      aero.front_ride_height_grid_m,
-      aero.rear_ride_height_grid_m,
-      panelDef.zKey,
-    );
-    surfacePanels.push(drawTireSurfacePanel(
-      ctx,
-      28 + col * (panelWidth + gap),
-      top + row * (panelHeight + gap),
-      panelWidth,
-      panelHeight,
-      panelDef.title,
-      [{
-        label: `${panelDef.title} map`,
-        shortLabel: panelDef.title,
-        color: panelDef.color,
-        rows,
-        xKey: "front_ride_height_m",
-        yKey: "rear_ride_height_m",
-        zKey: panelDef.zKey,
-      }],
-      "FRH m",
-      "RRH m",
-      `${panelDef.title} ${panelDef.unit}`,
-      { emptyMessage: "No aero map data" },
-    ));
-  });
-  state.tireSurfaceScene = {
-    panels: surfacePanels.filter(Boolean),
-  };
+  drawCanvasText(ctx, "Origin: average of the front contact patches. Right ride-height points mirror the left.", 28, height - 28, { size: 11, color: palette.muted });
 }
 
 function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {
@@ -8837,22 +8910,22 @@ function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {
   return table
     .map((row, rowIndex) => {
       if (!Array.isArray(row)) return null;
-      const rearRideHeight = Number(yValues[rowIndex] ?? rowIndex);
+      const rearRideHeight = Number(yValues[rowIndex] ?? rowIndex) * 1000;
       const points = row
         .map((value, colIndex) => {
-          const frontRideHeight = Number(xValues[colIndex] ?? colIndex);
+          const frontRideHeight = Number(xValues[colIndex] ?? colIndex) * 1000;
           const z = Number(value);
           if (!Number.isFinite(frontRideHeight) || !Number.isFinite(rearRideHeight) || !Number.isFinite(z)) return null;
           return {
-            front_ride_height_m: frontRideHeight,
-            rear_ride_height_m: rearRideHeight,
+            front_ride_height_mm: frontRideHeight,
+            rear_ride_height_mm: rearRideHeight,
             [zKey]: z,
           };
         })
         .filter(Boolean);
       return points.length
         ? {
-            rear_ride_height_m: rearRideHeight,
+            rear_ride_height_mm: rearRideHeight,
             points,
           }
         : null;
