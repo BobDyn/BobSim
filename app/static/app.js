@@ -2239,7 +2239,7 @@ function aeroSectionHtml(area) {
       </div>
       <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
       </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
-        ${infoHint("Aero coordinates and controls", "Origin: average of the front contact patches. Right ride-height points mirror the left. Drag to rotate, scroll to zoom, Ctrl-drag to pan. Double-click resets the view.")}
+        ${infoHint("Aero coordinates and controls", "+X forward, +Y left, +Z up. Origin: average of the front contact patches. Enter left-side points. Right-side points mirror Y. Drag to rotate, scroll to zoom, Ctrl-drag to pan. Double-click resets the view.")}
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
       </section>
     </div>
@@ -8915,6 +8915,17 @@ function drawAeroMapPreview(ctx, width, height, data) {
   state.tireSurfaceScene = { panels: panel ? [panel] : [] };
 }
 
+function aeroRideHeightReferences(aero = {}) {
+  return ["front", "rear"].flatMap((axle) => {
+    const point = toPoint(aero[`${axle}_left_ride_height_ref_m`]);
+    if (!point) return [];
+    return [
+      { id: `${axle}-aero-left`, label: axle === "front" ? "FL" : "RL", axle, point, mirrored: false },
+      { id: `${axle}-aero-right`, label: axle === "front" ? "FR" : "RR", axle, point: [point[0], -point[1], point[2]], mirrored: true },
+    ];
+  });
+}
+
 function drawAeroReferencePreview(ctx, width, height, data) {
   state.tireSurfaceScene = null;
   const palette = canvasPalette();
@@ -8924,9 +8935,10 @@ function drawAeroReferencePreview(ctx, width, height, data) {
   const refs = [
     { id: "origin", label: "Origin", point: [0, 0, 0], color: palette.muted },
     { id: "wrench", label: "Wrench reference", point: data.aero?.aero_ref_m, color: palette.magenta },
-    { id: "front", label: "Front ride height (left)", point: data.aero?.front_left_ride_height_ref_m, color: palette.green },
-    { id: "rear", label: "Rear ride height (left)", point: data.aero?.rear_left_ride_height_ref_m, color: palette.amber },
-  ].filter((ref) => toPoint(ref.point)).map((ref) => ({ ...ref, x: ref.point[0], y: ref.point[1], z: ref.point[2], radius: 7 }));
+    ...aeroRideHeightReferences(data.aero).map((ref) => ({
+      ...ref, color: ref.axle === "front" ? palette.green : palette.amber,
+    })),
+  ].filter((ref) => toPoint(ref.point)).map((ref) => ({ ...ref, x: ref.point[0], y: ref.point[1], z: ref.point[2], radius: ref.mirrored ? 5 : 7 }));
   model.points.push(...refs);
   const { map } = projectVehicleModelInRect(model, { x: 28, y: 66, width: width - 56, height: height - 136 }, "iso");
   ctx.save();
@@ -8935,10 +8947,12 @@ function drawAeroReferencePreview(ctx, width, height, data) {
   ctx.restore();
   refs.forEach((ref) => {
     const point = map.get(ref.id);
+    ctx.save();
+    ctx.globalAlpha = ref.mirrored ? 0.5 : 1;
     drawSphere(ctx, point);
     drawCanvasText(ctx, ref.label, point.x2 + 12, point.y2 - 12, { color: ref.color, size: 12, weight: 700 });
+    ctx.restore();
   });
-  drawCanvasText(ctx, "Origin: average of the front contact patches. Right ride-height points mirror the left.", 28, height - 28, { size: 11, color: palette.muted });
 }
 
 function aeroSurfaceRowsFromTable(table, xGrid, yGrid, zKey) {

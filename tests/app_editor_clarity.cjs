@@ -5,6 +5,18 @@ const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents(
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
+const aeroInput = {front_left_ride_height_ref_m:[0,0.2,0.08],rear_left_ride_height_ref_m:[-1.4,0.3,0.09]};
+const refs = aeroRideHeightReferences(aeroInput);
+assert.equal(refs.map(r=>r.label).join(','),'FL,FR,RL,RR');
+for (let i=0;i<4;i+=2) {
+  assert.equal(refs[i+1].point[0],refs[i].point[0]);
+  assert.equal(refs[i+1].point[1],-refs[i].point[1]);
+  assert.equal(refs[i+1].point[2],refs[i].point[2]);
+  assert.equal(refs[i].mirrored,false);
+  assert.equal(refs[i+1].mirrored,true);
+}
+assert.equal(aeroInput.front_left_ride_height_ref_m[1],0.2);
+assert.equal(aeroRideHeightReferences({}).length,0);
 const hint = infoHint('Geometry help', '<script> & coordinates');
 assert.match(hint, /<details class="info-hint">/);
 assert.match(hint, /aria-label="Geometry help"/);
