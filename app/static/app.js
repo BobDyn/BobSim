@@ -1359,7 +1359,13 @@ function renderWorkflowGuide(guide = setupGuide()) {
     <div class="guide-row"><span>Check</span><strong>${escapeHtml(guide.check || "")}</strong></div>
   `;
   panel.hidden = !state.referenceOpen;
-  document.getElementById("reference-toggle-btn")?.classList.toggle("active", state.referenceOpen);
+  const button = document.getElementById("reference-toggle-btn");
+  if (button) {
+    button.innerHTML = infoIcon();
+    button.setAttribute("aria-label", "Section information");
+    button.setAttribute("aria-expanded", String(state.referenceOpen));
+    button.classList.toggle("active", state.referenceOpen);
+  }
 }
 
 function cloneData(data) {
@@ -2723,11 +2729,11 @@ function fieldControl(field) {
   const wrapperAttrs = fieldWrapperAttrs(field);
   if (isArrayField(field)) return arrayFieldControl(field, label);
   if (field.kind === "boolean") {
-    return `<div class="form-field toggle-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}>${fieldHelpHtml(field)}</div>`;
+    return `<div class="form-field toggle-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="checkbox"${value ? " checked" : ""}></div>`;
   }
   if (field.kind === "number" || field.kind === "integer") {
     const step = field.kind === "integer" ? "1" : "any";
-    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}">${fieldHelpHtml(field)}</div>`;
+    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"></div>`;
   }
   if (field.kind === "select") {
     const choices = field.choices.some((choice) => String(choice) === String(value)) ? field.choices : [value, ...field.choices].filter(Boolean);
@@ -2737,7 +2743,7 @@ function fieldControl(field) {
         <select ${attrs}>
           ${choices.map((choice) => `<option value="${escapeHtml(choice)}"${String(choice) === String(value) ? " selected" : ""}>${escapeHtml(choice)}</option>`).join("")}
         </select>
-        ${fieldHelpHtml(field)}
+
       </div>
     `;
   }
@@ -2746,11 +2752,11 @@ function fieldControl(field) {
       <div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>
         ${label}
         <textarea ${attrs}>${escapeHtml(JSON.stringify(value, null, 2))}</textarea>
-        ${fieldHelpHtml(field)}
+
       </div>
     `;
   }
-  return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
+  return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="text" value="${escapeHtml(value ?? "")}"></div>`;
 }
 
 function fieldLabelHtml(field) {
@@ -2760,11 +2766,15 @@ function fieldLabelHtml(field) {
   const meta = unit || planned ? `<span class="field-label-meta">${unit}${planned}</span>` : "";
   const objectLabel = fieldObjectLabel(field);
   const object = objectLabel ? `<span class="field-object-label">${escapeHtml(objectLabel)}</span>` : "";
-  return `${object}<label><span>${escapeHtml(fieldPropertyLabel(field))}</span>${meta}</label>`;
+  return `${object}<div class="field-heading"><span class="field-heading-name">${escapeHtml(fieldPropertyLabel(field))}</span>${fieldHelpHtml(field)}${meta}</div>`;
+}
+
+function infoIcon() {
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="7.5" r=".8" fill="currentColor" stroke="none"/></svg>';
 }
 
 function infoHint(label, text) {
-  return `<details class="info-hint"><summary aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">i</summary><div class="info-hint-content">${escapeHtml(text)}</div></details>`;
+  return `<details class="info-hint"><summary aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">${infoIcon()}</summary><div class="info-hint-content">${escapeHtml(text)}</div></details>`;
 }
 
 function fieldHelpHtml(field) {
@@ -2825,7 +2835,7 @@ function arrayFieldControl(field, label) {
   const choices = JSON.stringify(Array.isArray(field.choices) ? field.choices : []);
   const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-display-scale="${field.display_scale || 1}" data-array-element-kind="${escapeHtml(elementKind)}" data-array-choices="${escapeHtml(choices)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
   const control = rank === 2 ? matrixControl(field) : vectorControl(field);
-  return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}${fieldHelpHtml(field)}</div>`;
+  return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}</div>`;
 }
 
 function vectorControl(field) {
@@ -4459,8 +4469,7 @@ function simulationVisualHtml(workflow) {
     }
   }
   return `<figure class="simulation-visual">
-    <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}">${drawing}</svg>
-    <figcaption>${infoHint("About this analysis", caption)}</figcaption>
+    <svg viewBox="0 0 260 125" role="img" aria-label="${escapeHtml(caption)}"><title>${escapeHtml(caption)}</title>${drawing}</svg>
   </figure>`;
 }
 

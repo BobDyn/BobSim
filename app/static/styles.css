@@ -1550,19 +1550,17 @@ body.resizing-panes * {
 }
 
 .reference-button {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .reference-button.active {
@@ -4796,10 +4794,11 @@ summary:focus-visible {
 .info-hint summary {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
@@ -4831,4 +4830,27 @@ summary:focus-visible {
 .sim-config-status:empty,
 #sim-readiness:empty {
   display: none;
+}
+
+.field-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.field-heading-name { min-width: 0; }
+.field-heading .field-label-meta { margin-left: auto; }
+.info-hint { flex-shrink: 0; }
+.info-hint summary:hover,
+.info-hint[open] summary,
+.reference-button:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.vehicle-component-editor > .info-hint,
+[data-aero-reference-editor] > .info-hint {
+  float: right;
 }

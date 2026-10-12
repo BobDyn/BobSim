@@ -8,6 +8,8 @@ vm.runInContext(`
 const hint = infoHint('Geometry help', '<script> & coordinates');
 assert.match(hint, /<details class="info-hint">/);
 assert.match(hint, /aria-label="Geometry help"/);
+assert.match(hint, /<svg[^>]+aria-hidden="true"/);
+assert.equal(hint.includes('>i</summary>'),false);
 assert.match(hint, /&lt;script&gt; &amp; coordinates/);
 assert.equal(hint.includes('<script>'),false);
 assert.equal(hint.includes('<details class="info-hint" open'),false);
