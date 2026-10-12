@@ -6036,17 +6036,11 @@ function renderArchitectureConnectionModal(data = currentVehicleFormData() || st
   const architecture = String(data.architecture?.[axle] || "");
   const title = document.getElementById("architecture-connection-title");
   const subtitle = document.getElementById("architecture-connection-subtitle");
-  const select = document.getElementById("architecture-modal-select");
   const body = document.getElementById("architecture-connection-body");
   if (title) title.textContent = `${humanizeToken(axle)} Connections`;
   if (subtitle) subtitle.textContent = architecture.includes("bellcrank")
     ? "Drag a colored pickup onto another to swap connections."
-    : "Select a bellcrank architecture to assign pickup connections.";
-  if (select) {
-    select.innerHTML = architectureChoicesForAxle(axle).map((choice) => `
-      <option value="${escapeHtml(choice)}"${choice === architecture ? " selected" : ""}>${escapeHtml(humanizeToken(choice))}</option>
-    `).join("");
-  }
+    : "This suspension has no bellcrank pickups.";
   if (body) {
     body.innerHTML = architecture.includes("bellcrank")
       ? architectureConnectionEditorHtml(axle, data)
@@ -6066,8 +6060,7 @@ function architectureConnectionEmptyHtml(architecture) {
 }
 
 function architectureConnectionEditorHtml(axle, data) {
-  const path = [axle, "actuation", "bellcrank", "order"];
-  const choices = bellcrankOrderChoicesForPath(path, data) || ["rod", "shock"];
+  const roles = bellcrankOrderChoicesForPath([axle, "actuation", "bellcrank", "order"], data) || ["rod", "shock"];
   const values = architectureOrderValuesForData(axle, data);
   const selectedIndex = clamp(state.architectureSelectedOrderIndex, 0, Math.max(0, values.length - 1));
   return `
@@ -6076,12 +6069,12 @@ function architectureConnectionEditorHtml(axle, data) {
     </section>
     <section class="connection-assignment-panel">
       <div class="connection-assignment-list">
-        <span>Connections</span>
-        ${values.map((role, index) => `
+        ${roles.map((role) => `
           <button
-            class="connection-assignment-row ${index === selectedIndex ? "active" : ""}"
+            class="connection-assignment-row ${values.indexOf(role) === selectedIndex ? "active" : ""}"
             data-architecture-pickup="${escapeHtml(axle)}"
-            data-order-index="${index}"
+            aria-label="${escapeHtml(humanizeToken(role))}. Use arrow keys to swap pickups."
+            data-order-index="${values.indexOf(role)}"
             style="--role-color: ${bellcrankRoleColor(role)}"
             type="button"
           >
@@ -6089,21 +6082,6 @@ function architectureConnectionEditorHtml(axle, data) {
             <span aria-hidden="true"></span>
           </button>
         `).join("")}
-      </div>
-      <div class="connection-role-picker">
-        <span>Or select a connection above, then swap with</span>
-        <div class="connection-role-grid">
-          ${choices.map((choice) => `
-            <button
-              class="bellcrank-role-button ${choice === values[selectedIndex] ? "active" : ""}"
-              data-architecture-role="${escapeHtml(axle)}"
-              data-order-index="${selectedIndex}"
-              data-role="${escapeHtml(choice)}"
-              style="--role-color: ${bellcrankRoleColor(choice)}"
-              type="button"
-            >${escapeHtml(humanizeToken(choice))}</button>
-          `).join("")}
-        </div>
       </div>
     </section>
   `;
@@ -6309,19 +6287,6 @@ function architectureConnectionLinkRole(role) {
   return role === "rod" ? "pushrod" : role;
 }
 
-function updateArchitectureModalArchitecture(value) {
-  const axle = state.architectureModalAxle;
-  if (!["front", "rear"].includes(axle)) return;
-  state.architectureSelectedId = `architecture-${axle}`;
-  setPrimitiveConfigValue(["architecture", axle], value);
-}
-
-function architectureChoicesForAxle(axle) {
-  const select = document.getElementById(`architecture-${axle}-select`);
-  const choices = select ? Array.from(select.options).map((option) => option.value) : [];
-  return choices.length ? choices : ["direct", "bellcrank", "bellcrank_stabar"];
-}
-
 function architectureOrderValues(axle) {
   const container = architectureOrderContainer(axle);
   if (!container) return [];
@@ -6396,25 +6361,6 @@ function selectArchitectureOrderPickup(axle, index) {
   if (state.architectureModalOpen) state.architectureModalAxle = axle;
   renderArchitectureConnectionModal();
   drawVehicleFromForm();
-}
-
-function updateArchitectureOrderRole(axle, index, role) {
-  const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
-  const path = [axle, "actuation", "bellcrank", "order"];
-  const choices = bellcrankOrderChoicesForPath(path, data) || ["rod", "shock"];
-  if (!choices.includes(role)) return;
-  const targetIndex = clamp(Number(index) || 0, 0, choices.length - 1);
-  const values = architectureOrderValuesForData(axle, data);
-  const previousRole = values[targetIndex];
-  const sourceIndex = values.indexOf(role);
-  values[targetIndex] = role;
-  if (sourceIndex >= 0 && sourceIndex !== targetIndex) values[sourceIndex] = previousRole;
-  state.architectureSelectedOrderIndex = targetIndex;
-  state.architectureSelectedId = `architecture-${axle}-pickup-${targetIndex}`;
-  if (state.architectureModalOpen) state.architectureModalAxle = axle;
-  pushUndoSnapshot(snapshotVehicleState("architecture-order"));
-  setArchitectureOrderValues(axle, normalizeBellcrankOrder(values, choices));
-  markVehicleDirty();
 }
 
 function swapArchitectureOrderPickups(axle, fromIndex, toIndex) {
@@ -12776,9 +12722,6 @@ function wireEvents() {
   document.getElementById("architecture-connection-modal").addEventListener("pointerdown", (event) => {
     if (event.target.id === "architecture-connection-modal") closeArchitectureConnectionModal();
   });
-  document.getElementById("architecture-modal-select").addEventListener("change", (event) => {
-    updateArchitectureModalArchitecture(event.target.value);
-  });
   const connectionBody = document.getElementById("architecture-connection-body");
   connectionBody.addEventListener("pointerdown", (event) => {
     if (!event.target.closest?.("#architecture-connection-canvas")) return;
@@ -12806,16 +12749,24 @@ function wireEvents() {
     document.getElementById("architecture-connection-canvas")?.classList.remove("hot");
     drawArchitectureConnectionCanvas();
   });
+  connectionBody.addEventListener("keydown", (event) => {
+    const pickup = event.target.closest("[data-architecture-pickup]");
+    if (!pickup || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const index = Number(pickup.dataset.orderIndex);
+    const count = connectionBody.querySelectorAll("[data-architecture-pickup]").length;
+    const direction = ["ArrowUp", "ArrowLeft"].includes(event.key) ? -1 : 1;
+    const target = (index + direction + count) % count;
+    swapArchitectureOrderPickups(pickup.dataset.architecturePickup, index, target);
+    connectionBody.querySelector(`[data-order-index="${target}"]`)?.focus();
+  });
   connectionBody.addEventListener("click", (event) => {
     const pickup = event.target.closest("[data-architecture-pickup]");
     if (pickup) {
       selectArchitectureOrderPickup(pickup.dataset.architecturePickup, pickup.dataset.orderIndex);
       return;
     }
-    const role = event.target.closest("[data-architecture-role]");
-    if (role) {
-      updateArchitectureOrderRole(role.dataset.architectureRole, role.dataset.orderIndex, role.dataset.role);
-    }
+
   });
   document.getElementById("kinematic-plot-close").addEventListener("click", () => closeSuspensionPlotModal());
   document.getElementById("kinematic-plot-modal").addEventListener("pointerdown", (event) => {

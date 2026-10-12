@@ -948,7 +948,7 @@ body.vehicle-start-open {
   max-height: min(760px, calc(100vh - 44px));
   min-height: min(620px, calc(100vh - 44px));
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -976,40 +976,17 @@ body.vehicle-start-open {
   margin-top: 2px;
 }
 
-.connection-architecture-field {
-  display: grid;
-  grid-template-columns: minmax(140px, auto) minmax(220px, 360px);
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  padding: 10px;
-}
-
-.connection-architecture-field span,
-.connection-empty span,
-.connection-assignment-list > span,
-.connection-role-picker > span {
+.connection-empty span {
   color: var(--muted);
   font-size: 10px;
   font-weight: 700;
 }
 
-.connection-architecture-field select {
-  min-width: 0;
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink);
-  padding: 6px 8px;
-}
-
 .connection-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 12px;
 }
 
@@ -1143,9 +1120,10 @@ body.vehicle-start-open {
   padding: 12px;
 }
 
-.connection-assignment-list,
-.connection-role-picker {
+.connection-assignment-list {
   display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -1179,16 +1157,6 @@ body.vehicle-start-open {
 .connection-assignment-row.active {
   border-color: color-mix(in srgb, var(--amber) 68%, var(--line));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 58%, transparent);
-}
-
-.connection-role-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.connection-role-grid .bellcrank-role-button {
-  min-height: 36px;
 }
 
 .connection-empty {

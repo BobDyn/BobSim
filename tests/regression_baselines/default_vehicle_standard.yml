@@ -2,7 +2,7 @@ schema: bobsim.regression.baseline.v1
 name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
-  boblib_commit: 0ae62c6ff0f1299883edb8df744da810174fb9af
+  boblib_commit: 1bd6d78c271d2e2fe86a2d4cdc1471bd7d46c1b5
   simulation_inputs_digest: a2cf83ddfe6b1db2371abfc81644b8bff4726d6a61ce6e713d26f8d26d7fa8c6
 refresh:
   make_targets:
