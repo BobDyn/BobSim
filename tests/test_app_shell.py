@@ -1797,3 +1797,19 @@ def test_failed_rebuild_cannot_certify_previous_executable(tmp_path, monkeypatch
     assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) != 0
     assert not (build_dir / target.exec_name).exists()
     assert not (build_dir / app.BUILD_METADATA_FILENAME).exists()
+
+
+def test_architecture_defaults_read_templates_once(monkeypatch):
+    from app import data_services
+    from unittest.mock import Mock
+
+    templates = app._vehicle_template_data()
+    read = Mock(return_value=templates)
+    monkeypatch.setattr(data_services, "_vehicle_template_data", read)
+    data = data_services._vehicle_with_architecture_defaults({
+        "architecture": {"front": "direct", "rear": "direct"},
+    })
+    read.assert_called_once_with()
+    for axle in ("front", "rear"):
+        assert data[axle]["suspension"]["wheel_center_m"]
+        assert "bellcrank" in data[axle]["actuation"]

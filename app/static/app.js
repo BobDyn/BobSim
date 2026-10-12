@@ -810,7 +810,6 @@ async function refresh() {
   state.vehicleTemplates = await api("/api/vehicle-templates");
   state.vehiclePayload = await api("/api/configs/vehicle");
   acceptCleanVehiclePayload();
-  await refreshVehicleDiagnostics(state.vehiclePayload?.data || {});
   await refreshTireTemplates();
   await refreshSavedResults();
   if (!state.activeTir && state.tireTemplates?.templates?.length) {
@@ -2378,6 +2377,7 @@ function activateParameterGroup(group) {
     section.classList.toggle("active", section.dataset.paramGroup === group);
   });
   if (isKinematicPlotArea()) queueKinematicsRefresh({ force: true });
+  if (isTirePreviewArea() && !state.tirePayload && !state.tirePayloadUpdating) queueTirePayloadRefresh();
   drawVehicleFromForm();
 }
 
