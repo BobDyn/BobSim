@@ -183,3 +183,25 @@ for (const axle of ['front','rear']) for (const slip of ['pure','combined']) for
   assert.equal(plotCalls[0][9],direction==='lateral'?'Fy (N)':'Fx (N)');
 }
 `,ctx);
+
+const momentCtx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+vm.runInContext(source, momentCtx);
+vm.runInContext(`
+currentTireCombinedFz=()=>150;
+currentTireLoadCamberDeg=()=>1;
+for (const output of ['mx','my','mz']) {
+  const key=output+'_nm';
+  const maps = [0,2].map(gamma=>({gamma_deg:gamma,maps:[100,200].map(load=>({fz_n:load,rows:[-4,4].map(alpha=>({alpha_deg:alpha,points:[-0.1,0.1].map(kappa=>({alpha_deg:alpha,kappa,fz_n:load,[key]:load+gamma+alpha+kappa}))}))}))}));
+  const pure=[0,2].map(gamma=>({gamma_deg:gamma,rows:[100,200].map(load=>({fz_n:load,points:[-0.1,0.1].map(slip=>({alpha_deg:slip,kappa:slip,fz_n:load,[key]:load+gamma+slip}))}))}));
+  for (const side of ['front','rear']) for (const combined of [false,true]) {
+    const surface=tireMomentSurfaces([{side,curves:{moments:{[output]:pure},combined:{force_maps_by_gamma_fz:maps}}}],output,combined,canvasPalette())[0];
+    assert.equal(surface.zKey,key);
+    assert.equal(surface.xKey,output==='my'?'kappa':'alpha_deg');
+    assert.equal(surface.yKey,combined?(output==='my'?'alpha_deg':'kappa'):'fz_n');
+    for (const row of surface.rows) for (const point of row.points) {
+      const expected=combined?151+point.alpha_deg+point.kappa:point.fz_n+1+point.kappa;
+      assert.ok(Math.abs(point[key]-expected)<1e-10);
+    }
+  }
+}
+`, momentCtx);

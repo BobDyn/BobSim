@@ -1828,9 +1828,9 @@ function tireFitSelectorsHtml() {
   return `<div class="field-grid">${[
     ["activeTireAxle", "Axle", ["front", "rear"]],
     ["tireFitSlip", "Slip", ["pure", "combined"]],
-    ["tireFitDirection", "Force direction", ["longitudinal", "lateral"]],
+    ["tireFitDirection", "Output", ["longitudinal", "lateral", "mx", "my", "mz"]],
   ].map(([key, label, options]) => `<label class="form-field"><span>${label}</span>
-    <select data-tire-fit="${key}">${options.map((value) => `<option value="${value}"${value === (state[key] || options[0]) ? " selected" : ""}>${humanizeToken(value)}</option>`).join("")}</select>
+    <select data-tire-fit="${key}">${options.map((value) => `<option value="${value}"${value === (state[key] || options[0]) ? " selected" : ""}>${({longitudinal: "Fx · Longitudinal", lateral: "Fy · Lateral", mx: "Mx · Overturning", my: "My · Rolling", mz: "Mz · Aligning"})[value] || humanizeToken(value)}</option>`).join("")}</select>
   </label>`).join("")}</div>`;
 }
 
@@ -9397,18 +9397,51 @@ function drawTirePreview(ctx, width, height, data) {
 
   const sides = state.tirePayload.sides.filter((side) => side.side === (state.activeTireAxle || "front"));
   const combined = state.tireFitSlip === "combined";
-  const lateral = state.tireFitDirection === "lateral";
-  const surfaces = combined
-    ? (lateral ? combinedFySurfaces : combinedFxSurfaces)(sides, palette)
-    : (lateral ? pureLateralLoadSurfaces : pureLongitudinalLoadSurfaces)(sides, palette);
-  const title = `${humanizeToken(state.activeTireAxle || "front")} · ${combined ? "Combined" : "Pure"} ${lateral ? "lateral" : "longitudinal"}`;
+  const output = state.tireFitDirection;
+  const moment = ["mx", "my", "mz"].includes(output);
+  const lateral = output === "lateral" || output === "mx" || output === "mz";
+  const surfaces = moment ? tireMomentSurfaces(sides, output, combined, palette)
+    : combined
+      ? (lateral ? combinedFySurfaces : combinedFxSurfaces)(sides, palette)
+      : (lateral ? pureLateralLoadSurfaces : pureLongitudinalLoadSurfaces)(sides, palette);
+  const symbol = moment ? `M${output[1]}` : lateral ? "Fy" : "Fx";
+  const speed = moment ? ` · ${formatNumber(sides[0]?.curves?.moment_speed_mps)} m/s` : "";
+  const title = `${humanizeToken(state.activeTireAxle || "front")} · ${combined ? "Combined" : "Pure"} ${symbol}${speed}`;
   const panel = drawTireSurfacePanel(
     ctx, 16, 16, width - 32, height - 32, title, surfaces,
     lateral ? "Slip angle (deg)" : "Slip ratio",
     combined ? (lateral ? "Slip ratio" : "Slip angle (deg)") : "Normal load (N)",
-    lateral ? "Fy (N)" : "Fx (N)",
+    `${symbol} (${moment ? "N m" : "N"})`,
+    { emptyMessage: moment && sides[0]?.curves?.moment_error
+      ? "Moment coefficients are missing or invalid in this tire file." : "No surface data" },
   );
   state.tireSurfaceScene = { panels: panel ? [panel] : [] };
+}
+
+function tireMomentSurfaces(sides, output, combined, palette) {
+  const zKey = `${output}_nm`;
+  const lateral = output !== "my";
+  return sides.map((side) => {
+    let gammaSurfaces = side.curves?.moments?.[output] || [];
+    if (combined) {
+      gammaSurfaces = (side.curves?.combined?.force_maps_by_gamma_fz || []).map((surface) => ({
+        gamma_deg: surface.gamma_deg,
+        rows: interpolateTireSurfaceRowsByFz(surface.maps, currentTireCombinedFz(), zKey) || [],
+      }));
+    }
+    let rows = interpolateTireSurfaceRowsByGamma(gammaSurfaces, currentTireLoadCamberDeg(), zKey) || [];
+    if (combined && lateral && rows.length) {
+      rows = rows[0].points.map((point, index) => ({
+        kappa: point.kappa, points: rows.map((row) => row.points[index]),
+      }));
+    }
+    return {
+      label: tireSurfaceLayerLabel(side.side), shortLabel: humanizeToken(side.side),
+      color: tireSurfaceLayerColor(side.side, palette), dash: tireSurfaceLayerDash(side.side),
+      rows, xKey: lateral ? "alpha_deg" : "kappa",
+      yKey: combined ? (lateral ? "kappa" : "alpha_deg") : "fz_n", zKey,
+    };
+  });
 }
 
 function drawTirePreviewError(ctx, width, height, error, data) {
