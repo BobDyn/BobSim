@@ -74,7 +74,8 @@ def run(workflow_id: str) -> None:
     started = time.perf_counter()
     inputs: dict[str, Any] = (
         {"roadwheel_rate_deg_s": float(data["roadwheel_rate_deg_s"]),
-         "start_time_s": float(data["start_time_s"])} if ramp else
+         "start_time_s": float(data["start_time_s"]),
+         "ramp_end_time_s": float(data.get("ramp_end_time_s", duration))} if ramp else
         {"roadwheel_step_deg": float(data["roadwheel_step_deg"]),
          "step_time_s": float(data["step_time_s"]), "rise_time_s": float(data["rise_time_s"])}
     )

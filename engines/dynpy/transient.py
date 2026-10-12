@@ -26,6 +26,36 @@ class TransientResult:
     message: str
 
 
+def _state_jacobian(rhs: Callable[[float, FloatArray], FloatArray], time: float, state: FloatArray) -> FloatArray:
+    """## State Jacobian
+
+    Use centered finite differences with a fresh scale for each evaluation.
+    Unlike growing adaptive probes, zero-sensitivity columns stay bounded.
+
+    Parameters
+    ----------
+    rhs : callable
+        State derivative, including the current control law.
+    time : float
+        Evaluation time in seconds.
+    state : FloatArray
+        Finite state at which to linearize the derivative.
+
+    Returns
+    -------
+    FloatArray
+        Derivative with respect to each state component.
+    """
+    steps = np.cbrt(np.finfo(float).eps) * np.maximum(1.0, np.abs(state))
+    jacobian = np.empty((state.size, state.size))
+    for column, step in enumerate(steps):
+        above, below = state.copy(), state.copy()
+        above[column] += step
+        below[column] -= step
+        jacobian[:, column] = (rhs(time, above) - rhs(time, below)) / (above[column] - below[column])
+    return jacobian
+
+
 def simulate_transient(
     model: ReducedVehicleModel,
     *,
@@ -57,6 +87,10 @@ def simulate_transient(
     def rhs(time: float, state: FloatArray) -> FloatArray:
         return model.derivative(time, state, input_at(time, state))
 
+    def jacobian(time: float, state: FloatArray) -> FloatArray:
+        return _state_jacobian(rhs, time, state)
+
+    solver_options = {"jac": jacobian} if method in {"Radau", "BDF"} else {}
     solution = solve_ivp(  # type: ignore[call-overload]
         rhs,
         (float(evaluation_times[0]), float(evaluation_times[-1])),
@@ -65,6 +99,7 @@ def simulate_transient(
         method=method,
         rtol=rtol,
         atol=atol,
+        **solver_options,
     )
     states = np.asarray(solution.y.T, dtype=float)
     signals: dict[str, FloatArray] = {

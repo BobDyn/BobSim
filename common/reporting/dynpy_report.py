@@ -82,7 +82,8 @@ def build_dynpy_report(
         frame = pd.read_csv(output_directory / "signals.csv")
         inputs = (
             [("Roadwheel rate (deg/s)", config["roadwheel_rate_deg_s"]),
-             ("Ramp start (s)", config["start_time_s"])] if ramp else
+             ("Ramp start (s)", config["start_time_s"]),
+             ("Ramp end (s)", config.get("ramp_end_time_s", config["stop_time_s"]))] if ramp else
             [("Roadwheel step (deg)", config["roadwheel_step_deg"]),
              ("Step time (s)", config["step_time_s"]), ("Rise time (s)", config["rise_time_s"])]
         )

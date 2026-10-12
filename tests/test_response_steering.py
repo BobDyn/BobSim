@@ -23,8 +23,10 @@ def test_steering_inputs_have_the_requested_shape_and_keep_trim_torque(monkeypat
     vehicle = SimpleNamespace(steady_state=lambda *args, **kwargs: trim, simulate=simulate)
     monkeypatch.setattr(response.Vehicle, "from_yaml", lambda *args, **kwargs: vehicle)
     if maneuver == "ramp":
-        response.run_ramp_steer(dof=dof, start_time_s=0.5, stop_time_s=1.0, roadwheel_rate_deg_s=-4.0)
-        expected = [0.0, 0.0, -0.4, -1.0, -2.0]
+        response.run_ramp_steer(
+            dof=dof, start_time_s=0.5, ramp_end_time_s=0.75, stop_time_s=1.0, roadwheel_rate_deg_s=-4.0,
+        )
+        expected = [0.0, 0.0, -0.4, -1.0, -1.0]
     else:
         response.run_step_steer(dof=dof, step_time_s=0.5, stop_time_s=1.0,
                                 roadwheel_step_deg=-2.0, rise_time_s=0.2)
@@ -38,3 +40,9 @@ def test_steering_inputs_have_the_requested_shape_and_keep_trim_torque(monkeypat
 def test_ramp_rejects_an_invalid_time_interval(start, stop):
     with pytest.raises(ValueError, match="Ramp start"):
         response.run_ramp_steer(dof=6, start_time_s=start, stop_time_s=stop)
+
+
+@pytest.mark.parametrize("end", (0.5, 0.4, 1.1, float("nan")))
+def test_ramp_end_must_be_between_start_and_simulation_end(end):
+    with pytest.raises(ValueError, match="Ramp start"):
+        response.run_ramp_steer(dof=14, start_time_s=0.5, ramp_end_time_s=end, stop_time_s=1.0)

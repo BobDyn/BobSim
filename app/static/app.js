@@ -4093,8 +4093,8 @@ function simWorkflowMeta(workflow) {
   };
   if (workflow?.id === "reduced-ramp-steer") return {
     title: "Ramp steer", summary: "Constant-rate roadwheel steering from straight-line trim.",
-    sequence: ["Trim at the initial speed", "Hold the trim drive torque", "Increase roadwheel steer at a constant rate"],
-    parameters: ["Model DOF, initial speed, steering rate and duration"],
+    sequence: ["Trim at the initial speed", "Hold the trim drive torque", "Ramp steering to the end time, then hold"],
+    parameters: ["Model DOF, initial speed and steering rate", "Ramp start, ramp end and simulation end"],
     outputs: ["Response PDF, signal CSV and run summary"],
   };
   const fallback = {

@@ -970,3 +970,21 @@ def test_qss_level_road_has_no_suspension_or_attitude_motion(parameters, dof, so
                     np.sin(beta) + 5 * np.cos(beta), 0.0]
         np.testing.assert_allclose(acceleration, expected, atol=1e-7)
         assert np.linalg.norm(output.derivative[:2]) == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("method", ("Radau", "BDF"))
+def test_implicit_transients_do_not_use_unbounded_adaptive_jacobian(parameters, monkeypatch, method):
+    import scipy.integrate._ivp.common as ivp_common
+
+    def reject_adaptive_probe(*args, **kwargs):
+        raise AssertionError("The adaptive Jacobian can overflow on cyclic coordinates")
+
+    monkeypatch.setattr(ivp_common, "_dense_num_jac", reject_adaptive_probe)
+    model = create_model(3, parameters)
+    trim = solve_steady_state(model, speed_mps=10.0)
+    result = simulate_transient(
+        model, initial_state=trim.state, controls=trim.inputs,
+        time_s=np.linspace(0, 0.2, 5), method=method,
+    )
+    assert result.success
+    assert np.isfinite(result.state).all()

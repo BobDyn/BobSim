@@ -76,6 +76,7 @@ def run_ramp_steer(
     speed_mps: float = 15.0,
     roadwheel_rate_deg_s: float = 1.0,
     start_time_s: float = 1.0,
+    ramp_end_time_s: float | None = None,
     stop_time_s: float = 5.0,
     sample_period_s: float = 0.01,
     vehicle_path: str | Path | None = None,
@@ -96,6 +97,9 @@ def run_ramp_steer(
         Signed steering rate in degrees per second.
     start_time_s : float
         Time at which the ramp begins.
+    ramp_end_time_s : float, optional
+        Time at which steering stops increasing and holds its final value.
+        Defaults to the simulation end for older callers.
     stop_time_s : float
         End of the simulation in seconds.
     sample_period_s : float
@@ -110,9 +114,10 @@ def run_ramp_steer(
     TransientResult
         Time history and solver status.
     """
-    if not 0 <= start_time_s < stop_time_s:
-        raise ValueError("Ramp start must be nonnegative and before the end of the run.")
-    duration = stop_time_s - start_time_s
+    ramp_end = stop_time_s if ramp_end_time_s is None else ramp_end_time_s
+    if not 0 <= start_time_s < ramp_end <= stop_time_s:
+        raise ValueError("Ramp start must precede ramp end, which must not exceed simulation end.")
+    duration = ramp_end - start_time_s
     return run_step_steer(
         dof=dof, speed_mps=speed_mps,
         roadwheel_step_deg=roadwheel_rate_deg_s * duration,
