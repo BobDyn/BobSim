@@ -7808,7 +7808,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
 }
 
 function isSpatialPreviewArea(area = activeParameterArea()) {
-  return area.visual === "hardpoints" || (area.visual === "aero" && state.aeroReferenceView);
+  return area.visual === "hardpoints" || area.visual === "mass" || (area.visual === "aero" && state.aeroReferenceView);
 }
 
 function visibleGeometryAxles() {
@@ -11469,8 +11469,8 @@ function setPreviewZoom(zoom, anchor = null) {
   const oldZoom = state.vehiclePreviewZoom;
   const nextZoom = clamp(Number(zoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
   if (Math.abs(nextZoom - oldZoom) < 0.001) return;
-  const width = state.geometryScene?.width || 800;
-  const height = state.geometryScene?.height || 600;
+  const width = state.geometryScene?.width || state.massScene?.width || 800;
+  const height = state.geometryScene?.height || state.massScene?.height || 600;
   if (anchor) {
     const ratio = nextZoom / oldZoom;
     const anchorX = anchor.x - width / 2;
@@ -11506,26 +11506,6 @@ function projectedViewFrame(model, view) {
   };
 }
 
-function projectVehicleModelToViewFrame(model, viewport, view, frame) {
-  const scale = Math.min(
-    Math.max(40, viewport.width - 34) / frame.spanU,
-    Math.max(40, viewport.height - 34) / frame.spanV,
-  );
-  const map = new Map((model.points || []).map((point) => {
-    const projected = projectPoint(point, view);
-    return [
-      point.id,
-      {
-        ...point,
-        ...projected,
-        x2: (projected.u - frame.centerU) * scale + viewport.x + viewport.width / 2,
-        y2: viewport.y + viewport.height / 2 - (projected.v - frame.centerV) * scale,
-      },
-    ];
-  }));
-  return { map, scale, frame };
-}
-
 function drawMassPreview(ctx, width, height, data) {
   const fullModel = buildVehicleGeometry(data);
   const massModel = filterVehicleModel(fullModel, sectionFocus("mass"));
@@ -11545,6 +11525,7 @@ function drawMassPreview(ctx, width, height, data) {
     scenePoints.push(...drawMassViewPanel(ctx, panel, fullModel, massModel));
   });
   state.massScene = {
+    width, height,
     points: scenePoints,
     uniquePoints: uniqueMassPoints(scenePoints),
   };
@@ -11580,13 +11561,16 @@ function drawMassViewPanel(ctx, panel, fullModel, massModel) {
     width: panel.width - 20,
     height: panel.height - 40,
   };
-  const frame = massViewFrame(fullModel, massModel, panel.view);
+  const scene = projectVehicleModelInRect({
+    points: [...massContextPoints(fullModel), ...massModel.points],
+  }, viewport, panel.view);
   ctx.save();
   ctx.beginPath();
   ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height);
   ctx.clip();
-  drawMassContext(ctx, fullModel, viewport, panel.view, frame);
-  const { map, scale } = projectVehicleModelToViewFrame(massModel, viewport, panel.view, frame);
+  drawMassContext(ctx, fullModel, scene);
+  const map = new Map(massModel.points.map((point) => [point.id, scene.map.get(point.id)]));
+  const { scale } = scene;
   const massPoints = [...map.values()].map((point) => ({
     ...point,
     massView: panel.view,
@@ -11617,20 +11601,14 @@ function isSelectedMassComponent(point) {
   return component.key === state.vehicleComponentSelection?.mass;
 }
 
-function massViewFrame(fullModel, massModel, view) {
-  const contextPoints = massContextPoints(fullModel);
-  const massCenters = massModel.points.map((point) => ({ ...point, shellRadiusM: 0 }));
-  return projectedViewFrame({ points: [...contextPoints, ...massCenters] }, view);
-}
-
-function drawMassContext(ctx, fullModel, viewport, view, frame) {
+function drawMassContext(ctx, fullModel, scene) {
   const contextPoints = massContextPoints(fullModel);
   const pointIds = new Set(contextPoints.map((point) => point.id));
   const contextModel = {
     points: contextPoints,
     links: fullModel.links.filter((link) => pointIds.has(link.from) && pointIds.has(link.to)),
   };
-  const { map } = projectVehicleModelToViewFrame(contextModel, viewport, view, frame);
+  const map = new Map(contextPoints.map((point) => [point.id, scene.map.get(point.id)]));
   [...contextModel.links]
     .sort((a, b) => ((map.get(a.from)?.depth || 0) + (map.get(a.to)?.depth || 0))
       - ((map.get(b.from)?.depth || 0) + (map.get(b.to)?.depth || 0)))
@@ -12345,12 +12323,18 @@ function wireVehicleCanvas() {
       return;
     }
     if (isMassPreviewArea()) {
+      if (isPanClick(event)) {
+        startPreviewDrag(event, "pan");
+        return;
+      }
+      if (event.button !== 0) return;
       const hit = hitTestMassPoint(event);
       if (hit) {
         selectMassPoint(hit);
         event.preventDefault();
       } else {
         selectMassPoint(null);
+        startPreviewDrag(event, "rotate");
       }
       return;
     }
@@ -12382,6 +12366,7 @@ function wireVehicleCanvas() {
       return;
     }
     if (isMassPreviewArea()) {
+      if (updatePreviewDrag(event)) return;
       updateMassHover(event);
       return;
     }

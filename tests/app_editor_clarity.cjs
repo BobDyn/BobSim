@@ -249,3 +249,32 @@ wireSuspensionSelection(); suspensionSelect.value='rear'; suspensionSelect.chang
 assert.equal(state.suspensionAxle,'rear');
 assert.equal(suspensionPanels[0].hidden,true); assert.equal(suspensionPanels[1].hidden,false);
 `,ctx);
+
+vm.runInContext(`
+state.activeParamGroup='mass';
+assert.equal(isSpatialPreviewArea(),true);
+const handlers={};
+const massCanvas={clientLeft:0,clientTop:0,classList:{toggle(){},remove(){}},
+  getBoundingClientRect:()=>({left:0,top:0,width:800,height:600}),
+  setPointerCapture(){},addEventListener(name,fn){(handlers[name]||=[]).push(fn);}};
+document={getElementById:()=>massCanvas,querySelectorAll:()=>[]};
+window={addEventListener(){}};
+drawVehicleFromForm=()=>{};
+wireVehicleCanvas();
+const event={pointerId:4,button:0,clientX:400,clientY:300,preventDefault(){}};
+handlers.pointerdown[0](event);
+assert.equal(state.vehicleDrag.mode,'rotate');
+const oldYaw=state.vehiclePreviewYaw;
+handlers.pointermove[0]({...event,clientX:440});
+assert.notEqual(state.vehiclePreviewYaw,oldYaw);
+handlers.pointerup[0](event);
+handlers.pointerdown[0]({...event,ctrlKey:true});
+assert.equal(state.vehicleDrag.mode,'pan');
+handlers.pointermove[0]({...event,clientX:500,clientY:340});
+assert.equal(state.vehiclePreviewPanX,100); assert.equal(state.vehiclePreviewPanY,40);
+handlers.pointerup[0](event);
+handlers.wheel[0]({...event,deltaY:-100});
+assert.ok(state.vehiclePreviewZoom>1);
+handlers.dblclick[0]();
+assert.equal(state.vehiclePreviewZoom,1); assert.equal(state.vehiclePreviewPanX,0);
+`,momentCtx);
