@@ -30,7 +30,7 @@ const savedGeometryPlotSelections = (() => {
     return [];
   }
 })();
-const DEFAULT_VEHICLE_YAW = Math.PI - 0.72;
+const DEFAULT_VEHICLE_YAW = -0.72;
 const DEFAULT_VEHICLE_PITCH = 0.46;
 const DEFAULT_TIRE_SURFACE_YAW = -0.72;
 const DEFAULT_TIRE_SURFACE_PITCH = 0.68;
@@ -42,7 +42,6 @@ const MAX_SETUP_PANE_WIDTH = 620;
 const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
-const MAX_PREVIEW_PAN_FRACTION = 0.42;
 const MAX_UNDO_STEPS = 80;
 const MAX_GEOMETRY_PLOTS = 3;
 const TIRE_LIVE_WHEEL_FIELDS = new Set(["camber_deg", "toe_deg", "radius_m"]);
@@ -1719,14 +1718,14 @@ function vehicleComponentEditorHtml(area) {
   state.vehicleComponentSelection[area.id] = selected?.key;
   const groups = [...new Set(entries.map((entry) => entry.group))];
   return `<div class="vehicle-component-editor" data-component-editor="${area.id}">
-    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : infoHint("Geometry controls and coordinates", "Select a pickup in the diagram or choose a component. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.")}
+    ${area.id === "mass" ? '<div class="vehicle-mass-summary" data-mass-summary></div>' : ""}
     <div class="component-editor-selectors" data-setup-filter>
       <label>${area.id === "mass" ? "Assembly" : "Axle"}<select data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
       </select></label>
-      <label>Component<select data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", "Select a pickup in the diagram or choose a component. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.") : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
         ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}
-      </select></label>
+      </select></div>
     </div>
     ${entries.map((entry) => {
       const inertia = entry.fields.filter((field) => fieldPathString(field).includes("inertia"));
@@ -2268,7 +2267,7 @@ function aeroTableControl(fields) {
 
 function aeroCellControl(field, indices, value, label) {
   const path = JSON.stringify([...field.path, ...indices]);
-  return `<input data-config-path="${escapeHtml(path)}" data-kind="number" type="number" step="any" required aria-label="${escapeHtml(label)}" ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"${field.disabled ? " disabled" : ""}>`;
+  return `<input data-config-path="${escapeHtml(path)}" data-kind="number" type="number" step="any" required style="min-width: ${Math.max(12, String(numericDisplayValue(value, field.display_scale)).length + 4)}ch" aria-label="${escapeHtml(label)}" ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"${field.disabled ? " disabled" : ""}>`;
 }
 
 function wireAeroControls() {
@@ -2773,8 +2772,24 @@ function infoIcon() {
   return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="7.5" r=".8" fill="currentColor" stroke="none"/></svg>';
 }
 
+let infoHintId = 0;
+
 function infoHint(label, text) {
-  return `<details class="info-hint"><summary aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">${infoIcon()}</summary><div class="info-hint-content">${escapeHtml(text)}</div></details>`;
+  const id = `info-popup-${++infoHintId}`;
+  return `<span class="info-hint"><button type="button" class="info-button" popovertarget="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">${infoIcon()}</button><span id="${id}" class="info-popup" popover aria-label="${escapeHtml(label)}">${escapeHtml(text)}</span></span>`;
+}
+
+function positionInfoPopup(event) {
+  const popup = event.target;
+  if (!popup.matches?.(".info-popup") || event.newState !== "open") return;
+  const button = document.querySelector(`[popovertarget="${popup.id}"]`);
+  if (!button) return;
+  const anchor = button.getBoundingClientRect();
+  const box = popup.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8))}px`;
+  const top = anchor.bottom + 6 + box.height <= window.innerHeight - 8
+    ? anchor.bottom + 6 : anchor.top - box.height - 6;
+  popup.style.top = `${Math.max(8, top)}px`;
 }
 
 function fieldHelpHtml(field) {
@@ -3011,7 +3026,7 @@ function arrayCellInputHtml(kind, position, value = "", choices = [], displaySca
   }
   if (kind === "number" || kind === "integer") {
     const step = kind === "integer" ? "1" : "any";
-    return `<input ${attrs} type="number" step="${step}" required ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
+    return `<input ${attrs} type="number" step="${step}" required style="min-width: ${Math.max(12, String(numericDisplayValue(value, displayScale)).length + 4)}ch" ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
   }
   return `<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">`;
 }
@@ -6842,7 +6857,6 @@ function syncGeometryPointEditor() {
   }
   editor.hidden = false;
   document.getElementById("geometry-point-name").textContent = point.sourceLabel || humanizeToken(point.id);
-  document.getElementById("geometry-axis-label").textContent = state.geometryAxis.toUpperCase();
   document.querySelectorAll("[data-geometry-axis]").forEach((button) => {
     button.classList.toggle("active", button.dataset.geometryAxis === state.geometryAxis);
   });
@@ -7252,11 +7266,11 @@ function updatePreviewDrag(event) {
   const dx = event.clientX - drag.x;
   const dy = event.clientY - drag.y;
   if (drag.mode === "pan") {
-    setPreviewPan(drag.panX + dx, drag.panY + dy, drag.width, drag.height);
+    setPreviewPan(drag.panX + dx, drag.panY + dy);
   } else {
     state.vehiclePreviewView = "iso";
     const sensitivity = 0.01 * state.rotationSensitivity;
-    state.vehiclePreviewYaw = drag.yaw - dx * sensitivity;
+    state.vehiclePreviewYaw = drag.yaw + dx * sensitivity;
     state.vehiclePreviewPitch = Math.max(-1.1, Math.min(1.1, drag.pitch + dy * sensitivity));
     syncViewButtons();
   }
@@ -11816,7 +11830,7 @@ function projectPoint(point, view) {
 
 function projectPointWithAngles(point, view, yaw, pitch) {
   const { x, y, z } = point;
-  if (view === "side") return { u: x, v: z, depth: y };
+  if (view === "side") return { u: x, v: z, depth: -y };
   if (view === "top") return { u: x, v: y, depth: z };
   const cy = Math.cos(yaw);
   const sy = Math.sin(yaw);
@@ -11824,7 +11838,7 @@ function projectPointWithAngles(point, view, yaw, pitch) {
   const sp = Math.sin(pitch);
   const xr = x * cy - y * sy;
   const yr = x * sy + y * cy;
-  return { u: xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
+  return { u: -xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
 }
 
 function vehicleModelFrame(model) {
@@ -11857,7 +11871,7 @@ function vehicleModelFrame(model) {
 }
 
 function projectVehicleModel(model, width, height, view, frame = vehicleModelFrame(model)) {
-  clampPreviewCamera(width, height);
+  clampPreviewCamera();
   return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view, frame);
 }
 
@@ -11883,24 +11897,14 @@ function projectVehicleModelInRect(model, viewport, view, frame = vehicleModelFr
   return { map, scale, frame };
 }
 
-function previewPanLimit(width, height) {
-  return {
-    x: Math.max(80, width * MAX_PREVIEW_PAN_FRACTION),
-    y: Math.max(80, height * MAX_PREVIEW_PAN_FRACTION),
-  };
-}
-
-function clampPreviewCamera(width = state.geometryScene?.width || 800, height = state.geometryScene?.height || 600) {
+function clampPreviewCamera() {
   state.vehiclePreviewZoom = clamp(Number(state.vehiclePreviewZoom) || 1, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM);
-  const limit = previewPanLimit(width, height);
-  state.vehiclePreviewPanX = clamp(Number(state.vehiclePreviewPanX) || 0, -limit.x, limit.x);
-  state.vehiclePreviewPanY = clamp(Number(state.vehiclePreviewPanY) || 0, -limit.y, limit.y);
+  setPreviewPan(state.vehiclePreviewPanX, state.vehiclePreviewPanY);
 }
 
-function setPreviewPan(x, y, width = state.geometryScene?.width, height = state.geometryScene?.height) {
-  const limit = previewPanLimit(width || 800, height || 600);
-  state.vehiclePreviewPanX = clamp(Number(x) || 0, -limit.x, limit.x);
-  state.vehiclePreviewPanY = clamp(Number(y) || 0, -limit.y, limit.y);
+function setPreviewPan(x, y) {
+  state.vehiclePreviewPanX = Number.isFinite(Number(x)) ? Number(x) : 0;
+  state.vehiclePreviewPanY = Number.isFinite(Number(y)) ? Number(y) : 0;
 }
 
 function setPreviewZoom(zoom, anchor = null) {
@@ -11916,12 +11920,10 @@ function setPreviewZoom(zoom, anchor = null) {
     setPreviewPan(
       anchorX - (anchorX - state.vehiclePreviewPanX) * ratio,
       anchorY - (anchorY - state.vehiclePreviewPanY) * ratio,
-      width,
-      height,
     );
   }
   state.vehiclePreviewZoom = nextZoom;
-  clampPreviewCamera(width, height);
+  clampPreviewCamera();
 }
 
 function projectedViewFrame(model, view) {
@@ -13014,6 +13016,7 @@ function syncViewButtons() {
 }
 
 function wireEvents() {
+  document.addEventListener("toggle", positionInfoPopup, true);
   document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
   document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
     if (!event.target.value.trim()) {

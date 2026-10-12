@@ -4787,33 +4787,43 @@ summary:focus-visible {
   font-size: 12px;
 }
 .info-hint {
-  position: relative;
-  display: inline-block;
-  width: fit-content;
+  display: inline-flex;
+  flex-shrink: 0;
 }
-.info-hint summary {
+.info-button {
   display: grid;
   place-items: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
   cursor: pointer;
-  list-style: none;
 }
-.info-hint summary::-webkit-details-marker { display: none; }
-.info-hint summary:focus-visible { outline: 2px solid var(--blue); }
-.info-hint-content {
-  padding: 6px 0;
-  color: var(--muted);
+.info-button:hover { color: var(--ink); background: var(--surface-2); }
+.info-button:focus-visible { outline: 2px solid var(--blue); }
+.info-popup {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.5;
   white-space: normal;
   overflow-wrap: anywhere;
+  box-shadow: 0 8px 24px #0003;
 }
 
 .vehicle-component-editor .field-object-label,
@@ -4836,9 +4846,6 @@ summary:focus-visible {
 }
 .field-heading-name { min-width: 0; }
 .field-heading .field-label-meta { margin-left: auto; }
-.info-hint { flex-shrink: 0; }
-.info-hint summary:hover,
-.info-hint[open] summary,
 .reference-button:hover {
   color: var(--ink);
   background: var(--surface-2);
@@ -4847,7 +4854,13 @@ summary:focus-visible {
 .inspector-label {
   flex-wrap: wrap;
 }
-.info-hint[open] {
-  width: 100%;
-  order: 2;
+
+#geometry-deselect-btn {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
 }
+.matrix-array-cells { min-width: max-content; }
+.aero-map-table th { white-space: normal; }

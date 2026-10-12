@@ -5,6 +5,31 @@ const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents(
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
+for (const view of ['iso','top','side']) {
+  const axes = [{x:1,y:0,z:0},{x:0,y:1,z:0},{x:0,y:0,z:1}].map(p=>projectPointWithAngles(p,view,0.7,0.4));
+  const [a,b,c] = axes.map(p=>[p.u,p.v,p.depth]);
+  const determinant = a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]);
+  assert.ok(Math.abs(determinant-1)<1e-12, view+' must preserve handedness');
+}
+const driverLeft = projectPointWithAngles({x:0,y:1,z:0},'iso',-Math.PI/2,0);
+assert.ok(driverLeft.u < 0);
+assert.ok(projectPointWithAngles({x:0,y:0,z:1},'iso',-Math.PI/2,0).v > 0);
+setPreviewPan(50000,-60000); clampPreviewCamera();
+assert.equal(state.vehiclePreviewPanX,50000); assert.equal(state.vehiclePreviewPanY,-60000);
+setPreviewPan(Infinity,NaN); assert.equal(state.vehiclePreviewPanX,0); assert.equal(state.vehiclePreviewPanY,0);
+const popup = {id:'test-help',matches:()=>true,style:{},getBoundingClientRect:()=>({width:280,height:100})};
+document.querySelector=()=>({getBoundingClientRect:()=>({left:950,top:750,bottom:774})});
+window={innerWidth:1000,innerHeight:800};
+positionInfoPopup({target:popup,newState:'open'});
+assert.equal(popup.style.left,'712px'); assert.equal(popup.style.top,'644px');
+isSpatialPreviewArea=()=>true;
+drawVehicleFromForm=()=>{};
+syncViewButtons=()=>{};
+state.rotationSensitivity=1;
+state.vehicleDrag={pointerId:1,mode:'rotate',x:0,y:0,yaw:0,pitch:0};
+updatePreviewDrag({pointerId:1,clientX:10,clientY:0});
+assert.ok(projectPoint({x:0,y:1,z:0},'iso').u>0,'near-side point follows rightward rotation drag');
+state.vehicleDrag=null;
 const aeroInput = {front_left_ride_height_ref_m:[0,0.2,0.08],rear_left_ride_height_ref_m:[-1.4,0.3,0.09]};
 const refs = aeroRideHeightReferences(aeroInput);
 assert.equal(refs.map(r=>r.label).join(','),'FL,FR,RL,RR');
@@ -18,10 +43,10 @@ for (let i=0;i<4;i+=2) {
 assert.equal(aeroInput.front_left_ride_height_ref_m[1],0.2);
 assert.equal(aeroRideHeightReferences({}).length,0);
 const hint = infoHint('Geometry help', '<script> & coordinates');
-assert.match(hint, /<details class="info-hint">/);
+assert.match(hint, /class="info-popup" popover/);
 assert.match(hint, /aria-label="Geometry help"/);
 assert.match(hint, /<svg[^>]+aria-hidden="true"/);
-assert.equal(hint.includes('>i</summary>'),false);
+assert.match(hint, /popovertarget="info-popup-/);
 assert.match(hint, /&lt;script&gt; &amp; coordinates/);
 assert.equal(hint.includes('<script>'),false);
 assert.equal(hint.includes('<details class="info-hint" open'),false);
