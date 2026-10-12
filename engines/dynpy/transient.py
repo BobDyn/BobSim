@@ -17,6 +17,25 @@ ControlLaw = Callable[[float, FloatArray], ModelInputs]
 
 
 @dataclass(frozen=True)
+class DynamicControls:
+    """## Controls With Integrated State
+
+    Attributes
+    ----------
+    initial_state : FloatArray
+        Initial controller state, integrated alongside the vehicle.
+    inputs : callable
+        Model inputs from time, vehicle state and controller state.
+    derivative : callable
+        Controller derivative from time, vehicle state and controller state.
+    """
+
+    initial_state: FloatArray
+    inputs: Callable[[float, FloatArray, FloatArray], ModelInputs]
+    derivative: Callable[[float, FloatArray, FloatArray], FloatArray]
+
+
+@dataclass(frozen=True)
 class TransientResult:
     time_s: FloatArray
     state: FloatArray
@@ -60,7 +79,7 @@ def simulate_transient(
     model: ReducedVehicleModel,
     *,
     initial_state: ArrayLike,
-    controls: ModelInputs | ControlLaw,
+    controls: ModelInputs | ControlLaw | DynamicControls,
     time_s: ArrayLike,
     method: str = "RK45",
     rtol: float = 1e-6,
@@ -79,13 +98,23 @@ def simulate_transient(
             f"Initial state must have shape ({model.state_size},), got {initial.shape}."
         )
 
+    if isinstance(controls, DynamicControls):
+        initial = np.concatenate((initial, controls.initial_state))
+
     def input_at(time: float, state: FloatArray) -> ModelInputs:
+        if isinstance(controls, DynamicControls):
+            return controls.inputs(time, state[:model.state_size], state[model.state_size:])
         if isinstance(controls, ModelInputs):
             return controls
         return controls(time, state)
 
     def rhs(time: float, state: FloatArray) -> FloatArray:
-        return model.derivative(time, state, input_at(time, state))
+        derivative = model.derivative(time, state[:model.state_size], input_at(time, state))
+        if isinstance(controls, DynamicControls):
+            return np.concatenate((derivative, controls.derivative(
+                time, state[:model.state_size], state[model.state_size:],
+            )))
+        return derivative
 
     def jacobian(time: float, state: FloatArray) -> FloatArray:
         return _state_jacobian(rhs, time, state)
@@ -101,7 +130,8 @@ def simulate_transient(
         atol=atol,
         **solver_options,
     )
-    states = np.asarray(solution.y.T, dtype=float)
+    integrated_states = np.asarray(solution.y.T, dtype=float)
+    states = integrated_states[:, :model.state_size]
     signals: dict[str, FloatArray] = {
         name: states[:, index] for index, name in enumerate(model.state_names)
     }
@@ -122,7 +152,7 @@ def simulate_transient(
     wheel_center_offset = np.empty((len(solution.t), 4, 3), dtype=float)
     instant_link = np.empty((len(solution.t), 4, 2), dtype=float)
     for index, (time, state) in enumerate(zip(solution.t, states)):
-        model_inputs = input_at(float(time), state)
+        model_inputs = input_at(float(time), integrated_states[index])
         output = model.evaluate(state, model_inputs)
         velocity = state[model.dof :]
         if model.dof == 3:
