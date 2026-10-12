@@ -159,3 +159,27 @@ state.selectedWorkflowId='mbd';
 renderStandard=()=>{};
 `,ctx);
 (async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('state.simModalOpen',ctx),true); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
+
+vm.runInContext(`
+state.activeTireTab='load-maps';
+state.tirePayload={sides:[{side:'front'},{side:'rear'}]};
+drawPreviewGrid=()=>{};
+let fitCalls=[];
+for (const name of ['pureLongitudinalLoadSurfaces','pureLateralLoadSurfaces','combinedFxSurfaces','combinedFySurfaces']) {
+  globalThis[name]=(sides)=>{fitCalls.push({name,sides});return [{name}];};
+}
+let plotCalls=[];
+drawTireSurfacePanel=(...args)=>{plotCalls.push(args);return {test:true};};
+for (const axle of ['front','rear']) for (const slip of ['pure','combined']) for (const direction of ['longitudinal','lateral']) {
+  state.activeTireAxle=axle; state.tireFitSlip=slip; state.tireFitDirection=direction;
+  fitCalls=[]; plotCalls=[];
+  drawTirePreview({},800,600,{});
+  assert.equal(fitCalls.length,1); assert.equal(fitCalls[0].sides.length,1);
+  assert.equal(fitCalls[0].sides[0].side,axle);
+  const expected=slip==='pure' ? (direction==='lateral'?'pureLateralLoadSurfaces':'pureLongitudinalLoadSurfaces') : (direction==='lateral'?'combinedFySurfaces':'combinedFxSurfaces');
+  assert.equal(fitCalls[0].name,expected);
+  assert.equal(plotCalls.length,1); assert.equal(state.tireSurfaceScene.panels.length,1);
+  assert.equal(plotCalls[0][3],768); assert.equal(plotCalls[0][4],568);
+  assert.equal(plotCalls[0][9],direction==='lateral'?'Fy (N)':'Fx (N)');
+}
+`,ctx);

@@ -129,6 +129,8 @@ const state = {
   tireSurfaceScene: null,
   tireSurfaceHover: null,
   activeTireTab: "setup",
+  tireFitSlip: "pure",
+  tireFitDirection: "longitudinal",
   tireCombinedFzN: null,
   tireLoadCamberDeg: null,
   activePowertrainSubsystem: "pBattery",
@@ -1813,13 +1815,23 @@ function tireSectionHtml(area) {
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
+    return `${tabs}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
   return `${tabs}<div class="inspector-label">Axle</div><div class="tire-subtabs" role="group" aria-label="Tire axle">
     ${["front", "rear"].map((side) => `<button type="button" class="tire-subtab ${side === (state.activeTireAxle || "front") ? "active" : ""}" data-tire-axle="${side}" aria-pressed="${side === (state.activeTireAxle || "front")}">${humanizeToken(side)}</button>`).join("")}
     </div>${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
       ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "").replace(/^./, (letter) => letter.toUpperCase()) })))}
     </section>`).join("")}`;
+}
+
+function tireFitSelectorsHtml() {
+  return `<div class="field-grid">${[
+    ["activeTireAxle", "Axle", ["front", "rear"]],
+    ["tireFitSlip", "Slip", ["pure", "combined"]],
+    ["tireFitDirection", "Force direction", ["longitudinal", "lateral"]],
+  ].map(([key, label, options]) => `<label class="form-field"><span>${label}</span>
+    <select data-tire-fit="${key}">${options.map((value) => `<option value="${value}"${value === (state[key] || options[0]) ? " selected" : ""}>${humanizeToken(value)}</option>`).join("")}</select>
+  </label>`).join("")}</div>`;
 }
 
 function tireSetupFieldsHtml(fields) {
@@ -1867,7 +1879,7 @@ function tireLoadMapControlsHtml() {
     : "No active camber";
   return `
     <div class="tire-load-controls" data-tire-load-controls>
-      <div class="tire-load-row">
+      <div class="tire-load-row" data-tire-fit-load${state.tireFitSlip === "combined" ? "" : " hidden"}>
         <div class="tire-load-head">
           <span>Normal load (N)</span>
           <strong id="tire-combined-fz-value">${formatNumber(value)} N</strong>
@@ -3844,6 +3856,14 @@ function renderTirEditorContent() {
 }
 
 function wireTireTabs() {
+  document.querySelectorAll("[data-tire-fit]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state[select.dataset.tireFit] = select.value;
+      const loadRow = document.querySelector("[data-tire-fit-load]");
+      if (loadRow) loadRow.hidden = state.tireFitSlip !== "combined";
+      drawVehicleFromForm();
+    });
+  });
   document.querySelectorAll("[data-tire-axle]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeTireAxle = button.dataset.tireAxle;
@@ -9368,13 +9388,6 @@ function drawTirePreview(ctx, width, height, data) {
     drawTireSetupPreview(ctx, width, height, data);
     return;
   }
-  drawCanvasText(ctx, "Tires", 28, 30, { size: 18, weight: 780 });
-  drawCanvasText(ctx, state.tirePayload?.model || `${data.front?.tire?.template || "front tire"} / ${data.rear?.tire?.template || "rear tire"}`, 28, 52, {
-    size: 12,
-    weight: 650,
-    color: palette.muted,
-  });
-
   if (!state.tirePayload?.sides?.length) {
     drawCanvasText(ctx, state.tirePayloadUpdating ? "Loading tire plots..." : "Tire plots unavailable. Check the selected tire files.", width / 2, height / 2, {
       align: "center", size: 16, color: palette.muted,
@@ -9382,66 +9395,20 @@ function drawTirePreview(ctx, width, height, data) {
     return;
   }
 
-  const chartX = 28;
-  const chartW = width - chartX - 28;
-  const chartGap = 12;
-  const chartH = (height - 78 - 28 - chartGap) / 2;
-  const chartW2 = (chartW - chartGap) / 2;
-  const sides = state.tirePayload?.sides || [];
-  const combinedFzLabel = `@ ${formatNumber(currentTireCombinedFz())} N`;
-  const camberLabel = `IA ${formatSignedNumber(currentTireLoadCamberDeg())} deg`;
-  const surfacePanels = [];
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX,
-    78,
-    chartW2,
-    chartH,
-    `Pure Fx Load Map, ${camberLabel}`,
-    pureLongitudinalLoadSurfaces(sides, palette),
-    "kappa",
-    "Fz N",
-    "Fx N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX + chartW2 + chartGap,
-    78,
-    chartW2,
-    chartH,
-    `Pure Fy Load Map, ${camberLabel}`,
-    pureLateralLoadSurfaces(sides, palette),
-    "alpha deg",
-    "Fz N",
-    "Fy N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX,
-    78 + chartH + chartGap,
-    chartW2,
-    chartH,
-    `Combined Fx ${combinedFzLabel}, ${camberLabel}`,
-    combinedFxSurfaces(sides, palette),
-    "kappa",
-    "alpha deg",
-    "Fx N",
-  ));
-  surfacePanels.push(drawTireSurfacePanel(
-    ctx,
-    chartX + chartW2 + chartGap,
-    78 + chartH + chartGap,
-    chartW2,
-    chartH,
-    `Combined Fy ${combinedFzLabel}, ${camberLabel}`,
-    combinedFySurfaces(sides, palette),
-    "alpha deg",
-    "kappa",
-    "Fy N",
-  ));
-  state.tireSurfaceScene = {
-    panels: surfacePanels.filter(Boolean),
-  };
+  const sides = state.tirePayload.sides.filter((side) => side.side === (state.activeTireAxle || "front"));
+  const combined = state.tireFitSlip === "combined";
+  const lateral = state.tireFitDirection === "lateral";
+  const surfaces = combined
+    ? (lateral ? combinedFySurfaces : combinedFxSurfaces)(sides, palette)
+    : (lateral ? pureLateralLoadSurfaces : pureLongitudinalLoadSurfaces)(sides, palette);
+  const title = `${humanizeToken(state.activeTireAxle || "front")} · ${combined ? "Combined" : "Pure"} ${lateral ? "lateral" : "longitudinal"}`;
+  const panel = drawTireSurfacePanel(
+    ctx, 16, 16, width - 32, height - 32, title, surfaces,
+    lateral ? "Slip angle (deg)" : "Slip ratio",
+    combined ? (lateral ? "Slip ratio" : "Slip angle (deg)") : "Normal load (N)",
+    lateral ? "Fy (N)" : "Fx (N)",
+  );
+  state.tireSurfaceScene = { panels: panel ? [panel] : [] };
 }
 
 function drawTirePreviewError(ctx, width, height, error, data) {

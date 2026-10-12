@@ -1924,6 +1924,10 @@ body.resizing-panes * {
   gap: 6px;
 }
 
+.tire-load-row[hidden] {
+  display: none;
+}
+
 .tire-load-head,
 .tire-load-meta {
   display: flex;
