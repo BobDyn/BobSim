@@ -2691,13 +2691,16 @@ body.resizing-panes * {
   min-width: 86px;
 }
 
-.aero-map-table .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.aero-map-table th input {
+  background: var(--surface-2);
+  color: var(--blue);
+  font-weight: 650;
+}
+
+.aero-map-table tbody th {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
 }
 
 .powertrain-model-label {

@@ -17,7 +17,7 @@ def test_aero_and_powertrain_editors_preserve_fields() -> None:
         pytest.skip("Node is required for editor checks")
     source = (Path(__file__).parents[1] / "app/static/app.js").read_text()
     names = (
-        "aeroSectionHtml", "aeroTableControl", "aeroSurfaceRowsFromTable", "aeroRideHeightLabel",
+        "aeroSectionHtml", "aeroTableControl", "aeroSurfaceRowsFromTable", "aeroCellControl",
         "powertrainSubsystemFieldsHtml", "powertrainSubsystems", "powertrainFieldSubsystem",
         "arrayScalarControl", "arrayCellInputHtml", "numericDisplayAttrs", "numericDisplayValue",
         "formatNumber", "escapeHtml",
@@ -45,20 +45,27 @@ delete payload.data.front.tire.template;
 assert(aeroSectionHtml({fields: aeroFields}).includes(
   '<details class="component-details"><summary>Legacy tire fallback'));
 payload.data.front.tire.template = originalTemplate;
+const table = aeroTableControl(aeroFields);
+const paths = [...table.matchAll(/data-config-path="([^"]+)"/g)].map(match =>
+  JSON.parse(match[1].replaceAll('&quot;', '"')));
+assert.equal(new Set(paths.map(path => JSON.stringify(path))).size, paths.length);
 for (const map of AERO_MAPS) {
   const field = aeroFields.find(field => field.path[1] === map.key);
-  const table = aeroTableControl(field, map, payload.data.aero);
-  assert.equal((table.match(/data-array-cell/g) || []).length, field.value.flat().length);
+  assert.equal(paths.filter(path => path[1] === map.key).length, field.value.flat().length);
   for (const [row, values] of field.value.entries()) {
     for (const [col, value] of values.entries()) {
-      assert(table.includes(`data-row="${row}" data-col="${col}"`));
-      assert(table.includes(`value="${value}"`));
+      assert(paths.some(path => path[1] === map.key && path[2] === row && path[3] === col));
+      assert(table.includes(`data-original-value="${value}"`));
     }
   }
-  assert(html.includes(`data-aero-map-panel="${map.key}"`));
 }
-assert.equal((html.match(/data-array-path=/g) || []).length, 5);
-assert.equal((html.match(/<section[^>]+ hidden>/g) || []).length, 4);
+for (const axle of ['front', 'rear']) {
+  const grid = payload.data.aero[`${axle}_ride_height_grid_m`];
+  assert.equal(paths.filter(path => path[1] === `${axle}_ride_height_grid_m`).length, grid.length);
+  assert(table.includes(`value="${numericDisplayValue(grid[0], 1000)}"`));
+}
+assert.equal((html.match(/<table /g) || []).length, 1);
+assert(!html.includes('<summary>Ride-height grid</summary>'));
 const rows = aeroSurfaceRowsFromTable([[1, 2], [3, 4]], [.04, .06], [.05, .07], 'force');
 const coordinates = rows.map(row => row.points.map(point =>
   [point.front_ride_height_mm, point.rear_ride_height_mm, point.force]));

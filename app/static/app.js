@@ -2219,13 +2219,7 @@ function aeroSectionHtml(area) {
         </label>
         <button type="button" class="ghost-button" data-aero-references aria-pressed="${state.aeroReferenceView ? "true" : "false"}">Reference points</button>
       </div>
-      ${AERO_MAPS.map((map) => {
-        const field = area.fields.find((entry) => entry.path?.[1] === map.key);
-        return `<section data-aero-map-panel="${map.key}"${map.key === state.activeAeroMap ? "" : " hidden"}>
-          ${field ? `<details class="component-details"><summary>Edit ${map.label.toLowerCase()} table</summary>${aeroTableControl(field, map, data.aero || {})}</details>` : '<p class="area-empty">No map data.</p>'}
-        </section>`;
-      }).join("")}
-      <details class="component-details"><summary>Ride-height grid</summary><div class="field-grid">${grids.map(fieldControl).join("")}</div></details>
+      <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
       <details class="component-details"><summary>Reference points</summary>
         <p class="field-help">Vehicle coordinates. Origin: average of the front contact patches. Right ride-height points mirror the left.</p>
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
@@ -2234,19 +2228,29 @@ function aeroSectionHtml(area) {
   `;
 }
 
-function aeroRideHeightLabel(value) {
-  const millimeters = Number(value) * 1000;
-  return Number.isFinite(millimeters) ? String(Number(millimeters.toFixed(3))) : "";
-}
-
-function aeroTableControl(field, map, aero) {
-  return `<div class="aero-table-scroll form-field" data-array-path="${escapeHtml(field.key)}" data-array-rank="2" data-array-element-kind="${escapeHtml(field.array_element_kind || "number")}"${field.disabled ? ' data-field-disabled="true"' : ""}>
+function aeroTableControl(fields) {
+  const front = fields.find((field) => field.path?.[1] === "front_ride_height_grid_m");
+  const rear = fields.find((field) => field.path?.[1] === "rear_ride_height_grid_m");
+  const maps = AERO_MAPS.map((map) => ({ ...map, field: fields.find((field) => field.path?.[1] === map.key) }))
+    .filter((map) => map.field);
+  if (!front || !rear) return '<p class="area-empty">No ride-height grid.</p>';
+  const rows = Math.max(rear.value.length, ...maps.map((map) => map.field.value.length));
+  const cols = Math.max(front.value.length, ...maps.flatMap((map) => map.field.value.map((row) => row.length)));
+  return `<div class="aero-table-scroll form-field">
     <table class="aero-map-table">
-      <caption>${map.label} (${map.unit}). Columns: front ride height (mm). Rows: rear ride height (mm).</caption>
-      <thead><tr><th scope="col">Rear / Front</th>${(field.value[0] || []).map((_, col) => `<th scope="col" data-aero-front-height="${col}">${escapeHtml(aeroRideHeightLabel(aero.front_ride_height_grid_m?.[col]))}</th>`).join("")}</tr></thead>
-      <tbody>${field.value.map((row, rowIndex) => `<tr><th scope="row" data-aero-rear-height="${rowIndex}">${escapeHtml(aeroRideHeightLabel(aero.rear_ride_height_grid_m?.[rowIndex]))}</th>${row.map((value, col) => `<td><label><span class="sr-only">${map.label}, rear row ${rowIndex + 1}, front column ${col + 1}</span>${arrayScalarControl(field, value, { row: rowIndex, col })}</label></td>`).join("")}</tr>`).join("")}</tbody>
+      <caption>Ride-height headers (mm)</caption>
+      <thead><tr><th scope="col">Rear / Front</th>${Array.from({ length: cols }, (_, col) => `<th scope="col">${col < front.value.length ? aeroCellControl(front, [col], front.value[col], `Front ride height ${col + 1} (mm)`) : ""}</th>`).join("")}</tr></thead>
+      <tbody>${Array.from({ length: rows }, (_, row) => `<tr>
+        <th scope="row">${row < rear.value.length ? aeroCellControl(rear, [row], rear.value[row], `Rear ride height ${row + 1} (mm)`) : ""}</th>
+        ${Array.from({ length: cols }, (_, col) => `<td>${maps.map((map) => `<span data-aero-map-panel="${map.key}"${map.key === state.activeAeroMap ? "" : " hidden"}>${col < (map.field.value[row]?.length || 0) ? aeroCellControl(map.field, [row, col], map.field.value[row][col], `${map.label} (${map.unit}), row ${row + 1}, column ${col + 1}`) : ""}</span>`).join("")}</td>`).join("")}
+      </tr>`).join("")}</tbody>
     </table>
   </div>`;
+}
+
+function aeroCellControl(field, indices, value, label) {
+  const path = JSON.stringify([...field.path, ...indices]);
+  return `<input data-config-path="${escapeHtml(path)}" data-kind="number" type="number" step="any" required aria-label="${escapeHtml(label)}" ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}"${field.disabled ? " disabled" : ""}>`;
 }
 
 function wireAeroControls() {
@@ -2266,15 +2270,7 @@ function wireAeroControls() {
     event.currentTarget.setAttribute("aria-pressed", String(state.aeroReferenceView));
     drawVehicleFromForm();
   });
-  panel.addEventListener("input", () => {
-    const aero = currentVehicleFormData()?.aero || {};
-    panel.querySelectorAll("[data-aero-front-height]").forEach((cell) => {
-      cell.textContent = aeroRideHeightLabel(aero.front_ride_height_grid_m?.[cell.dataset.aeroFrontHeight]);
-    });
-    panel.querySelectorAll("[data-aero-rear-height]").forEach((cell) => {
-      cell.textContent = aeroRideHeightLabel(aero.rear_ride_height_grid_m?.[cell.dataset.aeroRearHeight]);
-    });
-  });
+
 }
 
 function powertrainToolsHtml() {
