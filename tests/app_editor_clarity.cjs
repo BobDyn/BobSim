@@ -220,3 +220,18 @@ for (const output of ['mx','my','mz']) {
   }
 }
 `, momentCtx);
+
+vm.runInContext(`
+const ellipseCalls=[];
+drawPanel=()=>{}; drawCanvasText=()=>{}; drawTireForceMapLegend=()=>{};
+drawTireFrictionEllipse=(...args)=>ellipseCalls.push(args);
+tireSetupCorners=()=>['front','rear'].flatMap(axle=>['left','right'].map(side=>({axle,side,fxPeakN:500,fyPeakN:700,forceMapMaxN:700,fzN:400})));
+for (const axle of ['front','rear']) {
+  state.activeTireAxle=axle; ellipseCalls.length=0;
+  drawTireStancePanel({},16,16,800,600,{});
+  assert.equal(ellipseCalls.length,1);
+  assert.equal(ellipseCalls[0][1].axle,axle);
+  assert.equal(ellipseCalls[0][1].side,'left');
+  assert.equal(ellipseCalls[0][4],240);
+}
+`,ctx);

@@ -3878,6 +3878,7 @@ function wireTireTabs() {
       document.querySelectorAll("[data-tire-axle-panel]").forEach((panel) => {
         panel.hidden = panel.dataset.tireAxlePanel !== state.activeTireAxle;
       });
+      drawVehicleFromForm();
     });
   });
   document.querySelectorAll("[data-tire-tab]").forEach((button) => {
@@ -10091,41 +10092,20 @@ function drawProjectedPolyline(ctx, points) {
 
 function drawTireStancePanel(ctx, x, y, width, height, data) {
   const palette = canvasPalette();
-  const corners = tireSetupCorners(data);
-  const maxForce = Math.max(
-    100,
-    ...corners
-      .flatMap((corner) => [corner.fxPeakN, corner.fyPeakN, corner.forceMapMaxN])
-      .map(Number)
-      .filter((value) => Number.isFinite(value) && value > 0),
-  );
+  const axle = state.activeTireAxle || "front";
+  const corner = tireSetupCorners(data).find((item) => item.axle === axle && item.side === "left");
+  const maxForce = Math.max(100, ...[corner.fxPeakN, corner.fyPeakN, corner.forceMapMaxN]
+    .map(Number).filter((value) => Number.isFinite(value) && value > 0));
   drawPanel(ctx, x, y, width, height, palette.surface);
-  drawCanvasText(ctx, "Friction Ellipses", x + 14, y + 18, { size: 13, weight: 780 });
-  drawCanvasText(ctx, `Shared scale ${formatNumber(maxForce)} N`, x + width - 14, y + 18, {
-    size: 11,
-    weight: 650,
-    align: "right",
-    color: palette.muted,
+  drawCanvasText(ctx, `${humanizeToken(axle)} friction ellipse`, x + 14, y + 18, { size: 13, weight: 780 });
+  drawCanvasText(ctx, `Fz ${formatNumber(corner.fzN)} (N)`, x + width - 14, y + 18, {
+    size: 11, align: "right", color: palette.muted,
   });
-
-  const inset = 14;
-  const gap = clamp(width * 0.02, 10, 16);
-  const innerX = x + inset;
-  const innerY = y + 36;
-  const innerW = Math.max(140, width - inset * 2);
-  const innerH = Math.max(1, height - 80);
-  const cardW = Math.max(96, (innerW - gap) / 2);
-  const cardH = Math.max(70, (innerH - gap) / 2);
-  const positions = {
-    FL: { x: innerX, y: innerY },
-    FR: { x: innerX + cardW + gap, y: innerY },
-    RL: { x: innerX, y: innerY + cardH + gap },
-    RR: { x: innerX + cardW + gap, y: innerY + cardH + gap },
-  };
-  drawTireForceMapLegend(ctx, innerX, y + height - 30, palette.blue);
-  corners.forEach((corner) => {
-    const position = positions[corner.id];
-    drawTireCornerSetupCard(ctx, corner, position.x, position.y, cardW, cardH, maxForce);
+  const radius = Math.max(1, Math.min((width - 96) / 2, (height - 120) / 2));
+  drawTireFrictionEllipse(ctx, corner, x + width / 2, y + height / 2, radius, maxForce);
+  drawTireForceMapLegend(ctx, x + 14, y + height - 30, corner.color);
+  drawCanvasText(ctx, `Scale ${formatNumber(maxForce)} (N)`, x + width - 14, y + height - 16, {
+    size: 11, align: "right", color: palette.muted,
   });
 }
 
@@ -10477,18 +10457,6 @@ function tireForceMapPointAtKappa(points, kappa) {
 function cornerAlphaOffsetDeg(toeDeg, side) {
   const numeric = Number(toeDeg) || 0;
   return side === "right" ? -numeric : numeric;
-}
-
-function drawTireCornerSetupCard(ctx, corner, x, y, width, height, maxForce) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  drawPanel(ctx, x, y, width, height, colorWithAlpha(accent, state.dark ? 0.12 : 0.07));
-  drawCanvasText(ctx, corner.label, x + 12, y + 18, { size: 12, weight: 780 });
-  const radius = Math.max(1, Math.min((width - 76) / 2, (height - 84) / 2));
-  drawTireFrictionEllipse(ctx, corner, x + width / 2, y + height / 2 + 2, radius, maxForce);
-  drawCanvasText(ctx, `Fz ${formatNumber(corner.fzN)} (N)`, x + width / 2, y + height - 14, {
-    size: 11, align: "center", color: palette.muted,
-  });
 }
 
 function drawTireFrictionEllipse(ctx, corner, cx, cy, maxRadius, maxForce) {
