@@ -6876,7 +6876,7 @@ function isTirePreviewArea(area = activeParameterArea()) {
 }
 
 function isSurfaceMapPreviewArea(area = activeParameterArea()) {
-  return area.visual === "aero" || (area.visual === "tires" && state.activeTireTab === "load-maps");
+  return (area.visual === "aero" && !state.aeroReferenceView) || (area.visual === "tires" && state.activeTireTab === "load-maps");
 }
 
 function selectedMassPoint() {
@@ -7872,7 +7872,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
 }
 
 function isSpatialPreviewArea(area = activeParameterArea()) {
-  return area.visual === "hardpoints";
+  return area.visual === "hardpoints" || (area.visual === "aero" && state.aeroReferenceView);
 }
 
 function visibleGeometryAxles() {
@@ -8882,6 +8882,7 @@ function drawAeroReferencePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   drawPreviewGrid(ctx, width, height);
   drawCanvasText(ctx, "Aero reference points", 28, 28, { size: 18, weight: 780 });
+  drawCanvasText(ctx, "Drag to rotate · Scroll to zoom · Ctrl-drag to pan · Double-click to reset", 28, 49, { size: 11, color: palette.muted });
   const model = filterVehicleModel(buildVehicleGeometry(data), sectionFocus("geometry"));
   const refs = [
     { id: "origin", label: "Origin", point: [0, 0, 0], color: palette.muted },
