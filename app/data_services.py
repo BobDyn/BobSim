@@ -761,6 +761,10 @@ def _vehicle_field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:
     if name == "P_max_mot":
         payload["unit"] = "W"
         display_unit, scale = "kW", 0.001
+    if unit and payload["kind"] == "integer" and field.kind == "auto":
+        payload["kind"] = "number"
+    if payload.get("array_element_kind") == "integer" and (unit or name == "axis"):
+        payload["array_element_kind"] = "number"
     payload.update(display_unit=display_unit, display_scale=scale)
     return payload
 

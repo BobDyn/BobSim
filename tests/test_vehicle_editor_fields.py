@@ -58,3 +58,11 @@ for (const [original, scale, edited, expected] of [
 }
 '''
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_physical_quantity_accepts_fractional_display_values():
+    field = FieldSpec(path=("vertical_stiffness_n_per_m",), label="Stiffness")
+    result = _vehicle_field_payload(field, {"vertical_stiffness_n_per_m": 98947})
+    assert result["kind"] == "number"
+    assert result["display_scale"] == 0.001
+    assert result["value"] == 98947
