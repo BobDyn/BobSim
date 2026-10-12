@@ -6095,8 +6095,7 @@ function drawVehiclePreview(data) {
     clearGeometryInteractionScene();
     return;
   }
-  const frame = vehicleModelFrame(model);
-  const scene = projectVehicleModel(model, width, height, state.vehiclePreviewView, frame);
+  const scene = projectVehicleModel(model, width, height, state.vehiclePreviewView);
   const { map, scale } = scene;
   state.geometryScene = {
     width,
@@ -7983,7 +7982,6 @@ function fitCanvasText(ctx, text, maxWidth, options = {}) {
 function drawArchitecturePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   const architecture = data.architecture || {};
-  const profile = powertrainProfile(data);
   const hoverId = state.architectureHoverId;
   const selectedId = state.architectureModalOpen && state.architectureModalAxle
     ? `architecture-${state.architectureModalAxle}`
@@ -8020,17 +8018,16 @@ function drawArchitecturePreview(ctx, width, height, data) {
       drawArchitectureAxle3d(ctx, scene.points, viewport.axle, architecture[viewport.axle] || "direct", data, null, null, null, viewport);
     });
   });
-  drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId);
   drawArchitectureLegend(ctx, width, height, data);
 
   state.architectureScene = { hotspots };
 }
 
 function architectureAxlePanels(width, height) {
-  const top = 78;
-  const margin = 28;
+  const top = 16;
+  const margin = 16;
   const gap = 16;
-  const availableHeight = Math.max(250, height - top - 48);
+  const availableHeight = Math.max(1, height - top - 40);
   const panelHeight = (availableHeight - gap) / 2;
   return ["front", "rear"].map((axle, index) => (
     architectureAxlePanel(axle, margin, top + index * (panelHeight + gap), width - margin * 2, panelHeight)
@@ -8230,19 +8227,6 @@ function drawArchitecturePowertrain3d(ctx, points, profile, hotspots, hoverId, s
   hotspots.push({ id, type: "powertrain", view: viewport.view, rect });
   drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
   drawArchitecturePowertrainBlock(ctx, rect.x + rect.width / 2, rect.y + rect.height / 2 + 4, 78, 34);
-  drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
-}
-
-function drawArchitecturePowertrainSummary(ctx, width, profile, hotspots, hoverId, selectedId) {
-  const rect = {
-    x: Math.max(28, width - 238),
-    y: 18,
-    width: Math.min(210, width - 56),
-    height: 46,
-  };
-  const id = "architecture-powertrain";
-  hotspots.push({ id, type: "powertrain", rect });
-  drawArchitecture3dHotspotFrame(ctx, rect, id, hoverId, selectedId);
   drawArchitectureBadge(ctx, rect.x + 12, rect.y + 17, "Powertrain", profile.id, canvasPalette().green);
 }
 
@@ -8900,7 +8884,7 @@ function drawAeroReferencePreview(ctx, width, height, data) {
     })),
   ].filter((ref) => toPoint(ref.point)).map((ref) => ({ ...ref, x: ref.point[0], y: ref.point[1], z: ref.point[2], radius: ref.mirrored ? 5 : 7 }));
   model.points.push(...refs);
-  const { map } = projectVehicleModelInRect(model, { x: 28, y: 66, width: width - 56, height: height - 136 }, "iso");
+  const { map } = projectVehicleModelInRect(model, { x: 12, y: 48, width: width - 24, height: height - 60 }, "iso");
   ctx.save();
   ctx.globalAlpha = 0.35;
   model.links.forEach((link) => drawCylinder(ctx, map.get(link.from), map.get(link.to), link));
@@ -8910,7 +8894,7 @@ function drawAeroReferencePreview(ctx, width, height, data) {
     ctx.save();
     ctx.globalAlpha = ref.mirrored ? 0.5 : 1;
     drawSphere(ctx, point);
-    drawCanvasText(ctx, ref.label, point.x2 + 12, point.y2 - 12, { color: ref.color, size: 12, weight: 700 });
+    drawCanvasText(ctx, ref.label, clamp(point.x2 + 12, 12, width - 130), clamp(point.y2 - 12, 44, height - 16), { color: ref.color, size: 12, weight: 700 });
     ctx.restore();
   });
 }
@@ -9380,6 +9364,10 @@ function drawTirePreview(ctx, width, height, data) {
   const palette = canvasPalette();
   state.tireSurfaceScene = null;
   drawPreviewGrid(ctx, width, height);
+  if (state.tirePayload?.sides?.length && state.activeTireTab !== "load-maps") {
+    drawTireSetupPreview(ctx, width, height, data);
+    return;
+  }
   drawCanvasText(ctx, "Tires", 28, 30, { size: 18, weight: 780 });
   drawCanvasText(ctx, state.tirePayload?.model || `${data.front?.tire?.template || "front tire"} / ${data.rear?.tire?.template || "rear tire"}`, 28, 52, {
     size: 12,
@@ -9391,11 +9379,6 @@ function drawTirePreview(ctx, width, height, data) {
     drawCanvasText(ctx, state.tirePayloadUpdating ? "Loading tire plots..." : "Tire plots unavailable. Check the selected tire files.", width / 2, height / 2, {
       align: "center", size: 16, color: palette.muted,
     });
-    return;
-  }
-
-  if (state.activeTireTab !== "load-maps") {
-    drawTireSetupPreview(ctx, width, height, data);
     return;
   }
 
@@ -9494,7 +9477,7 @@ function drawTirePreviewError(ctx, width, height, error, data) {
 }
 
 function drawTireSetupPreview(ctx, width, height, data) {
-  drawTireStancePanel(ctx, 28, 78, width - 56, height - 106, data);
+  drawTireStancePanel(ctx, 16, 16, width - 32, height - 32, data);
 }
 
 function pureLongitudinalLoadSurfaces(sides, palette) {
@@ -10213,7 +10196,7 @@ function drawTireStancePanel(ctx, x, y, width, height, data) {
   const innerX = x + inset;
   const innerY = y + 36;
   const innerW = Math.max(140, width - inset * 2);
-  const innerH = Math.max(140, height - 50);
+  const innerH = Math.max(1, height - 80);
   const cardW = Math.max(96, (innerW - gap) / 2);
   const cardH = Math.max(70, (innerH - gap) / 2);
   const positions = {
@@ -10222,7 +10205,7 @@ function drawTireStancePanel(ctx, x, y, width, height, data) {
     RL: { x: innerX, y: innerY + cardH + gap },
     RR: { x: innerX + cardW + gap, y: innerY + cardH + gap },
   };
-  drawTireSetupCenterline(ctx, innerX, innerY, innerW, innerH);
+  drawTireForceMapLegend(ctx, innerX, y + height - 30, palette.blue);
   corners.forEach((corner) => {
     const position = positions[corner.id];
     drawTireCornerSetupCard(ctx, corner, position.x, position.y, cardW, cardH, maxForce);
@@ -10579,98 +10562,15 @@ function cornerAlphaOffsetDeg(toeDeg, side) {
   return side === "right" ? -numeric : numeric;
 }
 
-function drawTireSetupCenterline(ctx, x, y, width, height) {
-  const palette = canvasPalette();
-  const midX = x + width / 2;
-  const midY = y + height / 2;
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.5 : 0.7);
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 6]);
-  ctx.beginPath();
-  ctx.moveTo(midX, y + 6);
-  ctx.lineTo(midX, y + height - 6);
-  ctx.moveTo(x + 6, midY);
-  ctx.lineTo(x + width - 6, midY);
-  ctx.stroke();
-  ctx.restore();
-}
-
 function drawTireCornerSetupCard(ctx, corner, x, y, width, height, maxForce) {
   const palette = canvasPalette();
   const accent = corner.color || palette.blue;
   drawPanel(ctx, x, y, width, height, colorWithAlpha(accent, state.dark ? 0.12 : 0.07));
-  ctx.save();
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(x + 1.5, y + 11);
-  ctx.lineTo(x + 1.5, y + height - 11);
-  ctx.stroke();
-  ctx.restore();
-
-  drawCanvasText(ctx, corner.id, x + 12, y + 17, { size: 13, weight: 820, color: palette.ink });
-  const template = fitCanvasText(ctx, corner.template, Math.max(54, width - 78), { size: 10, weight: 650 });
-  drawCanvasText(ctx, template, x + width - 12, y + 17, {
-    size: 10,
-    weight: 650,
-    align: "right",
-    color: palette.muted,
-  });
-
-  const compact = height < 112 || width < 170;
-  const statsH = 38;
-  const plot = {
-    x: x + 12,
-    y: y + 30,
-    width: Math.max(64, width - 24),
-    height: Math.max(38, height - 36 - statsH),
-  };
-  const center = {
-    x: plot.x + plot.width / 2,
-    y: plot.y + plot.height / 2,
-  };
-  const maxRadius = Math.max(20, Math.min(plot.width * 0.42, plot.height * 0.43));
-  drawTireFrictionEllipse(ctx, corner, center.x, center.y, maxRadius, maxForce);
-  drawTireAlphaOffsetVector(ctx, corner, center.x, center.y, maxRadius);
-  if (!compact) {
-    drawTireInclinationGlyph(
-      ctx,
-      plot.x + plot.width - 52,
-      plot.y + plot.height - 30,
-      44,
-      25,
-      corner.inclinationDeg,
-      corner.side,
-      accent,
-    );
-  }
-
-  const leftX = x + 12;
-  const rightX = x + width - 12;
-  const statY = y + height - 29;
-  drawCanvasText(ctx, `FzNom ${formatNumber(corner.fzN)} N`, leftX, statY, {
-    size: compact ? 9 : 10,
-    weight: 760,
-    color: palette.ink,
-  });
-  drawCanvasText(ctx, `alpha0 ${formatSignedNumber(corner.alphaOffsetDeg)} deg`, rightX, statY, {
-    size: compact ? 9 : 10,
-    weight: 760,
-    align: "right",
-    color: palette.ink,
-  });
-  drawCanvasText(ctx, `Fy0 ${formatSignedNumber(corner.zeroFyN)} N`, leftX, statY + 15, {
-    size: compact ? 9 : 10,
-    weight: 650,
-    color: palette.muted,
-  });
-  drawCanvasText(ctx, `IA ${formatSignedNumber(corner.inclinationDeg)} deg  Fy ${formatSignedNumber(corner.camberFyN)} N`, rightX, statY + 15, {
-    size: compact ? 9 : 10,
-    weight: 650,
-    align: "right",
-    color: corner.camberThrustEnabled ? palette.muted : palette.amber,
+  drawCanvasText(ctx, corner.label, x + 12, y + 18, { size: 12, weight: 780 });
+  const radius = Math.max(1, Math.min((width - 76) / 2, (height - 84) / 2));
+  drawTireFrictionEllipse(ctx, corner, x + width / 2, y + height / 2 + 2, radius, maxForce);
+  drawCanvasText(ctx, `Fz ${formatNumber(corner.fzN)} (N)`, x + width / 2, y + height - 14, {
+    size: 11, align: "center", color: palette.muted,
   });
 }
 
@@ -10706,7 +10606,6 @@ function drawTireFrictionEllipse(ctx, corner, cx, cy, maxRadius, maxForce) {
       color: palette.muted,
     });
   }
-  if (maxRadius >= 30) drawTireForceMapLegend(ctx, cx - maxRadius, cy - maxRadius, accent);
 }
 
 function drawTireForceMapIsolines(ctx, rows, project, color) {
@@ -10775,170 +10674,14 @@ function drawTireForceMapLegend(ctx, x, y, color) {
   ctx.lineTo(x + 18, y + 18);
   ctx.stroke();
   ctx.restore();
-  drawCanvasText(ctx, "alpha", x + 23, y + 5, {
+  drawCanvasText(ctx, "Slip angle", x + 23, y + 5, {
     size: 8,
     weight: 700,
     color: palette.muted,
   });
-  drawCanvasText(ctx, "kappa", x + 23, y + 18, {
+  drawCanvasText(ctx, "Slip ratio", x + 23, y + 18, {
     size: 8,
     weight: 700,
-    color: palette.muted,
-  });
-}
-
-function drawTireAlphaOffsetVector(ctx, corner, cx, cy, maxRadius) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  const alphaRad = corner.alphaOffsetDeg * Math.PI / 180;
-  const heading = {
-    x: -Math.sin(alphaRad),
-    y: -Math.cos(alphaRad),
-  };
-  const length = clamp(maxRadius * 0.72, 16, 42);
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(accent, 0.72);
-  ctx.lineWidth = 1.5;
-  ctx.lineCap = "round";
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + heading.x * length, cy + heading.y * length);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  const angle = Math.atan2(heading.y, heading.x);
-  const arrow = projectArrowHead(cx + heading.x * length, cy + heading.y * length, angle);
-  ctx.beginPath();
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.left.x, arrow.left.y);
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.right.x, arrow.right.y);
-  ctx.stroke();
-  ctx.fillStyle = colorWithAlpha(palette.surface, state.dark ? 0.86 : 0.92);
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.56 : 0.72);
-  ctx.lineWidth = 1;
-  const badgeW = 42;
-  const badgeH = 16;
-  const badgeX = cx - maxRadius - 4;
-  const badgeY = cy + maxRadius - badgeH + 4;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
-  else ctx.rect(badgeX, badgeY, badgeW, badgeH);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-  drawCanvasText(ctx, "alpha0", badgeX + badgeW / 2, badgeY + badgeH / 2, {
-    size: 8,
-    weight: 760,
-    align: "center",
-    color: palette.muted,
-  });
-}
-
-function drawTireToeFootprint(ctx, corner, cx, cy, maxRadius) {
-  const palette = canvasPalette();
-  const accent = corner.color || palette.blue;
-  const alphaRad = corner.alphaOffsetDeg * Math.PI / 180;
-  const heading = {
-    x: -Math.sin(alphaRad),
-    y: -Math.cos(alphaRad),
-  };
-  const lateral = {
-    x: -heading.y,
-    y: heading.x,
-  };
-  const halfLong = clamp(maxRadius * 0.42, 15, 34);
-  const halfWide = clamp(maxRadius * 0.15, 5, 11);
-  const corners = [
-    { h: 1, l: 1 },
-    { h: 1, l: -1 },
-    { h: -1, l: -1 },
-    { h: -1, l: 1 },
-  ].map((point) => ({
-    x: cx + heading.x * halfLong * point.h + lateral.x * halfWide * point.l,
-    y: cy + heading.y * halfLong * point.h + lateral.y * halfWide * point.l,
-  }));
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.5 : 0.42);
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy + halfLong + 7);
-  ctx.lineTo(cx, cy - halfLong - 7);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = state.dark ? "#0b0e14" : "#f6f8fa";
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  corners.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-  });
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = colorWithAlpha(accent, 0.86);
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(cx - heading.x * halfLong * 0.74, cy - heading.y * halfLong * 0.74);
-  ctx.lineTo(cx + heading.x * (halfLong + 8), cy + heading.y * (halfLong + 8));
-  ctx.stroke();
-  const angle = Math.atan2(heading.y, heading.x);
-  const arrow = projectArrowHead(cx + heading.x * (halfLong + 8), cy + heading.y * (halfLong + 8), angle);
-  ctx.beginPath();
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.left.x, arrow.left.y);
-  ctx.moveTo(arrow.tip.x, arrow.tip.y);
-  ctx.lineTo(arrow.right.x, arrow.right.y);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawTireInclinationGlyph(ctx, x, y, width, height, inclinationDeg, side, color) {
-  const palette = canvasPalette();
-  const centerX = x + width * 0.52;
-  const groundY = y + height - 5;
-  const topY = y + 6;
-  const lean = clamp((Number(inclinationDeg) || 0) * 2.4, -13, 13);
-  const topX = centerX + lean;
-  const carSideX = side === "left" ? x + width - 5 : x + 5;
-  ctx.save();
-  ctx.strokeStyle = colorWithAlpha(palette.line, state.dark ? 0.7 : 0.8);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x + 5, groundY);
-  ctx.lineTo(x + width - 5, groundY);
-  ctx.stroke();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.5 : 0.46);
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(centerX, groundY);
-  ctx.lineTo(centerX, topY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.strokeStyle = color || palette.magenta;
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(centerX, groundY);
-  ctx.lineTo(topX, topY);
-  ctx.stroke();
-  ctx.fillStyle = colorWithAlpha(color || palette.magenta, state.dark ? 0.78 : 0.9);
-  ctx.beginPath();
-  ctx.arc(topX, topY, 2.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = colorWithAlpha(palette.muted, state.dark ? 0.56 : 0.48);
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(carSideX, groundY - 3);
-  ctx.lineTo(carSideX, topY + 3);
-  ctx.stroke();
-  ctx.restore();
-  drawCanvasText(ctx, "car", carSideX, topY - 4, {
-    size: 8,
-    weight: 760,
-    align: side === "left" ? "right" : "left",
     color: palette.muted,
   });
 }
@@ -11790,58 +11533,26 @@ function projectPointWithAngles(point, view, yaw, pitch) {
   return { u: -xr, v: z * cp - yr * sp, depth: yr * cp + z * sp };
 }
 
-function vehicleModelFrame(model) {
-  const points = model.points || [];
-  if (!points.length) return { center: { x: 0, y: 0, z: 0 }, radius: 1 };
-  const bounds = points.reduce(
-    (acc, point) => {
-      const shell = point.shellRadiusM || 0;
-      return {
-        minX: Math.min(acc.minX, point.x - shell),
-        maxX: Math.max(acc.maxX, point.x + shell),
-        minY: Math.min(acc.minY, point.y - shell),
-        maxY: Math.max(acc.maxY, point.y + shell),
-        minZ: Math.min(acc.minZ, point.z - shell),
-        maxZ: Math.max(acc.maxZ, point.z + shell),
-      };
-    },
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity },
-  );
-  const center = {
-    x: (bounds.minX + bounds.maxX) / 2,
-    y: (bounds.minY + bounds.maxY) / 2,
-    z: (bounds.minZ + bounds.maxZ) / 2,
-  };
-  const radius = points.reduce((maxRadius, point) => {
-    const shell = point.shellRadiusM || 0;
-    return Math.max(maxRadius, Math.hypot(point.x - center.x, point.y - center.y, point.z - center.z) + shell);
-  }, 0.1);
-  return { center, radius: Math.max(0.1, radius) };
-}
-
-function projectVehicleModel(model, width, height, view, frame = vehicleModelFrame(model)) {
+function projectVehicleModel(model, width, height, view) {
   clampPreviewCamera();
-  return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view, frame);
+  return projectVehicleModelInRect(model, { x: 0, y: 0, width, height }, view);
 }
 
-function projectVehicleModelInRect(model, viewport, view, frame = vehicleModelFrame(model)) {
-  const centerProjection = projectPoint(frame.center, view);
+function projectVehicleModelInRect(model, viewport, view) {
+  const frame = projectedViewFrame(model, view);
   const baseScale = Math.min(
-    Math.max(40, viewport.width - 70) / (frame.radius * 2),
-    Math.max(40, viewport.height - 70) / (frame.radius * 2),
+    Math.max(1, viewport.width - 48) / frame.spanU,
+    Math.max(1, viewport.height - 48) / frame.spanV,
   );
   const scale = baseScale * state.vehiclePreviewZoom;
   const map = new Map((model.points || []).map((point) => {
     const projected = projectPoint(point, view);
-    return [
-      point.id,
-      {
-        ...point,
-        ...projected,
-        x2: (projected.u - centerProjection.u) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
-        y2: viewport.y + viewport.height / 2 - (projected.v - centerProjection.v) * scale + state.vehiclePreviewPanY,
-      },
-    ];
+    return [point.id, {
+      ...point,
+      ...projected,
+      x2: (projected.u - frame.centerU) * scale + viewport.x + viewport.width / 2 + state.vehiclePreviewPanX,
+      y2: viewport.y + viewport.height / 2 - (projected.v - frame.centerV) * scale + state.vehiclePreviewPanY,
+    }];
   }));
   return { map, scale, frame };
 }

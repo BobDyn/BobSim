@@ -23,6 +23,25 @@ assert.equal(isSelectedMassComponent({group:'mass',sourcePath:['driver_mass']}),
 state.vehicleComponentSelection.mass='front.masses.upright';
 for (const side of ['left','right']) assert.ok(isSelectedMassComponent({group:'mass',side,sourcePath:['front','masses','upright']}));
 assert.equal(isSelectedMassComponent({group:'mass',aggregate:true}),false);
+const fitModel = {points:[
+  {id:'a',x:-2,y:-0.7,z:0}, {id:'b',x:0,y:0.7,z:0.6},
+  {id:'c',x:0,y:-0.7,z:0}, {id:'d',x:-2,y:0.7,z:0.6},
+]};
+state.vehiclePreviewZoom=1; setPreviewPan(0,0);
+for (const [width,height] of [[900,500],[400,700]]) {
+  for (const view of ['iso','top','side']) {
+    const fit = projectVehicleModel(fitModel,width,height,view);
+    const points = [...fit.map.values()];
+    assert.ok(points.every(p=>p.x2>=23.99 && p.x2<=width-23.99 && p.y2>=23.99 && p.y2<=height-23.99));
+    const spanX = Math.max(...points.map(p=>p.x2))-Math.min(...points.map(p=>p.x2));
+    const spanY = Math.max(...points.map(p=>p.y2))-Math.min(...points.map(p=>p.y2));
+    assert.ok(Math.abs(spanX-(width-48))<1e-8 || Math.abs(spanY-(height-48))<1e-8);
+  }
+  for (const panel of architectureAxlePanels(width,height)) {
+    assert.ok(panel.y>=0 && panel.y+panel.height<=height);
+    assert.ok(panel.views.every(v=>v.y>=panel.y && v.y+v.height<=panel.y+panel.height));
+  }
+}
 const driverLeft = projectPointWithAngles({x:0,y:1,z:0},'iso',-Math.PI/2,0);
 assert.ok(driverLeft.u < 0);
 assert.ok(projectPointWithAngles({x:0,y:0,z:1},'iso',-Math.PI/2,0).v > 0);

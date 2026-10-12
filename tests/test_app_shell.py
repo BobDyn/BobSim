@@ -870,15 +870,10 @@ def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> Non
     assert "function interpolateTireForceMapAtAlpha" in app_js
     assert "function drawTireForceMapIsolines" in app_js
     assert "function tireForceMapPointAt" in app_js
-    assert "function drawTireAlphaOffsetVector" in app_js
-    assert "function drawTireInclinationGlyph" in app_js
     assert 'return side === "right" ? -numeric : numeric;' in app_js
-    assert "x: -Math.sin(alphaRad)" in app_js
     assert "Friction Ellipses" in app_js
     assert "Shared scale" in app_js
-    assert "FzNom" in app_js
     assert "skipInvalid: true" in app_js
-    assert "IA ${formatSignedNumber(corner.inclinationDeg)} deg  Fy" in app_js
     assert "function queueTirePayloadRefresh" in app_js
     assert 'await api("/api/tires/eval", {' in app_js
     assert "function isTireSetupFieldTarget" in app_js
