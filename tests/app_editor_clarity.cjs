@@ -1,0 +1,51 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+vm.runInContext(source, ctx);
+vm.runInContext(`
+fieldControl = f => '<input data-field="'+ f.path.join('.') +'">';
+currentVehicleFormData = () => ({front:{tire:{template:'front.tir'}},rear:{tire:{template:'rear.tir'}}});
+state.tireTemplates = {templates:[{id:'front.tir',label:'Front tire'},{id:'rear.tir',label:'Rear tire'}]};
+const tireFields = ['front','rear'].flatMap(side => ['template','toe_deg'].map(name => ({path:[side,'tire',name],label:side+' '+name})));
+const html = tireSectionHtml({fields:tireFields});
+assert.match(html, /data-tire-axle-panel="rear" hidden/);
+assert.equal((html.match(/data-field="front.tire.toe_deg"/g)||[]).length,1);
+assert.equal((html.match(/data-field="rear.tire.toe_deg"/g)||[]).length,1);
+assert.match(html, /value="front.tir"/);
+assert.match(html, /value="rear.tir"/);
+const motor = powertrainSubsystemFieldsHtml({id:'pMotor',fields:['T_peak','eta_mot','rotorJ','w_eps'].map(name=>({path:['powertrain','pMotor',name]}))});
+assert.match(motor, /Electrical/);
+assert.match(motor, /Inertia/);
+assert.match(motor, /Numerical settings/);
+for (const name of ['T_peak','eta_mot','rotorJ','w_eps']) assert.equal(motor.split('data-field="powertrain.pMotor.'+name+'"').length-1,1);
+const buttons = ['front','rear'].map(side=>({dataset:{tireAxle:side},classList:{toggle(){}},setAttribute(){},addEventListener(t,fn){this.click=fn;}}));
+const panels = ['front','rear'].map(side=>({dataset:{tireAxlePanel:side},hidden:side==='rear',value:side+' unsaved'}));
+document = {querySelectorAll:q=>q==='[data-tire-axle]'?buttons:q==='[data-tire-axle-panel]'?panels:[]};
+wireTireTabs(); buttons[1].click();
+assert.equal(panels[0].hidden,true); assert.equal(panels[1].hidden,false);
+buttons[0].click(); assert.equal(panels[0].value,'front unsaved'); assert.equal(panels[1].value,'rear unsaved');
+const aeroButtons = ['maps','references'].map(view=>({dataset:{aeroView:view},classList:{toggle(){}},setAttribute(){},addEventListener(t,fn){this.click=fn;}}));
+const mapEditor = {hidden:false, value:'unsaved map'};
+const refEditor = {hidden:true, value:'unsaved coordinates'};
+const aeroPanel = {
+  querySelector:q=>q==='[data-aero-map]'?{addEventListener(){}}:q==='[data-aero-map-editor]'?mapEditor:refEditor,
+  querySelectorAll:()=>aeroButtons,
+};
+document.querySelector=()=>aeroPanel;
+drawVehicleFromForm=()=>{};
+wireAeroControls(); aeroButtons[1].click();
+assert.equal(state.aeroReferenceView,true); assert.equal(refEditor.hidden,false); assert.equal(mapEditor.hidden,true);
+aeroButtons[0].click(); assert.equal(mapEditor.hidden,false); assert.equal(refEditor.hidden,true);
+assert.equal(mapEditor.value,'unsaved map'); assert.equal(refEditor.value,'unsaved coordinates');
+standardWorkflows=()=>[{id:'mbd',config_id:'mbd',requires_mbd:true}];
+activeVehicleConfigReady=()=>true;
+canUseStandardSim=()=>false;
+workflowAvailable=()=>true;
+state.dirtyVehicle=false;
+assert.equal(canRunStandardWorkflow(standardWorkflows()[0]),false);
+state.selectedWorkflowId='mbd';
+renderStandard=()=>{};
+`,ctx);
+(async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('state.simModalOpen',ctx),true); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});

@@ -1780,7 +1780,7 @@ function updateVehicleMassSummary(data) {
   const frontShare = point && frontX !== rearX ? 100 * (point.x - rearX) / (frontX - rearX) : NaN;
   summary.innerHTML = point ? `<div><span>Total mass</span><strong>${escapeHtml(formatMassValue(point.massKg))}</strong></div>
     ${Number.isFinite(frontShare) ? `<div><span>Static front / rear</span><strong>${frontShare.toFixed(1)} / ${(100 - frontShare).toFixed(1)}%</strong></div>` : ""}
-    <div><span>Combined CG · m</span><strong>${escapeHtml(formatVector([point.x, point.y, point.z], ""))}</strong></div>` : "";
+    <div><span>Combined CG · mm</span><strong>${escapeHtml(formatVector([point.x * 1000, point.y * 1000, point.z * 1000], ""))}</strong></div>` : "";
 }
 
 function tireSectionHtml(area) {
@@ -1797,7 +1797,11 @@ function tireSectionHtml(area) {
   if (state.activeTireTab === "load-maps") {
     return `${tabs}<section class="tire-preview-conditions"><h4>Preview conditions</h4><p>Plot inputs only. Vehicle properties are unchanged.</p>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
-  return `${tabs}${tireAssignmentHtml()}${tireSetupFieldsHtml(area.fields)}`;
+  return `${tabs}<div class="tire-subtabs" role="group" aria-label="Tire axle">
+    ${["front", "rear"].map((side) => `<button type="button" class="tire-subtab ${side === (state.activeTireAxle || "front") ? "active" : ""}" data-tire-axle="${side}" aria-pressed="${side === (state.activeTireAxle || "front")}">${humanizeToken(side)}</button>`).join("")}
+    </div>${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
+      ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "") })))}
+    </section>`).join("")}`;
 }
 
 function tireSetupFieldsHtml(fields) {
@@ -1808,11 +1812,11 @@ function tireSetupFieldsHtml(fields) {
   if (!setupFields.length) return "";
   const drawing = setupFields.filter((field) => fieldPathString(field).includes(".rim_"));
   const physical = setupFields.filter((field) => !drawing.includes(field));
-  return `<h4>Wheel and tire properties</h4>${fieldGroupSections(physical, "tires")}
+  return `<h4>Wheel and tire properties</h4><div class="field-grid">${physical.map(fieldControl).join("")}</div>
     ${drawing.length ? `<details class="tire-model-editor"><summary>Drawing settings</summary>${fieldGroupSections(drawing, "tires")}</details>` : ""}`;
 }
 
-function tireAssignmentHtml() {
+function tireAssignmentHtml(axle) {
   const templates = state.tireTemplates?.templates || [];
   const options = (selected) => templates.length
     ? templates.map((template) => `
@@ -1820,24 +1824,11 @@ function tireAssignmentHtml() {
     `).join("")
     : `<option value="">No tire templates</option>`;
   const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
-  return `
-    <div class="tire-assignment-grid">
-      ${["front", "rear"].map((side) => {
-        const selected = data?.[side]?.tire?.template || "";
-
-        return `
-          <section class="tire-assignment-card">
-            <h4>${escapeHtml(humanizeToken(side))}</h4>
-            <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([side, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
-            <select class="config-picker" data-tire-assignment="${escapeHtml(side)}" aria-label="${escapeHtml(humanizeToken(side))} tire model">
-              ${options(selected)}
-            </select>
-
-          </section>
-        `;
-      }).join("")}
-    </div>
-  `;
+  const selected = data?.[axle]?.tire?.template || "";
+  return `<label class="form-field"><span>Tire model</span>
+    <input type="hidden" data-config-path="${escapeHtml(JSON.stringify([axle, "tire", "template"]))}" data-kind="string" value="${escapeHtml(selected)}">
+    <select class="config-picker" data-tire-assignment="${axle}" aria-label="${humanizeToken(axle)} tire model">${options(selected)}</select>
+  </label>`;
 }
 
 function tireLoadMapControlsHtml() {
@@ -2228,19 +2219,23 @@ function aeroSectionHtml(area) {
     <div class="aero-config-panel">
       <div class="field-grid">${settings.map(fieldControl).join("")}</div>
       ${fallback ? `<details class="component-details"${data.front?.tire?.template && data.rear?.tire?.template ? " hidden" : ""}><summary>Legacy tire fallback</summary>${fieldControl(fallback)}</details>` : ""}
+      <div class="tire-subtabs" role="group" aria-label="Aero view" data-setup-filter>
+        <button type="button" class="tire-subtab ${!state.aeroReferenceView ? "active" : ""}" data-aero-view="maps" aria-pressed="${!state.aeroReferenceView}">Maps</button>
+        <button type="button" class="tire-subtab ${state.aeroReferenceView ? "active" : ""}" data-aero-view="references" aria-pressed="${state.aeroReferenceView}">Reference points</button>
+      </div>
+      <div data-aero-map-editor${state.aeroReferenceView ? " hidden" : ""}>
       <div class="aero-view-controls" data-setup-filter>
         <label class="form-field"><span>Map</span>
           <select data-aero-map aria-label="Aero map">
             ${AERO_MAPS.map((map) => `<option value="${map.key}"${map.key === state.activeAeroMap ? " selected" : ""}>${map.label} · ${map.unit}</option>`).join("")}
           </select>
         </label>
-        <button type="button" class="ghost-button" data-aero-references aria-pressed="${state.aeroReferenceView ? "true" : "false"}">Reference points</button>
       </div>
       <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
-      <details class="component-details"><summary>Reference points</summary>
+      </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
         <p class="field-help">Vehicle coordinates. Origin: average of the front contact patches. Right ride-height points mirror the left.</p>
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
-      </details>
+      </section>
     </div>
   `;
 }
@@ -2275,17 +2270,23 @@ function wireAeroControls() {
   if (!panel) return;
   panel.querySelector("[data-aero-map]").addEventListener("change", (event) => {
     state.activeAeroMap = event.target.value;
-    state.aeroReferenceView = false;
-    panel.querySelector("[data-aero-references]").setAttribute("aria-pressed", "false");
     panel.querySelectorAll("[data-aero-map-panel]").forEach((section) => {
       section.hidden = section.dataset.aeroMapPanel !== state.activeAeroMap;
     });
     drawVehicleFromForm();
   });
-  panel.querySelector("[data-aero-references]").addEventListener("click", (event) => {
-    state.aeroReferenceView = !state.aeroReferenceView;
-    event.currentTarget.setAttribute("aria-pressed", String(state.aeroReferenceView));
-    drawVehicleFromForm();
+  panel.querySelectorAll("[data-aero-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.aeroReferenceView = button.dataset.aeroView === "references";
+      panel.querySelectorAll("[data-aero-view]").forEach((item) => {
+        const active = (item.dataset.aeroView === "references") === state.aeroReferenceView;
+        item.setAttribute("aria-pressed", String(active));
+        item.classList.toggle("active", active);
+      });
+      panel.querySelector("[data-aero-map-editor]").hidden = state.aeroReferenceView;
+      panel.querySelector("[data-aero-reference-editor]").hidden = !state.aeroReferenceView;
+      drawVehicleFromForm();
+    });
   });
 }
 
@@ -2340,6 +2341,17 @@ function powertrainSectionHtml(area) {
 }
 
 function powertrainSubsystemFieldsHtml(subsystem) {
+  if (subsystem.id === "pMotor") {
+    const groups = [
+      ["Torque and power", ["T_peak", "T_cont", "rpm_max_peak", "P_mech_peak", "P_cont_low", "P_cont_high", "peakTime"]],
+      ["Electrical", ["Vdc_max", "I_peak_2min", "I_cont", "Kt_Nm_per_A", "eta_mot", "eta_reg"]],
+      ["Inertia", ["rotorJ"]],
+    ];
+    const grouped = new Set(groups.flatMap(([, names]) => names));
+    const numerical = subsystem.fields.filter((field) => !grouped.has(field.path?.[2]));
+    return groups.map(([label, names], index) => `<details class="component-details"${index === 0 ? " open" : ""}><summary>${label}</summary><div class="field-grid">${subsystem.fields.filter((field) => names.includes(field.path?.[2])).map(fieldControl).join("")}</div></details>`).join("")
+      + (numerical.length ? `<details class="component-details"><summary>Numerical settings</summary>${numerical.map(fieldControl).join("")}</details>` : "");
+  }
   const primary = {
     pBattery: ["Ns", "Np", "SOC_start"],
     pVCU: ["tau_max", "P_max_mot", "regenTorqueLimit"],
@@ -2874,9 +2886,10 @@ function springRateControl(field) {
 function matrixControl(field) {
   const rows = Array.isArray(field.value) ? field.value : [];
   if (/\.(spring|damper)_table\.table$/.test(fieldPathString(field))) {
-    return `${springRateControl(field)}<div class="matrix-scroll curve-table"><div class="curve-table-heading"><span>${escapeHtml(matrixColumnLabel(field, 0))}</span><span>${escapeHtml(matrixColumnLabel(field, 1))}</span></div><div class="matrix-input" data-matrix-cols="2"><div class="matrix-array-body">
+    const collapse = fieldPathString(field).includes(".spring_table.") && linearSpringRate(rows);
+    return `${springRateControl(field)}${collapse ? '<details class="component-details"><summary>Edit force curve</summary>' : ""}<div class="matrix-scroll curve-table"><div class="curve-table-heading"><span>${escapeHtml(matrixColumnLabel(field, 0))}</span><span>${escapeHtml(matrixColumnLabel(field, 1))}</span></div><div class="matrix-input" data-matrix-cols="2"><div class="matrix-array-body">
       ${rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, 2, false)).join("")}
-      </div></div></div><button class="array-action" type="button" data-array-action="add-row">Add point</button>`;
+      </div></div></div><button class="array-action" type="button" data-array-action="add-row">Add point</button>${collapse ? "</details>" : ""}`;
   }
   const cols = Math.max(1, ...rows.map((row) => Array.isArray(row) ? row.length : 0));
   const fixed = matrixHasFixedShape(field);
@@ -3847,14 +3860,28 @@ function renderTirEditorContent() {
     picker.innerHTML = `<option value="${escapeHtml(state.activeTir.id)}" selected>${escapeHtml(state.activeTir.label)}</option>${picker.innerHTML}`;
   }
   if (editor) editor.value = state.activeTir?.text || "";
-  const metadata = state.activeTir?.metadata || {};
+  const data = currentVehicleFormData() || state.vehiclePayload?.data || {};
+  const users = ["front", "rear"].filter((side) => data[side]?.tire?.template === state.activeTir?.id).map(humanizeToken);
   meta.textContent = state.activeTir
-    ? `${state.activeTir.path} | FNOMIN ${formatNumber(metadata.fznom_n)} N | R0 ${formatNumber(metadata.unloaded_radius_m)} m`
+    ? `Editing ${state.activeTir.label || state.activeTir.id}. ${users.length ? `Used by ${users.join(" and ")}. Saving updates this shared tire file.` : "Not assigned to this vehicle."}`
     : "No .tir template loaded";
   renderTirActionState();
 }
 
 function wireTireTabs() {
+  document.querySelectorAll("[data-tire-axle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeTireAxle = button.dataset.tireAxle;
+      document.querySelectorAll("[data-tire-axle]").forEach((item) => {
+        const active = item.dataset.tireAxle === state.activeTireAxle;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
+      document.querySelectorAll("[data-tire-axle-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.tireAxlePanel !== state.activeTireAxle;
+      });
+    });
+  });
   document.querySelectorAll("[data-tire-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeTireTab = button.dataset.tireTab || "setup";
@@ -4277,7 +4304,7 @@ async function selectStandardWorkflow(workflowId) {
 
 async function configureSimulationWorkflow(workflowId) {
   const workflow = standardWorkflows().find((item) => item.id === workflowId);
-  if (!workflow || !canRunStandardWorkflow(workflow)) return;
+  if (!workflow) return;
   if (workflowId !== state.selectedWorkflowId) {
     await selectStandardWorkflow(workflowId);
   }
@@ -4322,7 +4349,6 @@ async function reviewSimulationWorkflow(workflowId) {
 function renderSimulationModal(workflow = selectedWorkflow()) {
   const modal = document.getElementById("simulation-config-modal");
   if (!modal) return;
-  if (!canRunStandardWorkflow(workflow)) state.simModalOpen = false;
   modal.hidden = !state.simModalOpen;
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
@@ -4339,7 +4365,7 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
 function workflowCard(workflow) {
   const meta = simWorkflowMeta(workflow);
   const canReview = workflowReviewAvailable(workflow);
-  const canConfigure = canRunStandardWorkflow(workflow);
+  const canConfigure = Boolean(workflow.config_id);
   return `
     <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
       <div class="simulation-card-body">
@@ -4348,7 +4374,7 @@ function workflowCard(workflow) {
           ${responseModelPicker(workflow)}
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
-        ${!canConfigure && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
+        ${!canRunStandardWorkflow(workflow) && activeVehicleConfigReady() && !state.dirtyVehicle ? `<p class="card-meta">${escapeHtml(standardWorkflowLockedMessage(workflow))}</p>` : ""}
         ${simulationVisualHtml(workflow)}
         <details class="simulation-details">
           <summary>Run details</summary>
@@ -4361,7 +4387,7 @@ function workflowCard(workflow) {
       </div>
       <div class="card-actions">
         ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
-        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${escapeHtml(standardWorkflowLockedMessage(workflow) || "Configure simulation")}">Configure</button>
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Configure simulation">Configure</button>
       </div>
     </article>
   `;
@@ -5169,22 +5195,19 @@ function renderSavedResultCatalog() {
 }
 
 function resultArchiveCard(result) {
-  const fileCount = result.files?.filter((file) => file.exists).length || 0;
   const workflow = result.workflow?.label || "Simulation";
   const runCount = Number(result.analysis?.run_count || result.run_count || 0);
-  const deleting = state.deletingResultId === result.id;
   return `
     <article class="workflow-card study-card result-card ${result.id === state.selectedResultId ? "active" : ""}" data-result-id="${escapeHtml(result.id)}">
       <div class="card-head">
         <div class="card-title">${escapeHtml(result.label || workflow)}</div>
         <div class="archive-card-actions">
           <span class="mini-pill">${escapeHtml(workflow)}</span>
-          <button class="ghost-button danger-button archive-delete-button" type="button" data-delete-result="${escapeHtml(result.id)}"${deleting ? " disabled" : ""}>${deleting ? "Deleting" : "Delete"}</button>
         </div>
       </div>
       <div class="card-meta">${escapeHtml(result.created_label || "")}</div>
       <div class="signal-row">
-        <span class="mini-pill ok">${fileCount} files</span>
+        <span class="mini-pill">${escapeHtml(workflowModelLabel(result) || "Model not recorded")}</span>
         ${runCount ? `<span class="mini-pill ok">${runCount} runs</span>` : ""}
         <span class="mini-pill">${escapeHtml(result.vehicle_name || activeVehicleName())}</span>
       </div>
@@ -5663,7 +5686,10 @@ function renderSimConfigLibrary() {
     deleteButton.disabled = !canDelete;
   }
   const saveName = document.getElementById("save-sim-config-name");
-  if (saveName && !saveName.value && selectedWorkflow()) saveName.value = `${selectedWorkflow().label} setup`;
+  if (saveName && selectedWorkflow() && saveName.dataset.workflow !== selectedWorkflow().id) {
+    saveName.value = `${simWorkflowMeta(selectedWorkflow()).title || selectedWorkflow().label} setup`;
+    saveName.dataset.workflow = selectedWorkflow().id;
+  }
   updateSimConfigStatus();
 }
 
@@ -5859,6 +5885,11 @@ function renderJobs() {
     ? state.dirtySimConfig ? "Apply + run" : runVerb
     : "No Workflow";
   runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  const readiness = document.getElementById("sim-readiness");
+  readiness.textContent = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  const prepare = document.getElementById("sim-prepare-mbd");
+  prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
+  prepare.disabled = !canWriteMbd();
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
@@ -13130,6 +13161,7 @@ function wireEvents() {
   document.getElementById("run-study-btn")?.addEventListener("click", saveActiveResults);
   document.getElementById("add-processing-btn")?.addEventListener("click", addProcessingWorkflow);
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
+  document.getElementById("sim-prepare-mbd").addEventListener("click", () => generateModelicaFromVehicle());
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
   document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
   document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);

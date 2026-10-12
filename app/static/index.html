@@ -19,7 +19,7 @@
           <button class="rail-item active" data-view="setup" type="button">Setup</button>
           <button class="rail-item" data-view="standard" type="button">Simulation</button>
           <button class="rail-item" data-view="replay" type="button">Replay</button>
-          <button class="rail-item" data-view="studies" type="button">Archive</button>
+          <button class="rail-item" data-view="studies" type="button">Results</button>
         </nav>
         <details class="model-menu settings-menu">
           <summary>Settings</summary>
@@ -332,7 +332,7 @@
         <section id="studies-view" class="screen">
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
             <aside class="workflow-list archive-sidebar">
-              <h2>Archive</h2>
+              <h2>Results</h2>
               <p id="studies-context"></p>
               <details class="study-catalog archive-catalog" open>
                 <summary>Saved runs</summary>
@@ -446,11 +446,15 @@
                 <div class="sim-config-row">
                   <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
                   <button id="save-sim-config-btn" class="run-button" type="button">Save Config</button>
-                  <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply Edits</button>
                 </div>
               </div>
             </details>
 
+            <div class="sim-config-row">
+              <button id="apply-sim-config-btn" class="ghost-button" type="button">Apply edits</button>
+              <button id="sim-prepare-mbd" class="ghost-button" type="button" hidden>Prepare MBD model</button>
+            </div>
+            <p id="sim-readiness" class="field-help" role="status"></p>
             <span id="sim-config-status" class="sim-config-status" role="status"></span>
             <form id="sim-config-form" class="sim-config-form"></form>
           </div>
