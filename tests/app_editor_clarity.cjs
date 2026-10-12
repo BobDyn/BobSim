@@ -11,6 +11,18 @@ for (const view of ['iso','top','side']) {
   const determinant = a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0]);
   assert.ok(Math.abs(determinant-1)<1e-12, view+' must preserve handedness');
 }
+const isoAxes = [{x:1,y:0,z:0},{x:0,y:1,z:0},{x:0,y:0,z:1}]
+  .map(p=>projectPointWithAngles(p,'iso',DEFAULT_VEHICLE_YAW,DEFAULT_VEHICLE_PITCH));
+assert.ok(isoAxes[0].u<0 && isoAxes[0].v<0 && isoAxes[0].depth>0);
+assert.ok(isoAxes[1].u>0 && isoAxes[1].v<0);
+assert.ok(Math.abs(isoAxes[2].u)<1e-12); assert.ok(isoAxes[2].v>0);
+for (const axis of isoAxes) assert.ok(Math.abs(Math.hypot(axis.u,axis.v)-Math.sqrt(2/3))<1e-12);
+state.vehicleComponentSelection={mass:'body'};
+assert.ok(isSelectedMassComponent({group:'mass',sourcePath:['sprung_mass']}));
+assert.equal(isSelectedMassComponent({group:'mass',sourcePath:['driver_mass']}),false);
+state.vehicleComponentSelection.mass='front.masses.upright';
+for (const side of ['left','right']) assert.ok(isSelectedMassComponent({group:'mass',side,sourcePath:['front','masses','upright']}));
+assert.equal(isSelectedMassComponent({group:'mass',aggregate:true}),false);
 const driverLeft = projectPointWithAngles({x:0,y:1,z:0},'iso',-Math.PI/2,0);
 assert.ok(driverLeft.u < 0);
 assert.ok(projectPointWithAngles({x:0,y:0,z:1},'iso',-Math.PI/2,0).v > 0);

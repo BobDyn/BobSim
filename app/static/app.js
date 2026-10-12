@@ -30,8 +30,8 @@ const savedGeometryPlotSelections = (() => {
     return [];
   }
 })();
-const DEFAULT_VEHICLE_YAW = -0.72;
-const DEFAULT_VEHICLE_PITCH = 0.46;
+const DEFAULT_VEHICLE_YAW = Math.PI / 4;
+const DEFAULT_VEHICLE_PITCH = Math.atan(1 / Math.sqrt(2));
 const DEFAULT_TIRE_SURFACE_YAW = -0.72;
 const DEFAULT_TIRE_SURFACE_PITCH = 0.68;
 const MIN_TIRE_SURFACE_ZOOM = 0.62;
@@ -1753,7 +1753,13 @@ function wireVehicleComponentEditors() {
       if (option) select.value = option.value;
       syncVehicleComponentEditor(editor);
     };
-    select.onchange = () => syncVehicleComponentEditor(editor);
+    select.onchange = () => {
+      syncVehicleComponentEditor(editor);
+      if (editor.dataset.componentEditor === "mass") {
+        state.massSelectedPointId = null;
+        drawVehicleFromForm();
+      }
+    };
     syncVehicleComponentEditor(editor);
   });
   updateVehicleMassSummary(state.vehiclePayload?.data);
@@ -12001,8 +12007,14 @@ function uniqueMassPoints(points) {
   return [...byId.values()];
 }
 
+function isSelectedMassComponent(point) {
+  if (point.group !== "mass" || !point.sourcePath) return false;
+  const component = vehicleFieldComponent({ path: point.sourcePath }, "mass");
+  return component.key === state.vehicleComponentSelection?.mass;
+}
+
 function shouldDrawMassLabel(point) {
-  return point.id === state.massHoverPointId || point.id === state.massSelectedPointId;
+  return point.id === state.massHoverPointId || point.id === state.massSelectedPointId || isSelectedMassComponent(point);
 }
 
 function drawMassLabel(ctx, point) {
@@ -12391,7 +12403,8 @@ function drawCylinder(ctx, from, to, link) {
 function drawSphere(ctx, point) {
   const radius = point.radius || 5;
   if (radius <= 0) return;
-  const selected = point.id === state.geometrySelectedPointId || point.id === state.massSelectedPointId;
+  const selected = point.id === state.geometrySelectedPointId || point.id === state.massSelectedPointId
+    || (isMassPreviewArea() && isSelectedMassComponent(point));
   const hovered = point.id === state.geometryHoverPointId || point.id === state.massHoverPointId;
   const opacity = Number.isFinite(point.opacity) ? clamp(point.opacity, 0.12, 1) : 1;
   const gradient = ctx.createRadialGradient(point.x2 - radius * 0.35, point.y2 - radius * 0.45, 1, point.x2, point.y2, radius);
