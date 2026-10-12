@@ -60,9 +60,14 @@ for (const [original, scale, edited, expected] of [
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
-def test_physical_quantity_accepts_fractional_display_values():
-    field = FieldSpec(path=("vertical_stiffness_n_per_m",), label="Stiffness", kind="integer")
-    result = _vehicle_field_payload(field, {"vertical_stiffness_n_per_m": 98947})
+@pytest.mark.parametrize(("name", "value", "scale"), [
+    ("vertical_stiffness_n_per_m", 98947, 0.001),
+    ("P_max_mot", 80000, 0.001),
+    ("SOC_start", 1, 100),
+])
+def test_physical_quantity_accepts_fractional_display_values(name, value, scale):
+    field = FieldSpec(path=(name,), label="Quantity", kind="integer")
+    result = _vehicle_field_payload(field, {name: value})
     assert result["kind"] == "number"
-    assert result["display_scale"] == 0.001
-    assert result["value"] == 98947
+    assert result["display_scale"] == scale
+    assert result["value"] == value

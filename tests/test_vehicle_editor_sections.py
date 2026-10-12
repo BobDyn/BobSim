@@ -19,7 +19,8 @@ def test_aero_and_powertrain_editors_preserve_fields() -> None:
     names = (
         "aeroSectionHtml", "aeroTableControl", "aeroSurfaceRowsFromTable", "aeroRideHeightLabel",
         "powertrainSubsystemFieldsHtml", "powertrainSubsystems", "powertrainFieldSubsystem",
-        "arrayScalarControl", "arrayCellInputHtml", "formatNumber", "escapeHtml",
+        "arrayScalarControl", "arrayCellInputHtml", "numericDisplayAttrs", "numericDisplayValue",
+        "formatNumber", "escapeHtml",
     )
     helpers = []
     for name in names:
