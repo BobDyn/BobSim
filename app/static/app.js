@@ -190,7 +190,7 @@ const PARAMETER_AREAS = [
   { id: "hardpoints", label: "Geometry", visual: "hardpoints", always: true },
   { id: "mass", label: "Mass", visual: "mass", always: true },
   { id: "suspension", label: "Suspension", visual: "suspension", always: true },
-  { id: "compliances", label: "Compliances", visual: "compliances", always: true },
+  { id: "compliances", label: "Compliance", visual: "compliances" },
   { id: "tires", label: "Tires", visual: "tires", always: true },
   { id: "aero", label: "Aero", visual: "aero", always: true },
   { id: "powertrain", label: "Powertrain", visual: "powertrain", always: true },
@@ -1313,7 +1313,8 @@ function setupGuide(areaId = state.activeParamGroup) {
 
 function renderSetupFocus() {
   const guide = setupGuide();
-  document.getElementById("setup-title").textContent = activeVehicleName();
+  const nameInput = document.getElementById("vehicle-name-input");
+  if (nameInput && document.activeElement !== nameInput) nameInput.value = activeVehicleName();
   document.getElementById("vehicle-preview-title").textContent = guide.figure.replace(/\.$/, "");
   document.getElementById("editor-title").textContent = guide.title;
   renderWorkflowGuide(guide);
@@ -1529,7 +1530,7 @@ function isTirePayloadRefreshTarget(target) {
 
 function buildParameterAreas(fields) {
   const buckets = Object.fromEntries(PARAMETER_AREAS.map((area) => [area.id, []]));
-  fields.forEach((field) => {
+  fields.filter((field) => !field.disabled).forEach((field) => {
     buckets[parameterAreaForField(field)].push(field);
   });
   return PARAMETER_AREAS
@@ -1542,6 +1543,9 @@ function parameterAreaForField(field) {
   const group = String(field.group || "").toLowerCase();
   const label = String(field.label || "").toLowerCase();
   if (path.startsWith("aero.")) return "aero";
+  if (path === "body.torsional_stiff_n_m_per_rad") return "mass";
+  if (path.startsWith("brake.")) return "powertrain";
+  if (/^(front|rear)\.wheel\.(toe_deg|camber_deg)$/.test(path)) return "hardpoints";
   if (fieldMatchesPowertrain(path, group, label)) return "powertrain";
   if (
     path.includes(".wheel.")
@@ -1624,6 +1628,12 @@ function fieldMatchesCompliance(path, group, label) {
 }
 
 function parameterAreaFields(area) {
+  if (area.id === "vehicle") {
+    const identity = area.fields.filter((field) => fieldPathString(field) === "vehicle.name");
+    const details = area.fields.filter((field) => fieldPathString(field) === "vehicle.version");
+    const fields = area.fields.filter((field) => !isArchitectureField(field) && !isArchitectureVisualOnlyField(field) && !fieldPathString(field).startsWith("vehicle."));
+    return `${identity.map((field) => `<div hidden>${fieldControl(field)}</div>`).join("")}${architectureToolsHtml(area.fields)}${fieldGroupSections(fields, area.id)}<details class="vehicle-details"><summary>Vehicle details</summary>${details.map(fieldControl).join("")}</details>`;
+  }
   if (area.id === "tires") return tireSectionHtml(area);
   if (area.id === "powertrain") return powertrainSectionHtml(area);
   const extra = area.id === "tires"
@@ -1976,14 +1986,14 @@ function architectureToolsHtml(fields) {
       <div class="architecture-control-grid">
         ${architectureSelectHtml(frontField, "architecture-front-select", "Front")}
         ${architectureSelectHtml(rearField, "architecture-rear-select", "Rear")}
-        <label class="form-field compact-field">
+        ${powertrains.length > 1 ? `<label class="form-field compact-field">
           <span>Powertrain</span>
           <select id="architecture-powertrain-select" data-config-path="${escapeHtml(JSON.stringify(["powertrain", "implementation"]))}" data-kind="select">
             ${powertrains.map((item) => `
               <option value="${escapeHtml(item.id)}"${item.id === activePowertrain ? " selected" : ""}>${escapeHtml(item.label)}</option>
             `).join("")}
           </select>
-        </label>
+        </label>` : `<div class="vehicle-model-label"><span>Powertrain</span><strong>Electric drivetrain</strong></div>`}
       </div>
       <div class="architecture-match-head">
         <span>Templates</span>
@@ -2003,7 +2013,7 @@ function architectureSelectHtml(field, id, label) {
       <span>${escapeHtml(label)}</span>
       <select id="${escapeHtml(id)}" data-config-path="${escapeHtml(field.key)}" data-kind="${escapeHtml(field.kind)}">
         ${choices.map((choice) => `
-          <option value="${escapeHtml(choice)}"${choice === field.value ? " selected" : ""}>${escapeHtml(humanizeToken(choice))}</option>
+          <option value="${escapeHtml(choice)}"${choice === field.value ? " selected" : ""}>${escapeHtml(({direct: "Direct acting", bellcrank: "Bellcrank", bellcrank_stabar: "Bellcrank + anti-roll bar"})[choice] || humanizeToken(choice))}</option>
         `).join("")}
       </select>
     </label>
@@ -2395,6 +2405,21 @@ function renderParameterTabCanvases() {
   });
 }
 
+function numericDisplayValue(value, scale = 1) {
+  if (value === null || value === undefined || value === "") return "";
+  return Number((Number(value) * scale).toPrecision(12));
+}
+
+function numericDisplayAttrs(value, scale = 1) {
+  return `data-display-scale="${scale || 1}" data-original-value="${escapeHtml(value ?? "")}" data-original-display="${escapeHtml(numericDisplayValue(value, scale))}"`;
+}
+
+function setNumericInputValue(input, value) {
+  input.value = String(numericDisplayValue(value, Number(input.dataset.displayScale || 1)));
+  input.dataset.originalValue = String(value);
+  input.dataset.originalDisplay = input.value;
+}
+
 function fieldControl(field) {
   const disabled = Boolean(field.disabled);
   const disabledAttr = disabled ? " disabled" : "";
@@ -2408,7 +2433,7 @@ function fieldControl(field) {
   }
   if (field.kind === "number" || field.kind === "integer") {
     const step = field.kind === "integer" ? "1" : "any";
-    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} value="${escapeHtml(value ?? "")}">${fieldHelpHtml(field)}</div>`;
+    return `<div class="form-field ${disabled ? "disabled-field" : ""}" ${wrapperAttrs}>${label}<input ${attrs} type="number" step="${step}"${disabled ? "" : " required"} ${numericDisplayAttrs(value, field.display_scale)} value="${escapeHtml(numericDisplayValue(value, field.display_scale))}">${fieldHelpHtml(field)}</div>`;
   }
   if (field.kind === "select") {
     const choices = field.choices.some((choice) => String(choice) === String(value)) ? field.choices : [value, ...field.choices].filter(Boolean);
@@ -2435,7 +2460,8 @@ function fieldControl(field) {
 }
 
 function fieldLabelHtml(field) {
-  const unit = field.unit ? `<span>${escapeHtml(field.unit)}</span>` : "";
+  const displayUnit = field.display_unit || field.unit;
+  const unit = displayUnit ? `<span>${escapeHtml(displayUnit)}</span>` : "";
   const planned = field.disabled ? `<span class="field-status-pill">Planned</span>` : "";
   const meta = unit || planned ? `<span class="field-label-meta">${unit}${planned}</span>` : "";
   const objectLabel = fieldObjectLabel(field);
@@ -2499,7 +2525,7 @@ function arrayFieldControl(field, label) {
   const rank = field.array_shape.length;
   const elementKind = field.array_element_kind || "string";
   const choices = JSON.stringify(Array.isArray(field.choices) ? field.choices : []);
-  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-array-element-kind="${escapeHtml(elementKind)}" data-array-choices="${escapeHtml(choices)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
+  const attrs = `data-array-path="${escapeHtml(field.key)}" data-array-rank="${rank}" data-display-scale="${field.display_scale || 1}" data-array-element-kind="${escapeHtml(elementKind)}" data-array-choices="${escapeHtml(choices)}"${field.disabled ? ` data-field-disabled="true"` : ""}`;
   const control = rank === 2 ? matrixControl(field) : vectorControl(field);
   return `<div class="form-field array-field ${field.disabled ? "disabled-field" : ""}" ${fieldWrapperAttrs(field)} ${attrs}>${label}${control}${fieldHelpHtml(field)}</div>`;
 }
@@ -2634,10 +2660,10 @@ function isNumericArrayKind(kind) {
 }
 
 function arrayScalarControl(field, value, position) {
-  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : []);
+  return arrayCellInputHtml(field.array_element_kind, position, value, Array.isArray(field.choices) ? field.choices : [], field.display_scale);
 }
 
-function arrayCellInputHtml(kind, position, value = "", choices = []) {
+function arrayCellInputHtml(kind, position, value = "", choices = [], displayScale = 1) {
   const positionAttrs = position.col === undefined
     ? `data-index="${position.index}"`
     : `data-row="${position.row}" data-col="${position.col}"`;
@@ -2653,7 +2679,7 @@ function arrayCellInputHtml(kind, position, value = "", choices = []) {
   }
   if (kind === "number" || kind === "integer") {
     const step = kind === "integer" ? "1" : "any";
-    return `<input ${attrs} type="number" step="${step}" required value="${escapeHtml(value ?? "")}">`;
+    return `<input ${attrs} type="number" step="${step}" required ${numericDisplayAttrs(value, displayScale)} value="${escapeHtml(numericDisplayValue(value, displayScale))}">`;
   }
   return `<input ${attrs} type="text" value="${escapeHtml(value ?? "")}">`;
 }
@@ -2694,7 +2720,7 @@ function addArrayItem(container) {
   cells.insertAdjacentHTML("beforeend", `
     <label class="array-list-row array-cell">
       <span>#${index + 1}</span>
-      ${arrayCellInputHtml(kind, { index }, choices[0] ?? defaultArrayValue(kind), choices)}
+      ${arrayCellInputHtml(kind, { index }, choices[0] ?? defaultArrayValue(kind), choices, Number(container.dataset.displayScale || 1))}
     </label>
   `);
 }
@@ -2878,7 +2904,8 @@ function collectScalarValue(input, kind, reportInvalid) {
       if (reportInvalid) input.reportValidity();
       throw new Error("Fix invalid numeric entries before saving.");
     }
-    return kind === "integer" ? Number.parseInt(rawValue, 10) : number;
+    if (input.dataset.originalDisplay === rawValue) return Number(input.dataset.originalValue);
+    return number / Number(input.dataset.displayScale || 1);
   }
   return input.value;
 }
@@ -6390,7 +6417,8 @@ function setPrimitiveConfigValue(path, value) {
     .find((item) => item.dataset.configPath === key);
   if (!input) return;
   pushUndoSnapshot(snapshotVehicleState("primitive"));
-  input.value = value;
+  if (["number", "integer"].includes(input.dataset.kind)) setNumericInputValue(input, value);
+  else input.value = value;
   markVehicleDirty();
 }
 
@@ -6421,7 +6449,7 @@ function geometrySourceContainer(point) {
 function geometrySourceValues(point) {
   const container = geometrySourceContainer(point);
   if (!container) return null;
-  const values = [0, 1, 2].map((index) => Number(container.querySelector(`[data-array-cell][data-index="${index}"]`)?.value));
+  const values = collectArrayValue(container, false);
   return values.every(Number.isFinite) ? values : null;
 }
 
@@ -6432,7 +6460,7 @@ function setGeometrySourceValues(point, values, { syncEditor = true, renderMini 
   [0, 1, 2].forEach((index) => {
     const input = container.querySelector(`[data-array-cell][data-index="${index}"]`);
     if (input && Number.isFinite(Number(values[index]))) {
-      input.value = Number(values[index]).toFixed(4).replace(/\.?0+$/, "");
+      setNumericInputValue(input, Number(values[index]));
     }
   });
   markGeometryDirty({ renderMini });
@@ -6469,7 +6497,8 @@ function syncGeometryPointEditor() {
   document.querySelectorAll("[data-geometry-coordinate]").forEach((input) => {
     const index = axisIndex(input.dataset.geometryCoordinate);
     if (index >= 0 && document.activeElement !== input) {
-      input.value = values[index].toFixed(4).replace(/\.?0+$/, "");
+      input.dataset.displayScale = "1000";
+      setNumericInputValue(input, values[index]);
     }
   });
   geometrySourceContainer(point)?.closest("[data-field-wrapper]")?.classList.add("geometry-source-active");
@@ -12585,7 +12614,9 @@ function wireGeometryEditor() {
     input.addEventListener("input", () => {
       const point = selectedGeometryPoint();
       if (!point) return;
-      const values = ["x", "y", "z"].map((axis) => Number(document.querySelector(`[data-geometry-coordinate="${axis}"]`)?.value));
+      const coordinates = ["x", "y", "z"].map((axis) => document.querySelector(`[data-geometry-coordinate="${axis}"]`));
+      if (coordinates.some((entry) => !entry.value.trim() || !entry.checkValidity())) return;
+      const values = coordinates.map((entry) => collectScalarValue(entry, "number", false));
       if (!values.every(Number.isFinite)) return;
       setGeometrySourceValues(point, values, { syncEditor: false });
     });
@@ -12684,6 +12715,13 @@ function syncViewButtons() {
 }
 
 function wireEvents() {
+  document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
+    if (!event.target.value.trim()) {
+      event.target.value = activeVehicleName();
+      return;
+    }
+    setPrimitiveConfigValue(["vehicle", "name"], event.target.value.trim());
+  });
   document.getElementById("refresh-btn").addEventListener("click", refresh);
   document.getElementById("theme-toggle-btn").addEventListener("click", toggleTheme);
   document.getElementById("reference-toggle-btn").addEventListener("click", toggleReferencePanel);

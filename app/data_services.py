@@ -692,6 +692,79 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
     return [_field_payload(field, data) for field in fields]
 
 
+def _vehicle_field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:
+    """## Vehicle Field Display
+
+    Add editor labels and display units without changing stored values.
+
+    Parameters
+    ----------
+    field : FieldSpec
+        Vehicle field definition.
+    data : Any
+        Vehicle configuration.
+
+    Returns
+    -------
+    dict[str, Any]
+        Field payload with display metadata.
+    """
+    payload = _field_payload(field, data)
+    name = str(field.path[-1])
+    labels = {
+        "rack_travel_per_rev_m": "Rack travel per revolution",
+        "reference_speed_m_per_s": "Reference speed",
+        "aero_ref_m": "Wrench reference point",
+        "front_left_ride_height_ref_m": "Front ride-height reference point",
+        "rear_left_ride_height_ref_m": "Rear ride-height reference point",
+        "front_ride_height_grid_m": "Front ride heights",
+        "rear_ride_height_grid_m": "Rear ride heights",
+        "drag_table_n": "Drag",
+        "downforce_table_n": "Downforce",
+        "mx_table_nm": "Roll moment",
+        "my_table_nm": "Pitch moment",
+        "mz_table_nm": "Yaw moment",
+        "rim_radius_ratio": "Rim radius ratio",
+        "rim_width_ratio": "Rim width ratio",
+        "wheel_inertia_kg_m2": "Wheel rotational inertia",
+        "vertical_stiffness_n_per_m": "Vertical stiffness",
+        "vertical_damping_n_s_per_m": "Vertical damping",
+        "front_bias": "Front brake bias",
+        "SOC_start": "Initial charge",
+        "rpm_max_peak": "Maximum speed",
+        "P_max_mot": "Drive power limit",
+        "diff_lockFractionAccel": "Acceleration locking",
+        "diff_lockFractionDecel": "Deceleration locking",
+        "axis": "Rotation axis",
+    }
+    if name in labels:
+        payload["label"] = labels[name]
+    if not payload["unit"]:
+        for suffix, unit in (
+            ("_kg_m2", "kg m2"), ("_n_s_per_m", "N s/m"),
+            ("_n_per_m", "N/m"), ("_m_per_s", "m/s"),
+            ("_kg", "kg"), ("_nm", "N m"), ("_n", "N"), ("_m", "m"),
+        ):
+            if name.endswith(suffix):
+                payload["unit"] = unit
+                break
+    unit = payload["unit"]
+    display_unit, scale = {
+        "m": ("mm", 1000), "W": ("kW", 0.001),
+        "N/m": ("N/mm", 0.001), "kg m2": ("kg·m²", 1),
+        "N m": ("N·m", 1), "N m/rad": ("N·m/rad", 1),
+    }.get(unit, (unit, 1))
+    if name == "rack_travel_per_rev_m":
+        display_unit, scale = "mm/rev", 1000
+    if name in {"SOC_start", "eta_mot", "eta_reg", "front_bias", "diff_lockFractionAccel", "diff_lockFractionDecel"}:
+        display_unit, scale = "%", 100
+    if name == "P_max_mot":
+        payload["unit"] = "W"
+        display_unit, scale = "kW", 0.001
+    payload.update(display_unit=display_unit, display_scale=scale)
+    return payload
+
+
 def _vehicle_config_fields(data: Any) -> list[dict[str, Any]]:
     overrides = {_field_key(field.path): field for field in VEHICLE_FIELDS}
     fields: list[FieldSpec] = []
@@ -706,7 +779,7 @@ def _vehicle_config_fields(data: Any) -> list[dict[str, Any]]:
         key = _field_key(field.path)
         if field.disabled and key not in seen:
             fields.append(field)
-    return [_field_payload(field, data) for field in fields]
+    return [_vehicle_field_payload(field, data) for field in fields]
 
 
 def config_summary(spec: ConfigSpec) -> dict[str, Any]:

@@ -56,17 +56,17 @@
         <section id="setup-view" class="screen active">
           <div class="screen-head setup-head">
             <div>
-              <h2 id="setup-title">Vehicle</h2>
+              <h2 id="setup-title"><input id="vehicle-name-input" aria-label="Vehicle name" placeholder="Vehicle name" type="text"></h2>
               <p id="setup-focus" class="setup-focus">Vehicle setup</p>
             </div>
             <div class="setup-head-actions">
               <div class="rail-actions">
                 <button id="rail-primary-btn" class="run-button" type="button">Save Vehicle</button>
-                <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
               </div>
               <details class="model-menu">
                 <summary>Files</summary>
                 <div class="model-menu-body">
+                  <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
                   <button id="open-vehicle-start-btn" class="run-button menu-primary" type="button">Open / Create Vehicle</button>
                   <div class="vehicle-source">
                     <select id="vehicle-library-picker" class="config-picker"></select>
@@ -185,15 +185,15 @@
                 </div>
                 <div class="geometry-coordinate-grid">
                   <label>
-                    <span>X</span>
+                    <span>X · mm</span>
                     <input data-geometry-coordinate="x" type="number" step="0.001">
                   </label>
                   <label>
-                    <span>Y</span>
+                    <span>Y · mm</span>
                     <input data-geometry-coordinate="y" type="number" step="0.001">
                   </label>
                   <label>
-                    <span>Z</span>
+                    <span>Z · mm</span>
                     <input data-geometry-coordinate="z" type="number" step="0.001">
                   </label>
                 </div>

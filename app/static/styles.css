@@ -4578,3 +4578,38 @@ summary:focus-visible {
     grid-template-rows: minmax(100px, 25%) minmax(0, 1fr);
   }
 }
+
+#vehicle-name-input {
+  width: min(540px, 44vw);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 3px 0;
+}
+
+#vehicle-name-input:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+
+.vehicle-model-label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.vehicle-model-label span,
+.vehicle-details summary {
+  color: var(--muted);
+}
+
+.vehicle-details {
+  margin-top: 16px;
+}
+
+.vehicle-details summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
