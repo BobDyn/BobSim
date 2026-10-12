@@ -4389,15 +4389,49 @@ summary:focus-visible {
   }
 }
 
+.simulation-categories {
+  display: flex;
+  gap: 8px;
+  margin: 8px 24px 20px;
+}
+
+.simulation-category {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  padding: 12px 8px;
+}
+
+.simulation-category[aria-pressed="true"] {
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-color: var(--blue);
+}
+
 .simulation-group {
   display: grid;
   gap: 10px;
 }
 
+.simulation-group[hidden] {
+  display: none;
+}
+
+.simulation-group-head {
+  padding: 16px 24px;
+  background: var(--surface-2);
+  border-block: 1px solid var(--line);
+}
+
 .simulation-group-title {
-  font-size: 14px;
+  font-size: 16px;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+.simulation-group-head p {
   color: var(--muted);
-  margin: 8px 24px 0;
+  font-size: 12px;
 }
 
 .model-guide {
