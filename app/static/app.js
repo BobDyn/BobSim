@@ -1815,18 +1815,21 @@ function tireSectionHtml(area) {
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
+    return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
-  return `${tabs}<div class="inspector-label">Axle</div><div class="tire-subtabs" role="group" aria-label="Tire axle">
-    ${["front", "rear"].map((side) => `<button type="button" class="tire-subtab ${side === (state.activeTireAxle || "front") ? "active" : ""}" data-tire-axle="${side}" aria-pressed="${side === (state.activeTireAxle || "front")}">${humanizeToken(side)}</button>`).join("")}
-    </div>${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
+  return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
       ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "").replace(/^./, (letter) => letter.toUpperCase()) })))}
     </section>`).join("")}`;
 }
 
+function axleSelectorHtml(selected, attribute) {
+  return `<label class="form-field"><span>Axle</span><select ${attribute}>
+    ${["front", "rear"].map((axle) => `<option value="${axle}"${axle === selected ? " selected" : ""}>${humanizeToken(axle)}</option>`).join("")}
+  </select></label>`;
+}
+
 function tireFitSelectorsHtml() {
   return `<div class="field-grid">${[
-    ["activeTireAxle", "Axle", ["front", "rear"]],
     ["tireFitSlip", "Slip", ["pure", "combined"]],
     ["tireFitDirection", "Output", ["longitudinal", "lateral", "mx", "my", "mz"]],
   ].map(([key, label, options]) => `<label class="form-field"><span>${label}</span>
@@ -2068,8 +2071,7 @@ function suspensionComponentForField(field) {
 function suspensionFieldSections(grouped) {
   const fields = Object.values(grouped).flat();
   const components = [["spring", "Spring"], ["damper", "Damper"], ["stabar", "Anti-roll bar"]];
-  return `<div class="inspector-label">Axle</div><div class="tire-subtabs" role="group" aria-label="Suspension axle">${["front", "rear"].map((axle) =>
-    `<button type="button" class="tire-subtab" data-suspension-axle="${axle}">${humanizeToken(axle)}</button>`).join("")}</div>
+  return `${axleSelectorHtml(state.suspensionAxle, "data-suspension-axle")}
     <div class="inspector-label">Component</div><div class="tire-subtabs" role="group" aria-label="Suspension component">${components.map(([key, label]) =>
       `<button type="button" class="tire-subtab" data-suspension-component="${key}">${label}</button>`).join("")}</div>
     ${["front", "rear"].map((axle) => components.map(([key, label]) => {
@@ -2082,10 +2084,8 @@ function syncSuspensionSelection() {
   const data = currentVehicleFormData() || {};
   const hasStabar = String(data.architecture?.[state.suspensionAxle] || "").includes("stabar");
   if (state.suspensionComponent === "stabar" && !hasStabar) state.suspensionComponent = "spring";
-  document.querySelectorAll("[data-suspension-axle]").forEach((button) => {
-    const selected = button.dataset.suspensionAxle === state.suspensionAxle;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-pressed", String(selected));
+  document.querySelectorAll("[data-suspension-axle]").forEach((select) => {
+    select.value = state.suspensionAxle;
   });
   document.querySelectorAll("[data-suspension-component]").forEach((button) => {
     const selected = button.dataset.suspensionComponent === state.suspensionComponent;
@@ -2099,9 +2099,15 @@ function syncSuspensionSelection() {
 }
 
 function wireSuspensionSelection() {
-  document.querySelectorAll("[data-suspension-axle], [data-suspension-component]").forEach((button) => {
+  document.querySelectorAll("[data-suspension-axle]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.suspensionAxle = select.value;
+      syncSuspensionSelection();
+      drawVehicleFromForm();
+    });
+  });
+  document.querySelectorAll("[data-suspension-component]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (button.dataset.suspensionAxle) state.suspensionAxle = button.dataset.suspensionAxle;
       if (button.dataset.suspensionComponent) state.suspensionComponent = button.dataset.suspensionComponent;
       syncSuspensionSelection();
       drawVehicleFromForm();
@@ -3867,14 +3873,9 @@ function wireTireTabs() {
       drawVehicleFromForm();
     });
   });
-  document.querySelectorAll("[data-tire-axle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeTireAxle = button.dataset.tireAxle;
-      document.querySelectorAll("[data-tire-axle]").forEach((item) => {
-        const active = item.dataset.tireAxle === state.activeTireAxle;
-        item.classList.toggle("active", active);
-        item.setAttribute("aria-pressed", String(active));
-      });
+  document.querySelectorAll("[data-tire-axle]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.activeTireAxle = select.value;
       document.querySelectorAll("[data-tire-axle-panel]").forEach((panel) => {
         panel.hidden = panel.dataset.tireAxlePanel !== state.activeTireAxle;
       });

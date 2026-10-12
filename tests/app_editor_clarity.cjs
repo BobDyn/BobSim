@@ -145,12 +145,16 @@ assert.match(motor, /Electrical/);
 assert.match(motor, /Inertia/);
 assert.match(motor, /Numerical settings/);
 for (const name of ['T_peak','eta_mot','rotorJ','w_eps']) assert.equal(motor.split('data-field="powertrain.pMotor.'+name+'"').length-1,1);
-const buttons = ['front','rear'].map(side=>({dataset:{tireAxle:side},classList:{toggle(){}},setAttribute(){},addEventListener(t,fn){this.click=fn;}}));
+const axleSelect={value:'front',addEventListener(t,fn){assert.equal(t,'change');this.change=fn;}};
 const panels = ['front','rear'].map(side=>({dataset:{tireAxlePanel:side},hidden:side==='rear',value:side+' unsaved'}));
-document = {querySelectorAll:q=>q==='[data-tire-axle]'?buttons:q==='[data-tire-axle-panel]'?panels:[]};
-wireTireTabs(); buttons[1].click();
+document = {querySelectorAll:q=>q==='[data-tire-axle]'?[axleSelect]:q==='[data-tire-axle-panel]'?panels:[]};
+wireTireTabs(); axleSelect.value='rear'; axleSelect.change();
+assert.equal(state.activeTireAxle,'rear');
 assert.equal(panels[0].hidden,true); assert.equal(panels[1].hidden,false);
-buttons[0].click(); assert.equal(panels[0].value,'front unsaved'); assert.equal(panels[1].value,'rear unsaved');
+axleSelect.value='front'; axleSelect.change();
+assert.equal(panels[0].value,'front unsaved'); assert.equal(panels[1].value,'rear unsaved');
+assert.match(axleSelectorHtml('rear','data-tire-axle'),/<option value="rear" selected>/);
+assert.equal(tireFitSelectorsHtml().includes('activeTireAxle'),false);
 const aeroButtons = ['maps','references'].map(view=>({dataset:{aeroView:view},classList:{toggle(){}},setAttribute(){},addEventListener(t,fn){this.click=fn;}}));
 const mapEditor = {hidden:false, value:'unsaved map'};
 const refEditor = {hidden:true, value:'unsaved coordinates'};
@@ -234,4 +238,14 @@ for (const axle of ['front','rear']) {
   assert.equal(ellipseCalls[0][1].side,'left');
   assert.equal(ellipseCalls[0][4],240);
 }
+`,ctx);
+
+vm.runInContext(`
+const suspensionSelect={value:'front',addEventListener(t,fn){assert.equal(t,'change');this.change=fn;}};
+const suspensionPanels=['front-spring','rear-spring'].map(key=>({dataset:{suspensionPanel:key}}));
+document={querySelectorAll:q=>q==='[data-suspension-axle]'?[suspensionSelect]:q==='[data-suspension-panel]'?suspensionPanels:[]};
+state.suspensionAxle='front'; state.suspensionComponent='spring';
+wireSuspensionSelection(); suspensionSelect.value='rear'; suspensionSelect.change();
+assert.equal(state.suspensionAxle,'rear');
+assert.equal(suspensionPanels[0].hidden,true); assert.equal(suspensionPanels[1].hidden,false);
 `,ctx);
