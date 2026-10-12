@@ -278,3 +278,22 @@ assert.ok(state.vehiclePreviewZoom>1);
 handlers.dblclick[0]();
 assert.equal(state.vehiclePreviewZoom,1); assert.equal(state.vehiclePreviewPanX,0);
 `,momentCtx);
+
+vm.runInContext(`
+for (const area of ['hardpoints','mass','aero','tires']) {
+  state.activeParamGroup=area;
+  state.aeroReferenceView=true;
+  state.activeTireTab='load-maps';
+  state.vehiclePreviewZoom=3; state.vehiclePreviewPanX=80; state.vehiclePreviewFit={key:'old'};
+  state.tireSurfaceZoom=4; state.tireSurfacePanX=90;
+  resetPreviewCamera();
+  if(area==='tires') {
+    assert.equal(state.tireSurfaceZoom,1); assert.equal(state.tireSurfacePanX,0);
+  } else {
+    assert.equal(state.vehiclePreviewZoom,1); assert.equal(state.vehiclePreviewPanX,0);
+    assert.equal(state.vehiclePreviewFit,null); assert.equal(state.vehiclePreviewYaw,DEFAULT_VEHICLE_YAW);
+  }
+}
+state.activeParamGroup='aero'; state.aeroReferenceView=false; state.tireSurfaceZoom=3;
+resetPreviewCamera(); assert.equal(state.tireSurfaceZoom,1);
+`,momentCtx);

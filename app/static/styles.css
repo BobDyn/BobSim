@@ -4662,7 +4662,14 @@ summary:focus-visible {
   grid-column: 1 / -1;
 }
 
-#mass-view-buttons[hidden] { display: none; }
+.camera-home-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.camera-home-button[hidden] { display: none; }
 
 /* Views use tabs. Component choices use equal-width segments. */
 .tire-subtabs {

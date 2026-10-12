@@ -7156,7 +7156,6 @@ function updatePreviewDrag(event) {
     const sensitivity = 0.01 * state.rotationSensitivity;
     state.vehiclePreviewYaw = drag.yaw + dx * sensitivity;
     state.vehiclePreviewPitch = Math.max(-1.1, Math.min(1.1, drag.pitch + dy * sensitivity));
-    syncViewButtons();
   }
   drawVehicleFromForm();
   return true;
@@ -7776,7 +7775,6 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
   const usesSpatialView = isSpatialPreviewArea(area);
-  document.getElementById("mass-view-buttons").hidden = area.id !== "mass";
   const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
   geometryTabs.hidden = area.id !== "hardpoints";
   document.getElementById("config-form").hidden = usesGeometryPlots;
@@ -7786,6 +7784,7 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     button.setAttribute("aria-pressed", String(active));
   });
   const usesTireSurface = isSurfaceMapPreviewArea(area);
+  document.getElementById("camera-home-btn").hidden = !(usesSpatialView || usesTireSurface);
   if (controls) {
     controls.hidden = true;
     controls.style.display = "none";
@@ -12416,13 +12415,7 @@ function wireVehicleCanvas() {
     canvas.classList.remove("tire-surface-dragging");
     drawVehicleFromForm();
   });
-  canvas.addEventListener("dblclick", () => {
-    if (isSurfaceMapPreviewArea()) {
-      resetTireSurfaceView();
-      return;
-    }
-    if (isSpatialPreviewArea()) resetVehicleView();
-  });
+  canvas.addEventListener("dblclick", resetPreviewCamera);
 }
 
 function wireGeometryEditor() {
@@ -12520,16 +12513,12 @@ function resetVehicleView() {
   state.vehiclePreviewZoom = 1;
   state.vehiclePreviewPanX = 0;
   state.vehiclePreviewPanY = 0;
-  syncViewButtons();
   drawVehicleFromForm();
 }
 
-function syncViewButtons() {
-  document.querySelectorAll(".view-button[data-view]").forEach((item) => {
-    const active = item.dataset.view === state.vehiclePreviewView;
-    item.classList.toggle("active", active);
-    item.setAttribute("aria-pressed", String(active));
-  });
+function resetPreviewCamera() {
+  if (isSurfaceMapPreviewArea()) resetTireSurfaceView();
+  else if (isSpatialPreviewArea()) resetVehicleView();
 }
 
 function wireEvents() {
@@ -12739,7 +12728,7 @@ function wireEvents() {
   document.getElementById("geometry-show-rear").addEventListener("change", (event) => {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
-  document.getElementById("reset-view-btn").addEventListener("click", resetVehicleView);
+  document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
@@ -12768,18 +12757,6 @@ function wireEvents() {
     button.addEventListener("click", () => {
       state.activeStudyTab = button.dataset.studyTab;
       syncStudyTabs();
-    });
-  });
-  document.querySelectorAll(".view-button[data-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.vehiclePreviewFit = null;
-      state.vehiclePreviewView = button.dataset.view;
-      if (state.vehiclePreviewView === "iso") {
-        state.vehiclePreviewYaw = DEFAULT_VEHICLE_YAW;
-        state.vehiclePreviewPitch = DEFAULT_VEHICLE_PITCH;
-      }
-      syncViewButtons();
-      drawVehicleFromForm();
     });
   });
   wireSetupSplitter();
