@@ -29,6 +29,7 @@ APP_SEED_RUNTIME_PATHS = (
     "common/vehicle_templates",
     "visualization/visual_templates",
     "simulations/response/reduced/reduced_order_eval_config.yml",
+    "simulations/response/reduced/ramp_steer_config.yml",
     "simulations/lap/lap_time_eval_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",
@@ -41,6 +42,7 @@ APP_SEED_RUNTIME_PATHS = (
     "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
     "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
     "simulations/response/mbd/transient/transient_eval_config.yml",
+    "simulations/response/mbd/transient/step_steer_config.yml",
     "optimization/envelope/config.yml",
     "optimization/response/configs",
 )
@@ -81,6 +83,7 @@ APP_REFRESH_RUNTIME_PATHS = {
     "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
     "simulations/response/mbd/steady_state/steady_state_eval_config.yml",
     "simulations/response/mbd/transient/transient_eval_config.yml",
+    "simulations/response/mbd/transient/step_steer_config.yml",
     "simulations/response/mbd/build_vehicle_sim.mos",
     "simulations/response/mbd/build_four_post_sim.mos",
 }

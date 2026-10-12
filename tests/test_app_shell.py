@@ -436,6 +436,15 @@ def test_deploy_does_not_bundle_generated_modelica_binaries() -> None:
     assert app.BUILD_ARCHIVE_ROOT.as_posix() not in data_paths
 
 
+def test_desktop_bundles_and_seeds_every_registered_config() -> None:
+    from app.registry import BASE_CONFIG_SPECS
+    from app.runtime import APP_SEED_RUNTIME_PATHS
+
+    for paths in (deploy.DATA_PATHS, APP_SEED_RUNTIME_PATHS):
+        for spec in BASE_CONFIG_SPECS.values():
+            assert any(Path(spec.path).is_relative_to(path) for path in paths), spec.path
+
+
 def test_deploy_collects_qt_webengine_for_embedded_desktop_window() -> None:
     assert "PyQt6" in deploy.PYINSTALLER_COLLECT_ALL
     assert "qtpy" in deploy.PYINSTALLER_COLLECT_ALL
