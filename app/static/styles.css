@@ -1246,23 +1246,6 @@ body.resizing-panes * {
   padding: 10px;
 }
 
-.visual-stage.mass-scroll-stage {
-  grid-template-rows: auto auto;
-  align-content: start;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
-}
-
-.visual-stage.mass-scroll-stage .preview-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 13;
-  background: var(--surface);
-}
-
 .preview-toolbar {
   justify-content: space-between;
   min-height: 38px;
@@ -1367,13 +1350,6 @@ body.resizing-panes * {
   touch-action: none;
 }
 
-#vehicle-canvas.mass-scroll-canvas {
-  flex: none;
-  min-height: 900px;
-  cursor: default;
-  touch-action: pan-y;
-}
-
 #vehicle-canvas.geometry-hot {
   cursor: pointer;
 }
@@ -1412,10 +1388,6 @@ body.resizing-panes * {
 
 #vehicle-canvas:active {
   cursor: grabbing;
-}
-
-#vehicle-canvas.mass-scroll-canvas:active {
-  cursor: default;
 }
 
 #vehicle-canvas.diagnostic-canvas {
@@ -4786,3 +4758,5 @@ summary:focus-visible {
   grid-row: 2;
   grid-column: 1 / -1;
 }
+
+#mass-view-buttons[hidden] { display: none; }

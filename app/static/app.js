@@ -7835,9 +7835,8 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const geometryPlotPanel = document.getElementById("geometry-plot-panel");
   const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
-  const stage = document.querySelector(".visual-stage");
   const usesSpatialView = isSpatialPreviewArea(area);
-  const usesMassScroll = area.id === "mass";
+  document.getElementById("mass-view-buttons").hidden = area.id !== "mass";
   const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
   geometryTabs.hidden = area.id !== "hardpoints";
   document.getElementById("config-form").hidden = usesGeometryPlots;
@@ -7860,24 +7859,11 @@ function syncPreviewModeControls(area = activeParameterArea()) {
     if (usesGeometryPlots) renderGeometryPlotControls();
     else clearGeometryPlotScene();
   }
-  if (stage) {
-    stage.classList.toggle("mass-scroll-stage", usesMassScroll);
-  }
   if (canvas) {
     canvas.classList.toggle("diagnostic-canvas", !usesSpatialView);
-    canvas.classList.toggle("mass-scroll-canvas", usesMassScroll);
     canvas.classList.toggle("tire-surface-canvas", usesTireSurface);
     if (!usesTireSurface) canvas.classList.remove("tire-surface-hot", "tire-surface-dragging");
-    if (usesMassScroll) {
-      const stageHeight = Math.max(360, stage?.clientHeight || canvas.clientHeight || 360);
-      const toolbarHeight = document.querySelector(".preview-toolbar")?.getBoundingClientRect().height || 46;
-      const contentHeight = Math.max(360, stageHeight - toolbarHeight - 28);
-      const plotMinimumHeight = 900;
-      const targetHeight = contentHeight * 2 + 64;
-      canvas.style.height = `${Math.max(plotMinimumHeight, targetHeight)}px`;
-    } else {
-      canvas.style.height = "";
-    }
+    canvas.style.height = "";
   }
 }
 
@@ -11944,13 +11930,13 @@ function drawMassPreview(ctx, width, height, data) {
 }
 
 function massViewPanels(width, height) {
-  const margin = 24;
-  const gap = 16;
-  const panelHeight = Math.max(130, (height - margin * 2 - gap) / 2);
-  return [
-    { label: "Top", axis: "X / Y", view: "top", x: margin, y: margin, width: width - margin * 2, height: panelHeight },
-    { label: "Side", axis: "X / Z", view: "side", x: margin, y: margin + panelHeight + gap, width: width - margin * 2, height: panelHeight },
-  ];
+  const margin = 16;
+  const view = state.vehiclePreviewView;
+  return [{
+    label: view === "top" ? "Top" : view === "side" ? "Side" : "3D",
+    axis: view === "top" ? "X / Y" : view === "side" ? "X / Z" : "",
+    view, x: margin, y: margin, width: width - margin * 2, height: height - margin * 2,
+  }];
 }
 
 function drawMassViewPanel(ctx, panel, fullModel, massModel) {
@@ -12959,7 +12945,9 @@ function resetVehicleView() {
 
 function syncViewButtons() {
   document.querySelectorAll(".view-button[data-view]").forEach((item) => {
-    item.classList.toggle("active", item.dataset.view === state.vehiclePreviewView);
+    const active = item.dataset.view === state.vehiclePreviewView;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
   });
 }
 
