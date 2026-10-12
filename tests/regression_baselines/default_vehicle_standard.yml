@@ -3,7 +3,7 @@ name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
   boblib_commit: e03da04243a8ee11c69180fd9f48bce51fe98524
-  simulation_inputs_digest: a2cf83ddfe6b1db2371abfc81644b8bff4726d6a61ce6e713d26f8d26d7fa8c6
+  simulation_inputs_digest: 543642bbe8cf33f4a029eccdb5ab503d13a3aa9080c2f71d25e9e252b6cec68f
 refresh:
   make_targets:
   - standard-build
