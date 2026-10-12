@@ -1152,8 +1152,6 @@ body.vehicle-start-open {
 .connection-assignment-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -1165,16 +1163,9 @@ body.vehicle-start-open {
 }
 
 .connection-assignment-row span {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  height: 8px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--role-color) 18%, var(--surface));
-  color: var(--role-color);
-  font-size: 11px;
-  font-weight: 700;
+  background: var(--role-color);
 }
 
 .connection-assignment-row strong {

@@ -6040,7 +6040,7 @@ function renderArchitectureConnectionModal(data = currentVehicleFormData() || st
   const body = document.getElementById("architecture-connection-body");
   if (title) title.textContent = `${humanizeToken(axle)} Connections`;
   if (subtitle) subtitle.textContent = architecture.includes("bellcrank")
-    ? "Assign each bellcrank connection to the fixed pickup points."
+    ? "Drag a colored pickup onto another to swap connections."
     : "Select a bellcrank architecture to assign pickup connections.";
   if (select) {
     select.innerHTML = architectureChoicesForAxle(axle).map((choice) => `
@@ -6076,7 +6076,7 @@ function architectureConnectionEditorHtml(axle, data) {
     </section>
     <section class="connection-assignment-panel">
       <div class="connection-assignment-list">
-        <span>Connection order</span>
+        <span>Connections</span>
         ${values.map((role, index) => `
           <button
             class="connection-assignment-row ${index === selectedIndex ? "active" : ""}"
@@ -6085,13 +6085,13 @@ function architectureConnectionEditorHtml(axle, data) {
             style="--role-color: ${bellcrankRoleColor(role)}"
             type="button"
           >
-            <span>${index + 1}</span>
             <strong>${escapeHtml(humanizeToken(role))}</strong>
+            <span aria-hidden="true"></span>
           </button>
         `).join("")}
       </div>
       <div class="connection-role-picker">
-        <span>Assign selected</span>
+        <span>Or select a connection above, then swap with</span>
         <div class="connection-role-grid">
           ${choices.map((choice) => `
             <button
@@ -6294,17 +6294,6 @@ function drawArchitectureModalHandle(ctx, socket, point, draggingThis = false) {
   ctx.fill();
   ctx.stroke();
   ctx.shadowColor = "transparent";
-  drawCanvasText(ctx, String(socket.index + 1), point.x2, point.y2 - 2, {
-    align: "center",
-    size: 10,
-    weight: 860,
-    color: "#ffffff",
-  });
-  drawCanvasText(ctx, humanizeToken(socket.role), point.x2 + 18, point.y2 - 14, {
-    size: 10,
-    weight: 820,
-    color: draggingThis ? palette.ink : palette.muted,
-  });
   ctx.restore();
 }
 
@@ -8035,12 +8024,6 @@ function drawArchitecturePickupReferences(ctx, points, axle, data, hotspots, hov
       ctx.arc(point.x2, point.y2, radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      drawCanvasText(ctx, String(index + 1), point.x2, point.y2, {
-        align: "center",
-        size: 9,
-        weight: 860,
-        color: draggingThis || targetThis ? palette.muted : palette.ink,
-      });
       drawCanvasText(ctx, humanizeToken(role), point.x2 + 14, point.y2 - 13, {
         size: 9,
         weight: 760,
