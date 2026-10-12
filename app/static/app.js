@@ -1723,7 +1723,7 @@ function vehicleComponentEditorHtml(area) {
       <div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
       </select></div>
-      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", "Select a pickup or choose a component. Drag the point along the highlighted axis. Drag empty space to rotate, Ctrl-drag to pan. Left-side coordinates mirror to the right. X forward, Y left, Z up. Tab cycles axes while a point is selected. Esc or empty space deselects. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.") : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", [["Move point", "Drag along the highlighted axis"], ["Change axis", "Tab"], ["Deselect", "Esc or click empty space"], ["Rotate / pan", "Drag empty space / Ctrl-drag"], ["Undo / redo", "Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z"], ["Coordinates", "+X forward, +Y left, +Z up"], ["Mirroring", "Left-side points define the right side"]]) : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
         ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(entry.label)}</option>`).join("")}
       </select></div>
     </div>
@@ -1732,7 +1732,7 @@ function vehicleComponentEditorHtml(area) {
       const regular = entry.fields.filter((field) => !inertia.includes(field));
       return `<section data-component-panel="${escapeHtml(entry.key)}"${entry.key === selected?.key ? "" : " hidden"}>
         <div class="field-grid">${regular.map(fieldControl).join("")}</div>
-        ${inertia.length ? `<details class="component-inertia"><summary>Inertia tensor · kg·m²</summary><div class="field-grid">${inertia.map(fieldControl).join("")}</div></details>` : ""}
+        ${inertia.length ? `<details class="component-inertia"><summary>Inertia tensor (kg·m²)</summary><div class="field-grid">${inertia.map(fieldControl).join("")}</div></details>` : ""}
       </section>`;
     }).join("")}
   </div>`;
@@ -1785,7 +1785,7 @@ function updateVehicleMassSummary(data) {
   const frontShare = point && frontX !== rearX ? 100 * (point.x - rearX) / (frontX - rearX) : NaN;
   summary.innerHTML = point ? `<div><span>Total mass</span><strong>${escapeHtml(formatMassValue(point.massKg))}</strong></div>
     ${Number.isFinite(frontShare) ? `<div><span>Static front / rear</span><strong>${frontShare.toFixed(1)} / ${(100 - frontShare).toFixed(1)}%</strong></div>` : ""}
-    <div><span>Combined CG · mm</span><strong>${escapeHtml(formatVector([point.x * 1000, point.y * 1000, point.z * 1000], ""))}</strong></div>` : "";
+    <div><span>Combined CG (mm)</span><strong>${escapeHtml(formatVector([point.x * 1000, point.y * 1000, point.z * 1000], ""))}</strong></div>` : "";
 }
 
 function tireSectionHtml(area) {
@@ -1856,7 +1856,7 @@ function tireLoadMapControlsHtml() {
     <div class="tire-load-controls" data-tire-load-controls>
       <div class="tire-load-row">
         <div class="tire-load-head">
-          <span>Normal load · Fz</span>
+          <span>Normal load (N)</span>
           <strong id="tire-combined-fz-value">${formatNumber(value)} N</strong>
         </div>
         <input
@@ -2074,25 +2074,6 @@ function syncSuspensionSelection() {
 }
 
 function wireSuspensionSelection() {
-  document.querySelectorAll("[data-spring-rate]").forEach((input) => {
-    input.closest("[data-array-path]").addEventListener("input", (event) => {
-      if (event.target === input) return;
-      const rows = [...input.closest("[data-array-path]").querySelectorAll("[data-matrix-row]")];
-      const linear = linearSpringRate(rows.map((row) => [...row.querySelectorAll("[data-array-cell]")].map((cell) => cell.value === "" ? NaN : Number(cell.value))));
-      input.parentElement.hidden = !linear;
-      if (linear) input.value = linear.rate / 1000;
-    });
-    input.addEventListener("input", () => {
-      if (input.value === "" || !input.checkValidity()) return;
-      const rows = [...input.closest("[data-array-path]").querySelectorAll("[data-matrix-row]")];
-      const table = rows.map((row) => [...row.querySelectorAll("[data-array-cell]")].map((cell) => Number(cell.value)));
-      const linear = linearSpringRate(table);
-      if (!linear) return;
-      rows.forEach((row, index) => {
-        row.querySelector('[data-col="1"]').value = table[index][0] * Number(input.value) * 1000 + linear.offset;
-      });
-    });
-  });
   document.querySelectorAll("[data-suspension-axle], [data-suspension-component]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.suspensionAxle) state.suspensionAxle = button.dataset.suspensionAxle;
@@ -2232,13 +2213,13 @@ function aeroSectionHtml(area) {
       <div class="aero-view-controls" data-setup-filter>
         <label class="form-field"><span>Map</span>
           <select data-aero-map aria-label="Aero map">
-            ${AERO_MAPS.map((map) => `<option value="${map.key}"${map.key === state.activeAeroMap ? " selected" : ""}>${map.label} · ${map.unit}</option>`).join("")}
+            ${AERO_MAPS.map((map) => `<option value="${map.key}"${map.key === state.activeAeroMap ? " selected" : ""}>${map.label} (${map.unit})</option>`).join("")}
           </select>
         </label>
       </div>
       <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
       </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
-        ${infoHint("Aero coordinates and controls", "+X forward, +Y left, +Z up. Origin: average of the front contact patches. Enter left-side points. Right-side points mirror Y. Drag to rotate, scroll to zoom, Ctrl-drag to pan. Double-click resets the view.")}
+        ${infoHint("Aero coordinates and controls", [["Coordinates", "+X forward, +Y left, +Z up"], ["Origin", "Average of the front contact patches"], ["Input", "Left-side points. Right side mirrors Y"], ["Rotate", "Drag"], ["Zoom", "Scroll"], ["Pan", "Ctrl-drag"], ["Reset", "Double-click"]])}
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
       </section>
     </div>
@@ -2759,8 +2740,8 @@ function fieldControl(field) {
 }
 
 function fieldLabelHtml(field) {
-  const displayUnit = field.display_unit || field.unit;
-  const unit = displayUnit ? `<span>${escapeHtml(displayUnit)}</span>` : "";
+  const displayUnit = /\.(spring|damper)_table\.table$/.test(fieldPathString(field)) ? "" : field.display_unit || field.unit;
+  const unit = displayUnit ? `<span>(${escapeHtml(displayUnit)})</span>` : "";
   const planned = field.disabled ? `<span class="field-status-pill">Planned</span>` : "";
   const meta = unit || planned ? `<span class="field-label-meta">${unit}${planned}</span>` : "";
   const objectLabel = fieldObjectLabel(field);
@@ -2776,7 +2757,10 @@ let infoHintId = 0;
 
 function infoHint(label, text) {
   const id = `info-popup-${++infoHintId}`;
-  return `<span class="info-hint"><button type="button" class="info-button" popovertarget="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(text)}">${infoIcon()}</button><span id="${id}" class="info-popup" popover aria-label="${escapeHtml(label)}">${escapeHtml(text)}</span></span>`;
+  const rows = Array.isArray(text) ? text : null;
+  const plain = rows ? rows.map(([key, value]) => `${key}: ${value}`).join(". ") : text;
+  const content = rows ? `<dl>${rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : `<p>${escapeHtml(text)}</p>`;
+  return `<span class="info-hint"><button type="button" class="info-button" popovertarget="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><div id="${id}" class="info-popup" popover aria-label="${escapeHtml(label)}">${content}</div>`;
 }
 
 function positionInfoPopup(event) {
@@ -2800,9 +2784,6 @@ function fieldHelpHtml(field) {
 }
 
 function fieldHelpText(field) {
-  const path = fieldPathString(field);
-  if (path.includes(".actuation.shock.spring_table.table")) return "Rows map shock deflection to spring force.";
-  if (path.includes(".actuation.shock.damper_table.table")) return "Rows map shock shaft velocity to damper force.";
   return field.help;
 }
 
@@ -2894,65 +2875,17 @@ function vectorSupportsQueueControls(field, coordinate) {
   return true;
 }
 
-function linearSpringRate(table) {
-  if (!Array.isArray(table) || table.length < 2 || table.some((row) => !Array.isArray(row) || row.length !== 2 || !row.every(Number.isFinite))) return null;
-  const [x0, y0] = table[0];
-  const distinct = table.find(([x]) => x !== x0);
-  if (!distinct) return null;
-  const rate = (distinct[1] - y0) / (distinct[0] - x0);
-  const offset = y0 - rate * x0;
-  if (rate < 0 || !Number.isFinite(rate) || !Number.isFinite(offset)) return null;
-  return table.every(([x, y]) => Math.abs(y - (rate * x + offset)) <= 1e-9 * Math.max(1, Math.abs(y))) ? { rate, offset } : null;
-}
-
-function springRateControl(field) {
-  if (!fieldPathString(field).includes(".spring_table.")) return "";
-  const linear = linearSpringRate(field.value);
-  if (!linear) return '<p class="field-help">Nonlinear spring curve</p>';
-  return `<label class="form-field"><span>Spring rate · N/mm</span><input type="number" min="0" step="any" data-spring-rate value="${linear.rate / 1000}"${field.disabled ? " disabled" : ""}></label>`;
-}
-
 function matrixControl(field) {
   const rows = Array.isArray(field.value) ? field.value : [];
-  if (/\.(spring|damper)_table\.table$/.test(fieldPathString(field))) {
-    const collapse = fieldPathString(field).includes(".spring_table.") && linearSpringRate(rows);
-    return `${springRateControl(field)}${collapse ? '<details class="component-details"><summary>Edit force curve</summary>' : ""}<div class="matrix-scroll curve-table"><div class="curve-table-heading"><span>${escapeHtml(matrixColumnLabel(field, 0))}</span><span>${escapeHtml(matrixColumnLabel(field, 1))}</span></div><div class="matrix-input" data-matrix-cols="2"><div class="matrix-array-body">
-      ${rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, 2, false)).join("")}
-      </div></div></div><button class="array-action" type="button" data-array-action="add-row">Add point</button>${collapse ? "</details>" : ""}`;
-  }
   const cols = Math.max(1, ...rows.map((row) => Array.isArray(row) ? row.length : 0));
+  const curve = /\.(spring|damper)_table\.table$/.test(fieldPathString(field));
   const fixed = matrixHasFixedShape(field);
-  const body = rows.map((row, rowIndex) => matrixRowControl(field, row, rowIndex, cols, fixed)).join("");
-  return `
-    ${matrixPurposeHtml(field)}
-    <div class="matrix-scroll">
-      <div class="matrix-input" data-matrix-cols="${cols}">
-        <div class="matrix-array-body">${body}</div>
-      </div>
+  return `<div class="matrix-scroll${curve ? " curve-table" : ""}">
+    <div class="matrix-input" data-matrix-cols="${cols}" style="--matrix-cols: ${cols}">
+      <div class="matrix-heading"><span class="matrix-row-label"></span><div class="matrix-array-cells">${Array.from({length: cols}, (_, index) => `<span>${escapeHtml(matrixColumnLabel(field, index))}</span>`).join("")}</div><span></span></div>
+      <div class="matrix-array-body">${rows.map((row, index) => matrixRowControl(field, row, index, cols, fixed)).join("")}</div>
     </div>
-    ${fixed ? "" : `<button class="array-action" type="button" data-array-action="add-row">Add row</button>`}
-  `;
-}
-
-function matrixPurposeHtml(field) {
-  const path = fieldPathString(field);
-  if (path.includes(".actuation.shock.spring_table.table")) {
-    return `
-      <div class="table-purpose">
-        <strong>Spring table</strong>
-        <span>Shock deflection (m) -> spring force (N)</span>
-      </div>
-    `;
-  }
-  if (path.includes(".actuation.shock.damper_table.table")) {
-    return `
-      <div class="table-purpose">
-        <strong>Damper table</strong>
-        <span>Shock shaft velocity (m/s) -> damper force (N)</span>
-      </div>
-    `;
-  }
-  return "";
+  </div>${fixed ? "" : `<button class="array-action" type="button" data-array-action="add-row">${curve ? "Add point" : "Add row"}</button>`}`;
 }
 
 function matrixRowControl(field, row, rowIndex, cols, fixed) {

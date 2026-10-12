@@ -4707,18 +4707,6 @@ summary:focus-visible {
 .vehicle-mass-summary > div { display: flex; justify-content: space-between; gap: 12px; }
 .vehicle-mass-summary span { color: var(--muted); }
 .vehicle-mass-summary strong { font-variant-numeric: tabular-nums; }
-/* Suspension curves retain the shared array editor's add/remove controls. */
-.curve-table .matrix-array-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-.curve-table .matrix-row-label,
-.curve-table .array-bracket {
-  display: none;
-}
-.curve-table .matrix-array-cells {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
 .tire-model-editor,
 .tir-param-panel > details {
   border-top: 1px solid var(--line);
@@ -4735,14 +4723,7 @@ summary:focus-visible {
   font-size: 12px;
 }
 
-.curve-table-heading {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 0 40px 7px 8px;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--muted);
-}
+
 .tire-model-editor .tir-param-row {
   grid-template-columns: minmax(64px, 1fr) minmax(72px, 1fr) 24px;
 }
@@ -4856,5 +4837,43 @@ summary:focus-visible {
   font-size: 20px;
   line-height: 1;
 }
-.matrix-array-cells { min-width: max-content; }
 .aero-map-table th { white-space: normal; }
+
+.matrix-input { min-width: max-content; }
+.matrix-heading,
+.matrix-array-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.matrix-heading { margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+.matrix-input .matrix-array-cells {
+  display: grid;
+  grid-template-columns: repeat(var(--matrix-cols), minmax(14ch, 1fr));
+  gap: 6px;
+}
+.matrix-array-row .array-bracket { display: none; }
+.matrix-array-cell > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.matrix-array-cell input { width: 100%; box-sizing: border-box; }
+.curve-table .matrix-heading,
+.curve-table .matrix-array-row { grid-template-columns: minmax(0, 1fr) 30px; }
+.curve-table .matrix-row-label { display: none; }
+.info-popup p { margin: 0; }
+.info-popup dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+.info-popup dt { color: var(--muted); }
+.info-popup dd { margin: 0; }
