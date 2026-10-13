@@ -521,12 +521,12 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     assert payload["warnings"] == []
     assert payload["axles"]["front"]["ok"] is True
     assert payload["axles"]["rear"]["ok"] is True
-    assert len(payload["sweep_m"]) == 20
-    assert len(payload["roll_deg"]) == 20
+    assert len(payload["sweep_m"]) == 21
+    assert len(payload["roll_deg"]) == 21
     assert len(payload["steer_m"]) == 21
     assert len(payload["curve_meta"]) == len(KINEMATIC_CURVE_META)
     # Pin the absolute count. A bad merge once dropped ten curves from the registry.
-    assert len(payload["curve_meta"]) == 33
+    assert len(payload["curve_meta"]) == 35
     published = {item["id"] for item in payload["curve_meta"]}
     assert {
         "bump_front_ic_y_mm", "bump_front_ic_z_mm", "bump_front_swing_arm_mm",
@@ -560,7 +560,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     axis_lengths = {
         "jounce_mm": len(payload["x_axes"]["jounce_mm"]),
         "roll_deg": len(payload["x_axes"]["roll_deg"]),
-        "steer_deg": len(payload["x_axes"]["steer_deg"]),
+        "rack_mm": len(payload["x_axes"]["rack_mm"]),
     }
     for item in KINEMATIC_CURVE_META:
         key = item["id"]
@@ -570,11 +570,9 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     for item in KINEMATIC_CURVE_META:
         if item["id"].startswith("steer_"):
             assert rear_curves[item["id"]] == []
-    # Steer's x-axis is the solved road-wheel angle, so it need not track the rack sweep.
-    steer_x = payload["x_axes"]["steer_deg"]
-    zero_index = payload["steer_m"].index(0.0)
-    assert steer_x[zero_index] == pytest.approx(0.0, abs=0.5)
-    assert steer_x[0] != steer_x[-1]
+    assert payload["x_axes"]["rack_mm"] == pytest.approx([1000 * value for value in payload["steer_m"]])
+    for axis in payload["x_axes"].values():
+        assert 0.0 in axis
     for key in (
         "bump_camber_deg",
         "bump_toe_deg",
@@ -1102,3 +1100,22 @@ def test_geometry_only_corner_rejects_unreachable_pose() -> None:
     _, points, residual = corner.solve_jounce(0.25, np.zeros(3))
     assert residual < 1e-8
     assert points.contact_patch[2] == pytest.approx(0.25, abs=1e-8)
+
+
+def test_custom_jounce_sweep_includes_zero() -> None:
+    from engines.kinpy.kinematics import _clean_sweep
+
+    assert _clean_sweep([-0.02, 0.01]) == (-0.02, 0.0, 0.01)
+    assert _clean_sweep([0.01, 0.02]) == (0.01, 0.02)
+    assert _clean_sweep([-0.01, 0.0, 0.01]) == (-0.01, 0.0, 0.01)
+
+
+def test_roll_center_height_uses_both_corners() -> None:
+    vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text(encoding="utf-8"))
+    payload = kinematic_curves_payload(vehicle, sweep_m=[0.0], roll_deg=[-1.0, 0.0, 1.0], steer_m=[0.0])
+    for axle in ("front", "rear"):
+        curves = payload["axles"][axle]["curves"]
+        heights = curves["roll_rc_height_mm"]
+        # A symmetric axle has the same height for equal left and right roll.
+        assert heights[0] == pytest.approx(heights[2], abs=1e-5)
+        assert heights[1] == pytest.approx(curves["bump_rc_height_mm"][0], abs=1e-5)

@@ -12,8 +12,8 @@ from engines.kinpy.suspension_model.suspension_elements._2_elements.tire import 
 from engines.kinpy.suspension_model.suspension_elements._2_elements.wishbone import Wishbone
 from engines.kinpy.suspension_model.suspension_elements._5_elements.quarter_car import QuarterCar
 
-DEFAULT_SWEEP_M = tuple(round(-0.04 + (0.08 / 19.0) * index, 6) for index in range(20))
-DEFAULT_ROLL_DEG = tuple(round(-1.5 + (3.0 / 19.0) * index, 6) for index in range(20))
+DEFAULT_SWEEP_M = tuple(round(-0.04 + (0.08 / 20.0) * index, 6) for index in range(21))
+DEFAULT_ROLL_DEG = tuple(round(-1.5 + (3.0 / 20.0) * index, 6) for index in range(21))
 DEFAULT_STEER_M = tuple(round(-0.03 + (0.06 / 20.0) * index, 6) for index in range(21))
 
 
@@ -54,11 +54,11 @@ KINEMATIC_CURVE_META = [
         "bump_scrub_mm", "Bump Scrub Radius", "mm", "jounce_mm", "Jounce", "mm", "Scrub Radius", "Plot6",
     ),
     _curve_meta(
-        "bump_rc_y_mm", "Bump RC y-Migration", "mm", "jounce_mm", "Jounce", "mm", "RC y-Position",
+        "bump_rc_y_mm", "Bump RC y-Position", "mm", "jounce_mm", "Jounce", "mm", "RC y-position",
         "Plot11",
     ),
     _curve_meta(
-        "bump_rc_z_mm", "Bump RC z-Migration", "mm", "jounce_mm", "Jounce", "mm", "RC z-Position",
+        "bump_rc_z_mm", "Bump RC z-Position", "mm", "jounce_mm", "Jounce", "mm", "RC z-position",
         "Plot12",
     ),
     _curve_meta("roll_camber_deg", "Roll Camber", "deg", "roll_deg", "Roll", "deg", "Camber", "Plot15"),
@@ -75,11 +75,11 @@ KINEMATIC_CURVE_META = [
         "roll_scrub_mm", "Roll Scrub Radius", "mm", "roll_deg", "Roll", "deg", "Scrub Radius", "Plot20",
     ),
     _curve_meta(
-        "roll_rc_y_mm", "Roll RC y-Migration", "mm", "roll_deg", "Roll", "deg", "RC y-Position",
+        "roll_rc_y_mm", "Roll RC y-Position", "mm", "roll_deg", "Roll", "deg", "RC y-position",
         "Plot25",
     ),
     _curve_meta(
-        "roll_rc_z_mm", "Roll RC z-Migration", "mm", "roll_deg", "Roll", "deg", "RC z-Position",
+        "roll_rc_z_mm", "Roll RC z-Position", "mm", "roll_deg", "Roll", "deg", "RC z-position",
         "Plot26",
     ),
     # Side-view instant centres stay unpublished on purpose. See tests/test_kinematics.py.
@@ -123,30 +123,37 @@ KINEMATIC_CURVE_META = [
         "roll_rc_migration_mm", "Roll RC Migration", "mm", "roll_deg", "Roll", "deg",
         "RC Migration", "Plot48",
     ),
-    # Front axle only. Swept by rack_displacement_m and plotted against the solved road-wheel steer angle.
+    # Front axle only, swept by rack displacement.
     _curve_meta(
-        "steer_camber_deg", "Steer Camber", "deg", "steer_deg", "Steer", "deg", "Camber", "Plot51",
+        "steer_camber_deg", "Steer Camber", "deg", "rack_mm", "Rack displacement", "mm", "Camber", "Plot51",
     ),
     _curve_meta(
-        "steer_scrub_mm", "Steer Scrub Radius", "mm", "steer_deg", "Steer", "deg", "Scrub Radius", "Plot52",
+        "steer_scrub_mm", "Steer Scrub Radius", "mm", "rack_mm", "Rack displacement", "mm", "Scrub Radius", "Plot52",
     ),
     _curve_meta(
-        "steer_mech_trail_mm", "Steer Mechanical Trail", "mm", "steer_deg", "Steer", "deg",
+        "steer_mech_trail_mm", "Steer Mechanical Trail", "mm", "rack_mm", "Rack displacement", "mm",
         "Mechanical Trail", "Plot53",
     ),
     _curve_meta(
-        "steer_rc_y_mm", "Steer RC y-Migration", "mm", "steer_deg", "Steer", "deg", "RC y-Position",
+        "steer_rc_y_mm", "Steer RC y-Position", "mm", "rack_mm", "Rack displacement", "mm", "RC y-position",
         "Plot54",
     ),
     _curve_meta(
-        "steer_rc_z_mm", "Steer RC z-Migration", "mm", "steer_deg", "Steer", "deg", "RC z-Position",
+        "steer_rc_z_mm", "Steer RC z-Position", "mm", "rack_mm", "Rack displacement", "mm", "RC z-position",
         "Plot55",
     ),
     _curve_meta(
-        "steer_kpi_deg", "Steer KPI", "deg", "steer_deg", "Steer", "deg", "Kingpin inclination", "Plot56",
+        "steer_kpi_deg", "Steer KPI", "deg", "rack_mm", "Rack displacement", "mm", "Kingpin inclination", "Plot56",
     ),
     _curve_meta(
-        "steer_caster_deg", "Steer Caster", "deg", "steer_deg", "Steer", "deg", "Caster", "Plot57",
+        "steer_caster_deg", "Steer Caster", "deg", "rack_mm", "Rack displacement", "mm", "Caster", "Plot57",
+    ),
+    _curve_meta(
+        "steer_toe_deg", "Steer Toe", "deg", "rack_mm", "Rack displacement", "mm", "Toe", "",
+    ),
+    _curve_meta(
+        "steer_rc_height_mm", "Steer RC Height", "mm", "rack_mm", "Rack displacement", "mm",
+        "RC Height above Contact Patch", "",
     ),
 ]
 
@@ -183,6 +190,8 @@ ROLL_CURVE_SOURCES = {
 }
 
 STEER_CURVE_SOURCES = {
+    "steer_toe_deg": "toe_deg",
+    "steer_rc_height_mm": "roll_center_height_mm",
     "steer_camber_deg": "camber_deg",
     "steer_scrub_mm": "scrub_mm",
     "steer_mech_trail_mm": "mech_trail_mm",
@@ -308,6 +317,11 @@ class CornerKinematics:
                 roll_center = self.roll_center_pair_yz(right_points, left_points)
                 curve_values["rc_y_mm"] = _scale_optional(roll_center[0] if roll_center else None, 1000.0)
                 curve_values["rc_z_mm"] = _scale_optional(roll_center[1] if roll_center else None, 1000.0)
+                curve_values["roll_center_height_mm"] = _scale_optional(
+                    roll_center[1] - float((right_points.contact_patch[2] + left_points.contact_patch[2]) / 2)
+                    if roll_center else None,
+                    1000.0,
+                )
                 for key, source in ROLL_CURVE_SOURCES.items():
                     curves[key].append(_json_optional_float(curve_values.get(source)))
             except Exception as exc:
@@ -648,7 +662,6 @@ def kinematic_curves_payload(
     roll_deg: list[float] | tuple[float, ...] | None = None,
     steer_m: list[float] | tuple[float, ...] | None = None,
 ) -> dict[str, Any]:
-    # Neither default grid samples zero. For design-position values, supply a grid that does.
     sweep = _clean_sweep(sweep_m)
     roll = tuple(float(value) for value in roll_deg) if roll_deg else DEFAULT_ROLL_DEG
     steer = tuple(float(value) for value in steer_m) if steer_m else DEFAULT_STEER_M
@@ -662,7 +675,7 @@ def kinematic_curves_payload(
         "x_axes": {
             "jounce_mm": [_json_float(value * 1000.0) for value in sweep],
             "roll_deg": [_json_float(value) for value in roll],
-            "steer_deg": [],
+            "rack_mm": [_json_float(value * 1000.0) for value in steer],
         },
         "curve_meta": KINEMATIC_CURVE_META,
         "axles": {},
@@ -675,8 +688,6 @@ def kinematic_curves_payload(
             axle_payload = solver.solve_sweep(sweep, roll, axle_steer)
             payload["axles"][axle] = axle_payload
             payload["warnings"].extend(axle_payload.get("warnings", []))
-            if axle == "front":
-                payload["x_axes"]["steer_deg"] = axle_payload.get("steer_x_deg", [])
         except Exception as exc:
             payload["axles"][axle] = {
                 "ok": False,
@@ -697,7 +708,11 @@ def _clean_sweep(sweep_m: list[float] | tuple[float, ...] | None) -> tuple[float
         number = float(value)
         if math.isfinite(number):
             values.append(max(-0.15, min(0.15, number)))
-    return tuple(values[:41] or DEFAULT_SWEEP_M)
+    values = values[:41]
+    if values and min(values) < 0.0 < max(values) and 0.0 not in values:
+        values.append(0.0)
+        values.sort()
+    return tuple(values or DEFAULT_SWEEP_M)
 
 
 def _vector(value: Any, label: str) -> Any:

@@ -313,3 +313,45 @@ for (const area of ['hardpoints','mass','aero','tires']) {
 state.activeParamGroup='aero'; state.aeroReferenceView=false; state.tireSurfaceZoom=3;
 resetPreviewCamera(); assert.equal(state.tireSurfaceZoom,1);
 `,momentCtx);
+
+vm.runInContext(`
+{
+  const originalDocument = document;
+  const originalDraw = drawGeometryPlotPanel;
+  const originalStorage = localStorage;
+  const elements = {
+    'geometry-plot-panel': {hidden:false},
+    'geometry-plot-x-axis': {},
+    'geometry-plot-y-axis': {},
+    'geometry-add-plot-btn': {},
+  };
+  document = {getElementById:id=>elements[id]};
+  localStorage = {setItem(){}};
+  drawGeometryPlotPanel = () => {};
+  state.kinematicsPayload = null;
+  state.geometryPlotSelections = [];
+  const choices = [...geometryPlotDescriptorMap().values()];
+  assert.equal(choices.length,21);
+  assert.ok(choices.every(item=>!/(migration|swing_arm|front_ic|rc_[yz])/.test(item.id)));
+  for (const item of choices) {
+    state.geometryPlotDraftX = item.x_id;
+    state.geometryPlotDraftY = item.id;
+    renderGeometryPlotControls();
+    assert.equal(elements['geometry-add-plot-btn'].disabled,false);
+    addGeometryPlotSelection();
+    assert.equal(elements['geometry-add-plot-btn'].disabled,true);
+  }
+  assert.equal(cleanGeometryPlotSelections().size,21);
+  assert.equal(state.geometryPlotSelections.length,21);
+  removeGeometryPlotSelection('jounce_mm:bump_camber_deg');
+  assert.equal(state.geometryPlotSelections.length,20);
+  assert.ok(state.geometryPlotSelections.some(item=>item.y==='bump_toe_deg'));
+  state.geometryPlotSelections = [{x:'steer_deg',y:'steer_camber_deg'}];
+  cleanGeometryPlotSelections();
+  assert.equal(state.geometryPlotSelections[0].x,'rack_mm');
+  assert.equal(geometryXAxisOption('rack_mm').unit,'mm');
+  document = originalDocument;
+  localStorage = originalStorage;
+  drawGeometryPlotPanel = originalDraw;
+}
+`, ctx);
