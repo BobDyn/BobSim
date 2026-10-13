@@ -1502,7 +1502,7 @@ function redoVehicleEdit() {
 function handleUndoShortcut(event) {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "z") return;
   if (shouldUseNativeUndo(event)) return;
-  if (state.view !== "setup" || document.querySelector('[role="dialog"]:not([hidden])')) return;
+  if (state.view !== "setup" || document.querySelector('[role="dialog"]:not([hidden]), dialog[open]')) return;
   event.preventDefault();
   if (event.shiftKey) redoVehicleEdit();
   else undoVehicleEdit();
@@ -6887,7 +6887,7 @@ function cycleGeometryAxis() {
 function canUseGeometryAxisShortcut() {
   return state.view === "setup" && activeParameterArea().visual === "hardpoints"
     && editableGeometryPoint(selectedGeometryPoint())
-    && !document.querySelector('[role="dialog"]:not([hidden])');
+    && !document.querySelector('[role="dialog"]:not([hidden]), dialog[open]');
 }
 
 function handleGeometryAxisShortcut(event) {

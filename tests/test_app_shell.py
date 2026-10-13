@@ -22,6 +22,13 @@ from app import app
 from app import desktop
 
 
+def test_editor_behavior() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    subprocess.run([node, "tests/app_editor_clarity.cjs"], cwd=app.PACKAGE_ROOT, check=True)
+
+
 def test_static_assets_allow_linked_root_but_reject_escapes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
