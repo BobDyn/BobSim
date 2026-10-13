@@ -4827,31 +4827,49 @@ summary:focus-visible {
 .simulation-tree-pane {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   min-height: 0;
   overflow: auto;
-  padding: 12px;
   border-right: 1px solid var(--line);
 }
-#simulation-tree h3 { font-size: 13px; margin: 4px 0 14px; overflow-wrap: anywhere; }
-.simulation-tree-item strong { overflow-wrap: anywhere; }
-.simulation-tree-item, .simulation-tree-run {
-  width: 100%;
-  text-align: left;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  background: transparent;
-  padding: 10px;
-  cursor: pointer;
+.simulation-tree-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+  font-size: 11px; font-weight: 600; color: var(--muted);
 }
-.simulation-tree-item { display: grid; gap: 4px; }
-.simulation-tree-item span { font-size: 11px; color: var(--muted); }
-.simulation-tree-item.active, .simulation-tree-run.active { background: var(--surface-2); }
-.simulation-tree-item:hover, .simulation-tree-run:hover { background: var(--surface-2); }
-.simulation-tree-run { padding-left: 24px; font-size: 11px; color: var(--muted); }
-.simulation-library-links { display: grid; gap: 8px; margin-top: auto; }
-#simulation-workspace-status { color: var(--red); font-size: 12px; }
+.simulation-tree-toolbar button {
+  width: 26px; height: 26px; padding: 0; border: 1px solid var(--line);
+  border-radius: 3px; background: transparent; color: var(--ink); font-size: 20px; cursor: pointer;
+}
+#simulation-tree { padding: 10px 6px 4px; }
+.simulation-tree-root { display: flex; align-items: center; gap: 6px; padding: 4px; font-size: 12px; }
+.simulation-tree-root strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simulation-tree-children { margin-left: 11px; border-left: 1px solid var(--line); }
+.simulation-tree-row { display: flex; align-items: center; min-width: 0; }
+.simulation-tree-toggle, .simulation-tree-spacer { width: 18px; flex: 0 0 18px; }
+.simulation-tree-toggle {
+  display: grid; place-items: center; height: 28px; padding: 0;
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+}
+.simulation-tree-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.simulation-tree-item, .simulation-tree-run {
+  display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; min-height: 28px;
+  text-align: left; border: 1px solid transparent; border-radius: 2px;
+  color: var(--ink); background: transparent; padding: 4px 5px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.simulation-tree-icon { width: 16px; height: 16px; flex: 0 0 16px; color: var(--muted); }
+.simulation-tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simulation-tree-model { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.simulation-tree-item:hover, .simulation-tree-run:hover, .simulation-tree-toggle:hover { background: var(--surface-2); }
+.simulation-tree-item.active, .simulation-tree-run.active {
+  background: var(--surface-2); border-color: var(--line); box-shadow: inset 2px 0 var(--blue);
+}
+.simulation-tree-runs { margin-left: 25px; padding-left: 8px; border-left: 1px solid var(--line); }
+.simulation-tree-runs[hidden] { display: none; }
+.simulation-tree-run { position: relative; color: var(--muted); font-size: 11px; }
+.simulation-tree-run::before { content: ""; position: absolute; left: -9px; width: 8px; border-top: 1px solid var(--line); }
+.simulation-library-links { display: grid; padding: 6px 10px; margin-top: 8px; border-top: 1px solid var(--line); }
+#simulation-workspace-status { margin: 8px 10px; color: var(--red); font-size: 12px; }
+#simulation-workspace-status:empty { display: none; }
 .simulation-detail { min-width: 0; min-height: 0; display: grid; overflow: hidden; }
 .simulation-detail > [hidden] { display: none !important; }
 .simulation-inline-config {
@@ -4877,3 +4895,15 @@ summary:focus-visible {
   .simulation-detail .simulation-card { padding: 14px; gap: 12px; }
   .simulation-detail .simulation-categories { flex-wrap: wrap; }
 }
+
+.simulation-tree-add, .simulation-tree-remove {
+  flex: 0 0 22px; width: 22px; height: 26px; padding: 0; border: 0;
+  background: transparent; color: var(--muted); font-size: 17px; cursor: pointer;
+}
+.simulation-tree-add:hover, .simulation-tree-remove:hover { color: var(--ink); background: var(--surface-2); }
+.simulation-tree-group { padding: 7px 5px 3px; font-size: 10px; color: var(--muted); }
+.simulation-child-editor { padding: 24px; overflow: auto; }
+.simulation-child-editor header { display: flex; align-items: center; justify-content: space-between; }
+.simulation-child-editor h2 { font-size: 18px; }
+.simulation-child-editor form { display: grid; gap: 16px; max-width: 420px; margin: 20px 0 32px; }
+.simulation-child-editor label { display: grid; gap: 6px; }

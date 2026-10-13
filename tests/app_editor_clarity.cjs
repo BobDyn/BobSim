@@ -372,3 +372,21 @@ vm.runInContext(`
   document=originalDocument;
 }
 `,ctx);
+
+vm.runInContext(`
+{
+  const originalDocument = document, originalSetView = setView;
+  const replay = {dataset:{}};
+  document = {getElementById:()=>replay};
+  setView = view => { state.view = view; };
+  openSimulationVisualization({id:'plot',kind:'report',run_id:'saved-run'});
+  assert.equal(state.view,'studies');
+  assert.equal(state.selectedResultId,'saved-run');
+  assert.equal(state.selectedVisualizationId,'plot');
+  openSimulationVisualization({id:'animation',kind:'replay',run_id:'captured-scene'});
+  assert.equal(state.view,'replay');
+  assert.equal(replay.dataset.capture,'captured-scene');
+  assert.equal(state.selectedVisualizationId,'animation');
+  document=originalDocument; setView=originalSetView;
+}
+`,ctx);

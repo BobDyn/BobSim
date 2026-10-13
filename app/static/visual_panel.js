@@ -18,6 +18,8 @@
     runId: null,
     tab: "tires",
     started: false,
+    capture: null,
+    loadVersion: 0,
     metricFilter: "",
     recording: null,
   };
@@ -34,6 +36,7 @@
   // ==========================================================================
 
   async function loadRuns() {
+    const capture = state.capture;
     let body;
     try {
       const response = await fetch("/api/visual/runs");
@@ -44,13 +47,15 @@
       setStatus("Could not reach the app to list captured runs: " + error.message);
       return;
     }
+    if (capture !== state.capture) return;
     if (body && body.error) {
       setStatus("Could not list captured runs: " + body.error);
       return;
     }
-    state.runs = body.runs || [];
+    state.runs = (body.runs || []).filter(run => !state.capture || run.id === state.capture);
     const picker = $("replay-run");
     picker.innerHTML = "";
+    picker.disabled = Boolean(state.capture);
     for (const run of state.runs) {
       const option = document.createElement("option");
       option.value = run.id;
@@ -59,8 +64,8 @@
     }
     if (!state.runs.length) {
       setStatus(
-        "No captured runs yet. Produce one with a rig or manoeuvre capture, " +
-          "then reopen this tab."
+        state.capture ? "This captured scene is no longer available." :
+          "No captured runs yet. Produce one with a rig or manoeuvre capture, then reopen this tab."
       );
       return;
     }
@@ -68,12 +73,14 @@
   }
 
   async function loadRun(runId) {
+    const version = ++state.loadVersion;
     setStatus("Loading " + runId + "…");
     try {
       const [header, buffer] = await Promise.all([
         fetch("/api/visual/scene?run=" + encodeURIComponent(runId)).then((r) => r.json()),
         fetch("/api/visual/data?run=" + encodeURIComponent(runId)).then((r) => r.arrayBuffer()),
       ]);
+      if (version !== state.loadVersion) return;
       if (header.error) throw new Error(header.error);
       state.runId = runId;
       state.scene = new window.BobVis.Scene(header, buffer);
@@ -83,7 +90,7 @@
       buildTabs(header);
       setStatus("");
     } catch (error) {
-      setStatus("Could not open this run: " + error.message);
+      if (version === state.loadVersion) setStatus("Could not open this run: " + error.message);
     }
   }
 
@@ -728,7 +735,20 @@
   }
 
   function watch() {
-    if (screenActive()) start();
+    if (!screenActive()) return;
+    const capture = $("replay-view").dataset.capture || null;
+    const changed = capture !== state.capture;
+    state.capture = capture;
+    if (!state.started) start();
+    else if (changed) {
+      state.loadVersion++;
+      state.viewer.playing = false;
+      state.scene = null;
+      state.viewer.scene = null;
+      $("replay-layers").innerHTML = "";
+      for (const id of ["replay-tabs", "replay-panel-tires", "replay-panel-metrics"]) $(id).hidden = true;
+      loadRuns().catch(error => setStatus("Could not open the viewer: " + error.message));
+    }
   }
 
   function bootstrap() {

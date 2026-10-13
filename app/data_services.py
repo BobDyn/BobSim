@@ -21,6 +21,7 @@ from common.vehicle_io import parse_tir
 from app import registry as app_registry
 from app import storage as app_storage
 from app import tire_eval as tire_eval_core
+from app import visual as app_visual
 from app.contracts import BuildTargetSpec, ConfigSpec, FieldSpec, PathPart, WorkflowSpec
 from app.modelica_generator import generate_modelica_stack, modelica_generation_payload
 from app.registry import (
@@ -1015,7 +1016,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
     Parameters
     ----------
     action : str
-        List, create, load, save or delete a simulation.
+        List, create, load, save or delete a simulation, or edit its visualizations.
     payload : dict[str, Any] | None
         Simulation ID, workflow and name supplied by the editor.
 
@@ -1042,6 +1043,29 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                 "model": workflow_model(workflow, root=ROOT),
                 "config_text": _config_file_path(spec).read_text(encoding="utf-8")}
         items.append(item)
+    elif action in {"add-visualization", "delete-visualization"}:
+        if item is None:
+            raise ValueError("Simulation not found for this vehicle.")
+        children = item.setdefault("visualizations", [])
+        if action == "add-visualization":
+            kind = payload.get("kind", "report")
+            source_id = payload.get("source_id", payload.get("run_id"))
+            if kind == "report":
+                valid = any(run["id"] == source_id and (run.get("simulation") or {}).get("id") == item["id"]
+                            for run in saved_results_payload(key)["results"])
+            elif kind == "replay":
+                valid = any(run["id"] == source_id for run in app_visual.available_runs(ROOT))
+            else:
+                raise ValueError("Choose reports or 3D replay.")
+            if not valid:
+                raise ValueError("Choose a saved run from this simulation or an available captured scene.")
+            child = {"id": uuid4().hex,
+                     "name": str(payload.get("name") or "Visualization").strip()[:120] or "Visualization",
+                     "kind": kind, "run_id": source_id}
+            children.append(child)
+            result["visualization"] = child
+        else:
+            item["visualizations"] = [child for child in children if child["id"] != payload.get("child_id")]
     elif action in {"load", "save", "delete"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
@@ -1060,7 +1084,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
             items.remove(item)
     elif action != "list":
         raise ValueError("Unknown simulation action.")
-    if action in {"create", "save", "delete"}:
+    if action in {"create", "save", "delete", "add-visualization", "delete-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)

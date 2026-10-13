@@ -146,3 +146,40 @@ def test_start_named_simulation_loads_its_config_under_job_lock(archive_workspac
     with pytest.raises(ValueError, match='active vehicle changed'):
         app.start_workflow('study', simulation_id=simulation['id'], vehicle_key='different')
     assert not execution.LOCK.locked()
+
+
+def test_visualizations_belong_to_the_parent_simulation_and_keep_the_run(archive_workspace):
+    root, _ = archive_workspace
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    other = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    snapshot = app.capture_workflow_inputs("study")
+    snapshot["simulation"] = parent
+    saved = app.save_active_results("study", input_snapshot=snapshot)["saved"]
+    with pytest.raises(ValueError, match="saved run from this simulation"):
+        app.simulation_workspace("add-visualization", {"id": other["id"], "run_id": saved["id"]})
+    child = app.simulation_workspace("add-visualization", {
+        "id": parent["id"], "run_id": saved["id"], "name": "Response plots",
+    })["visualization"]
+    loaded = app.simulation_workspace("load", {"id": parent["id"]})["simulation"]
+    assert loaded["visualizations"] == [child]
+    app.simulation_workspace("delete-visualization", {"id": parent["id"], "child_id": child["id"]})
+    assert app.simulation_workspace()["simulations"][0]["visualizations"] == []
+    assert (root / saved["config_snapshot"]).is_file()
+    assert app.saved_results_payload()["results"][0]["id"] == saved["id"]
+
+
+def test_replay_visualization_requires_an_existing_capture(archive_workspace, monkeypatch):
+    from app import visual
+
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    with pytest.raises(ValueError, match="available captured scene"):
+        app.simulation_workspace("add-visualization", {
+            "id": parent["id"], "kind": "replay", "source_id": "missing",
+        })
+    monkeypatch.setattr(visual, "available_runs", lambda root: [{"id": "captured-rig"}])
+    child = app.simulation_workspace("add-visualization", {
+        "id": parent["id"], "kind": "replay", "source_id": "captured-rig", "name": "Rig replay",
+    })["visualization"]
+    assert child["kind"] == "replay"
+    assert child["run_id"] == "captured-rig"
+    assert app.simulation_workspace("load", {"id": parent["id"]})["simulation"]["visualizations"] == [child]

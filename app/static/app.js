@@ -67,6 +67,9 @@ const state = {
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
   simulationWorkspace: null,
+  collapsedSimulations: new Set(),
+  selectedVisualizationId: null,
+  simulationChildEditor: false,
   selectedSimulationId: null,
   simulationCatalogOpen: false,
   simulationNavigating: false,
@@ -538,6 +541,9 @@ async function refreshSavedResults() {
     state.simModalOpen = false;
     state.simulationCatalogOpen = false;
     state.simConfigPayload = null;
+    state.selectedVisualizationId = null;
+    state.simulationChildEditor = false;
+    delete document.getElementById("replay-view").dataset.capture;
   }
   state.simulationWorkspace = workspace;
   try {
@@ -4186,6 +4192,8 @@ async function saveSimulationEdits() {
 }
 
 async function openSimulation(id) {
+  state.selectedVisualizationId = null;
+  state.simulationChildEditor = false;
   await saveSimulationEdits();
   const payload = await simulationRequest("load", {id});
   state.selectedSimulationId = id;
@@ -4201,6 +4209,8 @@ async function openSimulation(id) {
 }
 
 async function showSimulationCatalog() {
+  state.selectedVisualizationId = null;
+  state.simulationChildEditor = false;
   await saveSimulationEdits();
   state.selectedSimulationId = null;
   state.simModalOpen = false;
@@ -4217,6 +4227,19 @@ function workspaceAction(action) {
   }).finally(() => { state.simulationNavigating = false; });
 }
 
+function openSimulationVisualization(child) {
+  state.selectedVisualizationId = child.id;
+  state.simModalOpen = false;
+  state.simulationChildEditor = false;
+  if (child.kind === "replay") {
+    document.getElementById("replay-view").dataset.capture = child.run_id;
+    setView("replay");
+  } else {
+    state.selectedResultId = child.run_id;
+    setView("studies");
+  }
+}
+
 function mountSimulationWorkspace() {
   const detail = document.getElementById("simulation-detail");
   const config = document.getElementById("simulation-config-modal");
@@ -4226,20 +4249,97 @@ function mountSimulationWorkspace() {
   for (const id of ["simulation-config-modal", "studies-view", "replay-view"]) detail.appendChild(document.getElementById(id));
   document.getElementById("add-simulation-btn").addEventListener("click", () => workspaceAction(showSimulationCatalog));
   document.getElementById("simulation-saved-runs").addEventListener("click", () => workspaceAction(async () => {
-    await saveSimulationEdits(); state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
   }));
   document.getElementById("simulation-captures").addEventListener("click", () => workspaceAction(async () => {
-    await saveSimulationEdits(); state.simModalOpen = false; setView("replay");
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
   }));
   document.getElementById("simulation-instance-name").addEventListener("change", event => workspaceAction(async () => {
     await simulationRequest("save", {id: state.selectedSimulationId, name: event.target.value});
     renderSimulationWorkspace();
   }));
+  document.getElementById("simulation-child-close").addEventListener("click", () => workspaceAction(() => openSimulation(state.selectedSimulationId)));
+  document.getElementById("simulation-visualization-form").addEventListener("submit", event => {
+    event.preventDefault();
+    workspaceAction(async () => {
+      const source = document.getElementById("simulation-visualization-run").selectedOptions[0];
+      const payload = await simulationRequest("add-visualization", {
+        id: state.selectedSimulationId,
+        name: document.getElementById("simulation-visualization-name").value,
+        kind: source.dataset.kind,
+        source_id: source.value,
+      });
+      openSimulationVisualization(payload.visualization);
+    });
+  });
   document.getElementById("simulation-tree").addEventListener("click", event => {
+    const add = event.target.closest("[data-simulation-add-child]");
+    if (add) {
+      workspaceAction(async () => {
+        await saveSimulationEdits();
+        state.selectedSimulationId = add.dataset.simulationAddChild;
+        state.selectedVisualizationId = null;
+        state.simModalOpen = false;
+        state.simulationCatalogOpen = false;
+        state.simulationChildEditor = true;
+        state.collapsedSimulations.delete(state.selectedSimulationId);
+        const runs = savedResults().filter(run => run.simulation?.id === state.selectedSimulationId);
+        const captures = (await api("/api/visual/runs")).runs || [];
+        document.getElementById("simulation-visualization-run").innerHTML =
+          `<optgroup label="Plots and reports">${runs.map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
+          `<optgroup label="Captured scenes (3D replay)">${captures.map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
+        document.getElementById("simulation-visualization-name").value = "Visualization";
+        document.getElementById("simulation-visualization-add").disabled = !runs.length && !captures.length;
+        document.getElementById("simulation-visualization-empty").hidden = Boolean(runs.length || captures.length);
+        setView("standard");
+      });
+      return;
+    }
+    const remove = event.target.closest("[data-remove-visualization]");
+    if (remove) {
+      workspaceAction(async () => {
+        await simulationRequest("delete-visualization", {id: remove.dataset.owner, child_id: remove.dataset.removeVisualization});
+        if (state.selectedVisualizationId === remove.dataset.removeVisualization) {
+          state.selectedVisualizationId = null;
+          if (state.view === "replay") {
+            delete document.getElementById("replay-view").dataset.capture;
+            setView("replay");
+          }
+        }
+        renderSimulationWorkspace();
+      });
+      return;
+    }
+    const child = event.target.closest("[data-simulation-visualization]");
+    if (child) {
+      workspaceAction(async () => {
+        await saveSimulationEdits();
+        const parent = state.simulationWorkspace.simulations.find(item => item.id === child.dataset.owner);
+        const visualization = parent?.visualizations?.find(item => item.id === child.dataset.simulationVisualization);
+        if (!visualization) throw new Error("Visualization no longer available.");
+        if (visualization.kind !== "replay" && !savedResults().some(run => run.id === visualization.run_id && run.simulation?.id === parent.id)) {
+          throw new Error("This visualization's saved run is no longer available.");
+        }
+        state.selectedSimulationId = parent.id;
+        openSimulationVisualization(visualization);
+      });
+      return;
+    }
+    const toggle = event.target.closest("[data-simulation-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.simulationToggle;
+      if (state.collapsedSimulations.has(id)) state.collapsedSimulations.delete(id);
+      else state.collapsedSimulations.add(id);
+      renderSimulationWorkspace();
+      document.querySelector(`[data-simulation-toggle="${id}"]`)?.focus();
+      return;
+    }
     const simulation = event.target.closest("[data-simulation-id]");
     const run = event.target.closest("[data-simulation-run]");
     if (run) workspaceAction(async () => {
       await saveSimulationEdits();
+      state.selectedVisualizationId = null;
+      state.simulationChildEditor = false;
       state.selectedResultId = run.dataset.simulationRun;
       state.selectedSimulationId = run.dataset.owner;
       state.simModalOpen = false;
@@ -4249,24 +4349,61 @@ function mountSimulationWorkspace() {
   });
 }
 
+function simulationTreeIcon(kind) {
+  const paths = {
+    vehicle: '<path d="m3 6 5-3 5 3v5l-5 3-5-3Z M3 6l5 3 5-3 M8 9v5"/>',
+    response: '<path d="M2 13V3 M2 13h12 M4 10h3V5h6"/>',
+    envelope: '<path d="M8 2v12 M2 8h12"/><ellipse cx="8" cy="8" rx="5" ry="4"/>',
+    lap: '<path d="M5 3C1 3 1 12 5 13c4 2 5-4 7-4s3-6 0-6Z"/>',
+    report: '<path d="M4 2h6l3 3v9H4Z M10 2v4h3 M6 9h5 M6 11h4"/>',
+    scene: '<path d="m6 4 6 4-6 4Z"/>',
+    chevron: '<path d="m6 4 4 4-4 4"/>',
+  };
+  return `<svg class="simulation-tree-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind]}</svg>`;
+}
+
 function renderSimulationWorkspace() {
   const tree = document.getElementById("simulation-tree");
   if (!tree) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
-  tree.innerHTML = `<h3>${escapeHtml(activeVehicleName())}</h3>` + (simulations || []).map(item => {
+  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + (simulations || []).map(item => {
     const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id);
+    const expanded = !state.collapsedSimulations.has(item.id);
+    const selected = state.view === "standard" && state.simModalOpen && item.id === state.selectedSimulationId;
+    const workflow = state.status?.workflows?.find(w => w.id === item.workflow_id);
+    const model = item.model ? `${item.model.engine} · ${item.model.fidelity}` : workflow?.label || item.workflow_id;
+    const icon = workflow?.group === "lap" ? "lap" : workflow?.group === "envelope" ? "envelope" : "response";
     return `<div class="simulation-tree-branch">
-      <button type="button" data-simulation-id="${escapeHtml(item.id)}" class="simulation-tree-item ${item.id === state.selectedSimulationId ? "active" : ""}" aria-pressed="${item.id === state.selectedSimulationId}">
-        <strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.model ? `${item.model.engine} · ${item.model.fidelity}` : state.status?.workflows?.find(w => w.id === item.workflow_id)?.label || item.workflow_id)}</span>
-      </button>
-      ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}">${escapeHtml(run.created_label)}</button>`).join("")}
+      <div class="simulation-tree-row">
+        <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${escapeHtml(item.id)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>
+        <button type="button" data-simulation-id="${escapeHtml(item.id)}" class="simulation-tree-item" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
+          ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.fidelity || "")}</span>
+        </button>
+        <button type="button" class="simulation-tree-add" data-simulation-add-child="${escapeHtml(item.id)}" aria-label="Add to ${escapeHtml(item.name)}" title="Add visualization or optimization">+</button>
+      </div>
+      <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
+        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
+        ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
+        ${runs.length ? '<div class="simulation-tree-group">Runs</div>' : ""}
+        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
+      </div>
     </div>`;
-  }).join("");
+  }).join("") + "</div>";
+  for (const [id, label, icon, selected] of [
+    ["simulation-saved-runs", "Saved runs", "report", state.view === "studies" && !state.selectedSimulationId],
+    ["simulation-captures", "Captured scenes", "scene", state.view === "replay" && !state.selectedVisualizationId],
+  ]) {
+    const button = document.getElementById(id);
+    button.innerHTML = simulationTreeIcon(icon) + `<span>${label}</span>`;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  document.getElementById("simulation-child-editor").hidden = state.view !== "standard" || !state.simulationChildEditor;
   const empty = document.getElementById("simulation-empty");
   empty.querySelector("h3").textContent = simulations?.length ? "Select a simulation" : "Add a simulation";
   empty.querySelector("p").hidden = Boolean(simulations?.length);
-  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || state.simulationCatalogOpen;
+  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || state.simulationCatalogOpen || state.simulationChildEditor;
   document.getElementById("simulation-catalog").hidden = state.view !== "standard" || !state.simulationCatalogOpen;
   document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
   const config = document.getElementById("simulation-config-modal");

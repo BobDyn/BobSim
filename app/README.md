@@ -15,7 +15,7 @@ Open `http://127.0.0.1:8765`.
 | View | Contents |
 | --- | --- |
 | Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
-| Simulation | Named simulations under the vehicle, independent configs, run history, reports and captured scenes |
+| Simulation | Named simulations with setup, run history, report views and 3D replay children |
 
 Setup uses the architecture templates in `common/vehicle_templates`, including
 direct, bellcrank, and bellcrank-stabar suspension. The preview shows hardpoints,

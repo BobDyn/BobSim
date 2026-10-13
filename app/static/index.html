@@ -216,15 +216,26 @@
 
           <div class="standard-workspace simulation-workspace">
             <aside class="simulation-tree-pane">
-              <button id="add-simulation-btn" class="run-button" type="button">+ Add simulation</button>
+              <header class="simulation-tree-toolbar"><span>Outline</span><button id="add-simulation-btn" type="button" title="Add simulation" aria-label="Add simulation">+</button></header>
               <nav id="simulation-tree" aria-label="Vehicle simulations"></nav>
               <div class="simulation-library-links">
-                <button id="simulation-saved-runs" class="ghost-button" type="button">Saved runs</button>
-                <button id="simulation-captures" class="ghost-button" type="button">Captured scenes</button>
+                <button id="simulation-saved-runs" class="simulation-tree-item" type="button">Saved runs</button>
+                <button id="simulation-captures" class="simulation-tree-item" type="button">Captured scenes</button>
               </div>
               <p id="simulation-workspace-status" role="status"></p>
             </aside>
             <div id="simulation-detail" class="simulation-detail">
+            <section id="simulation-child-editor" class="simulation-child-editor" hidden>
+              <header><h2>Add to simulation</h2><button id="simulation-child-close" type="button" class="ghost-button" aria-label="Close">×</button></header>
+              <form id="simulation-visualization-form">
+                <h3>Visualization</h3>
+                <label>Name<input id="simulation-visualization-name" value="Visualization" maxlength="120" required></label>
+                <label>Source<select id="simulation-visualization-run" required></select></label>
+                <p id="simulation-visualization-empty" class="muted">Run this simulation or capture a scene first.</p>
+                <button id="simulation-visualization-add" class="run-button" type="submit">Add visualization</button>
+              </form>
+              <button type="button" class="ghost-button" disabled title="The current optimization workflows cannot yet use a named simulation's settings.">Optimization (not available yet)</button>
+            </section>
             <div id="simulation-empty" class="empty-state"><h3>Add a simulation</h3><p>Choose an analysis for this vehicle.</p></div>
             <section id="simulation-catalog" class="workflow-list simulation-catalog" hidden>
               <details class="model-guide">
