@@ -43,7 +43,6 @@ const MIN_VISUAL_PANE_WIDTH = 520;
 const MIN_PREVIEW_ZOOM = 0.55;
 const MAX_PREVIEW_ZOOM = 3.5;
 const MAX_UNDO_STEPS = 80;
-const MAX_GEOMETRY_PLOTS = 3;
 const TIRE_LIVE_WHEEL_FIELDS = new Set(["camber_deg", "toe_deg", "radius_m"]);
 
 const state = {
@@ -379,16 +378,16 @@ const DEFAULT_KINEMATIC_CURVES = [
   { id: "bump_kpi_deg", label: "Bump KPI", unit: "deg", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Kingpin inclination" },
   { id: "bump_mech_trail_mm", label: "Bump Mechanical Trail", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Mechanical Trail" },
   { id: "bump_scrub_mm", label: "Bump Scrub Radius", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Scrub Radius" },
-  { id: "bump_rc_y_mm", label: "Bump RC y-Migration", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC y-Position" },
-  { id: "bump_rc_z_mm", label: "Bump RC z-Migration", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC z-Position" },
+  { id: "bump_rc_y_mm", label: "Bump RC y-Position", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC y-position" },
+  { id: "bump_rc_z_mm", label: "Bump RC z-Position", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "RC z-position" },
   { id: "roll_camber_deg", label: "Roll Camber", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Camber" },
   { id: "roll_toe_deg", label: "Roll Toe", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Toe" },
   { id: "roll_caster_deg", label: "Roll Caster", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Caster" },
   { id: "roll_kpi_deg", label: "Roll KPI", unit: "deg", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Kingpin inclination" },
   { id: "roll_mech_trail_mm", label: "Roll Mechanical Trail", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Mechanical Trail" },
   { id: "roll_scrub_mm", label: "Roll Scrub Radius", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Scrub Radius" },
-  { id: "roll_rc_y_mm", label: "Roll RC y-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC y-Position" },
-  { id: "roll_rc_z_mm", label: "Roll RC z-Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC z-Position" },
+  { id: "roll_rc_y_mm", label: "Roll RC y-Position", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC y-position" },
+  { id: "roll_rc_z_mm", label: "Roll RC z-Position", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC z-position" },
   { id: "bump_front_ic_y_mm", label: "Bump Front-View IC y", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Front-View IC y" },
   { id: "bump_front_ic_z_mm", label: "Bump Front-View IC z", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Front-View IC z" },
   { id: "bump_front_swing_arm_mm", label: "Bump Front-View Swing Arm", unit: "mm", x_id: "jounce_mm", x_label: "Jounce", x_unit: "mm", y_label: "Swing Arm Length" },
@@ -399,13 +398,15 @@ const DEFAULT_KINEMATIC_CURVES = [
   { id: "roll_front_swing_arm_mm", label: "Roll Front-View Swing Arm", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "Swing Arm Length" },
   { id: "roll_rc_height_mm", label: "Roll RC Height", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Height above Contact Patch" },
   { id: "roll_rc_migration_mm", label: "Roll RC Migration", unit: "mm", x_id: "roll_deg", x_label: "Roll", x_unit: "deg", y_label: "RC Migration" },
-  { id: "steer_camber_deg", label: "Steer Camber", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Camber" },
-  { id: "steer_scrub_mm", label: "Steer Scrub Radius", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Scrub Radius" },
-  { id: "steer_mech_trail_mm", label: "Steer Mechanical Trail", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Mechanical Trail" },
-  { id: "steer_rc_y_mm", label: "Steer RC y-Migration", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "RC y-Position" },
-  { id: "steer_rc_z_mm", label: "Steer RC z-Migration", unit: "mm", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "RC z-Position" },
-  { id: "steer_kpi_deg", label: "Steer KPI", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Kingpin inclination" },
-  { id: "steer_caster_deg", label: "Steer Caster", unit: "deg", x_id: "steer_deg", x_label: "Steer", x_unit: "deg", y_label: "Caster" },
+  { id: "steer_camber_deg", label: "Steer Camber", unit: "deg", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Camber" },
+  { id: "steer_scrub_mm", label: "Steer Scrub Radius", unit: "mm", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Scrub Radius" },
+  { id: "steer_mech_trail_mm", label: "Steer Mechanical Trail", unit: "mm", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Mechanical Trail" },
+  { id: "steer_rc_y_mm", label: "Steer RC y-Position", unit: "mm", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "RC y-position" },
+  { id: "steer_rc_z_mm", label: "Steer RC z-Position", unit: "mm", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "RC z-position" },
+  { id: "steer_kpi_deg", label: "Steer KPI", unit: "deg", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Kingpin inclination" },
+  { id: "steer_caster_deg", label: "Steer Caster", unit: "deg", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Caster" },
+  { id: "steer_toe_deg", label: "Steer Toe", unit: "deg", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "Toe" },
+  { id: "steer_rc_height_mm", label: "Steer RC Height", unit: "mm", x_id: "rack_mm", x_label: "Rack displacement", x_unit: "mm", y_label: "RC Height above Contact Patch" },
 ];
 
 async function api(path, options = {}) {
@@ -7494,7 +7495,8 @@ function pointerCanvasPointFor(event, canvas) {
 function geometryPlotDescriptorMap() {
   const descriptors = new Map(DEFAULT_KINEMATIC_CURVES.map((item) => [item.id, item]));
   kinematicCurveDescriptors(state.kinematicsPayload).forEach((item) => descriptors.set(item.id, item));
-  return descriptors;
+  return new Map([...descriptors].filter(([id]) =>
+    /^(bump|roll|steer)_(camber_deg|toe_deg|caster_deg|kpi_deg|mech_trail_mm|scrub_mm|rc_height_mm)$/.test(id)));
 }
 
 function descriptorXAxisId(descriptor) {
@@ -7510,8 +7512,8 @@ function geometryXAxisOptions(payload = state.kinematicsPayload) {
     .filter(Boolean)
     .map((id) => ({
       id,
-      label: id === "roll_deg" ? "Roll" : id === "jounce_mm" ? "Jounce" : humanizeToken(id),
-      unit: id === "roll_deg" ? "deg" : id === "jounce_mm" ? "mm" : "",
+      label: id === "roll_deg" ? "Roll" : id === "jounce_mm" ? "Jounce" : id === "rack_mm" ? "Rack displacement" : humanizeToken(id),
+      unit: id === "roll_deg" ? "deg" : (id === "jounce_mm" || id === "rack_mm") ? "mm" : "",
     }))
     .sort((left, right) => (left.id === "jounce_mm" ? -1 : right.id === "jounce_mm" ? 1 : left.label.localeCompare(right.label)));
 }
@@ -7547,7 +7549,7 @@ function cleanGeometryPlotSelections() {
     const plot = normalizeGeometryPlotSelection(selection, descriptorMap);
     if (!plot) return;
     const key = geometryPlotKey(plot);
-    if (seen.has(key) || selected.length >= MAX_GEOMETRY_PLOTS) return;
+    if (seen.has(key)) return;
     seen.add(key);
     selected.push(plot);
   });
@@ -7594,7 +7596,6 @@ function renderGeometryPlotControls() {
   const xSelect = document.getElementById("geometry-plot-x-axis");
   const ySelect = document.getElementById("geometry-plot-y-axis");
   const addButton = document.getElementById("geometry-add-plot-btn");
-  const list = document.getElementById("geometry-plot-list");
   const xChoices = geometryXAxisOptions();
   if (!xChoices.some((item) => item.id === state.geometryPlotDraftX)) {
     state.geometryPlotDraftX = xChoices[0]?.id || "jounce_mm";
@@ -7605,7 +7606,6 @@ function renderGeometryPlotControls() {
   }
   const draftKey = geometryPlotKey({ x: state.geometryPlotDraftX, y: state.geometryPlotDraftY });
   const draftAlreadySelected = selected.has(draftKey);
-  const trayFull = state.geometryPlotSelections.length >= MAX_GEOMETRY_PLOTS;
   if (xSelect) {
     xSelect.innerHTML = xChoices.map((item) => (
       `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.unit ? ` (${escapeHtml(item.unit)})` : ""}</option>`
@@ -7622,22 +7622,12 @@ function renderGeometryPlotControls() {
     ySelect.disabled = false;
   }
   if (addButton) {
-    addButton.disabled = !yChoices.length || draftAlreadySelected || trayFull;
+    addButton.disabled = !yChoices.length || draftAlreadySelected;
     addButton.title = !yChoices.length
       ? "No compatible signals for this x-axis"
       : draftAlreadySelected
         ? "This plot is already in the tray"
-        : trayFull
-          ? `Keep the tray to ${MAX_GEOMETRY_PLOTS} active plots`
-          : "Add selected plot";
-  }
-  if (list) {
-    list.innerHTML = geometryPlotDescriptors().map((item) => `
-      <span class="geometry-plot-chip">
-        ${escapeHtml(item.label || humanizeKinematicCurve(item.id))}
-        <button type="button" data-geometry-plot-remove="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(item.label || item.id)}">x</button>
-      </span>
-    `).join("");
+        : "Add selected plot";
   }
 }
 
@@ -7652,7 +7642,6 @@ function addGeometryPlotSelection() {
   const plot = { x, y };
   const key = geometryPlotKey(plot);
   if (state.geometryPlotSelections.some((item) => geometryPlotKey(item) === key)) return;
-  if (state.geometryPlotSelections.length >= MAX_GEOMETRY_PLOTS) return;
   state.geometryPlotSelections.push(plot);
   persistGeometryPlotSelections();
   renderGeometryPlotControls();
@@ -7675,7 +7664,17 @@ function drawGeometryPlotPanel() {
     clearGeometryPlotScene();
     return;
   }
-  canvas.style.height = `${Math.max(1, state.geometryPlotSelections.length) * 230}px`;
+  const descriptors = geometryPlotDescriptors();
+  const columns = Math.min(Math.max(1, descriptors.length), canvas.clientWidth > 760 ? 3 : canvas.clientWidth > 520 ? 2 : 1);
+  const rows = Math.max(1, Math.ceil(descriptors.length / columns));
+  canvas.style.height = `${rows * 230}px`;
+  const closeButtons = document.getElementById("geometry-plot-close-buttons");
+  const closeMarkup = descriptors.map((item, index) => `
+    <button type="button" class="geometry-plot-close" data-geometry-plot-remove="${escapeHtml(item.id)}"
+      style="right:calc(${100 * (columns - 1 - index % columns) / columns}% + 14px);top:${Math.floor(index / columns) * 230 + 12}px"
+      aria-label="Close ${escapeHtml(item.label)}" title="Close plot">×</button>
+  `).join("");
+  if (closeButtons.innerHTML !== closeMarkup) closeButtons.innerHTML = closeMarkup;
   const width = Math.max(1, canvas.clientWidth);
   const height = Math.max(1, canvas.clientHeight);
   const dpr = window.devicePixelRatio || 1;
@@ -7701,7 +7700,6 @@ function drawGeometryPlotPanel() {
     clearGeometryPlotScene();
     return;
   }
-  const descriptors = geometryPlotDescriptors();
   if (!descriptors.length) {
     drawCanvasText(ctx, "Add a signal above", width / 2, height / 2, {
       align: "center",
@@ -7722,11 +7720,9 @@ function drawGeometryPlotPanel() {
     clearGeometryPlotScene();
     return;
   }
-  const columns = Math.min(descriptors.length, width > 760 ? 3 : width > 520 ? 2 : 1);
-  const rows = Math.ceil(descriptors.length / columns);
   const gap = 10;
   const chartWidth = (width - gap * (columns + 1)) / columns;
-  const chartHeight = (height - gap * (rows + 1)) / rows;
+  const chartHeight = 230 - gap;
   const charts = [];
   descriptors.forEach((descriptor, index) => {
     const col = index % columns;
@@ -7734,7 +7730,7 @@ function drawGeometryPlotPanel() {
     const chart = drawKinematicChart(
       ctx,
       gap + col * (chartWidth + gap),
-      gap + row * (chartHeight + gap),
+      gap + row * 230,
       chartWidth,
       chartHeight,
       state.kinematicsPayload,
@@ -10797,7 +10793,9 @@ function drawKinematicChart(
   else ctx.rect(x, y, width, height);
   ctx.fill();
   ctx.stroke();
-  drawCanvasText(ctx, title, x + 10, y + (focused ? 18 : 14), { size: focused ? 14 : 11, weight: 780 });
+  const titleStyle = { size: focused ? 14 : 11, weight: 780 };
+  drawCanvasText(ctx, fitCanvasText(ctx, title, width - (focused ? 20 : 44), titleStyle),
+    x + 10, y + (focused ? 18 : 14), titleStyle);
   const chart = createPlotChart({
     key,
     title,
@@ -12642,8 +12640,9 @@ function wireEvents() {
   });
   document.getElementById("geometry-plot-y-axis").addEventListener("change", (event) => {
     state.geometryPlotDraftY = event.target.value;
+    renderGeometryPlotControls();
   });
-  document.getElementById("geometry-plot-list").addEventListener("click", (event) => {
+  document.getElementById("geometry-plot-close-buttons").addEventListener("click", (event) => {
     const remove = event.target.closest("[data-geometry-plot-remove]");
     if (remove) removeGeometryPlotSelection(remove.dataset.geometryPlotRemove);
   });

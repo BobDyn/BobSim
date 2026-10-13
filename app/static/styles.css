@@ -1478,44 +1478,26 @@ body.resizing-panes * {
   min-width: 0;
 }
 
-.geometry-plot-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 28px;
-  align-content: start;
+.geometry-plots {
+  position: relative;
+  min-width: 0;
 }
 
-.geometry-plot-chip {
-  min-height: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 0 8px 0 10px;
-}
-
-.geometry-plot-chip button {
-  width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
+.geometry-plot-close {
+  position: absolute;
+  width: 24px;
+  height: 24px;
   border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   color: var(--muted);
-  cursor: pointer;
+  font-size: 20px;
   line-height: 1;
   padding: 0;
+  cursor: pointer;
 }
 
-.geometry-plot-chip button:hover {
-  background: color-mix(in srgb, var(--red) 12%, transparent);
+.geometry-plot-close:hover {
   color: var(--red);
 }
 

@@ -1338,11 +1338,11 @@ def test_app_generates_live_kinematic_curves_for_active_vehicle() -> None:
         pytest.skip(payload["warnings"][0])
     assert payload["axles"]["front"]["ok"] is True
     assert payload["axles"]["rear"]["ok"] is True
-    assert len(payload["sweep_m"]) == 20
-    assert len(payload["roll_deg"]) == 20
-    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 20
-    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 20
-    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 20
+    assert len(payload["sweep_m"]) == 21
+    assert len(payload["roll_deg"]) == 21
+    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 21
+    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 21
+    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 21
     assert payload["warnings"] == []
 
 

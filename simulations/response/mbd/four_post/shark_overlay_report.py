@@ -128,12 +128,17 @@ class StaleGeometryError(RuntimeError):
 def sweep_including_zero(reference: Sequence[float], points: int = 21) -> tuple[float, ...]:
     """Rebuild a sweep over the same range with the design position on a grid point.
 
-    The app defaults span the range in an even number of steps, so zero falls
-    between samples: the bump grid's nearest point is 2.1 mm of jounce. Any
-    "value at design position" taken from that grid is an extrapolation, which is
-    the one number a suspension engineer is most likely to read off directly. An
-    odd count puts the midpoint exactly on zero, and it is snapped to a hard 0.0 so
-    float accumulation cannot leave it at 1e-18.
+    Parameters
+    ----------
+    reference : Sequence[float]
+        Sweep defining the range.
+    points : int
+        Sample count, rounded up to an odd number.
+
+    Returns
+    -------
+    tuple[float, ...]
+        Sweep with its midpoint set to zero.
     """
     low, high = min(reference), max(reference)
     if points % 2 == 0:
@@ -153,9 +158,15 @@ STEER_SWEEP_M = DEFAULT_STEER_M
 def kinematic_payload(vehicle_path: Path) -> dict[str, Any]:
     """Solve the full registry curve deck over the app's ranges, sampling zero.
 
-    Ranges match the app registry defaults so the curves stay comparable to the
-    app's kinematics view; only the point count differs, to put the design
-    position on a sample rather than between two.
+    Parameters
+    ----------
+    vehicle_path : Path
+        Vehicle definition to evaluate.
+
+    Returns
+    -------
+    dict[str, Any]
+        Kinematics curves over the app's default ranges.
     """
     vehicle = load_yaml(vehicle_path)
     return kinematic_curves_payload(vehicle, BUMP_SWEEP_M, ROLL_SWEEP_DEG, STEER_SWEEP_M)
@@ -1283,15 +1294,13 @@ def main(argv: list[str] | None = None) -> int:
             notes.append(f"{label}: {warning}")
 
     notes.append(
-        f"Sweep ranges match the app registry defaults; the point count is raised to "
-        f"{len(BUMP_SWEEP_M)}/{len(ROLL_SWEEP_DEG)} so the design position is sampled "
-        "rather than falling between two points as it does on the app's even grid."
+        f"Sweeps match the app ranges with {len(BUMP_SWEEP_M)} jounce samples and "
+        f"{len(ROLL_SWEEP_DEG)} roll samples. Both include the design position."
     )
     notes.append(
         f"Steer sweep: {len(STEER_SWEEP_M)} points over "
         f"{min(STEER_SWEEP_M) * 1000.0:+.0f}..{max(STEER_SWEEP_M) * 1000.0:+.0f} mm rack "
-        "displacement, front axle only; plotted against the solved road-wheel steer "
-        "angle rather than the commanded rack travel."
+        "displacement, front axle only. Plotted against rack displacement in mm."
     )
     notes.append(
         "The anti-roll bar takes no part in the kinematic solve; it is handled outside "
