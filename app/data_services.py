@@ -1060,7 +1060,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                             for run in app_visual.available_runs(ROOT))
             else:
                 raise ValueError("Choose reports, signal explorer or 3D replay.")
-            if not valid:
+            if source_id is not None and not valid:
                 raise ValueError("Choose a saved run from this simulation or an available captured scene.")
             child = {"id": uuid4().hex,
                      "name": str(payload.get("name") or "Visualization").strip()[:120] or "Visualization",
@@ -1092,6 +1092,21 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)
     summaries = [{k: v for k, v in item.items() if k != "config_text"} for item in items]
+    if any(summary.get("visualizations") for summary in summaries):
+        runs = saved_results_payload(key)["results"]
+        captures = app_visual.available_runs(ROOT) if any(
+            child["kind"] == "replay" for summary in summaries for child in summary.get("visualizations", [])
+        ) else []
+        for summary in summaries:
+            latest = next((run for run in runs if (run.get("simulation") or {}).get("id") == summary["id"]), None)
+            for child in summary.get("visualizations", []):
+                if child["kind"] == "replay":
+                    child["run_id"] = next((run["id"] for run in captures
+                        if run.get("simulation_id") == summary["id"] and run.get("vehicle_key") == key
+                        and (not run["id"].startswith("saved-")
+                             or latest and run["id"] == "saved-" + latest["id"])), None)
+                else:
+                    child["run_id"] = latest["id"] if latest else None
     result.update(vehicle_key=key, simulations=summaries)
     if item is not None and action != "delete":
         result["simulation"] = {k: v for k, v in item.items() if k != "config_text"}

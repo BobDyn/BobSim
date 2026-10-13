@@ -555,6 +555,12 @@ async function refreshSavedResults() {
   if (!state.selectedVisualizationId && !results.some((result) => result.id === state.selectedResultId)) {
     state.selectedResultId = results[0]?.id || null;
   }
+  const child = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
+  if (child) {
+    const current = child.kind === "replay" ? document.getElementById("replay-view").dataset.capture : state.selectedResultId;
+    const next = child.kind === "replay" ? child.run_id || `pending:${state.selectedSimulationId}` : child.run_id;
+    if (current !== next) openSimulationVisualization(child);
+  }
 }
 
 async function refreshResultSources() {
@@ -4253,7 +4259,7 @@ function openSimulationVisualization(child) {
   state.simModalOpen = false;
   state.simulationChildEditor = false;
   if (child.kind === "replay") {
-    document.getElementById("replay-view").dataset.capture = child.run_id;
+    document.getElementById("replay-view").dataset.capture = child.run_id || `pending:${state.selectedSimulationId}`;
     setView("replay");
   } else {
     state.selectedResultId = child.run_id;
@@ -4371,20 +4377,16 @@ async function addSimulationVisualization(id, kind = null) {
   state.simulationCatalogOpen = false;
   state.simulationChildEditor = true;
   state.collapsedSimulations.delete(state.selectedSimulationId);
-  const vehicleKey = activeVehicleKey();
-  const runs = savedResults().filter(run => run.simulation?.id === id);
   const envelope = ["ggv", "ymd"].includes(selectedSimulation()?.workflow_id);
-  const captures = envelope ? [] : ((await api("/api/visual/runs")).runs || []).filter(run =>
-    run.simulation_id === id && run.vehicle_key === vehicleKey);
-  if (state.selectedSimulationId !== id || activeVehicleKey() !== vehicleKey || !state.simulationChildEditor) return;
-  document.getElementById("simulation-visualization-run").innerHTML =
-    `<optgroup label="${envelope ? "Envelope plots and report" : "Plots and reports"}">${(kind && kind !== "report" ? [] : runs).map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
-    `<optgroup label="Signal explorer">${(kind && kind !== "signals" ? [] : runs.filter(run => run.files?.some(file => file.kind === "csv"))).map(run => `<option data-kind="signals" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
-    (envelope ? "" : `<optgroup label="3D replay">${(kind && kind !== "replay" ? [] : captures).map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`);
-  document.getElementById("simulation-visualization-name").value = ({report: envelope ? "Envelope plots and report" : "Plots and report", replay: "3D replay", signals: "Signal explorer"})[kind] || "Visualization";
-  document.getElementById("simulation-visualization-add").disabled = !document.getElementById("simulation-visualization-run").options.length;
-  document.getElementById("simulation-visualization-empty").textContent = envelope ? "Run this simulation to generate its envelope plots." : "Run this simulation or capture a scene first.";
-  document.getElementById("simulation-visualization-empty").hidden = Boolean(document.getElementById("simulation-visualization-run").options.length);
+  const kinds = {report: envelope ? "Envelope plots and report" : "Plots and report", signals: "Signal explorer"};
+  if (!envelope) kinds.replay = "3D replay";
+  const picker = document.getElementById("simulation-visualization-kind");
+  picker.innerHTML = Object.entries(kinds).map(([value, label]) =>
+    `<option value="${value}">${label}</option>`).join("");
+  picker.value = kind && kinds[kind] ? kind : "report";
+  const name = document.getElementById("simulation-visualization-name");
+  name.value = kinds[picker.value];
+  picker.onchange = () => { name.value = kinds[picker.value]; };
   setView("standard");
 }
 
@@ -4413,12 +4415,11 @@ function mountSimulationWorkspace() {
   document.getElementById("simulation-visualization-form").addEventListener("submit", event => {
     event.preventDefault();
     workspaceAction(async () => {
-      const source = document.getElementById("simulation-visualization-run").selectedOptions[0];
+      const kind = document.getElementById("simulation-visualization-kind").value;
       const payload = await simulationRequest("add-visualization", {
         id: state.selectedSimulationId,
         name: document.getElementById("simulation-visualization-name").value,
-        kind: source.dataset.kind,
-        source_id: source.value,
+        kind,
       });
       openSimulationVisualization(payload.visualization);
     });
@@ -4451,9 +4452,6 @@ function mountSimulationWorkspace() {
         const parent = state.simulationWorkspace.simulations.find(item => item.id === child.dataset.owner);
         const visualization = parent?.visualizations?.find(item => item.id === child.dataset.simulationVisualization);
         if (!visualization) throw new Error("Visualization no longer available.");
-        if (visualization.kind !== "replay" && !savedResults().some(run => run.id === visualization.run_id && run.simulation?.id === parent.id)) {
-          throw new Error("This visualization's saved run is no longer available.");
-        }
         state.selectedSimulationId = parent.id;
         openSimulationVisualization(visualization);
       });
@@ -4502,7 +4500,7 @@ function renderSimulationWorkspace() {
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
   tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + (simulations || []).map(item => {
-    const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id);
+    const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id).slice(0, 1);
     const expanded = !state.collapsedSimulations.has(item.id);
     const selected = state.view === "standard" && state.simModalOpen && item.id === state.selectedSimulationId;
     const workflow = state.status?.workflows?.find(w => w.id === item.workflow_id);
@@ -4520,7 +4518,7 @@ function renderSimulationWorkspace() {
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>${escapeHtml(SIMULATION_GROUPS.find(group => group.id === simulationAnalysisGroup({id: item.workflow_id}))?.label || "Setup")} setup</span></button>
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
-        ${runs.length ? '<div class="simulation-tree-group">Runs</div>' : ""}
+        ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
       </div>
     </div>`;

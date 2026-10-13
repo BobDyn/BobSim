@@ -392,6 +392,9 @@ vm.runInContext(`
   assert.equal(state.view,'replay');
   assert.equal(replay.dataset.capture,'captured-scene');
   assert.equal(state.selectedVisualizationId,'animation');
+  state.selectedSimulationId='new-analysis';
+  openSimulationVisualization({id:'empty',kind:'replay',run_id:null});
+  assert.equal(replay.dataset.capture,'pending:new-analysis','empty views must not show another analysis');
   document=originalDocument; setView=originalSetView;
 }
 `,ctx);
@@ -544,9 +547,12 @@ vm.runInContext(`
     state.simulationWorkspace={simulations:[{id:'ggv-test',workflow_id:'ggv'}]};
     api=()=>{throw new Error('An envelope must not request replay captures');};
     await addSimulationVisualization('ggv-test');
-    assert.match(elements['simulation-visualization-run'].innerHTML,/Envelope plots and report/);
-    assert.match(elements['simulation-visualization-run'].innerHTML,/Signal explorer/);
-    assert.doesNotMatch(elements['simulation-visualization-run'].innerHTML,/3D replay/);
-    assert.match(elements['simulation-visualization-empty'].textContent,/envelope plots/);
+    assert.match(elements['simulation-visualization-kind'].innerHTML,/Envelope plots and report/);
+    assert.match(elements['simulation-visualization-kind'].innerHTML,/Signal explorer/);
+    assert.doesNotMatch(elements['simulation-visualization-kind'].innerHTML,/3D replay/);
+    assert.equal(elements['simulation-visualization-name'].value,'Envelope plots and report');
+    elements['simulation-visualization-kind'].value='signals';
+    elements['simulation-visualization-kind'].onchange();
+    assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
   })()`, simulationContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});

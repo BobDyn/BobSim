@@ -64,7 +64,8 @@
     }
     if (!state.runs.length) {
       setStatus(
-        state.capture ? "This captured scene is no longer available." :
+        state.capture?.startsWith("pending:") ? "Run this analysis to generate replay data." :
+          state.capture ? "This captured scene is no longer available." :
           "No captured runs yet. Produce one with a rig or manoeuvre capture, then reopen this tab."
       );
       return;

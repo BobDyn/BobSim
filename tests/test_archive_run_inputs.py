@@ -204,3 +204,28 @@ def test_saved_replay_cannot_be_attached_to_a_different_simulation(archive_works
         app.simulation_workspace("add-visualization", {
             "id": parent["id"], "kind": "replay", "source_id": "saved-other",
         })
+
+
+@pytest.mark.parametrize("kind", ["report", "signals", "replay"])
+def test_analysis_views_follow_latest_results_without_a_source(archive_workspace, monkeypatch, kind):
+    from app import visual
+
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    captures = []
+    monkeypatch.setattr(visual, "available_runs", lambda root: captures)
+    child = app.simulation_workspace("add-visualization", {"id": parent["id"], "kind": kind})["visualization"]
+    assert child["run_id"] is None
+    snapshot = app.capture_workflow_inputs("study")
+    snapshot["simulation"] = parent
+    first = app.save_active_results("study", input_snapshot=snapshot)["saved"]
+    captures.append({"id": "saved-" + first["id"], "simulation_id": parent["id"], "vehicle_key": "original"})
+    loaded = app.simulation_workspace()["simulations"][0]["visualizations"][0]
+    assert loaded["run_id"] == ("saved-" if kind == "replay" else "") + first["id"]
+    second = app.save_active_results("study", input_snapshot=snapshot)["saved"]
+    if kind == "replay":
+        # A new report without replay data must not silently show the old animation.
+        assert app.simulation_workspace()["simulations"][0]["visualizations"][0]["run_id"] is None
+    captures.insert(0, {"id": "saved-" + second["id"], "simulation_id": parent["id"], "vehicle_key": "original"})
+    loaded = app.simulation_workspace()["simulations"][0]["visualizations"][0]
+    assert loaded["id"] == child["id"]
+    assert loaded["run_id"] == ("saved-" if kind == "replay" else "") + second["id"]
