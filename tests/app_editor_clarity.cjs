@@ -516,7 +516,7 @@ vm.runInContext(`
     document:{body:{classList:{toggle(){}}}}});
   vm.runInContext(source, simulationContext);
   await vm.runInContext(`(async () => {
-    for (const [id, group] of [['four-post','four-post'], ['steady-state','steady-state'],
+    for (const [id, group] of [['four-post','kinematic'], ['steady-state','steady-state'],
       ['ggv','steady-state'], ['ymd','steady-state'], ['lap-qss','steady-state'],
       ['reduced-ramp-steer','transient'], ['mbd-step-steer','transient'],
       ['transient','transient'], ['lap-transient','transient']]) {
@@ -580,9 +580,50 @@ vm.runInContext(`
     assert.doesNotMatch(group('steady-state'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
-    assert.match(group('four-post'),/data-simulation-branch="rig"/);
+    assert.match(group('kinematic'),/data-simulation-branch="rig"/);
     state.collapsedSimulations.add('group:transient');
     renderSimulationWorkspace();
     assert.match(elements['simulation-tree'].innerHTML,/data-simulation-toggle="group:transient" aria-expanded="false"/);
   `,treeContext);
+}
+
+{
+  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,menuContext);
+  vm.runInContext(`
+    const events={}; let focused, added;
+    const buttons=['add','setup','report','replay','signals','delete'].map(action=>({
+      dataset:{action},hidden:false,focus(){focused=action;}
+    }));
+    const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
+      querySelectorAll:()=>buttons,
+      querySelector:selector=>selector==='button:not([hidden])' ? buttons.find(b=>!b.hidden)
+        : buttons.find(b=>selector.includes('"'+b.dataset.action+'"')),
+      addEventListener:(name,fn)=>events['menu:'+name]=fn
+    };
+    const trigger={setAttribute(){},focus(){}};
+    document={getElementById:id=>id==='simulation-context-menu' ? menu : {
+      addEventListener:(name,fn)=>events['tree:'+name]=fn
+    },addEventListener(){},querySelector:()=>({addEventListener(){}})};
+    window={innerWidth:1000,innerHeight:800,addEventListener(){}};
+    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
+    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'}]};
+    wireSimulationContextMenu();
+    const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
+      closest:selector=>selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
+        : {dataset:{analysisGroup:group},querySelector:()=>trigger}
+    }});
+    for (const group of ['kinematic','steady-state','transient']) {
+      rightClick(group);
+      assert.equal(menu.hidden,false); assert.equal(focused,'add');
+      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add']);
+      events['menu:click']({target:{closest:()=>buttons[0]}});
+      assert.equal(added,group); assert.equal(menu.hidden,true);
+    }
+    rightClick('steady-state','envelope');
+    assert.equal(focused,'setup');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','signals','delete']);
+    rightClick('transient','maneuver');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','replay','signals','delete']);
+  `,menuContext);
 }

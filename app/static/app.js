@@ -4320,25 +4320,29 @@ function wireSimulationContextMenu() {
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
   };
-  const open = (id, x, y, element) => {
+  const open = (id, x, y, element, group = false) => {
     target = id;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
     const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
-    menu.querySelector('[data-action="replay"]').hidden = envelope;
+    for (const button of menu.querySelectorAll("button")) {
+      button.hidden = group ? button.dataset.action !== "add" : button.dataset.action === "add" || (envelope && button.dataset.action === "replay");
+    }
     menu.querySelector('[data-action="report"]').textContent = envelope ? "Add envelope plots and report" : "Add plots and report";
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
     menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
     trigger?.setAttribute("aria-expanded", "true");
-    menu.querySelector("button").focus();
+    menu.querySelector("button:not([hidden])").focus();
   };
   tree.addEventListener("contextmenu", event => {
     const branch = event.target.closest("[data-simulation-branch]");
-    if (!branch) return;
+    const group = event.target.closest("[data-analysis-group]");
+    if (!branch && !group) return;
     event.preventDefault();
-    open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
+    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
+    else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), true);
   });
   tree.addEventListener("click", event => {
     const button = event.target.closest("[data-simulation-menu]");
@@ -4351,7 +4355,7 @@ function wireSimulationContextMenu() {
     if (!action) return;
     const id = target;
     close();
-    workspaceAction(() => action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
+    workspaceAction(() => action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
@@ -4629,13 +4633,13 @@ function responseModelPicker(workflow) {
 
 let activeSimulationGroup = "transient";
 const SIMULATION_GROUPS = [
-  {id: "four-post", label: "Four-post", description: "Suspension motion and loads."},
+  {id: "kinematic", label: "Kinematic", description: "Suspension motion and loads."},
   {id: "steady-state", label: "Steady state", description: "Choose equilibrium, an envelope or a quasi-steady lap."},
   {id: "transient", label: "Transient", description: "Choose a maneuver or a driver-controlled lap."},
 ];
 
 function simulationAnalysisGroup(workflow) {
-  if (workflow.id === "four-post") return "four-post";
+  if (workflow.id === "four-post") return "kinematic";
   if (["steady-state", "ggv", "ymd", "lap-qss"].includes(workflow.id)) return "steady-state";
   return "transient";
 }
