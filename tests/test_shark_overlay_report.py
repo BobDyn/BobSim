@@ -347,10 +347,10 @@ def test_four_post_section_gates_and_flags_confounds() -> None:
 
 
 def test_design_position_is_sampled_not_extrapolated() -> None:
-    """The app's even grid straddles zero; the report's grid lands on it."""
+    """Both the app and report sample the design position."""
     from engines.kinpy.kinematics import DEFAULT_ROLL_DEG, DEFAULT_SWEEP_M
 
-    assert 0.0 not in DEFAULT_SWEEP_M and 0.0 not in DEFAULT_ROLL_DEG
+    assert 0.0 in DEFAULT_SWEEP_M and 0.0 in DEFAULT_ROLL_DEG
     assert 0.0 in sor.BUMP_SWEEP_M and 0.0 in sor.ROLL_SWEEP_DEG
     # Range is preserved so the curves stay comparable to the app's view.
     assert min(sor.BUMP_SWEEP_M) == pytest.approx(min(DEFAULT_SWEEP_M))
@@ -371,6 +371,7 @@ def test_steer_sweep_is_zero_centered_and_front_axle_only() -> None:
     assert steer_ids == {
         "steer_camber_deg", "steer_scrub_mm", "steer_mech_trail_mm",
         "steer_rc_y_mm", "steer_rc_z_mm", "steer_kpi_deg", "steer_caster_deg",
+        "steer_toe_deg", "steer_rc_height_mm",
     }
 
     withheld: frozenset[str] = frozenset()
