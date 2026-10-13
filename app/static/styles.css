@@ -4955,3 +4955,7 @@ summary:focus-visible {
 .replay-display-settings > summary:focus-visible { outline: 2px solid var(--accent); }
 .replay-display-panel { position: absolute; top: 42px; right: 0; width: 190px; padding: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px #0004; }
 .replay-display-panel h4 { margin: 0 0 10px; }
+
+#result-selected-signals { max-height: 25%; overflow-y: auto; flex-shrink: 0; padding: 4px 10px; }
+.result-series-key { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.result-series-key i { width: 16px; height: 3px; flex-shrink: 0; }

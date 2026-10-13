@@ -203,6 +203,10 @@
     ctx.clearRect(0, 0, width, height);
 
     const corners = grip.corners;
+    const extent = Math.max(1, ...corners.flatMap(corner =>
+      state.scene.scalar(corner.slot_airborne, f) > 0.5 ? [] : [
+        Math.abs(state.scene.scalar(corner.slot_x, f)), Math.abs(state.scene.scalar(corner.slot_y, f)),
+      ]));
     const columns = 2;
     const rows = Math.ceil(corners.length / columns);
     const cellW = width / columns;
@@ -220,7 +224,7 @@
       ctx.lineWidth = 1 * dpr;
       for (const ring of [0.5, 1]) {
         ctx.beginPath();
-        ctx.arc(cx, cy, radius * ring, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius * ring / extent, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.beginPath();
@@ -237,8 +241,8 @@
 
       if (!airborne) {
         // Lateral is the horizontal axis: it is the one a driver feels.
-        const px = cx + gy * radius;
-        const py = cy - gx * radius;
+        const px = cx + gy * radius / extent;
+        const py = cy - gx * radius / extent;
         ctx.fillStyle = usage >= 1 ? "#d64550" : "#2b7fd4";
         ctx.beginPath();
         ctx.arc(px, py, 5 * dpr, 0, Math.PI * 2);

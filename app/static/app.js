@@ -5544,7 +5544,7 @@ function drawResultPlotCanvas() {
     series.values.forEach((value, index) => {
       const x = Number(payload.x[index]);
       const y = Number(value);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      if (value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
         drawing = false;
         return;
       }
@@ -5558,20 +5558,10 @@ function drawResultPlotCanvas() {
     ctx.stroke();
     ctx.restore();
   });
-  ctx.save();
-  ctx.fillStyle = palette.surface;
-  ctx.fillRect(plot.x + 8, plot.y + 8, Math.min(plot.width - 16, 310), Math.min(26 + payload.series.length * 18, plot.height - 16));
-  payload.series.slice(0, 8).forEach((series, index) => {
-    const y = plot.y + 24 + index * 18;
-    ctx.strokeStyle = colors[index % colors.length];
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(plot.x + 18, y);
-    ctx.lineTo(plot.x + 40, y);
-    ctx.stroke();
-    drawCanvasText(ctx, series.signal, plot.x + 48, y + 1, { size: 11, weight: 760, color: palette.ink });
-  });
-  ctx.restore();
+  const legend = document.getElementById("result-selected-signals");
+  legend.innerHTML = payload.series.map((series, index) =>
+    `<span class="result-series-key"><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(series.signal)}</span>`
+  ).join("");
   drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : state.resultXAxis, plot.x + plot.width / 2, height - 18, {
     align: "center",
     size: 11,

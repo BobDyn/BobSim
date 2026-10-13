@@ -456,3 +456,53 @@ vm.runInContext(`
   })()
   `,deletionContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+// Peak utilization may exceed the reference ellipse without leaving its cell.
+{
+  const arcs = [];
+  const labels = [];
+  const drawing = new Proxy({arc:(...args)=>arcs.push(args),fillText:text=>labels.push(text)}, {
+    get:(target,key)=>key in target ? target[key] : ()=>{},
+  });
+  const canvas = {clientWidth:240,clientHeight:240,getContext:()=>drawing};
+  const panel = vm.createContext({window:{devicePixelRatio:1},document:{readyState:'loading',body:{},
+    addEventListener(){},getElementById:id=>id==='replay-tires-canvas'?canvas:{}},
+    getComputedStyle:()=>({getPropertyValue:()=>''})});
+  const panelSource = fs.readFileSync('app/static/visual_panel.js','utf8').replace(
+    '  function bootstrap() {',
+    '  window.testTires = scene => { state.scene=scene; state.tab="tires"; renderFrictionCircles(0); };\n  function bootstrap() {'
+  );
+  vm.runInContext(panelSource,panel);
+  panel.window.testTires({header:{grip:{corners:['fl','fr','rl','rr'].map((corner,i)=>({
+    corner,slot_x:i*4,slot_y:i*4+1,slot_usage:i*4+2,slot_airborne:i*4+3,
+  }))}},scalar:slot=>[2,3,3.6,0,-4,1,4.1,0,0,0,0,0,0,0,0,1][slot]});
+  const dots=arcs.filter(arc=>arc[2]===5);
+  assert.equal(dots.length,3);
+  dots.forEach(([x,y],i)=>{
+    assert.ok(x>=(i%2)*120+5&&x<=(i%2+1)*120-5);
+    assert.ok(y>=Math.floor(i/2)*120+5&&y<=(Math.floor(i/2)+1)*120-5);
+  });
+  assert.ok(labels.includes('410% of peak'));
+}
+{
+  const plotContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,plotContext);
+  vm.runInContext(`
+    const fills=[];
+    const pen=new Proxy({fillRect:(...args)=>fills.push(args)}, {get:(target,key)=>key in target?target[key]:()=>{}});
+    const legend={innerHTML:''};
+    document={getElementById:id=>id==='result-plot-canvas'?{getBoundingClientRect:()=>({width:800,height:400}),getContext:()=>pen}:id==='result-selected-signals'?legend:{}};
+    window={devicePixelRatio:1};
+    canvasPalette=()=>({surface:'#000',blue:'#00f',green:'#0f0'});
+    let limits;
+    drawPlotGrid=(_ctx,chart)=>{limits=chart;};
+    drawCanvasText=()=>{};
+    selectedResultSource=()=>null;
+    state.resultPlotStatus='ready';state.resultXAxis='time';
+    state.resultPlotPayload={x:[0,1,2],series:[{signal:'small',values:[-1,0,2]},{signal:'large',values:[-1000,null,2000]}]};
+    drawResultPlotCanvas();
+    assert.ok(limits.yDomain[0]<-1000&&limits.yDomain[1]>2000);
+    assert.ok(legend.innerHTML.includes('small')&&legend.innerHTML.includes('large'));
+    assert.equal(fills.length,1,'the legend must not paint over the plot');
+  `,plotContext);
+}
