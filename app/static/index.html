@@ -224,6 +224,9 @@
               </div>
               <p id="simulation-workspace-status" role="status"></p>
             </aside>
+            <div id="simulation-splitter" class="splitter" role="separator" aria-label="Resize simulation outline"
+              aria-orientation="vertical" aria-valuemin="180" aria-valuemax="560" aria-valuenow="230"
+              tabindex="0" title="Drag to resize"></div>
             <div id="simulation-detail" class="simulation-detail">
             <section id="simulation-child-editor" class="simulation-child-editor" hidden>
               <header><h2>Add to simulation</h2><button id="simulation-child-close" type="button" class="ghost-button" aria-label="Close">×</button></header>
@@ -259,12 +262,11 @@
           <div class="screen-head">
             <div>
               <h2>Replay</h2>
-              <p>Suspension geometry, tire loads and grip from a captured run.</p>
+              <p id="replay-model">Captured geometry</p>
             </div>
             <div class="replay-controls">
               <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
               <button id="replay-play" class="ghost-button" type="button">Pause</button>
-              <button id="replay-reset-view" class="ghost-button" type="button">Reset view</button>
               <button id="replay-export" class="ghost-button" type="button">Export video</button>
               <button id="replay-help-btn" class="ghost-button" type="button">Controls</button>
             </div>
@@ -272,17 +274,19 @@
 
           <div class="replay-workspace">
             <section class="replay-stage">
+              <div class="replay-camera-tools">
+              <button id="replay-reset-view" class="ghost-button camera-home-button" type="button" aria-label="Camera home" title="Camera home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v11h5v-6h4v6h5V10"/></svg></button>
+              <select id="replay-camera-view" aria-label="Camera view"><option value="iso">Isometric</option><option value="top">Bird’s eye</option><option value="front">Front</option><option value="side">Side</option></select>
+              <select id="replay-camera-follow" aria-label="Camera motion"><option value="position">Follow vehicle</option><option value="heading">Follow heading</option><option value="fixed">Fixed camera</option></select>
+              </div>
               <canvas id="replay-canvas"></canvas>
               <p id="replay-status" class="replay-status" hidden></p>
               <div id="replay-help" class="replay-help" hidden>
                 <h4>Controls</h4>
                 <ul>
                   <li><b>Drag</b> orbits around the centre</li>
-                  <li><b>Shift + drag</b>, or a middle or right drag, pans</li>
+                  <li><b>Ctrl + drag</b> or <b>middle drag</b> pans</li>
                   <li><b>Scroll</b> zooms toward the cursor</li>
-                  <li><b>Two-finger drag</b> pans as soon as it moves sideways.
-                    Straight up and down zooms</li>
-                  <li><b>Shift + scroll</b> always pans</li>
                   <li><b>Pinch</b> zooms toward the cursor</li>
                   <li><b>Touchscreen:</b> one finger orbits, two pan and pinch</li>
                   <li><b>Double-click</b> re-centres on the ground under the cursor</li>

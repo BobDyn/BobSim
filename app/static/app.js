@@ -4240,7 +4240,50 @@ function openSimulationVisualization(child) {
   }
 }
 
+function wireSimulationSplitter() {
+  const splitter = document.getElementById("simulation-splitter");
+  const workspace = document.querySelector(".simulation-workspace");
+  let width = Number(localStorage.getItem("bobsim-simulation-pane-width")) || 230;
+  let pointer = null;
+  const apply = value => {
+    if (!workspace.clientWidth) return;
+    const maximum = Math.max(180, Math.min(560, workspace.clientWidth - 360));
+    width = clamp(value, 180, maximum);
+    workspace.style.setProperty("--simulation-pane-width", `${width}px`);
+    splitter.setAttribute("aria-valuenow", String(Math.round(width)));
+    splitter.setAttribute("aria-valuemax", String(Math.round(maximum)));
+  };
+  const finish = event => {
+    if (event.pointerId !== pointer) return;
+    pointer = null;
+    splitter.classList.remove("active");
+    document.body.classList.remove("resizing-panes");
+    localStorage.setItem("bobsim-simulation-pane-width", String(width));
+  };
+  splitter.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    pointer = event.pointerId;
+    splitter.setPointerCapture(pointer);
+    splitter.classList.add("active");
+    document.body.classList.add("resizing-panes");
+    event.preventDefault();
+  });
+  splitter.addEventListener("pointermove", event => {
+    if (event.pointerId === pointer) apply(event.clientX - workspace.getBoundingClientRect().left);
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) splitter.addEventListener(name, finish);
+  splitter.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 48 : 16;
+    apply(event.key === "Home" ? 180 : event.key === "End" ? 560 : width + (event.key === "ArrowLeft" ? -step : step));
+    localStorage.setItem("bobsim-simulation-pane-width", String(width));
+  });
+  new ResizeObserver(() => apply(width)).observe(workspace);
+}
+
 function mountSimulationWorkspace() {
+  wireSimulationSplitter();
   const detail = document.getElementById("simulation-detail");
   const config = document.getElementById("simulation-config-modal");
   config.classList.add("simulation-inline-config");
@@ -4284,10 +4327,11 @@ function mountSimulationWorkspace() {
         state.simulationChildEditor = true;
         state.collapsedSimulations.delete(state.selectedSimulationId);
         const runs = savedResults().filter(run => run.simulation?.id === state.selectedSimulationId);
-        const captures = (await api("/api/visual/runs")).runs || [];
+        const captures = ((await api("/api/visual/runs")).runs || []).filter(run =>
+          !run.simulation_id || (run.simulation_id === state.selectedSimulationId && run.vehicle_key === activeVehicleKey()));
         document.getElementById("simulation-visualization-run").innerHTML =
           `<optgroup label="Plots and reports">${runs.map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
-          `<optgroup label="Captured scenes (3D replay)">${captures.map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
+          `<optgroup label="3D replay">${captures.map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
         document.getElementById("simulation-visualization-name").value = "Visualization";
         document.getElementById("simulation-visualization-add").disabled = !runs.length && !captures.length;
         document.getElementById("simulation-visualization-empty").hidden = Boolean(runs.length || captures.length);

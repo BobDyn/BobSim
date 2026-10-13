@@ -4822,7 +4822,7 @@ summary:focus-visible {
 
 /* Simulations belong to the active vehicle. */
 .simulation-workspace {
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: var(--simulation-pane-width, 230px) 8px minmax(0, 1fr);
 }
 .simulation-tree-pane {
   display: flex;
@@ -4891,7 +4891,7 @@ summary:focus-visible {
 .simulation-detail .replay-stage { min-height: 0; }
 .simulation-detail .replay-controls { flex-wrap: wrap; }
 @media (max-width: 900px) {
-  .simulation-workspace { grid-template-columns: 180px minmax(0, 1fr); }
+  .simulation-workspace { grid-template-columns: var(--simulation-pane-width, 180px) 8px minmax(0, 1fr); }
   .simulation-detail .simulation-card { padding: 14px; gap: 12px; }
   .simulation-detail .simulation-categories { flex-wrap: wrap; }
 }
@@ -4907,3 +4907,15 @@ summary:focus-visible {
 .simulation-child-editor h2 { font-size: 18px; }
 .simulation-child-editor form { display: grid; gap: 16px; max-width: 420px; margin: 20px 0 32px; }
 .simulation-child-editor label { display: grid; gap: 6px; }
+
+.replay-camera-tools {
+  position: absolute; top: 10px; left: 10px; z-index: 2;
+  display: flex; align-items: center; gap: 6px; max-width: calc(100% - 20px);
+}
+.replay-camera-tools button, .replay-camera-tools select {
+  height: 32px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 5px; color: var(--ink); font-size: 11px;
+}
+.replay-camera-tools select { min-width: 0; padding: 4px 6px; }
+
+#simulation-splitter { display: block; }

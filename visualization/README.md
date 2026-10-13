@@ -22,7 +22,18 @@ These targets run in Docker by default.
 | `visual-demo` | Synthetic data, no simulation required |
 
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
-`visualization/results/`. Captured scenes lists the available scenes.
+`visualization/results/`. Captured scenes lists these scenes and saved DynPy
+ramp- and step-steer runs. Reduced replay uses the run's archived signals and
+vehicle definition.
+
+The camera uses the geometry editor's orbit, pan and zoom gestures. Home restores
+the isometric view. Top, front and side views are available. Follow vehicle
+tracks position, Follow heading also turns with the vehicle, and Fixed camera
+stays in world space.
+
+Reduced replay shows planar motion at 3 DOF, body motion at 6 DOF, wheel rotation
+at 10 DOF, and unsprung motion at 14 DOF. Suspension connections are schematic.
+MBD replay uses captured linkage positions.
 
 ## Scene Capture
 
@@ -59,6 +70,7 @@ pair. Missing signal names are reported when a template is loaded.
 | `from_results.py` | Convert BobLib result frames to a scene |
 | `capture.py` | Run an evaluation with geometry capture and convert its output |
 | `demo.py` | Generate the synthetic scene |
+| `dynpy.py` | Build reduced replay geometry from archived response signals |
 | `visual_templates/` | Older templates |
 | `results/` | Generated scenes, excluded from Git |
 | `../app/visual.py` | Resolve scenes into a JSON header and float32 buffer |
@@ -126,8 +138,8 @@ camera:
 ```
 
 Point coordinates are in the world frame, in metres, matching BobSim's axis
-conventions ([`docs/conventions.md`](../docs/conventions.md)). Wheel spin is
-integrated from wheel-center velocity, without a separate spin-angle signal.
+conventions ([`docs/conventions.md`](../docs/conventions.md)). Spin markers use
+saved wheel-angle signals when available. They are omitted otherwise.
 
 `input_stride` is applied once, to every signal including `time`, so geometry,
 plots and the timeline stay on one index.
@@ -137,5 +149,5 @@ plots and the timeline stay on one index.
 The friction display uses an ellipse based on pure-slip peak friction. It does
 not represent the full MF5.2 combined-slip envelope.
 
-Video export is not supported. Scenes are generated locally and excluded from
-Git.
+Video export depends on browser recording support. Generated scenes are excluded
+from Git.

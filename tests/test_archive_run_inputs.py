@@ -183,3 +183,16 @@ def test_replay_visualization_requires_an_existing_capture(archive_workspace, mo
     assert child["kind"] == "replay"
     assert child["run_id"] == "captured-rig"
     assert app.simulation_workspace("load", {"id": parent["id"]})["simulation"]["visualizations"] == [child]
+
+
+def test_saved_replay_cannot_be_attached_to_a_different_simulation(archive_workspace, monkeypatch):
+    from app import visual
+
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    monkeypatch.setattr(visual, "available_runs", lambda root: [{
+        "id": "saved-other", "simulation_id": "other", "vehicle_key": "original",
+    }])
+    with pytest.raises(ValueError, match="available captured scene"):
+        app.simulation_workspace("add-visualization", {
+            "id": parent["id"], "kind": "replay", "source_id": "saved-other",
+        })

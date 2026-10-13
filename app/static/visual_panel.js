@@ -85,6 +85,8 @@
       state.runId = runId;
       state.scene = new window.BobVis.Scene(header, buffer);
       state.viewer.load(state.scene);
+      $("replay-camera-view").value = "iso";
+      $("replay-model").textContent = header.representation || "Captured geometry";
       $("replay-run").value = runId;
       buildLayerToggles(header);
       buildTabs(header);
@@ -103,22 +105,6 @@
   // ==========================================================================
   // Controls
   // ==========================================================================
-
-  /** Follow rides with the car; the rest are scene layers. */
-  function buildFollowToggle() {
-    const menu = $("replay-layers");
-    const wrap = document.createElement("label");
-    wrap.className = "replay-layer";
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.checked = state.viewer.follow;
-    box.addEventListener("change", () => {
-      state.viewer.follow = box.checked;
-    });
-    wrap.appendChild(box);
-    wrap.appendChild(document.createTextNode("Follow the car"));
-    menu.appendChild(wrap);
-  }
 
   const LAYER_LABELS = {
     links: "Links",
@@ -156,7 +142,7 @@
       wrap.appendChild(document.createTextNode(label));
       menu.appendChild(wrap);
     }
-    buildFollowToggle();
+
   }
 
   /** Tabs only appear when the run actually carries their data. */
@@ -678,7 +664,16 @@
       state.viewer.playing = !state.viewer.playing;
       $("replay-play").textContent = state.viewer.playing ? "Pause" : "Play";
     });
-    $("replay-reset-view").addEventListener("click", () => state.viewer.resetView());
+    $("replay-reset-view").addEventListener("click", () => {
+      $("replay-camera-view").value = "iso";
+      state.viewer.resetView();
+    });
+    $("replay-camera-view").addEventListener("change", event => state.viewer.resetView(event.target.value));
+    $("replay-camera-follow").addEventListener("change", event => {
+      state.viewer.follow = event.target.value;
+      state.viewer._anchor = null;
+      state.viewer._heading = null;
+    });
     const exportButton = $("replay-export");
     if (canExport()) {
       resetExportButton();

@@ -401,6 +401,7 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
     signals["state/speed_mps"] = np.full(car.time.size, car.speed)
 
     config: dict[str, Any] = {
+        "representation": "Synthetic demo · Not a dynamics model",
         "style": {
             "joints": {"radius": 0.014, "color": "#e0483c"},
             "links": {

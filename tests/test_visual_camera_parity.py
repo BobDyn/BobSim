@@ -155,3 +155,30 @@ def test_browser_wheel_zoom_matches_one_mouse_notch() -> None:
     assert up > 1.0 > down, "scrolling up zooms in, down zooms out"
     # Ten tenth-of-a-notch trackpad events must zoom exactly as far as one notch.
     assert half**2 == pytest.approx(up, rel=1e-12)
+
+
+def test_follow_camera_and_home_views_preserve_geometry_conventions():
+    result = _run_node("""
+      globalThis.window=globalThis;
+      eval(require('fs').readFileSync('app/static/visual.js','utf8'));
+      const camera=BobVis.camera;
+      const pose={position:[1,0,2],focal:[0,0,0],up:[0,0,1],viewAngle:30};
+      const moved=camera.followPose(pose,[0,0,0],[4,5,0],Math.PI/2);
+      const viewer=Object.create(BobVis.Viewer.prototype);
+      viewer.scene={frameAt:()=>0,centroid:()=>[2,3,1],extent:()=>2};
+      viewer.simTime=0; viewer.aspect=()=>1.5;
+      viewer.resetView(); const home=viewer.pose;
+      viewer.resetView('top'); const top=viewer.pose;
+      console.log(JSON.stringify({moved,home,top}));
+    """)
+    assert result["moved"]["position"] == pytest.approx([4, 6, 2])
+    assert result["moved"]["focal"] == [4, 5, 0]
+    assert result["moved"]["up"] == [0, 0, 1]
+    home = result["home"]
+    offset = np.array(home["position"]) - home["focal"]
+    assert offset[0] == pytest.approx(offset[1])
+    assert offset[1] == pytest.approx(offset[2])
+    top = result["top"]
+    assert top["position"][:2] == top["focal"][:2]
+    assert top["position"][2] > top["focal"][2]
+    assert top["up"] == [1, 0, 0]

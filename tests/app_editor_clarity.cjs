@@ -402,3 +402,26 @@ vm.runInContext(`
   savedResults=originalResults;
 }
 `,ctx);
+
+vm.runInContext(`
+{
+  const originalDocument=document, originalStorage=localStorage;
+  const handlers={}, attributes={}, properties={}, stored={};
+  const splitter={addEventListener:(event,fn)=>handlers[event]=fn,setAttribute:(key,value)=>attributes[key]=value};
+  const workspace={clientWidth:1000,style:{setProperty:(key,value)=>properties[key]=value}};
+  document={getElementById:()=>splitter,querySelector:()=>workspace};
+  localStorage={getItem:()=>null,setItem:(key,value)=>stored[key]=value};
+  globalThis.ResizeObserver=class {constructor(callback){this.callback=callback;}observe(){this.callback();}};
+  wireSimulationSplitter();
+  assert.equal(attributes['aria-valuenow'],'230');
+  handlers.keydown({key:'ArrowRight',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'246');
+  assert.equal(stored['bobsim-simulation-pane-width'],'246');
+  handlers.keydown({key:'End',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'560');
+  handlers.keydown({key:'Home',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'180');
+  document=originalDocument;localStorage=originalStorage;
+  delete globalThis.ResizeObserver;
+}
+`,ctx);

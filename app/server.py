@@ -31,9 +31,13 @@ def _visual_payload(run_id: str) -> Any:
     if run is None:
         raise FileNotFoundError(f"No visual run named {run_id!r}")
     data_path = ROOT / run["data"]
-    key = f"{run_id}:{data_path.stat().st_mtime_ns}"
+    config_path = ROOT / run["config"]
+    key = f"{run_id}:{run.get('dof')}:{data_path.stat().st_mtime_ns}:{config_path.stat().st_mtime_ns}"
     if _VISUAL_CACHE["key"] != key:
-        _VISUAL_CACHE["payload"] = app_visual.scene_payload(ROOT / run["config"], data_path)
+        _VISUAL_CACHE["payload"] = (
+            app_visual.reduced_scene_payload(config_path, data_path, int(run["dof"]))
+            if "dof" in run else app_visual.scene_payload(config_path, data_path)
+        )
         _VISUAL_CACHE["key"] = key
     return _VISUAL_CACHE["payload"]
 
