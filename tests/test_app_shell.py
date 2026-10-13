@@ -525,7 +525,11 @@ def test_desktop_bundles_and_seeds_every_registered_config() -> None:
             assert any(Path(spec.path).is_relative_to(path) for path in paths), spec.path
 
 
-def test_deploy_collects_qt_webengine_for_embedded_desktop_window() -> None:
+def test_deploy_collects_native_desktop_dependencies() -> None:
+    if sys.platform == "darwin":
+        assert deploy.PYINSTALLER_COLLECT_ALL == ("webview",)
+        assert deploy.PYINSTALLER_RUNTIME_HIDDEN_IMPORTS == ()
+        return
     assert "PyQt6" in deploy.PYINSTALLER_COLLECT_ALL
     assert "qtpy" in deploy.PYINSTALLER_COLLECT_ALL
     assert "PyQt6.QtWebEngineCore" in deploy.PYINSTALLER_RUNTIME_HIDDEN_IMPORTS

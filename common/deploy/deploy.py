@@ -81,13 +81,13 @@ EXCLUDED_MODULES = (
     "vtkmodules",
 )
 
-PYINSTALLER_COLLECT_ALL = (
+PYINSTALLER_COLLECT_ALL = ("webview",) if platform.system() == "Darwin" else (
     "PyQt6",
     "qtpy",
     "webview",
 )
 
-PYINSTALLER_RUNTIME_HIDDEN_IMPORTS = (
+PYINSTALLER_RUNTIME_HIDDEN_IMPORTS = () if platform.system() == "Darwin" else (
     "PyQt6.QtCore",
     "PyQt6.QtGui",
     "PyQt6.QtWidgets",
@@ -478,6 +478,8 @@ def build_pyinstaller(mode: str, install_deps: bool, skip_conflict_check: bool) 
     _run(cmd, env={"MPLCONFIGDIR": str(matplotlib_cache), "QT_API": "pyqt6"})
 
     artifact = _artifact_path(output_root, mode)
+    if platform.system() == "Darwin":
+        _run(["codesign", "--verify", "--deep", "--strict", str(artifact)])
 
     manifest = {
         "app": APP_NAME,
