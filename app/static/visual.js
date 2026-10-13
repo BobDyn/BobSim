@@ -824,7 +824,7 @@
         const r = header.joints.radius;
         const ax = scale(right, r);
         const ay = scale(up, r);
-        for (let i = 0; i < scene.pointCount; i++) {
+        for (const i of header.joints.indices || Array.from({length: scene.pointCount}, (_, index) => index)) {
           scene.point(i, f, pa);
           this.disc(pa, ax, ay, scene.jointRgb, 1);
         }
@@ -851,10 +851,13 @@
           }
           if (Number.isInteger(tire.spin_slot)) {
             const angle = scene.scalar(tire.spin_slot, f);
-            const spoke = add(scale(ex, tire.radius*0.44*Math.cos(angle)), scale(ez, -tire.radius*0.44*Math.sin(angle)));
-            for (const center of faces) {
-              const outer = add(center, scale(axle, dot(sub(center, pa), axle) > 0 ? 0.003 : -0.003));
-              this.segment(outer, add(outer, spoke), [0.82, 0.86, 0.91], 0.012);
+            for (let spokeIndex = 0; spokeIndex < 3; spokeIndex++) {
+              const phase = angle + spokeIndex * Math.PI * 2 / 3;
+              const spoke = add(scale(ex, tire.radius*0.44*Math.cos(phase)), scale(ez, -tire.radius*0.44*Math.sin(phase)));
+              for (const center of faces) {
+                const outer = add(center, scale(axle, dot(sub(center, pa), axle) > 0 ? 0.003 : -0.003));
+                this.segment(outer, add(outer, spoke), [0.82, 0.86, 0.91], 0.012);
+              }
             }
           }
         }

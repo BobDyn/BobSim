@@ -4822,7 +4822,7 @@ summary:focus-visible {
 
 /* Simulations belong to the active vehicle. */
 .simulation-workspace {
-  grid-template-columns: var(--simulation-pane-width, 230px) 8px minmax(0, 1fr);
+  grid-template-columns: var(--simulation-pane-width, 230px) 12px minmax(0, 1fr);
 }
 .simulation-tree-pane {
   display: flex;
@@ -4891,7 +4891,7 @@ summary:focus-visible {
 .simulation-detail .replay-stage { min-height: 0; }
 .simulation-detail .replay-controls { flex-wrap: wrap; }
 @media (max-width: 900px) {
-  .simulation-workspace { grid-template-columns: var(--simulation-pane-width, 180px) 8px minmax(0, 1fr); }
+  .simulation-workspace { grid-template-columns: var(--simulation-pane-width, 180px) 12px minmax(0, 1fr); }
   .simulation-detail .simulation-card { padding: 14px; gap: 12px; }
   .simulation-detail .simulation-categories { flex-wrap: wrap; }
 }
@@ -4918,4 +4918,24 @@ summary:focus-visible {
 }
 .replay-camera-tools select { min-width: 0; padding: 4px 6px; }
 
-#simulation-splitter { display: block; }
+#simulation-splitter { display: grid; }
+
+
+.simulation-context-menu {
+  position: fixed; z-index: 10000; min-width: 170px; padding: 4px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+  box-shadow: 0 8px 24px #0004;
+}
+.simulation-context-menu[hidden] { display: none; }
+.simulation-context-menu button {
+  display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 3px;
+  text-align: left; background: transparent; color: var(--ink); font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.simulation-context-menu button:hover, .simulation-context-menu button:focus-visible { background: var(--surface-2); }
+.simulation-context-menu [data-action="delete"] { color: var(--red); }
+.simulation-tree-more {
+  width: 22px; flex: 0 0 22px; border: 0; padding: 0; height: 28px;
+  color: var(--muted); background: transparent; cursor: pointer; font-size: 17px;
+}
+.simulation-tree-more:hover { color: var(--ink); background: var(--surface-2); }

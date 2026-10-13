@@ -28,6 +28,12 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
     assert np.allclose(np.diff(channels["body.z"]), 0 if dof == 3 else .02)
     assert bool(config["geometry"]["links"]["suspension"]) == (dof >= 6)
     assert bool(config["geometry"]["links"]["unsprung"]) == (dof == 14)
+    assert ("fl_body_lower" in config["geometry"]["points"]) == (dof >= 6)
+    assert ("fl_mass_0" in config["geometry"]["points"]) == (dof == 14)
+    assert not any("spring" in name for name in config["geometry"]["joints"])
+    if dof >= 6:
+        assert np.linalg.norm([channels[f"fl_body.{axis}"][0] - channels[f"fl_body_lower.{axis}"][0]
+                               for axis in "xyz"]) == pytest.approx(0.16)
     tire = config["geometry"]["tires"]["fl"]
     assert ("spin" in tire) == (dof >= 10)
     assert channels["fl_y.z"][0] == pytest.approx(-np.sin(0.1))

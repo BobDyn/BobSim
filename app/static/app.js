@@ -4282,8 +4282,65 @@ function wireSimulationSplitter() {
   new ResizeObserver(() => apply(width)).observe(workspace);
 }
 
+function wireSimulationContextMenu() {
+  const tree = document.getElementById("simulation-tree");
+  const menu = document.getElementById("simulation-context-menu");
+  let target = null;
+  let trigger = null;
+  const close = (restoreFocus = false) => {
+    menu.hidden = true;
+    trigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger?.focus();
+  };
+  const open = (id, x, y, element) => {
+    target = id;
+    trigger?.setAttribute("aria-expanded", "false");
+    trigger = element;
+    menu.hidden = false;
+    menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
+    menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
+    trigger?.setAttribute("aria-expanded", "true");
+    menu.querySelector("button").focus();
+  };
+  tree.addEventListener("contextmenu", event => {
+    const branch = event.target.closest("[data-simulation-branch]");
+    if (!branch) return;
+    event.preventDefault();
+    open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
+  });
+  tree.addEventListener("click", event => {
+    const button = event.target.closest("[data-simulation-menu]");
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    open(button.dataset.simulationMenu, rect.left, rect.bottom, button);
+  });
+  menu.addEventListener("click", event => {
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (!action) return;
+    const id = target;
+    close();
+    workspaceAction(() => action === "delete" ? removeSimulation(id) : openSimulation(id));
+  });
+  menu.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); close(true); }
+    if (event.key === "Tab") close();
+    if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      const buttons = [...menu.querySelectorAll("button")];
+      const index = buttons.indexOf(document.activeElement);
+      buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+    }
+  });
+  document.addEventListener("pointerdown", event => {
+    if (!menu.contains(event.target) && !event.target.closest("[data-simulation-menu]")) close();
+  });
+  window.addEventListener("resize", () => close());
+  document.querySelector(".simulation-tree-pane").addEventListener("scroll", () => close());
+}
+
 function mountSimulationWorkspace() {
   wireSimulationSplitter();
+  wireSimulationContextMenu();
   const detail = document.getElementById("simulation-detail");
   const config = document.getElementById("simulation-config-modal");
   config.classList.add("simulation-inline-config");
@@ -4418,13 +4475,14 @@ function renderSimulationWorkspace() {
     const workflow = state.status?.workflows?.find(w => w.id === item.workflow_id);
     const model = item.model ? `${item.model.engine} · ${item.model.fidelity}` : workflow?.label || item.workflow_id;
     const icon = workflow?.group === "lap" ? "lap" : workflow?.group === "envelope" ? "envelope" : "response";
-    return `<div class="simulation-tree-branch">
+    return `<div class="simulation-tree-branch" data-simulation-branch="${escapeHtml(item.id)}">
       <div class="simulation-tree-row">
         <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${escapeHtml(item.id)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>
         <button type="button" data-simulation-id="${escapeHtml(item.id)}" class="simulation-tree-item" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
-          ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.fidelity || "")}</span>
+          ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.model_dofs?.length ? item.model.model_dofs.join("/") + " DOF" : item.model?.fidelity || "")}</span>
         </button>
         <button type="button" class="simulation-tree-add" data-simulation-add-child="${escapeHtml(item.id)}" aria-label="Add to ${escapeHtml(item.name)}" title="Add visualization or optimization">+</button>
+        <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
@@ -4625,15 +4683,21 @@ async function configureSimulationWorkflow(workflowId) {
   await openSimulation(payload.simulation.id);
 }
 
-async function removeSimulation() {
-  const simulation = selectedSimulation();
-  if (!simulation || !window.confirm(`Remove "${simulation.name}"? Saved runs will be kept.`)) return;
+async function removeSimulation(id = state.selectedSimulationId) {
+  const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+  if (!simulation || !window.confirm(`Delete "${simulation.name}"? Saved runs will be kept.`)) return;
   await simulationRequest("delete", {id: simulation.id});
-  state.selectedSimulationId = null;
-  state.simModalOpen = false;
-  state.dirtySimConfig = false;
-  renderStandard();
+  state.collapsedSimulations.delete(id);
+  if (state.selectedSimulationId === id) {
+    state.selectedSimulationId = null;
+    state.selectedVisualizationId = null;
+    state.simulationChildEditor = false;
+    state.simModalOpen = false;
+    state.dirtySimConfig = false;
+    setView("standard");
+  } else renderSimulationWorkspace();
 }
+
 
 function firstExistingWorkflowOutput(workflow) {
   return workflow?.outputs?.find((output) => output.exists) || null;
@@ -12873,7 +12937,7 @@ function wireEvents() {
     importVehicleFile(event.target.files?.[0]);
     event.target.value = "";
   });
-  document.getElementById("simulation-modal-close").addEventListener("click", () => workspaceAction(removeSimulation));
+  document.getElementById("simulation-modal-close").addEventListener("click", () => workspaceAction(() => removeSimulation()));
   document.getElementById("toolchain-settings-btn").addEventListener("click", openModelicaToolchain);
   document.getElementById("toolchain-close-btn").addEventListener("click", closeModelicaToolchain);
   document.getElementById("toolchain-save-btn").addEventListener("click", saveOpenModelicaToolchain);

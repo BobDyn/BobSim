@@ -238,6 +238,7 @@ def scene_payload(config_path: str | Path, data_path: str | Path) -> ScenePayloa
         "speed": float(data.render_cfg.get("speed", 1.0)),
         "points": point_names,
         "joints": {
+            "indices": [index_of[name] for name in geometry.get("joints", point_names) if name in index_of],
             "radius": float((style.get("joints") or {}).get("radius", 0.014)),
             "color": str((style.get("joints") or {}).get("color", "#e0483c")),
         },

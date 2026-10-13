@@ -425,3 +425,30 @@ vm.runInContext(`
   delete globalThis.ResizeObserver;
 }
 `,ctx);
+
+(async () => {
+  const deletionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,deletionContext);
+  await vm.runInContext(`
+  (async () => {
+    const originals={request:simulationRequest,render:renderSimulationWorkspace,view:setView};
+    globalThis.window={confirm:()=>true};
+    let deleted=null;
+    simulationRequest=async (action,payload)=>{deleted=payload.id;};
+    renderSimulationWorkspace=()=>{};
+    setView=view=>{state.view=view;};
+    state.simulationWorkspace={simulations:[{id:'editing',name:'Editing'},{id:'other',name:'Other'}]};
+    state.selectedSimulationId='editing';state.dirtySimConfig=true;state.simModalOpen=true;
+    await removeSimulation('other');
+    assert.equal(deleted,'other');
+    assert.equal(state.selectedSimulationId,'editing');
+    assert.equal(state.dirtySimConfig,true,'deleting another simulation must preserve unsaved inputs');
+    await removeSimulation('editing');
+    assert.equal(state.selectedSimulationId,null);
+    assert.equal(state.simModalOpen,false);
+    assert.equal(state.view,'standard');
+    simulationRequest=originals.request;renderSimulationWorkspace=originals.render;setView=originals.view;
+    delete globalThis.window;
+  })()
+  `,deletionContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});

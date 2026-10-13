@@ -73,6 +73,18 @@ def build_scene(
         return np.einsum("nij,nj->ni", rotation, np.broadcast_to(local, (len(time), 3))) + translation
 
     point("body", translation)
+    visible_joints = ["body"]
+
+    def connection(name: str, start: NDArray[np.float64], end: NDArray[np.float64]) -> None:
+        direction = end - start
+        lateral = np.einsum("nij,j->ni", rotation, np.array([0., 1., 0.]))
+        for index in range(10):
+            fraction = index / 9
+            offset = 0.025 * (-1 if index % 2 else 1) if 1 < index < 8 else 0.
+            point(f"{name}_{index}", start + direction * fraction + lateral * offset)
+            if index:
+                links["suspension"].append([f"{name}_{index-1}", f"{name}_{index}"])
+
     for corner in ("fl", "fr", "rl", "rr"):
         axle = vehicle["front" if corner.startswith("f") else "rear"]
         nominal = np.array(axle["suspension"]["wheel_center_m"], dtype=float)
@@ -83,16 +95,33 @@ def build_scene(
         if dof == 14:
             wheel[:, 2] = nominal[2] + signals[f"unsprung_z_{corner}"]
         point(corner, wheel)
+        visible_joints.append(corner)
         mount = nominal - cg
-        mount[2] = 0.0
-        point(corner + "_body", world(mount))
+        mount[1] *= 0.65
+        mount[2] = 0.08 if dof >= 6 else 0.0
+        upper = world(mount)
+        point(corner + "_body", upper)
+        visible_joints.append(corner + "_body")
         if dof >= 6:
-            links["suspension"].append([corner + "_body", corner])
-        if dof == 14:
-            marker = wheel.copy()
-            marker[:, 2] += 0.08
-            point(corner + "_unsprung", marker)
-            links["unsprung"].append([corner, corner + "_unsprung"])
+            lower_mount = mount.copy()
+            lower_mount[2] -= 0.16
+            point(corner + "_body_lower", world(lower_mount))
+            links["body"].append([corner + "_body", corner + "_body_lower"])
+            spring_bottom = wheel.copy()
+            if dof == 14:
+                inboard = np.array([0., -0.18 if corner.endswith("l") else 0.18, 0.])
+                spring_bottom += np.einsum("nij,j->ni", rotation, inboard)
+                for index in range(8):
+                    delta = np.array([0.07 if index & 1 else -0.07,
+                                      0.05 if index & 2 else -0.05,
+                                      0.05 if index & 4 else -0.05])
+                    point(f"{corner}_mass_{index}", spring_bottom + np.einsum("nij,j->ni", rotation, delta))
+                    for bit in (1, 2, 4):
+                        if not index & bit:
+                            links["unsprung"].append([f"{corner}_mass_{index}", f"{corner}_mass_{index | bit}"])
+                point(corner + "_unsprung", spring_bottom)
+                links["unsprung"].append([corner, corner + "_unsprung"])
+            connection(corner + "_spring", upper, spring_bottom)
         toe = signals[f"toe{corner.upper()}"]
         camber = signals[f"camber{corner.upper()}"]
         ex = np.column_stack((np.cos(toe), np.sin(toe), zero))
@@ -109,11 +138,13 @@ def build_scene(
             tires[corner]["spin"] = corner + "_spin"
     for first, second in (("fl", "fr"), ("fr", "rr"), ("rr", "rl"), ("rl", "fl")):
         links["body"].append([first + "_body", second + "_body"])
-    descriptions = {3: "Planar body", 6: "Sprung body motion", 10: "Sprung body and wheel rotation",
+        if dof >= 6:
+            links["body"].append([first + "_body_lower", second + "_body_lower"])
+    descriptions = {3: "Four-tire planar body", 6: "Sprung body motion", 10: "Sprung body and wheel rotation",
                     14: "Sprung body, wheel rotation and unsprung motion"}
     config = {
         "representation": f"DynPy · {dof} DOF · {descriptions[dof]}",
-        "geometry": {"points": points, "links": links, "tires": tires},
+        "geometry": {"points": points, "links": links, "tires": tires, "joints": visible_joints},
         "style": {"joints": {"radius": 0.012, "color": "#a7b8cc"},
                   "links": {"default": {"radius": 0.013, "color": "#8ba1bd"},
                             "groups": {"suspension": {"color": "#d46b7d"}, "unsprung": {"color": "#e2ac54"}}}},
