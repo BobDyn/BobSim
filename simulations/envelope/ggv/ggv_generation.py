@@ -430,7 +430,7 @@ def solve_ax_limit(
                 )
             except (ValueError, RuntimeError):
                 boundary = None
-            if boundary is not None:
+            if boundary is not None and (boundary.success or not trim_multistart):
                 return boundary.longitudinal_acceleration_mps2 if boundary.success else float("nan")
         return _solve_ax_limit_qss(
             vehicle,
@@ -1006,7 +1006,7 @@ def generate_ggv(
                         )
                     except (ValueError, RuntimeError):
                         pass
-                if boundary is not None:
+                if boundary is not None and (boundary.success or not config.trim_multistart):
                     branch[i] = boundary.longitudinal_acceleration_mps2 if boundary.success else np.nan
                     seeds[mode] = boundary.unknowns
                 else:

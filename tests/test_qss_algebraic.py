@@ -124,15 +124,24 @@ def test_unreachable_steering_bound_does_not_reject_reachable_trim(vehicle, monk
     assert result.success, result.message
 
 
-def test_negative_drive_maximum_does_not_trigger_repeated_trim_search(vehicle, monkeypatch):
+@pytest.mark.parametrize("multistart", (False, True))
+def test_negative_drive_maximum_preserves_optional_branch_audit(vehicle, monkeypatch, multistart):
     from simulations.envelope.ggv import ggv_generation as ggv
 
-    def no_retry(*args, **kwargs):
-        pytest.fail("A converged negative drive maximum already rules out positive acceleration.")
+    attempts = []
 
-    monkeypatch.setattr(ggv, "_solve_ax_limit_qss", no_retry)
+    def audit(*args, **kwargs):
+        attempts.append(kwargs["trim_multistart"])
+        return .123
+
+    monkeypatch.setattr(ggv, "_solve_ax_limit_qss", audit)
     value = ggv.solve_ax_limit(
         project_vehicle_yaml(load_vehicle_yaml()).ggv, reduced_model=vehicle.model(3),
-        speed=25., ay=20.5, ax_grid=np.array([0., 27.5]), mode="drive", trim_multistart=True,
+        speed=25., ay=20.5, ax_grid=np.array([0., 27.5]), mode="drive", trim_multistart=multistart,
     )
-    assert np.isnan(value)
+    if multistart:
+        assert attempts == [True]
+        assert value == .123
+    else:
+        assert not attempts
+        assert np.isnan(value)
