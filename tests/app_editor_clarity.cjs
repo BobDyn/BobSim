@@ -66,8 +66,22 @@ setPreviewPan(Infinity,NaN); assert.equal(state.vehiclePreviewPanX,0); assert.eq
 const popup = {id:'test-help',matches:()=>true,style:{},getBoundingClientRect:()=>({width:280,height:100})};
 document.querySelector=()=>({getBoundingClientRect:()=>({left:950,top:750,bottom:774})});
 window={innerWidth:1000,innerHeight:800};
-positionInfoPopup({target:popup,newState:'open'});
+positionInfoPopup(popup);
 assert.equal(popup.style.left,'712px'); assert.equal(popup.style.top,'644px');
+popup.open=false;
+popup.showModal=()=>{popup.open=true;};
+popup.close=()=>{popup.open=false;};
+popup.closest=selector=>selector==='.info-popup'?popup:null;
+document.getElementById=()=>popup;
+const helpButton={dataset:{infoPopup:popup.id}};
+handleInfoPopupClick({target:{closest:selector=>selector==='[data-info-popup]'?helpButton:null}});
+assert.equal(popup.open,true,'help opens only when requested');
+handleInfoPopupClick({target:{closest:selector=>selector==='.info-popup'?popup:selector==='.info-close'?{}:null}});
+assert.equal(popup.open,false,'close button dismisses help');
+popup.open=true;
+handleInfoPopupClick({target:popup});
+assert.equal(popup.open,false,'clicking the backdrop dismisses help');
+
 isSpatialPreviewArea=()=>true;
 drawVehicleFromForm=()=>{};
 syncViewButtons=()=>{};
@@ -89,10 +103,12 @@ for (let i=0;i<4;i+=2) {
 assert.equal(aeroInput.front_left_ride_height_ref_m[1],0.2);
 assert.equal(aeroRideHeightReferences({}).length,0);
 const hint = infoHint('Geometry help', '<script> & coordinates');
-assert.match(hint, /class="info-popup" popover/);
+assert.match(hint, /<dialog[^>]+class="info-popup"/);
 assert.match(hint, /aria-label="Geometry help"/);
+assert.match(hint, /aria-label="Close help"/);
+assert.equal(hint.includes(' popover'),false);
 assert.match(hint, /<svg[^>]+aria-hidden="true"/);
-assert.match(hint, /popovertarget="info-popup-/);
+assert.match(hint, /data-info-popup="info-popup-/);
 assert.match(hint, /&lt;script&gt; &amp; coordinates/);
 assert.equal(hint.includes('<script>'),false);
 assert.equal(hint.includes('<details class="info-hint" open'),false);

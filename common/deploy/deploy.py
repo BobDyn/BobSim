@@ -81,13 +81,13 @@ EXCLUDED_MODULES = (
     "vtkmodules",
 )
 
-PYINSTALLER_COLLECT_ALL = (
+PYINSTALLER_COLLECT_ALL = ("webview",) if platform.system() == "Darwin" else (
     "PyQt6",
     "qtpy",
     "webview",
 )
 
-PYINSTALLER_RUNTIME_HIDDEN_IMPORTS = (
+PYINSTALLER_RUNTIME_HIDDEN_IMPORTS = () if platform.system() == "Darwin" else (
     "PyQt6.QtCore",
     "PyQt6.QtGui",
     "PyQt6.QtWidgets",
@@ -478,6 +478,8 @@ def build_pyinstaller(mode: str, install_deps: bool, skip_conflict_check: bool) 
     _run(cmd, env={"MPLCONFIGDIR": str(matplotlib_cache), "QT_API": "pyqt6"})
 
     artifact = _artifact_path(output_root, mode)
+    if platform.system() == "Darwin":
+        _run(["codesign", "--verify", "--deep", "--strict", str(artifact)])
 
     manifest = {
         "app": APP_NAME,
@@ -541,7 +543,7 @@ def _copy_release_artifact(artifact: Path, release_dir: Path) -> Path:
         else:
             destination.unlink()
     if artifact.is_dir():
-        shutil.copytree(artifact, destination)
+        shutil.copytree(artifact, destination, symlinks=True)
     else:
         shutil.copy2(artifact, destination)
     return destination
@@ -562,7 +564,7 @@ def _write_release_notes(release_dir: Path, version: str, artifact: Path) -> Pat
                 "",
                 "## Highlights",
                 "",
-                "- One-file BobSim desktop wrapper with the Python backend and frontend bundled.",
+                "- BobSim desktop app with the Python backend and frontend bundled.",
                 "- BobSim icon assets generated from the BobDyn project resource image.",
                 "- Local simulation executables, generated configs, reports, workspaces, and caches are not bundled.",
                 "",
@@ -586,6 +588,9 @@ def _make_archive(release_dir: Path, release_root: Path, release_name: str) -> P
         archive = release_root / f"{release_name}.zip"
         if archive.exists():
             archive.unlink()
+        if platform.system() == "Darwin":
+            _run(["ditto", "-c", "-k", "--keepParent", str(release_dir), str(archive)])
+            return archive
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as handle:
             for path in sorted(release_dir.rglob("*")):
                 handle.write(path, path.relative_to(release_root))

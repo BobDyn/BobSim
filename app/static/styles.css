@@ -4716,6 +4716,21 @@ summary:focus-visible {
 }
 .info-button:hover { color: var(--ink); background: var(--surface-2); }
 .info-button:focus-visible { outline: 2px solid var(--blue); }
+.info-popup:not([open]) { display: none; }
+.info-popup::backdrop { background: transparent; }
+.info-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 20px;
+}
 .info-popup {
   position: fixed;
   inset: auto;
@@ -4725,7 +4740,7 @@ summary:focus-visible {
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow: auto;
-  padding: 12px;
+  padding: 16px 32px 16px 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);

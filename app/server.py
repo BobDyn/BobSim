@@ -389,8 +389,9 @@ class BobSimHandler(BaseHTTPRequestHandler):
 
 
 def _safe_static_path(raw_path: str) -> Path:
-    candidate = (STATIC_ROOT / raw_path).resolve()
-    if candidate != STATIC_ROOT and STATIC_ROOT not in candidate.parents:
+    root = STATIC_ROOT.resolve()
+    candidate = (root / raw_path).resolve()
+    if candidate != root and root not in candidate.parents:
         raise ValueError("Static path escapes app root")
     return candidate
 
@@ -411,5 +412,4 @@ def run(host: str, port: int) -> None:
         print("\nStopping BobSim app")
     finally:
         server.server_close()
-
 

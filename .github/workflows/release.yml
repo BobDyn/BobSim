@@ -25,10 +25,13 @@ jobs:
         include:
           - name: Linux
             os: ubuntu-latest
+            mode: onefile
           - name: Windows
             os: windows-latest
+            mode: onefile
           - name: macOS
             os: macos-latest
+            mode: onedir
 
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +55,7 @@ jobs:
           if [ -z "$version" ] && [[ "$GITHUB_REF_NAME" == v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
-          args=(--release --mode onefile)
+          args=(--release --mode "${{ matrix.mode }}")
           if [ -n "$version" ]; then
             args+=(--version "$version")
           fi
