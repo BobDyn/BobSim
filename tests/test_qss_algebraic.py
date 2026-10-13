@@ -122,3 +122,17 @@ def test_unreachable_steering_bound_does_not_reject_reachable_trim(vehicle, monk
         vehicle.model(3), speed_mps=12., longitudinal_acceleration_mps2=2., lateral_acceleration_mps2=4.,
     )
     assert result.success, result.message
+
+
+def test_negative_drive_maximum_does_not_trigger_repeated_trim_search(vehicle, monkeypatch):
+    from simulations.envelope.ggv import ggv_generation as ggv
+
+    def no_retry(*args, **kwargs):
+        pytest.fail("A converged negative drive maximum already rules out positive acceleration.")
+
+    monkeypatch.setattr(ggv, "_solve_ax_limit_qss", no_retry)
+    value = ggv.solve_ax_limit(
+        project_vehicle_yaml(load_vehicle_yaml()).ggv, reduced_model=vehicle.model(3),
+        speed=25., ay=20.5, ax_grid=np.array([0., 27.5]), mode="drive", trim_multistart=True,
+    )
+    assert np.isnan(value)

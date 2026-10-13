@@ -431,7 +431,7 @@ def solve_ax_limit(
             except (ValueError, RuntimeError):
                 boundary = None
             if boundary is not None:
-                return boundary.longitudinal_acceleration_mps2
+                return boundary.longitudinal_acceleration_mps2 if boundary.success else float("nan")
         return _solve_ax_limit_qss(
             vehicle,
             reduced_model,
@@ -505,7 +505,8 @@ def _solve_planar_limit(
     Returns
     -------
     QSSResult or None
-        Validated equilibrium, or no converged boundary.
+        Converged boundary, or None when optimization fails. A drive maximum
+        below the requested acceleration range has success=False.
     """
     force_scale = model.parameters.mass_kg * G / 4.0
     radius = np.asarray(model.parameters.wheel_radius_m)
@@ -519,7 +520,7 @@ def _solve_planar_limit(
     seed = initial_unknowns
     if seed is None:
         trim = solve_acceleration_trim(
-            model, speed_mps=speed, longitudinal_acceleration_mps2=coast if mode == "lateral" else 0.,
+            model, speed_mps=speed, longitudinal_acceleration_mps2=coast,
             lateral_acceleration_mps2=0. if mode == "lateral" else ay, max_nfev=60, tolerance=1e-8,
         )
         if not trim.success:
@@ -557,12 +558,12 @@ def _solve_planar_limit(
         ax, lateral, _ = output.generalized_acceleration
         required = vehicle.mass * ax + drag
         constraints = []
-        if np.isfinite(ax_bounds[0]):
+        if mode != "drive" and np.isfinite(ax_bounds[0]):
             constraints.append(ax - ax_bounds[0])
         if np.isfinite(ax_bounds[1]):
             constraints.append(ax_bounds[1] - ax)
         if mode == "drive":
-            constraints.extend((required, ax))
+            constraints.append(required)
             drive_limit = powertrain_force_limit(vehicle, speed)
             if np.isfinite(drive_limit):
                 constraints.append(drive_limit - required)
@@ -595,8 +596,10 @@ def _solve_planar_limit(
     inputs = replace(inputs, steering_rad=steering)
     if _tire_state_error(model, inputs, output):
         return None
+    feasible = mode != "drive" or float(output.generalized_acceleration[0]) >= ax_bounds[0] - 1e-7
     return QSSResult(
-        success=True, message=str(result.message), residual_norm=float(np.linalg.norm(equality(result.x))),
+        success=feasible, message=str(result.message) if feasible else "Drive maximum is below the requested range.",
+        residual_norm=float(np.linalg.norm(equality(result.x))),
         state=state, inputs=inputs, output=output,
         unknowns={**dict(zip(names, map(float, physical))), "steering_rad": steering},
         speed_mps=speed, yaw_rate_radps=0.,
@@ -1004,7 +1007,7 @@ def generate_ggv(
                     except (ValueError, RuntimeError):
                         pass
                 if boundary is not None:
-                    branch[i] = boundary.longitudinal_acceleration_mps2
+                    branch[i] = boundary.longitudinal_acceleration_mps2 if boundary.success else np.nan
                     seeds[mode] = boundary.unknowns
                 else:
                     branch[i] = solve_ax_limit(
