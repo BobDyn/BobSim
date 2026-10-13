@@ -390,3 +390,15 @@ vm.runInContext(`
   document=originalDocument; setView=originalSetView;
 }
 `,ctx);
+
+vm.runInContext(`
+{
+  const originalResults = savedResults;
+  savedResults = () => [{id:'unrelated'}];
+  state.selectedResultId='removed'; state.selectedVisualizationId='pinned-view';
+  assert.equal(selectedSavedResult(),null,'a missing visualization source must not show another run');
+  state.selectedVisualizationId=null;
+  assert.equal(selectedSavedResult().id,'unrelated');
+  savedResults=originalResults;
+}
+`,ctx);

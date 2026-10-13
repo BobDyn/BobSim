@@ -740,7 +740,7 @@
     const changed = capture !== state.capture;
     state.capture = capture;
     if (!state.started) start();
-    else if (changed) {
+    else if (changed && state.viewer) {
       state.loadVersion++;
       state.viewer.playing = false;
       state.scene = null;

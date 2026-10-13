@@ -552,7 +552,7 @@ async function refreshSavedResults() {
     state.savedResultsPayload = { results: [], error: error.message };
   }
   const results = savedResults();
-  if (!results.some((result) => result.id === state.selectedResultId)) {
+  if (!state.selectedVisualizationId && !results.some((result) => result.id === state.selectedResultId)) {
     state.selectedResultId = results[0]?.id || null;
   }
 }
@@ -640,7 +640,7 @@ function savedResults() {
 
 function selectedSavedResult() {
   const results = savedResults();
-  return results.find((result) => result.id === state.selectedResultId) || results[0] || null;
+  return results.find((result) => result.id === state.selectedResultId) || (state.selectedVisualizationId ? null : results[0]) || null;
 }
 
 function resultSources() {
