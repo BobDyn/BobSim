@@ -187,8 +187,11 @@ equations and constrains selected generalized accelerations:
 - YMD point: sideslip and steer are imposed, longitudinal/vertical/wheel states
   are equilibrated, and lateral acceleration plus yaw moment are outputs.
 
-The unknown set grows naturally with fidelity: body sideslip/steer/drive torque,
-then heave-roll-pitch, then four wheel slips, then four unsprung positions.
+Acceleration and constant-radius trims solve rack travel directly. Tire loads
+and massless-wheel slips are algebraic unknowns solved alongside body equilibrium.
+MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
+These algebraic unknowns do not add dynamic DOFs. The 3 DOF GGV solver maximizes
+each boundary with the same equations and retains the trim search as a fallback.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
 range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected

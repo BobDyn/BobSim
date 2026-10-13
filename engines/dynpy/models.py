@@ -138,7 +138,30 @@ class VehicleDynamicsSystem(ABC):
         del time_s
         return self.evaluate(state, inputs).derivative
 
-    def evaluate(self, state: ArrayLike, inputs: ModelInputs = ModelInputs()) -> ModelOutput:
+    def evaluate(
+        self, state: ArrayLike, inputs: ModelInputs = ModelInputs(), *,
+        normal_loads_n: ArrayLike | None = None,
+        algebraic_slips: ArrayLike | None = None,
+    ) -> ModelOutput:
+        """## Vehicle Force Evaluation
+
+        Parameters
+        ----------
+        state : ArrayLike
+            Generalized coordinates and velocities.
+        inputs : ModelInputs
+            Driver and road inputs.
+        normal_loads_n : ArrayLike or None
+            Trial corner loads for simultaneous QSS closure in 3/6/10 DOF.
+        algebraic_slips : ArrayLike or None
+            Trial wheel slips for simultaneous torque balance in 3/6 DOF.
+
+        Returns
+        -------
+        ModelOutput
+            Forces and accelerations. Supplied trial loads and slips require
+            external load and wheel torque balance constraints.
+        """
         x = np.asarray(state, dtype=float)
         if x.shape != (self.state_size,):
             raise ValueError(
@@ -198,9 +221,19 @@ class VehicleDynamicsSystem(ABC):
         slip_denominator = np.maximum(np.abs(wheel_longitudinal_speed), 1.0)
         slip_ratios = (radii * wheel_speeds - wheel_longitudinal_speed) / slip_denominator
 
+        if normal_loads_n is not None:
+            normal_loads = np.asarray(normal_loads_n, dtype=float)
+            if (self.dof == 14 or normal_loads.shape != (4,)
+                    or not np.all(np.isfinite(normal_loads)) or np.any(normal_loads < 0.0)):
+                raise ValueError("Trial loads require four nonnegative finite values in 3/6/10 DOF.")
+        if algebraic_slips is not None:
+            slip_ratios = np.asarray(algebraic_slips, dtype=float)
+            if self.dof >= 10 or slip_ratios.shape != (4,) or not np.all(np.isfinite(slip_ratios)):
+                raise ValueError("Trial slips require four finite values in 3/6 DOF.")
+
         # 6/10DOF uprights are massless, so tire load depends on tire force
         # through the instant links. Iterate to close that loop.
-        for _iteration in range(self._force_path_iterations):
+        for _iteration in range(self._force_path_iterations if normal_loads_n is None else 0):
             fx_tire, fy_tire, slip_ratios = self._tire_forces(
                 normal_loads,
                 slip_angles,
@@ -208,6 +241,7 @@ class VehicleDynamicsSystem(ABC):
                 kinematics.camber_rad,
                 inputs,
                 wheel_longitudinal_speed,
+                prescribed_slip=algebraic_slips is not None,
             )
             tire_moments = self._tire_moments(
                 normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
@@ -251,6 +285,7 @@ class VehicleDynamicsSystem(ABC):
             kinematics.camber_rad,
             inputs,
             wheel_longitudinal_speed,
+            prescribed_slip=algebraic_slips is not None,
         )
         tire_moments = self._tire_moments(
             normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
@@ -383,6 +418,7 @@ class VehicleDynamicsSystem(ABC):
         camber_rad: FloatArray,
         inputs: ModelInputs,
         wheel_speed_mps: FloatArray | None = None,
+        *, prescribed_slip: bool = False,
     ) -> tuple[FloatArray, FloatArray, FloatArray]:
         """## Tire Forces
 
@@ -403,6 +439,8 @@ class VehicleDynamicsSystem(ABC):
 
         wheel_speed_mps : NDArray or None
             Wheel-frame longitudinal speeds for rolling resistance. Defaults to zero.
+        prescribed_slip : bool
+            Evaluate supplied massless-wheel slips for external torque closure.
 
         Returns
         -------
@@ -422,10 +460,11 @@ class VehicleDynamicsSystem(ABC):
                 lever = radii[corners] - my_slope
                 if np.any(lever <= 0):
                     raise ValueError("Tire rolling moment gives a nonpositive wheel torque lever.")
-                requested_fx = (torques[corners] + my_zero) / lever
-                slip_ratios[corners] = tire.slip_for_force(
-                    normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx,
-                )
+                if not prescribed_slip:
+                    requested_fx = (torques[corners] + my_zero) / lever
+                    slip_ratios[corners] = tire.slip_for_force(
+                        normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx,
+                    )
             fx[corners], fy[corners] = tire.forces(
                 normal_loads[corners], slip_angles[corners], slip_ratios[corners], camber_rad[corners],
             )
