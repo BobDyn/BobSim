@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 import re
 import shutil
+from types import SimpleNamespace
+import time
+from urllib.request import urlopen
 import zipfile
 
 import pytest
@@ -100,14 +103,42 @@ def test_desktop_forwards_python_module_invocations_without_opening_window(
     monkeypatch.setattr(desktop.multiprocessing, "freeze_support", lambda: calls.append("freeze_support"))
     monkeypatch.setattr(
         desktop,
-        "_available_port",
-        lambda _host: (_ for _ in ()).throw(AssertionError("desktop window should not start")),
+        "_running_server",
+        lambda: (_ for _ in ()).throw(AssertionError("desktop window should not start")),
     )
 
     desktop.main()
 
     assert calls == ["freeze_support", "main"]
     assert desktop.sys.argv == normalized
+
+
+def test_desktop_window_can_load_after_slow_backend_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages: list[bytes] = []
+
+    def load_app():
+        time.sleep(0.5)
+        return app
+
+    def create_window(_title: str, url: str, **_kwargs) -> None:
+        with urlopen(url, timeout=2) as response:
+            pages.append(response.read())
+
+    def unexpected_fallback(*_args) -> None:
+        pytest.fail("The native window could not load the backend")
+
+    monkeypatch.setattr(desktop.sys, "argv", ["BobSim"])
+    monkeypatch.setattr(desktop, "_bobsim_app", load_app)
+    monkeypatch.setattr(desktop, "_can_start_embedded_window", lambda: True)
+    monkeypatch.setattr(desktop, "_open_browser_and_wait", unexpected_fallback)
+    monkeypatch.setitem(desktop.sys.modules, "webview", SimpleNamespace(
+        create_window=create_window, start=lambda **_kwargs: None,
+    ))
+
+    desktop.main()
+
+    assert len(pages) == 1
+    assert b"BobSim" in pages[0]
 
 
 def test_desktop_stdio_replaces_unencodable_output(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
+from http.server import ThreadingHTTPServer
 import importlib.util
 import multiprocessing
 import os
 from pathlib import Path
-import socket
 import sys
 import threading
 import time
@@ -52,14 +52,18 @@ def _normalize_module_args(argv: list[str]) -> list[str]:
     return argv
 
 
-def _available_port(host: str) -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind((host, 0))
-        return int(sock.getsockname()[1])
-
-
-def _run_server(host: str, port: int) -> None:
-    _bobsim_app().run(host, port)
+@contextmanager
+def _running_server():
+    # Finish imports and runtime seeding before the native window can navigate.
+    with ThreadingHTTPServer((HOST, 0), _bobsim_app().BobSimHandler) as server:
+        url = f"http://{HOST}:{server.server_port}"
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        try:
+            yield url, server_thread
+        finally:
+            server.shutdown()
+            server_thread.join()
 
 
 def _has_module(module: str) -> bool:
@@ -179,31 +183,26 @@ def main() -> None:
         _bobsim_app().main()
         return
 
-    port = _available_port(HOST)
-    url = f"http://{HOST}:{port}"
-    server_thread = threading.Thread(target=_run_server, args=(HOST, port), daemon=True)
-    server_thread.start()
-    time.sleep(0.35)
+    with _running_server() as (url, server_thread):
+        os.environ.setdefault("QT_API", "pyqt6")
 
-    os.environ.setdefault("QT_API", "pyqt6")
+        if not _can_start_embedded_window():
+            _open_browser_and_wait(url, server_thread)
+            return
 
-    if not _can_start_embedded_window():
-        _open_browser_and_wait(url, server_thread)
-        return
+        try:
+            import webview
+        except Exception as exc:
+            print(f"Embedded BobSim window unavailable: {exc}", flush=True)
+            _open_browser_and_wait(url, server_thread)
+            return
 
-    try:
-        import webview
-    except Exception as exc:
-        print(f"Embedded BobSim window unavailable: {exc}", flush=True)
-        _open_browser_and_wait(url, server_thread)
-        return
-
-    try:
-        webview.create_window(APP_TITLE, url, width=1440, height=960, min_size=(1100, 700))
-        _start_embedded_webview(webview, _preferred_webview_gui())
-    except Exception as exc:
-        print(f"Embedded BobSim window failed to start: {exc}", flush=True)
-        _open_browser_and_wait(url, server_thread)
+        try:
+            webview.create_window(APP_TITLE, url, width=1440, height=960, min_size=(1100, 700))
+            _start_embedded_webview(webview, _preferred_webview_gui())
+        except Exception as exc:
+            print(f"Embedded BobSim window failed to start: {exc}", flush=True)
+            _open_browser_and_wait(url, server_thread)
 
 
 if __name__ == "__main__":
