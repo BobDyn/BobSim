@@ -740,7 +740,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field(
                 "generation.ax_search_max_g", "Max longitudinal search", kind="number", group="Generation", unit="g"
             ),
-            _field("generation.ax_search_points", "Longitudinal points", kind="integer", group="Generation"),
+            _field("generation.ax_binary_iterations", "Longitudinal refinement steps",
+                   kind="integer", group="Generation"),
             _field("generation.include_left_right", "Include left/right", kind="boolean", group="Generation"),
             _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
             _field("report.title", "Title", kind="string", group="Report"),

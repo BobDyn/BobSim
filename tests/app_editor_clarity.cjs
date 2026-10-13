@@ -192,6 +192,7 @@ state.dirtyVehicle=false;
 assert.equal(canRunStandardWorkflow(standardWorkflows()[0]),false);
 state.selectedWorkflowId='mbd';
 renderStandard=()=>{};
+api=async()=>({jobs:[]});
 simulationRequest=async()=>({simulation:{id:'test',workflow_id:'mbd'},config:{id:'mbd',data:{}},library:{sources:[]}});
 refreshStatus=async()=>{};
 setView=()=>{};
@@ -506,3 +507,46 @@ vm.runInContext(`
     assert.equal(fills.length,1,'the legend must not paint over the plot');
   `,plotContext);
 }
+
+(async () => {
+  const simulationContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source, simulationContext);
+  await vm.runInContext(`(async () => {
+    for (const [id, group] of [['four-post','four-post'], ['steady-state','steady-state'],
+      ['ggv','steady-state'], ['ymd','steady-state'], ['lap-qss','steady-state'],
+      ['reduced-ramp-steer','transient'], ['mbd-step-steer','transient'],
+      ['transient','transient'], ['lap-transient','transient']]) {
+      assert.equal(simulationAnalysisGroup({id}), group);
+    }
+    let requests=[];
+    api=async (path, options)=>{
+      assert.equal(options,undefined,'reopening a running simulation must be read-only');
+      requests.push(path);
+      return {jobs:[{id:'job',simulation:{id:'ggv-test'},workflow_id:'ggv',status:'running'}]};
+    };
+    simulationRequest=()=>{throw new Error('Must not reload the locked workspace');};
+    refreshSelectedSimConfig=async()=>{};
+    refreshStatus=async()=>{};
+    setView=view=>{state.view=view;};
+    await openSimulation('ggv-test');
+    assert.equal(state.selectedSimulationId,'ggv-test');
+    assert.equal(state.selectedJobId,'job');
+    assert.equal(state.activeSimTab,'jobs');
+    assert.equal(state.simModalOpen,true);
+    assert.equal(state.view,'standard');
+    assert.deepEqual(requests,['/api/jobs']);
+
+    const elements={};
+    document.getElementById=id=>elements[id] ||= {options:[]};
+    activeVehicleKey=()=> 'vehicle';
+    savedResults=()=>[{id:'result',created_label:'Today',simulation:{id:'ggv-test'},files:[{kind:'csv'}]}];
+    state.simulationWorkspace={simulations:[{id:'ggv-test',workflow_id:'ggv'}]};
+    api=()=>{throw new Error('An envelope must not request replay captures');};
+    await addSimulationVisualization('ggv-test');
+    assert.match(elements['simulation-visualization-run'].innerHTML,/Envelope plots and report/);
+    assert.match(elements['simulation-visualization-run'].innerHTML,/Signal explorer/);
+    assert.doesNotMatch(elements['simulation-visualization-run'].innerHTML,/3D replay/);
+    assert.match(elements['simulation-visualization-empty'].textContent,/envelope plots/);
+  })()`, simulationContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});

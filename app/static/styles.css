@@ -4927,7 +4927,7 @@ summary:focus-visible {
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
   box-shadow: 0 8px 24px #0004;
 }
-.simulation-context-menu[hidden] { display: none; }
+.simulation-context-menu[hidden], .simulation-context-menu button[hidden] { display: none; }
 .simulation-context-menu button {
   display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 3px;
   text-align: left; background: transparent; color: var(--ink); font: inherit; font-size: 12px;
@@ -4959,3 +4959,5 @@ summary:focus-visible {
 #result-selected-signals { max-height: 25%; overflow-y: auto; flex-shrink: 0; padding: 4px 10px; }
 .result-series-key { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
 .result-series-key i { width: 16px; height: 3px; flex-shrink: 0; }
+
+.simulation-input-fields { display: grid; gap: 10px; border: 0; margin: 0; padding: 0; min-width: 0; }

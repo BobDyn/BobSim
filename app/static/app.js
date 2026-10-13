@@ -4196,6 +4196,23 @@ async function saveSimulationEdits() {
 }
 
 async function openSimulation(id) {
+  const running = (await api("/api/jobs")).jobs.find(job =>
+    job.simulation?.id === id && ["queued", "running"].includes(job.status));
+  if (running) {
+    await saveSimulationEdits();
+    state.selectedSimulationId = id;
+    state.selectedVisualizationId = null;
+    state.simulationChildEditor = false;
+    state.selectedWorkflowId = running.workflow_id;
+    state.selectedJobId = running.id;
+    state.simulationCatalogOpen = false;
+    state.simModalOpen = true;
+    state.activeSimTab = "jobs";
+    await refreshSelectedSimConfig();
+    await refreshStatus();
+    setView("standard");
+    return;
+  }
   state.selectedVisualizationId = null;
   state.simulationChildEditor = false;
   await saveSimulationEdits();
@@ -4300,6 +4317,10 @@ function wireSimulationContextMenu() {
     target = id;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
+    const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+    const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
+    menu.querySelector('[data-action="replay"]').hidden = envelope;
+    menu.querySelector('[data-action="report"]').textContent = envelope ? "Add envelope plots and report" : "Add plots and report";
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
     menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
@@ -4330,7 +4351,7 @@ function wireSimulationContextMenu() {
     if (event.key === "Tab") close();
     if (["ArrowDown", "ArrowUp"].includes(event.key)) {
       event.preventDefault();
-      const buttons = [...menu.querySelectorAll("button")];
+      const buttons = [...menu.querySelectorAll("button")].filter(button => !button.hidden);
       const index = buttons.indexOf(document.activeElement);
       buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
     }
@@ -4352,15 +4373,17 @@ async function addSimulationVisualization(id, kind = null) {
   state.collapsedSimulations.delete(state.selectedSimulationId);
   const vehicleKey = activeVehicleKey();
   const runs = savedResults().filter(run => run.simulation?.id === id);
-  const captures = ((await api("/api/visual/runs")).runs || []).filter(run =>
+  const envelope = ["ggv", "ymd"].includes(selectedSimulation()?.workflow_id);
+  const captures = envelope ? [] : ((await api("/api/visual/runs")).runs || []).filter(run =>
     run.simulation_id === id && run.vehicle_key === vehicleKey);
   if (state.selectedSimulationId !== id || activeVehicleKey() !== vehicleKey || !state.simulationChildEditor) return;
   document.getElementById("simulation-visualization-run").innerHTML =
-    `<optgroup label="Plots and reports">${(kind && kind !== "report" ? [] : runs).map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
+    `<optgroup label="${envelope ? "Envelope plots and report" : "Plots and reports"}">${(kind && kind !== "report" ? [] : runs).map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
     `<optgroup label="Signal explorer">${(kind && kind !== "signals" ? [] : runs.filter(run => run.files?.some(file => file.kind === "csv"))).map(run => `<option data-kind="signals" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
-    `<optgroup label="3D replay">${(kind && kind !== "replay" ? [] : captures).map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
-  document.getElementById("simulation-visualization-name").value = ({report: "Plots and report", replay: "3D replay", signals: "Signal explorer"})[kind] || "Visualization";
+    (envelope ? "" : `<optgroup label="3D replay">${(kind && kind !== "replay" ? [] : captures).map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`);
+  document.getElementById("simulation-visualization-name").value = ({report: envelope ? "Envelope plots and report" : "Plots and report", replay: "3D replay", signals: "Signal explorer"})[kind] || "Visualization";
   document.getElementById("simulation-visualization-add").disabled = !document.getElementById("simulation-visualization-run").options.length;
+  document.getElementById("simulation-visualization-empty").textContent = envelope ? "Run this simulation to generate its envelope plots." : "Run this simulation or capture a scene first.";
   document.getElementById("simulation-visualization-empty").hidden = Boolean(document.getElementById("simulation-visualization-run").options.length);
   setView("standard");
 }
@@ -4495,7 +4518,7 @@ function renderSimulationWorkspace() {
         <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
-        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
+        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>${escapeHtml(SIMULATION_GROUPS.find(group => group.id === simulationAnalysisGroup({id: item.workflow_id}))?.label || "Setup")} setup</span></button>
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Runs</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
@@ -4590,12 +4613,18 @@ function responseModelPicker(workflow) {
   </label>`;
 }
 
-let activeSimulationGroup = "response";
+let activeSimulationGroup = "transient";
 const SIMULATION_GROUPS = [
-  {id: "response", label: "Vehicle Response", groups: ["standard", "response"], description: "Steering inputs, operating states and suspension motion."},
-  {id: "envelope", label: "Performance Envelopes", groups: ["envelope"], description: "Acceleration limits and yaw moment maps."},
-  {id: "lap", label: "Laptime", groups: ["lap"], description: "Racing lines, speed profiles and driver-controlled laps."},
+  {id: "four-post", label: "Four-post", description: "Suspension motion and loads."},
+  {id: "steady-state", label: "Steady state", description: "Choose equilibrium, an envelope or a quasi-steady lap."},
+  {id: "transient", label: "Transient", description: "Choose a maneuver or a driver-controlled lap."},
 ];
+
+function simulationAnalysisGroup(workflow) {
+  if (workflow.id === "four-post") return "four-post";
+  if (["steady-state", "ggv", "ymd", "lap-qss"].includes(workflow.id)) return "steady-state";
+  return "transient";
+}
 
 function renderWorkflows() {
   const order = ["four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
@@ -4611,13 +4640,13 @@ function renderWorkflows() {
     <nav class="simulation-categories" aria-label="Simulation categories">
       ${SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="ghost-button simulation-category" data-simulation-group="${id}" aria-pressed="${id === activeSimulationGroup}" aria-controls="simulation-group-${id}">${label}</button>`).join("")}
     </nav>
-    ${SIMULATION_GROUPS.map(({id, label, groups, description}) => `
+    ${SIMULATION_GROUPS.map(({id, label, description}) => `
       <section id="simulation-group-${id}" class="simulation-group" aria-labelledby="simulation-title-${id}"${id === activeSimulationGroup ? "" : " hidden"}>
         <header class="simulation-group-head">
           <h3 id="simulation-title-${id}" class="simulation-group-title">${label}</h3>
           <p>${description}</p>
         </header>
-        ${workflows.filter((workflow) => groups.includes(workflow.group)).map(workflowCard).join("")}
+        ${workflows.filter((workflow) => simulationAnalysisGroup(workflow) === id).map(workflowCard).join("")}
       </section>
     `).join("")}
   `;
@@ -4749,6 +4778,7 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
   if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
   const name = document.getElementById("simulation-instance-name");
   if (name && document.activeElement !== name) name.value = selectedSimulation()?.name || "";
+  if (name) name.disabled = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
   if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
     ? "Run log"
     : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
@@ -6109,7 +6139,8 @@ function renderSimConfigForm() {
     form.innerHTML = `<div class="empty-state">Select a workflow to configure its simulation inputs.</div>`;
     return;
   }
-  form.innerHTML = fieldGroupSections(state.simConfigPayload.fields || [], "sim-config");
+  const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(state.simConfigPayload.fields || [], "sim-config")}</fieldset>`;
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
   form.onclick = handleArrayEditorClick;
@@ -6134,7 +6165,9 @@ function updateSimConfigStatus() {
     status.textContent = "Loading run configuration.";
     return;
   }
-  status.textContent = state.dirtySimConfig ? "Unsaved changes" : "";
+  const generation = state.simConfigPayload.data?.generation;
+  const cases = workflow.id === "ggv" ? (generation?.speeds_mps?.length || 0) * Number(generation?.ay_points || 0) : 0;
+  status.textContent = state.dirtySimConfig ? "Unsaved changes" : cases ? `${formatNumber(cases)} lateral cases, each with nonlinear acceleration and braking trims.` : "";
   document.getElementById("apply-sim-config-btn").hidden = !state.dirtySimConfig;
 }
 
@@ -6284,17 +6317,18 @@ function renderJobs() {
   const list = document.getElementById("job-list");
   const runButton = document.getElementById("run-workflow-btn");
   const workflow = selectedWorkflow();
-  const canRun = Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
+  const busy = (state.status?.jobs || []).find(job => ["queued", "running"].includes(job.status));
+  const canRun = !busy && Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
   const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
-  runButton.textContent = !canRun
+  runButton.textContent = busy ? "Running" : !canRun
     ? "Simulation locked"
     : workflow
     ? runVerb
     : "No Workflow";
-  runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  runButton.title = busy ? "A simulation is running." : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
-  readiness.textContent = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  readiness.textContent = busy ? `${busy.label}. Settings are locked while it runs.` : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const prepare = document.getElementById("sim-prepare-mbd");
   prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
   prepare.disabled = !canWriteMbd();
