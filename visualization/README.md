@@ -31,8 +31,11 @@ the isometric view. Top, front and side views are available. Follow vehicle
 tracks position, Follow heading also turns with the vehicle, and Fixed camera
 stays in world space.
 
-Reduced replay shows planar motion at 3 DOF, body motion at 6 DOF, wheel rotation
-at 10 DOF, and unsprung motion at 14 DOF. Wishbones and steering use archived hardpoints and KinPy reconstruction from
+Reduced replay shows two axles and a center spine at 3 DOF, body motion at 6 DOF,
+and unsprung motion at 14 DOF. Wheel spin uses saved angles at 10/14 DOF and
+distance traveled at 3/6 DOF. The latter is a rolling animation, without wheel slip.
+Contact trails show all four wheels. Force arrows use saved Fx and Fy. Load
+footprints use Fz, which is available in new runs. Wishbones and steering use archived hardpoints and KinPy reconstruction from
 corner travel and rack input. Chassis lines connect the inboard mounts. Actuation
 linkages are omitted in reduced replay. MBD replay uses captured linkage positions.
 
@@ -140,7 +143,8 @@ camera:
 
 Point coordinates are in the world frame, in metres, matching BobSim's axis
 conventions ([`docs/conventions.md`](../docs/conventions.md)). Spin markers use
-saved wheel-angle signals when available. They are omitted otherwise.
+saved wheel-angle signals when available. Reduced 3/6 DOF replay derives them
+from distance traveled.
 
 `input_stride` is applied once, to every signal including `time`, so geometry,
 plots and the timeline stay on one index.

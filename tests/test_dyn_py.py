@@ -616,11 +616,16 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
         "instantLinkLateralRR",
         "tireFxFL",
         "tireFyFR",
+        "tireFzFL",
         "tireMxFL",
         "tireMyRL",
         "tireMzRR",
     ):
         assert signal in result.signals
+    for index, state in enumerate(result.state):
+        expected = model.evaluate(state, trim.inputs).normal_loads_n
+        assert np.allclose([result.signals[f"tireFz{corner}"][index]
+                            for corner in ("FL", "FR", "RL", "RR")], expected)
     metrics = compare_transient_signals(
         result.time_s,
         {"yawVel": result.signals["yawVel"]},

@@ -4207,6 +4207,7 @@ summary:focus-visible {
   gap: 6px;
 }
 
+.replay-trail-legend:not([hidden]) { display: flex; gap: 10px; font-size: 11px; }
 .replay-layer {
   display: flex;
   align-items: center;

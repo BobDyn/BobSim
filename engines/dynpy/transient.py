@@ -138,6 +138,7 @@ def simulate_transient(
     body_acceleration = np.empty((len(solution.t), 3), dtype=float)
     steering = np.empty(len(solution.t), dtype=float)
     tire_forces = np.empty((len(solution.t), 4, 2), dtype=float)
+    normal_loads = np.empty((len(solution.t), 4), dtype=float)
     tire_moments = np.empty((len(solution.t), 4, 3), dtype=float)
     camber = np.empty((len(solution.t), 4), dtype=float)
     toe = np.empty((len(solution.t), 4), dtype=float)
@@ -169,6 +170,7 @@ def simulate_transient(
         body_forces = output.wheel_forces_body_n
         tire_forces[index, :, 0] = body_forces[:, 0]*np.cos(heading)+body_forces[:, 1]*np.sin(heading)
         tire_forces[index, :, 1] = -body_forces[:, 0]*np.sin(heading)+body_forces[:, 1]*np.cos(heading)
+        normal_loads[index] = output.normal_loads_n
         tire_moments[index] = output.wheel_moments_tire_nm
         camber[index] = output.camber_rad
         toe[index] = output.toe_rad
@@ -198,6 +200,7 @@ def simulate_transient(
     for corner_index, corner in enumerate(("FL", "FR", "RL", "RR")):
         for component, label in enumerate(("Fx", "Fy")):
             signals[f"tire{label}{corner}"] = tire_forces[:, corner_index, component]
+        signals[f"tireFz{corner}"] = normal_loads[:, corner_index]
         for component, label in enumerate(("Mx", "My", "Mz")):
             signals[f"tire{label}{corner}"] = tire_moments[:, corner_index, component]
         signals[f"camber{corner}"] = camber[:, corner_index]

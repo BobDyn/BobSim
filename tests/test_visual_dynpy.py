@@ -27,19 +27,25 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
     assert f"{dof} DOF" in config["representation"]
     assert np.allclose(channels["body.x"], signals["x"])
     assert np.allclose(np.diff(channels["body.z"]), 0 if dof == 3 else .02)
-    assert len(config["geometry"]["links"]["upper"]) == 8
-    assert len(config["geometry"]["links"]["lower"]) == 8
-    assert len(config["geometry"]["links"]["steering"]) == 4
+    assert len(config["geometry"]["links"]["upper"]) == (0 if dof == 3 else 8)
+    assert len(config["geometry"]["links"]["lower"]) == (0 if dof == 3 else 8)
+    assert len(config["geometry"]["links"]["steering"]) == (0 if dof == 3 else 4)
     assert not any("mass_" in name or "spring" in name for name in config["geometry"]["points"])
-    cg = np.asarray(_combine_mass_properties(_mass_components(vehicle))[1])
-    for corner, side in (("fl", 1), ("fr", -1)):
-        for name in ("upper_fore_i", "upper_aft_i", "lower_fore_i", "lower_aft_i", "lower_o", "upper_o", "tie_o"):
-            # At zero body pose, stored hardpoints retain their ground-referenced height and lateral coordinate.
-            expected = np.asarray(vehicle["front"]["suspension"][name + "_m"]) * [1, side, 1]
-            assert channels[f"{corner}_{name}.y"][0] == pytest.approx(expected[1] - cg[1], abs=1e-8)
-            assert channels[f"{corner}_{name}.z"][0] == pytest.approx(expected[2], abs=1e-8)
+    if dof > 3:
+        cg = np.asarray(_combine_mass_properties(_mass_components(vehicle))[1])
+        for corner, side in (("fl", 1), ("fr", -1)):
+            for name in ("upper_fore_i", "upper_aft_i", "lower_fore_i", "lower_aft_i", "lower_o", "upper_o", "tie_o"):
+                # At zero body pose, stored hardpoints retain their ground-referenced height and lateral coordinate.
+                expected = np.asarray(vehicle["front"]["suspension"][name + "_m"]) * [1, side, 1]
+                assert channels[f"{corner}_{name}.y"][0] == pytest.approx(expected[1] - cg[1], abs=1e-8)
+                assert channels[f"{corner}_{name}.z"][0] == pytest.approx(expected[2], abs=1e-8)
+    else:
+        assert config["geometry"]["links"]["body"] == [
+            ["fl", "front_axle"], ["front_axle", "fr"],
+            ["rl", "rear_axle"], ["rear_axle", "rr"], ["front_axle", "rear_axle"],
+        ]
     tire = config["geometry"]["tires"]["fl"]
-    assert ("spin" in tire) == (dof >= 10)
+    assert "spin" in tire
     assert channels["fl_y.z"][0] == pytest.approx(-np.sin(0.1))
     assert np.allclose(channels["fl_x.x"], [1, 0, -1], atol=1e-12)
     assert np.allclose(channels["fl_x.y"], [0, 1, 0], atol=1e-12)
@@ -51,7 +57,10 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
     payload = visual.scene_payload(tmp_path / "scene.yml", tmp_path / "scene.npz")
     assert payload.header["frames"] == 3
     assert np.isfinite(np.frombuffer(payload.buffer, dtype=np.float32)).all()
-    assert (payload.header["tires"][0]["spin_slot"] is not None) == (dof >= 10)
+    assert payload.header["tires"][0]["spin_slot"] is not None
+    assert len(payload.header["tracks"]["corners"]) == 4
+    assert not payload.header["loads"]["corners"]
+    assert not payload.header["arrows"]
     (tmp_path / "vehicle.yml").write_text(yaml.safe_dump(vehicle))
     np.savetxt(tmp_path / "signals.csv", np.column_stack(list(signals.values())),
                delimiter=",", header=",".join(signals), comments="")
@@ -70,8 +79,26 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
         for start, end in moving_config["geometry"]["links"][group]:
             lengths = np.linalg.norm(position(end, moving) - position(start, moving), axis=1)
             assert np.allclose(lengths, lengths[0], atol=1e-8)
-    assert not np.allclose(position("fl_upper_o", moving), position("fl_upper_o", channels))
-    assert not np.allclose(position("fr_tie_o", moving), position("fr_tie_o", channels))
+    if dof > 3:
+        assert not np.allclose(position("fl_upper_o", moving), position("fl_upper_o", channels))
+        assert not np.allclose(position("fr_tie_o", moving), position("fr_tie_o", channels))
+    # Straight travel and reverse travel drive signed rolling animation without wheel states.
+    signals["yaw"][:] = 0
+    signals["roll"][:] = 0
+    signals["pitch"][:] = 0
+    signals["x"] = np.array([0., 2., 0.])
+    for corner in ("FL", "FR", "RL", "RR"):
+        signals[f"tireFx{corner}"] = np.full(3, 100.)
+        signals[f"tireFy{corner}"] = np.full(3, 200.)
+        signals[f"tireFz{corner}"] = np.full(3, 500.)
+    overlay_config, overlay = build_scene(signals, vehicle, dof)
+    assert len(overlay_config["geometry"]["vectors"]["tire_force"]) == 4
+    assert len(overlay_config["ground"]["loads"]["corners"]) == 4
+    assert np.allclose(overlay["fl_force.x"], 100.)
+    assert np.allclose(overlay["fl_force.y"], 200.)
+    assert np.allclose(overlay["tireFzFL"], 500.)
+    assert np.allclose(overlay["fl_spin"], signals["wheel_angle_fl"] if dof >= 10 else
+                       np.array([0., 2., 0.]) / vehicle["front"]["wheel"]["radius_m"])
     del signals["yaw"]
     with pytest.raises(ValueError, match="yaw channel"):
         build_scene(signals, vehicle, dof)

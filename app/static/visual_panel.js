@@ -111,7 +111,7 @@
     joints: "Joints",
     tires: "Tires",
     loads: "Load footprints",
-    tracks: "Contact trails",
+    tracks: "Wheel paths",
     arrows: "Force vectors",
     grid: "Ground grid",
   };
@@ -141,6 +141,20 @@
       wrap.appendChild(box);
       wrap.appendChild(document.createTextNode(label));
       menu.appendChild(wrap);
+      if (key === "tracks") {
+        const legend = document.createElement("div");
+        legend.className = "replay-trail-legend";
+        legend.hidden = !box.checked;
+        for (const corner of header.tracks.corners) {
+          const item = document.createElement("span");
+          const name = header.points[corner.point];
+          item.textContent = /^(fl|fr|rl|rr)/i.test(name) ? name.slice(0, 2).toUpperCase() : name;
+          item.style.color = corner.color;
+          legend.appendChild(item);
+        }
+        box.addEventListener("change", () => { legend.hidden = !box.checked; });
+        menu.appendChild(legend);
+      }
     }
 
   }
