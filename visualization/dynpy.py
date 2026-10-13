@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from engines.dynpy.models import _body_to_world_rotation
 from engines.dynpy.parameters import _combine_mass_properties, _mass_components
+from engines.kinpy.lookup import NonlinearDoubleWishboneKinematics
 
 
 def build_scene(
@@ -16,8 +17,8 @@ def build_scene(
 ) -> tuple[dict[str, Any], dict[str, NDArray[np.float64]]]:
     """## Reduced Model Scene
 
-    Represent only the motion resolved by the saved model. Suspension is drawn
-    as corner connections, not as independently simulated MBD links.
+    Animate saved body and wheel states with the archived vehicle hardpoints.
+    KinPy reconstructs wishbones and steering from corner travel and rack input.
 
     Parameters
     ----------
@@ -36,11 +37,11 @@ def build_scene(
     if dof not in (3, 6, 10, 14):
         raise ValueError("Replay requires a 3, 6, 10 or 14 DOF model.")
     time = np.asarray(signals["time"], dtype=float)
-    required = ["x", "y", "yaw"]
+    required = ["x", "y", "yaw", "handwheelAngle"]
     if dof >= 6:
         required += ["z", "roll", "pitch"]
     for corner in ("FL", "FR", "RL", "RR"):
-        required += [f"toe{corner}", f"camber{corner}"]
+        required += [f"toe{corner}", f"camber{corner}", f"jounce{corner}"]
         required += [f"wheelCenterOffset{axis}{corner}" for axis in "XYZ"]
         if dof >= 10:
             required.append(f"wheel_angle_{corner.lower()}")
@@ -59,7 +60,9 @@ def build_scene(
     output = {"time": time}
     points: dict[str, list[str]] = {}
     tires: dict[str, Any] = {}
-    links: dict[str, list[list[str]]] = {"body": [], "suspension": [], "unsprung": []}
+    links: dict[str, list[list[str]]] = {"body": [], "upper": [], "lower": [], "steering": [], "upright": []}
+    kinematics = NonlinearDoubleWishboneKinematics(vehicle)
+    rack = np.array([kinematics.rack_from_steering(float(angle)) for angle in signals["handwheelAngle"]])
 
     def vector(name: str, values: NDArray[np.float64]) -> list[str]:
         names = [f"{name}.{axis}" for axis in "xyz"]
@@ -75,16 +78,6 @@ def build_scene(
     point("body", translation)
     visible_joints = ["body"]
 
-    def connection(name: str, start: NDArray[np.float64], end: NDArray[np.float64]) -> None:
-        direction = end - start
-        lateral = np.einsum("nij,j->ni", rotation, np.array([0., 1., 0.]))
-        for index in range(10):
-            fraction = index / 9
-            offset = 0.025 * (-1 if index % 2 else 1) if 1 < index < 8 else 0.
-            point(f"{name}_{index}", start + direction * fraction + lateral * offset)
-            if index:
-                links["suspension"].append([f"{name}_{index-1}", f"{name}_{index}"])
-
     for corner in ("fl", "fr", "rl", "rr"):
         axle = vehicle["front" if corner.startswith("f") else "rear"]
         nominal = np.array(axle["suspension"]["wheel_center_m"], dtype=float)
@@ -96,32 +89,35 @@ def build_scene(
             wheel[:, 2] = nominal[2] + signals[f"unsprung_z_{corner}"]
         point(corner, wheel)
         visible_joints.append(corner)
-        mount = nominal - cg
-        mount[1] *= 0.65
-        mount[2] = 0.08 if dof >= 6 else 0.0
-        upper = world(mount)
-        point(corner + "_body", upper)
-        visible_joints.append(corner + "_body")
-        if dof >= 6:
-            lower_mount = mount.copy()
-            lower_mount[2] -= 0.16
-            point(corner + "_body_lower", world(lower_mount))
-            links["body"].append([corner + "_body", corner + "_body_lower"])
-            spring_bottom = wheel.copy()
-            if dof == 14:
-                inboard = np.array([0., -0.18 if corner.endswith("l") else 0.18, 0.])
-                spring_bottom += np.einsum("nij,j->ni", rotation, inboard)
-                for index in range(8):
-                    delta = np.array([0.07 if index & 1 else -0.07,
-                                      0.05 if index & 2 else -0.05,
-                                      0.05 if index & 4 else -0.05])
-                    point(f"{corner}_mass_{index}", spring_bottom + np.einsum("nij,j->ni", rotation, delta))
-                    for bit in (1, 2, 4):
-                        if not index & bit:
-                            links["unsprung"].append([f"{corner}_mass_{index}", f"{corner}_mass_{index | bit}"])
-                point(corner + "_unsprung", spring_bottom)
-                links["unsprung"].append([corner, corner + "_unsprung"])
-            connection(corner + "_spring", upper, spring_bottom)
+        geometry = kinematics.front if corner.startswith("f") else kinematics.rear
+        mirror = np.array([1., -1. if corner.endswith("r") else 1., 1.])
+        corner_rack = rack * mirror[1] if corner.startswith("f") else zero
+        moving: dict[str, list[NDArray[np.float64]]] = {name: [] for name in ("lower_o", "upper_o", "tie_o")}
+        guess = np.zeros(3)
+        for travel, displacement in zip(signals[f"jounce{corner.upper()}"], corner_rack):
+            guess, pose, residual = geometry.solve_jounce(float(travel), guess, rack_displacement_m=float(displacement))
+            if residual > 1e-8:
+                raise ValueError(f"Could not reconstruct {corner.upper()} suspension geometry.")
+            for name in moving:
+                moving[name].append(np.asarray(getattr(pose, name)))
+        for name, values in moving.items():
+            point(f"{corner}_{name}", world(np.asarray(values) * mirror - cg))
+        for name in ("lower_fore_i", "lower_aft_i", "upper_fore_i", "upper_aft_i"):
+            point(f"{corner}_{name}", world(np.asarray(getattr(geometry, name)) * mirror - cg))
+        rack_pickup = np.tile(geometry.rack_pickup_initial, (len(time), 1))
+        rack_pickup[:, 1] += corner_rack
+        point(f"{corner}_rack", world(rack_pickup * mirror - cg))
+        for arm in ("upper", "lower"):
+            for end in ("fore", "aft"):
+                links[arm].append([f"{corner}_{arm}_{end}_i", f"{corner}_{arm}_o"])
+            links["body"].append([f"{corner}_{arm}_fore_i", f"{corner}_{arm}_aft_i"])
+        links["steering"].append([f"{corner}_rack", f"{corner}_tie_o"])
+        links["upright"].extend([[f"{corner}_lower_o", f"{corner}_upper_o"],
+                                 [f"{corner}_lower_o", corner], [f"{corner}_upper_o", corner],
+                                 [f"{corner}_tie_o", corner]])
+        visible_joints.extend(f"{corner}_{name}" for name in (
+            *moving, "rack", "lower_fore_i", "lower_aft_i", "upper_fore_i", "upper_aft_i",
+        ))
         toe = signals[f"toe{corner.upper()}"]
         camber = signals[f"camber{corner.upper()}"]
         ex = np.column_stack((np.cos(toe), np.sin(toe), zero))
@@ -136,19 +132,21 @@ def build_scene(
         if dof >= 10:
             output[corner + "_spin"] = np.asarray(signals[f"wheel_angle_{corner}"])
             tires[corner]["spin"] = corner + "_spin"
-    for first, second in (("fl", "fr"), ("fr", "rr"), ("rr", "rl"), ("rl", "fl")):
-        links["body"].append([first + "_body", second + "_body"])
-        if dof >= 6:
-            links["body"].append([first + "_body_lower", second + "_body_lower"])
+    for arm in ("upper", "lower"):
+        for first, second, end in (("fl", "fr", "fore"), ("rl", "rr", "aft")):
+            links["body"].append([f"{first}_{arm}_{end}_i", f"{second}_{arm}_{end}_i"])
+        for side in ("l", "r"):
+            links["body"].append([f"f{side}_{arm}_aft_i", f"r{side}_{arm}_fore_i"])
     descriptions = {3: "Four-tire planar body", 6: "Sprung body motion", 10: "Sprung body and wheel rotation",
                     14: "Sprung body, wheel rotation and unsprung motion"}
     config = {
-        "representation": f"DynPy · {dof} DOF · {descriptions[dof]}",
+        "representation": f"DynPy · {dof} DOF · {descriptions[dof]} · KinPy linkages",
         "geometry": {"points": points, "links": links, "tires": tires, "joints": visible_joints},
-        "style": {"joints": {"radius": 0.012, "color": "#a7b8cc"},
-                  "links": {"default": {"radius": 0.013, "color": "#8ba1bd"},
-                            "groups": {"suspension": {"color": "#d46b7d"}, "unsprung": {"color": "#e2ac54"}}}},
-        "camera": {"attach_to": "body", "forward_pair": ["rl_body", "fl_body"]},
+        "style": {"joints": {"radius": 0.009, "color": "#a7b8cc"},
+                  "links": {"default": {"radius": 0.008, "color": "#8ba1bd"},
+                            "groups": {"upper": {"color": "#9cb6d4"}, "lower": {"color": "#9cb6d4"},
+                                       "steering": {"color": "#d46b7d"}, "upright": {"color": "#e2ac54"}}}},
+        "camera": {"attach_to": "body", "forward_pair": ["rl_lower_fore_i", "fl_lower_fore_i"]},
         "ground": {"tracks": {"points": ["fl", "rl"], "history": 3.0}},
     }
     return config, output

@@ -32,8 +32,9 @@ tracks position, Follow heading also turns with the vehicle, and Fixed camera
 stays in world space.
 
 Reduced replay shows planar motion at 3 DOF, body motion at 6 DOF, wheel rotation
-at 10 DOF, and unsprung motion at 14 DOF. Suspension connections are schematic.
-MBD replay uses captured linkage positions.
+at 10 DOF, and unsprung motion at 14 DOF. Wishbones and steering use archived hardpoints and KinPy reconstruction from
+corner travel and rack input. Chassis lines connect the inboard mounts. Actuation
+linkages are omitted in reduced replay. MBD replay uses captured linkage positions.
 
 ## Scene Capture
 
