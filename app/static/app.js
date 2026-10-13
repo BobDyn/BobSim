@@ -66,6 +66,10 @@ const state = {
   view: "setup",
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
+  simulationWorkspace: null,
+  selectedSimulationId: null,
+  simulationCatalogOpen: false,
+  simulationNavigating: false,
   selectedStudyWorkflowId: null,
   selectedJobId: null,
   toolchainModalOpen: false,
@@ -528,6 +532,14 @@ async function refreshTireTemplates() {
 }
 
 async function refreshSavedResults() {
+  const workspace = await api("/api/simulations");
+  if (state.simulationWorkspace?.vehicle_key !== workspace.vehicle_key) {
+    state.selectedSimulationId = null;
+    state.simModalOpen = false;
+    state.simulationCatalogOpen = false;
+    state.simConfigPayload = null;
+  }
+  state.simulationWorkspace = workspace;
   try {
     state.savedResultsPayload = await api("/api/results");
   } catch (error) {
@@ -617,7 +629,7 @@ function selectedWorkflow() {
 }
 
 function savedResults() {
-  return state.savedResultsPayload?.results || [];
+  return (state.savedResultsPayload?.results || []).filter(result => result.vehicle_key === activeVehicleKey());
 }
 
 function selectedSavedResult() {
@@ -1120,15 +1132,17 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
 }
 
 function renderMode() {
+  renderSimulationWorkspace();
   document.querySelectorAll(".rail-item").forEach((button) => {
-    const active = button.dataset.view === state.view;
+    const active = button.dataset.view === state.view || (button.dataset.view === "standard" && ["replay", "studies"].includes(state.view));
     button.classList.toggle("active", active);
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   document.querySelectorAll(".screen").forEach((screen) => {
-    screen.classList.toggle("active", screen.id === `${state.view}-view`);
+    screen.classList.toggle("active", screen.id === `${state.view}-view` || (screen.id === "standard-view" && ["replay", "studies"].includes(state.view)));
   });
+  document.dispatchEvent(new Event("bobsim-view-change"));
 }
 
 function renderRailActions() {
@@ -3547,6 +3561,7 @@ async function applySimConfigEdits() {
     body: JSON.stringify({ mode: "patch", values }),
   });
   state.simConfigPayload = payload;
+  if (state.selectedSimulationId) await simulationRequest("save", {id: state.selectedSimulationId});
   acceptCleanSimConfigPayload();
   state.status = await api("/api/status");
   renderSimSetup(selectedWorkflow());
@@ -3582,6 +3597,7 @@ async function loadSelectedSimConfig() {
   state.simConfigPayload = payload.config;
   state.simConfigLibrary = payload.library;
   state.selectedSimConfigSource = payload.source?.id || sourceId;
+  if (state.selectedSimulationId) await simulationRequest("save", {id: state.selectedSimulationId});
   acceptCleanSimConfigPayload();
   renderStandard();
 }
@@ -4153,8 +4169,112 @@ async function resetOpenModelicaToolchain() {
   }
 }
 
+function selectedSimulation() {
+  return state.simulationWorkspace?.simulations?.find(item => item.id === state.selectedSimulationId) || null;
+}
+
+async function simulationRequest(action, values = {}) {
+  const payload = await api("/api/simulations", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action, vehicle_key: activeVehicleKey(), ...values})});
+  state.simulationWorkspace = payload;
+  return payload;
+}
+
+async function saveSimulationEdits() {
+  if (!state.selectedSimulationId) return;
+  if (state.dirtySimConfig && !await applySimConfigEdits()) throw new Error("Check the simulation inputs.");
+}
+
+async function openSimulation(id) {
+  await saveSimulationEdits();
+  const payload = await simulationRequest("load", {id});
+  state.selectedSimulationId = id;
+  state.selectedWorkflowId = payload.simulation.workflow_id;
+  state.simConfigPayload = payload.config;
+  state.simConfigLibrary = payload.library;
+  acceptCleanSimConfigPayload();
+  state.simulationCatalogOpen = false;
+  state.simModalOpen = true;
+  state.activeSimTab = "setup";
+  await refreshStatus();
+  setView("standard");
+}
+
+async function showSimulationCatalog() {
+  await saveSimulationEdits();
+  state.selectedSimulationId = null;
+  state.simModalOpen = false;
+  state.simulationCatalogOpen = true;
+  setView("standard");
+}
+
+function workspaceAction(action) {
+  if (state.simulationNavigating) return;
+  state.simulationNavigating = true;
+  document.getElementById("simulation-workspace-status").textContent = "";
+  Promise.resolve().then(action).catch(error => {
+    document.getElementById("simulation-workspace-status").textContent = error.message;
+  }).finally(() => { state.simulationNavigating = false; });
+}
+
+function mountSimulationWorkspace() {
+  const detail = document.getElementById("simulation-detail");
+  const config = document.getElementById("simulation-config-modal");
+  config.classList.add("simulation-inline-config");
+  config.removeAttribute("role");
+  config.removeAttribute("aria-modal");
+  for (const id of ["simulation-config-modal", "studies-view", "replay-view"]) detail.appendChild(document.getElementById(id));
+  document.getElementById("add-simulation-btn").addEventListener("click", () => workspaceAction(showSimulationCatalog));
+  document.getElementById("simulation-saved-runs").addEventListener("click", () => workspaceAction(async () => {
+    await saveSimulationEdits(); state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
+  }));
+  document.getElementById("simulation-captures").addEventListener("click", () => workspaceAction(async () => {
+    await saveSimulationEdits(); state.simModalOpen = false; setView("replay");
+  }));
+  document.getElementById("simulation-instance-name").addEventListener("change", event => workspaceAction(async () => {
+    await simulationRequest("save", {id: state.selectedSimulationId, name: event.target.value});
+    renderSimulationWorkspace();
+  }));
+  document.getElementById("simulation-tree").addEventListener("click", event => {
+    const simulation = event.target.closest("[data-simulation-id]");
+    const run = event.target.closest("[data-simulation-run]");
+    if (run) workspaceAction(async () => {
+      await saveSimulationEdits();
+      state.selectedResultId = run.dataset.simulationRun;
+      state.selectedSimulationId = run.dataset.owner;
+      state.simModalOpen = false;
+      setView("studies");
+    });
+    else if (simulation) workspaceAction(() => openSimulation(simulation.dataset.simulationId));
+  });
+}
+
+function renderSimulationWorkspace() {
+  const tree = document.getElementById("simulation-tree");
+  if (!tree) return;
+  const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
+    ? state.simulationWorkspace.simulations : [];
+  tree.innerHTML = `<h3>${escapeHtml(activeVehicleName())}</h3>` + (simulations || []).map(item => {
+    const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id);
+    return `<div class="simulation-tree-branch">
+      <button type="button" data-simulation-id="${escapeHtml(item.id)}" class="simulation-tree-item ${item.id === state.selectedSimulationId ? "active" : ""}" aria-pressed="${item.id === state.selectedSimulationId}">
+        <strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.model ? `${item.model.engine} · ${item.model.fidelity}` : state.status?.workflows?.find(w => w.id === item.workflow_id)?.label || item.workflow_id)}</span>
+      </button>
+      ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}">${escapeHtml(run.created_label)}</button>`).join("")}
+    </div>`;
+  }).join("");
+  const empty = document.getElementById("simulation-empty");
+  empty.querySelector("h3").textContent = simulations?.length ? "Select a simulation" : "Add a simulation";
+  empty.querySelector("p").hidden = Boolean(simulations?.length);
+  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || state.simulationCatalogOpen;
+  document.getElementById("simulation-catalog").hidden = state.view !== "standard" || !state.simulationCatalogOpen;
+  document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
+  const config = document.getElementById("simulation-config-modal");
+  config.hidden = state.view !== "standard" || !state.simModalOpen || state.simulationCatalogOpen;
+}
+
 function renderStandard() {
-  if (canRunStandardWorkflow()) ensureSelectedSimConfigLoaded();
+  if (state.selectedSimulationId && canRunStandardWorkflow()) ensureSelectedSimConfigLoaded();
   const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
     activeVehicleName();
@@ -4169,6 +4289,7 @@ function renderStandard() {
   renderSimSetup(workflow);
   renderJobs();
   renderSimulationModal(workflow);
+  renderSimulationWorkspace();
 }
 
 function syncSimTabs() {
@@ -4290,7 +4411,7 @@ function renderWorkflows() {
   grid.querySelectorAll("[data-configure-workflow]").forEach((button) => {
     button.addEventListener("click", async (event) => {
       event.stopPropagation();
-      await configureSimulationWorkflow(button.dataset.configureWorkflow);
+      workspaceAction(() => configureSimulationWorkflow(button.dataset.configureWorkflow));
     });
   });
   grid.querySelectorAll("[data-review-workflow]").forEach((button) => {
@@ -4313,19 +4434,24 @@ async function selectStandardWorkflow(workflowId) {
 }
 
 async function configureSimulationWorkflow(workflowId) {
-  const workflow = standardWorkflows().find((item) => item.id === workflowId);
+  if (!workflowId) return;
+  await saveSimulationEdits();
+  const workflow = standardWorkflows().find(item => item.id === workflowId);
   if (!workflow) return;
-  if (workflowId !== state.selectedWorkflowId) {
-    await selectStandardWorkflow(workflowId);
-  }
-  state.activeSimTab = "setup";
-  state.simModalOpen = true;
-  renderStandard();
+  const count = (state.simulationWorkspace?.simulations || []).filter(item => item.workflow_id === workflowId).length;
+  const payload = await simulationRequest("create", {workflow_id: workflowId,
+    name: `${simWorkflowMeta(workflow).title || workflow.label}${count ? ` ${count + 1}` : ""}`});
+  await openSimulation(payload.simulation.id);
 }
 
-function closeSimulationModal() {
+async function removeSimulation() {
+  const simulation = selectedSimulation();
+  if (!simulation || !window.confirm(`Remove "${simulation.name}"? Saved runs will be kept.`)) return;
+  await simulationRequest("delete", {id: simulation.id});
+  state.selectedSimulationId = null;
   state.simModalOpen = false;
-  renderSimulationModal(selectedWorkflow());
+  state.dirtySimConfig = false;
+  renderStandard();
 }
 
 function firstExistingWorkflowOutput(workflow) {
@@ -4350,6 +4476,8 @@ async function reviewSimulationWorkflow(workflowId) {
   const review = savedReviewForWorkflow(workflow.id);
   if (review) {
     state.selectedResultId = review.id;
+    state.selectedSimulationId = review.simulation?.id || null;
+    state.simModalOpen = false;
     state.view = "studies";
     render();
     return;
@@ -4359,11 +4487,13 @@ async function reviewSimulationWorkflow(workflowId) {
 function renderSimulationModal(workflow = selectedWorkflow()) {
   const modal = document.getElementById("simulation-config-modal");
   if (!modal) return;
-  modal.hidden = !state.simModalOpen;
+  modal.hidden = !state.simModalOpen || state.view !== "standard" || state.simulationCatalogOpen;
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
   const meta = simWorkflowMeta(workflow);
   if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
+  const name = document.getElementById("simulation-instance-name");
+  if (name && document.activeElement !== name) name.value = selectedSimulation()?.name || "";
   if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
     ? "Run log"
     : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
@@ -4396,7 +4526,7 @@ function workflowCard(workflow) {
       </div>
       <div class="card-actions">
         ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
-        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Configure simulation">Configure</button>
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Add simulation">Add simulation</button>
       </div>
     </article>
   `;
@@ -5654,7 +5784,7 @@ function renderStudyJobs() {
     if (log) log.textContent = "";
     return;
   }
-  if (!state.selectedJobId) state.selectedJobId = jobs[0].id;
+  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = jobs[0].id;
   list.innerHTML = jobs.map(jobItem).join("");
   list.querySelectorAll("[data-job]").forEach((item) => {
     item.addEventListener("click", async () => {
@@ -5704,6 +5834,9 @@ function renderSimConfigLibrary() {
 function renderSimConfigForm() {
   const form = document.getElementById("sim-config-form");
   if (!form) return;
+  const instance = `${state.selectedSimulationId || ""}:${state.simConfigPayload?.id || ""}`;
+  if (state.dirtySimConfig && form.dataset.instance === instance) return;
+  form.dataset.instance = instance;
   if (!state.simConfigPayload) {
     form.innerHTML = `<div class="empty-state">Select a workflow to configure its simulation inputs.</div>`;
     return;
@@ -5879,11 +6012,11 @@ function csvTable(data) {
 }
 
 function renderJobs() {
-  const jobs = state.status?.jobs || [];
+  const jobs = (state.status?.jobs || []).filter(job => !state.selectedSimulationId || job.simulation?.id === state.selectedSimulationId);
   const list = document.getElementById("job-list");
   const runButton = document.getElementById("run-workflow-btn");
   const workflow = selectedWorkflow();
-  const canRun = canRunStandardWorkflow(workflow);
+  const canRun = Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
   const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
   runButton.textContent = !canRun
@@ -5902,7 +6035,7 @@ function renderJobs() {
     document.getElementById("job-log").textContent = "";
     return;
   }
-  if (!state.selectedJobId) state.selectedJobId = jobs[0].id;
+  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = jobs[0].id;
   list.innerHTML = jobs.map(jobItem).join("");
   list.querySelectorAll("[data-job]").forEach((item) => {
     item.addEventListener("click", async () => {
@@ -5937,7 +6070,7 @@ async function loadJobLog(targetId = "job-log") {
 
 async function startSelectedWorkflow() {
   const workflow = selectedWorkflow();
-  if (!workflow) return;
+  if (!workflow || !state.selectedSimulationId) return;
   if (!canRunStandardWorkflow(workflow)) {
     state.view = "setup";
     render();
@@ -5948,9 +6081,11 @@ async function startSelectedWorkflow() {
     if (!applied) return;
   }
   try {
+    await saveSimulationEdits();
     const job = await api(`/api/workflows/${workflow.id}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({simulation_id: state.selectedSimulationId, vehicle_key: activeVehicleKey()}),
     });
     state.selectedJobId = job.id;
     state.activeSimTab = "jobs";
@@ -12529,6 +12664,7 @@ function resetPreviewCamera() {
 }
 
 function wireEvents() {
+  mountSimulationWorkspace();
   document.addEventListener("click", handleInfoPopupClick);
   document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
   document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
@@ -12556,10 +12692,7 @@ function wireEvents() {
     importVehicleFile(event.target.files?.[0]);
     event.target.value = "";
   });
-  document.getElementById("simulation-modal-close").addEventListener("click", closeSimulationModal);
-  document.getElementById("simulation-config-modal").addEventListener("pointerdown", (event) => {
-    if (event.target.id === "simulation-config-modal") closeSimulationModal();
-  });
+  document.getElementById("simulation-modal-close").addEventListener("click", () => workspaceAction(removeSimulation));
   document.getElementById("toolchain-settings-btn").addEventListener("click", openModelicaToolchain);
   document.getElementById("toolchain-close-btn").addEventListener("click", closeModelicaToolchain);
   document.getElementById("toolchain-save-btn").addEventListener("click", saveOpenModelicaToolchain);
@@ -12659,11 +12792,7 @@ function wireEvents() {
       event.preventDefault();
       return;
     }
-    if (event.key === "Escape" && state.simModalOpen) {
-      closeSimulationModal();
-      event.preventDefault();
-      return;
-    }
+
     if (event.key === "Escape" && state.suspensionPlotModalKey) {
       closeSuspensionPlotModal();
       event.preventDefault();
@@ -12746,14 +12875,18 @@ function wireEvents() {
       state.resultsStatusMessage = "";
       renderStudies();
     }
-    else await configureSimulationWorkflow(selectedWorkflow()?.id);
+    else if (state.selectedSimulationId) workspaceAction(() => openSimulation(state.selectedSimulationId));
+    else showSimulationCatalog();
   });
   document.getElementById("rail-secondary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await generateModelicaFromVehicle({ actionKey: "rail-write-mbd" });
     else setView("setup");
   });
   document.querySelectorAll(".rail-item").forEach((button) => {
-    button.addEventListener("click", () => setView(button.dataset.view));
+    button.addEventListener("click", () => workspaceAction(async () => {
+      await saveSimulationEdits();
+      setView(button.dataset.view);
+    }));
   });
   document.querySelectorAll(".simulation-modal-tabs .tab").forEach((button) => {
     button.addEventListener("click", () => {

@@ -192,6 +192,9 @@ state.dirtyVehicle=false;
 assert.equal(canRunStandardWorkflow(standardWorkflows()[0]),false);
 state.selectedWorkflowId='mbd';
 renderStandard=()=>{};
+simulationRequest=async()=>({simulation:{id:'test',workflow_id:'mbd'},config:{id:'mbd',data:{}},library:{sources:[]}});
+refreshStatus=async()=>{};
+setView=()=>{};
 `,ctx);
 (async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('state.simModalOpen',ctx),true); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
 
@@ -355,3 +358,17 @@ vm.runInContext(`
   drawGeometryPlotPanel = originalDraw;
 }
 `, ctx);
+
+vm.runInContext(`
+{
+  const originalDocument = document;
+  const form = {dataset:{instance:'named:step'},innerHTML:'edited inputs'};
+  document = {getElementById:()=>form};
+  state.selectedSimulationId='named'; state.simConfigPayload={id:'step',fields:[]};
+  state.dirtySimConfig=true;
+  renderSimConfigForm();
+  assert.equal(form.innerHTML,'edited inputs','background refresh must preserve unsaved fields');
+  state.dirtySimConfig=false;
+  document=originalDocument;
+}
+`,ctx);

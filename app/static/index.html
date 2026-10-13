@@ -18,8 +18,6 @@
         <nav class="rail-stack" aria-label="Main navigation">
           <button class="rail-item active" data-view="setup" type="button">Setup</button>
           <button class="rail-item" data-view="standard" type="button">Simulation</button>
-          <button class="rail-item" data-view="replay" type="button">Replay</button>
-          <button class="rail-item" data-view="studies" type="button">Results</button>
         </nav>
         <details class="model-menu settings-menu">
           <summary>Settings</summary>
@@ -217,7 +215,18 @@
           </div>
 
           <div class="standard-workspace simulation-workspace">
-            <section class="workflow-list simulation-catalog">
+            <aside class="simulation-tree-pane">
+              <button id="add-simulation-btn" class="run-button" type="button">+ Add simulation</button>
+              <nav id="simulation-tree" aria-label="Vehicle simulations"></nav>
+              <div class="simulation-library-links">
+                <button id="simulation-saved-runs" class="ghost-button" type="button">Saved runs</button>
+                <button id="simulation-captures" class="ghost-button" type="button">Captured scenes</button>
+              </div>
+              <p id="simulation-workspace-status" role="status"></p>
+            </aside>
+            <div id="simulation-detail" class="simulation-detail">
+            <div id="simulation-empty" class="empty-state"><h3>Add a simulation</h3><p>Choose an analysis for this vehicle.</p></div>
+            <section id="simulation-catalog" class="workflow-list simulation-catalog" hidden>
               <details class="model-guide">
                 <summary>Model fidelity</summary>
                 <dl>
@@ -231,6 +240,7 @@
               </details>
               <div id="workflow-grid" class="workflow-grid"></div>
             </section>
+            </div>
           </div>
         </section>
 
@@ -401,11 +411,12 @@
           <div>
             <span class="context-label">Simulation</span>
             <h2 id="simulation-modal-title">Configure Simulation</h2>
+            <input id="simulation-instance-name" class="name-input" aria-label="Simulation name" maxlength="120" />
             <p id="simulation-modal-subtitle"></p>
           </div>
           <div class="simulation-run-actions">
             <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
-            <button id="simulation-modal-close" class="ghost-button" type="button">Close</button>
+            <button id="simulation-modal-close" class="ghost-button danger-button" type="button">Remove simulation</button>
           </div>
         </div>
 

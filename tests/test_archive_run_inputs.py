@@ -77,3 +77,72 @@ def test_seed_only_mode_is_respected_by_archive(archive_workspace, monkeypatch):
     monkeypatch.setenv(config_io.SEED_ONLY_ENV, '1')
     saved = app.save_active_results('study')['saved']
     assert yaml.safe_load((root / saved['config_snapshot']).read_text())['simulation']['stop_time'] == 1
+
+
+def test_named_simulations_keep_independent_configs_and_vehicle_ownership(archive_workspace):
+    root, active = archive_workspace
+    first = app.simulation_workspace('create', {'workflow_id': 'study', 'name': 'Slow'})['simulation']
+    active.write_text('simulation:\n  stop_time: 12\n')
+    second = app.simulation_workspace('create', {'workflow_id': 'study', 'name': 'Fast'})['simulation']
+    assert first['id'] != second['id']
+    app.simulation_workspace('load', {'id': first['id']})
+    assert yaml.safe_load(active.read_text())['simulation']['stop_time'] == 99
+    app.simulation_workspace('load', {'id': second['id']})
+    assert yaml.safe_load(active.read_text())['simulation']['stop_time'] == 12
+    active.write_text('simulation:\n  stop_time: 14\n')
+    app.simulation_workspace('save', {'id': second['id'], 'name': 'Fast updated'})
+    app.simulation_workspace('load', {'id': first['id']})
+    app.simulation_workspace('load', {'id': second['id']})
+    assert yaml.safe_load(active.read_text())['simulation']['stop_time'] == 14
+    (root / 'vehicle.yml').write_text('vehicle:\n  name: Other\n')
+    assert app.simulation_workspace()['simulations'] == []
+    with pytest.raises(ValueError, match='not found'):
+        app.simulation_workspace('load', {'id': first['id']})
+    with pytest.raises(ValueError, match='active vehicle changed'):
+        app.simulation_workspace('create', {'workflow_id': 'study', 'vehicle_key': 'original'})
+
+
+def test_named_simulation_run_metadata_survives_edits_and_removal(archive_workspace):
+    root, _ = archive_workspace
+    simulation = app.simulation_workspace('create', {'workflow_id': 'study', 'name': 'Initial'})['simulation']
+    snapshot = app.capture_workflow_inputs('study')
+    snapshot['simulation'] = simulation
+    saved = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    app.simulation_workspace('save', {'id': simulation['id'], 'name': 'Renamed'})
+    app.simulation_workspace('delete', {'id': simulation['id']})
+    assert app.simulation_workspace()['simulations'] == []
+    assert saved['simulation']['name'] == 'Initial'
+    assert (root / saved['config_snapshot']).is_file()
+    assert app.saved_results_payload()['results'][0]['simulation']['id'] == simulation['id']
+
+
+def test_start_named_simulation_loads_its_config_under_job_lock(archive_workspace, monkeypatch):
+    from app import execution
+
+    _, active = archive_workspace
+    simulation = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    active.write_text('simulation:\n  stop_time: 2\n')
+    store = JobStore(10000)
+    monkeypatch.setattr(app, 'JOBS', store)
+    seen = []
+
+    def run(_actions, job_id, workflow_id):
+        assert execution.LOCK.locked()
+        seen.append((store.get(job_id)['simulation'], active.read_text()))
+
+    class InlineThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(actions, 'run_actions_job', run)
+    monkeypatch.setattr(actions.threading, 'Thread', InlineThread)
+    app.start_workflow('study', simulation_id=simulation['id'], vehicle_key='original')
+    assert seen[0][0]['id'] == simulation['id']
+    assert yaml.safe_load(seen[0][1])['simulation']['stop_time'] == 99
+    assert not execution.LOCK.locked()
+    with pytest.raises(ValueError, match='active vehicle changed'):
+        app.start_workflow('study', simulation_id=simulation['id'], vehicle_key='different')
+    assert not execution.LOCK.locked()

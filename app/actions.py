@@ -64,6 +64,10 @@ def _workflow_by_id(_workflow_id: str) -> WorkflowSpec:
     raise KeyError(_workflow_id)
 
 
+def simulation_workspace(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise RuntimeError("Simulation workspace has not been connected")
+
+
 def capture_workflow_inputs(_workflow_id: str) -> dict[str, Any]:
     raise RuntimeError("Workflow input capture has not been connected")
 
@@ -168,6 +172,8 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
     JOBS.update(job_id, status="running", started_at=started_at)
     try:
         input_snapshot = capture_workflow_inputs(workflow_id) if workflow_id else None
+        if input_snapshot is not None:
+            input_snapshot["simulation"] = (JOBS.get(job_id) or {}).get("simulation")
         returncode = 0
         action_wall_time_s: dict[str, float] = {}
         for action in actions:
@@ -218,7 +224,9 @@ def start_job(action_id: str) -> dict[str, Any]:
     return _launch_job((action,), action.id, action.label, list(action.argv))
 
 
-def start_workflow(workflow_id: str) -> dict[str, Any]:
+def start_workflow(
+    workflow_id: str, simulation_id: str | None = None, vehicle_key: str | None = None,
+) -> dict[str, Any]:
     workflows = {workflow.id: workflow for workflow in WORKFLOWS}
     if workflow_id not in workflows:
         raise KeyError(workflow_id)
@@ -229,14 +237,22 @@ def start_workflow(workflow_id: str) -> dict[str, Any]:
         raise RuntimeError(unavailable_action_reason(unavailable[0]))
     label = f"Run {workflow.label}"
     argv = [action.label for action in actions]
-    return _launch_job(actions, f"workflow:{workflow.id}", label, argv, workflow.id)
+    return _launch_job(actions, f"workflow:{workflow.id}", label, argv, workflow.id, simulation_id, vehicle_key)
 
 
-def _launch_job(actions, action_id, label, argv, workflow_id=None):
+def _launch_job(actions, action_id, label, argv, workflow_id=None, simulation_id=None, vehicle_key=None):
     # Reserve before creating a thread, so simultaneous requests cannot both win.
     workspace_execution.reserve()
     try:
+        simulation = None
+        if simulation_id:
+            loaded = simulation_workspace("load", {"id": simulation_id, "workflow_id": workflow_id,
+                                                   "vehicle_key": vehicle_key})
+            simulation = loaded["simulation"]
+            label = f"Run {simulation['name']}"
         job = JOBS.create(action_id, label, argv)
+        if simulation:
+            JOBS.update(job["id"], simulation=simulation, vehicle_key=vehicle_key)
         owner = workflow_id or next((w.id for w in WORKFLOWS if action_id in w.actions
                                      and not action_id.startswith("build-")), None)
         JOBS.update(job["id"], workflow_id=owner)

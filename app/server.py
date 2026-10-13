@@ -58,6 +58,7 @@ saved_results_payload = _not_connected
 _active_vehicle_workspace_key = _not_connected
 result_sources_payload = _not_connected
 result_source_payload = _not_connected
+simulation_workspace = _not_connected
 processing_workflows_payload = _not_connected
 tire_eval_payload = _not_connected
 kinematic_curves_from_active_vehicle = _not_connected
@@ -118,6 +119,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(vehicle_workspace_payload(vehicle_key))
             elif parsed.path == "/api/vehicle-templates":
                 self._send_json(vehicle_template_payloads())
+            elif parsed.path == "/api/simulations":
+                self._send_json(simulation_workspace())
             elif parsed.path == "/api/sim-configs":
                 self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
             elif parsed.path == "/api/results":
@@ -205,7 +208,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(payload)
             elif parsed.path.startswith("/api/workflows/") and parsed.path.endswith("/run"):
                 workflow_id = parsed.path.removeprefix("/api/workflows/").removesuffix("/run").strip("/")
-                job = start_workflow(workflow_id)
+                job = start_workflow(workflow_id, simulation_id=body.get("simulation_id"),
+                                     vehicle_key=body.get("vehicle_key"))
                 self._send_json(job, status=HTTPStatus.CREATED)
             elif parsed.path.startswith("/api/configs/"):
                 config_id = parsed.path.rsplit("/", 1)[-1]
@@ -233,6 +237,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/modelica/generate":
                 payload = generate_modelica_payload()
                 self._send_json(payload)
+            elif parsed.path == "/api/simulations":
+                self._send_json(simulation_workspace(str(body.get("action", "list")), body))
             elif parsed.path == "/api/sim-configs/load":
                 payload = load_sim_config_source(str(body.get("source_id", "")))
                 self._send_json(payload)

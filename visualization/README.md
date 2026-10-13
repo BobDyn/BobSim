@@ -1,13 +1,13 @@
 # BobVis
 
-BobVis captures simulation geometry for the app's Replay view. It shows
+BobVis captures simulation geometry for the app's Simulation → Captured scenes view. It shows
 suspension links, tires, force vectors, and tire loads.
 
 ```bash
 make visual-maneuver   # capture a VehicleSim transient
 make visual-rig        # capture a four-post run
 make visual-demo       # generate a synthetic scene
-make app               # open Replay
+make app               # open Simulation → Captured scenes
 ```
 
 These targets run in Docker by default.
@@ -22,7 +22,7 @@ These targets run in Docker by default.
 | `visual-demo` | Synthetic data, no simulation required |
 
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
-`visualization/results/`. Replay lists the available scenes.
+`visualization/results/`. Captured scenes lists the available scenes.
 
 ## Scene Capture
 

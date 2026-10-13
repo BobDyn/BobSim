@@ -10,6 +10,7 @@ import shutil
 import time
 from typing import Any
 import zipfile
+from uuid import uuid4
 
 import yaml
 
@@ -1006,6 +1007,70 @@ def delete_saved_sim_config(source_id: str) -> dict[str, Any]:
     return sim_config_library_payload(workflow_id)
 
 
+def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """## Vehicle Simulations
+
+    Read or update named simulations in the active vehicle workspace.
+
+    Parameters
+    ----------
+    action : str
+        List, create, load, save or delete a simulation.
+    payload : dict[str, Any] | None
+        Simulation ID, workflow and name supplied by the editor.
+
+    Returns
+    -------
+    dict[str, Any]
+        Simulation list and, when loaded, its active configuration.
+    """
+    payload = payload or {}
+    key = _active_vehicle_workspace_key()
+    if payload.get("vehicle_key", key) != key:
+        raise ValueError("The active vehicle changed. Reopen the simulation.")
+    path = _vehicle_workspace_dir(key) / "simulations.json"
+    items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+    item = next((item for item in items if item["id"] == payload.get("id")), None)
+    result: dict[str, Any] = {}
+    if action == "create":
+        workflow = _workflow_by_id(str(payload.get("workflow_id", "")))
+        if workflow.group not in {"standard", "response", "envelope", "lap"}:
+            raise ValueError("Choose a simulation workflow.")
+        spec = _sim_config_spec(workflow.id)
+        item = {"id": uuid4().hex, "workflow_id": workflow.id,
+                "name": str(payload.get("name") or workflow.label).strip()[:120],
+                "model": workflow_model(workflow, root=ROOT),
+                "config_text": _config_file_path(spec).read_text(encoding="utf-8")}
+        items.append(item)
+    elif action in {"load", "save", "delete"}:
+        if item is None:
+            raise ValueError("Simulation not found for this vehicle.")
+        if payload.get("workflow_id", item["workflow_id"]) != item["workflow_id"]:
+            raise ValueError("Simulation workflow does not match.")
+        spec = _sim_config_spec(item["workflow_id"])
+        if action == "load":
+            _config_file_path(spec).write_text(item["config_text"], encoding="utf-8")
+            result["config"] = config_payload(spec.id)
+            result["library"] = sim_config_library_payload(item["workflow_id"])
+        elif action == "save":
+            item["model"] = workflow_model(_workflow_by_id(item["workflow_id"]), root=ROOT)
+            item["config_text"] = _config_file_path(spec).read_text(encoding="utf-8")
+            item["name"] = str(payload.get("name") or item["name"]).strip()[:120] or item["name"]
+        else:
+            items.remove(item)
+    elif action != "list":
+        raise ValueError("Unknown simulation action.")
+    if action in {"create", "save", "delete"}:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
+        temporary.replace(path)
+    summaries = [{k: v for k, v in item.items() if k != "config_text"} for item in items]
+    result.update(vehicle_key=key, simulations=summaries)
+    if item is not None and action != "delete":
+        result["simulation"] = {k: v for k, v in item.items() if k != "config_text"}
+    return result
+
+
 def _workflow_by_id(workflow_id: str) -> WorkflowSpec:
     workflows = {workflow.id: workflow for workflow in WORKFLOWS}
     if workflow_id not in workflows:
@@ -1609,6 +1674,7 @@ def save_active_results(
         "created_label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at)),
         "job_id": job_id,
         "model": inputs.get("model"),
+        "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
@@ -1642,6 +1708,7 @@ def save_active_results(
         "vehicle_snapshot": vehicle_snapshot,
         "config_snapshot": config_snapshot,
         "model": inputs.get("model"),
+        "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",

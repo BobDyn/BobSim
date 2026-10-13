@@ -732,16 +732,7 @@
   }
 
   function bootstrap() {
-    // The rail is wired by app.js; this only needs to know when its own screen
-    // becomes visible, so the WebGL context is not created for people who
-    // never open the tab.
-    //
-    // app.js switches screens inside its own click handler, so this one has to
-    // look afterwards rather than during: a microtask is enough and, unlike a
-    // timer, is not clamped when the tab is in the background.
-    document.querySelectorAll(".rail-item").forEach((button) => {
-      button.addEventListener("click", () => Promise.resolve().then(watch));
-    });
+    document.addEventListener("bobsim-view-change", watch);
     watch();
   }
 

@@ -15,9 +15,7 @@ Open `http://127.0.0.1:8765`.
 | View | Contents |
 | --- | --- |
 | Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
-| Simulation | Response, envelope and lap workflows with model labels, run configs and job logs |
-| Replay | Captured 3D scenes, tire data, and metrics |
-| Results | Saved run packages and downloads |
+| Simulation | Named simulations under the vehicle, independent configs, run history, reports and captured scenes |
 
 Setup uses the architecture templates in `common/vehicle_templates`, including
 direct, bellcrank, and bellcrank-stabar suspension. The preview shows hardpoints,
@@ -40,11 +38,16 @@ BobSim runtime directory. `storage.py` defines these paths:
 
 The UI assets are in `static/`. Default run configs live with their workflows.
 `visualization/` captures scenes. `visual.py` and `static/visual.js` load and draw
-them in Replay.
+them under Simulation → Captured scenes. Captures are separate from ordinary
+simulation runs.
 
 The app defaults to dark mode. The theme toggle saves `bobsim-theme` in
 `localStorage`. Colors are defined in `static/styles.css` and `canvasPalette()`
 in `static/app.js`.
+
+Named simulations are stored in `workspaces/vehicles/<vehicle>/simulations.json`.
+Completed runs retain the simulation name, vehicle and config used at run time.
+Removing a simulation keeps its saved runs.
 
 ## Module layout
 
