@@ -219,6 +219,9 @@
               <header class="simulation-tree-toolbar"><span>Outline</span><button id="add-simulation-btn" type="button" title="Add simulation" aria-label="Add simulation">+</button></header>
               <div id="simulation-context-menu" class="simulation-context-menu" role="menu" aria-label="Simulation actions" hidden>
                 <button type="button" role="menuitem" data-action="setup">Open setup</button>
+                <button type="button" role="menuitem" data-action="report">Add plots and report</button>
+                <button type="button" role="menuitem" data-action="replay">Add 3D replay</button>
+                <button type="button" role="menuitem" data-action="signals">Add signal explorer</button>
                 <button type="button" role="menuitem" data-action="delete">Delete simulation</button>
               </div>
               <nav id="simulation-tree" aria-label="Vehicle simulations"></nav>
@@ -281,8 +284,12 @@
               <div class="replay-camera-tools">
               <button id="replay-reset-view" class="ghost-button camera-home-button" type="button" aria-label="Camera home" title="Camera home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v11h5v-6h4v6h5V10"/></svg></button>
               <select id="replay-camera-view" aria-label="Camera view"><option value="iso">Isometric</option><option value="top">Bird’s eye</option><option value="front">Front</option><option value="side">Side</option></select>
-              <select id="replay-camera-follow" aria-label="Camera motion"><option value="position">Follow vehicle</option><option value="heading">Follow heading</option><option value="fixed">Fixed camera</option></select>
+              <select id="replay-camera-follow" aria-label="Camera frame" title="Vehicle frame follows position and heading while keeping roll visible"><option value="position">World frame</option><option value="heading">Vehicle frame</option></select>
               </div>
+              <details id="replay-display-settings" class="replay-display-settings">
+                <summary aria-label="Display settings" title="Display settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linejoin="round" d="M19.50 12.00L21.90 13.41L21.08 16.19L18.30 16.07L17.30 17.30L18.00 20.00L15.46 21.38L13.58 19.33L12.00 19.50L10.59 21.90L7.81 21.08L7.93 18.30L6.70 17.30L4.00 18.00L2.62 15.46L4.67 13.58L4.50 12.00L2.10 10.59L2.92 7.81L5.70 7.93L6.70 6.70L6.00 4.00L8.54 2.62L10.42 4.67L12.00 4.50L13.41 2.10L16.19 2.92L16.07 5.70L17.30 6.70L20.00 6.00L21.38 8.54L19.33 10.42Z"/><circle cx="12" cy="12" r="3"/></svg></summary>
+                <div class="replay-display-panel"><h4>Display</h4><div id="replay-layers" class="replay-layers"></div></div>
+              </details>
               <canvas id="replay-canvas"></canvas>
               <p id="replay-status" class="replay-status" hidden></p>
               <div id="replay-help" class="replay-help" hidden>
@@ -306,10 +313,7 @@
             </section>
 
             <aside class="replay-side">
-              <div class="replay-group">
-                <h4>Layers</h4>
-                <div id="replay-layers" class="replay-layers"></div>
-              </div>
+
 
               <div id="replay-tabs" class="replay-tabs" hidden>
                 <button id="replay-tab-tires" class="tab active" type="button">Tires</button>
@@ -340,6 +344,20 @@
           </div>
         </section>
         <section id="studies-view" class="screen">
+          <div id="signal-explorer" class="result-explorer-shell" hidden>
+            <aside class="workflow-list">
+              <h2>Signal explorer</h2>
+              <label>Source<select id="result-source-picker" aria-label="Signal file"></select></label>
+              <label>X axis<select id="result-x-axis"></select></label>
+              <label>Y signals<input id="result-signal-search" type="search" placeholder="Find a signal"></label>
+              <div id="result-signal-list" class="result-signal-list"></div>
+            </aside>
+            <section class="result-plot-shell">
+              <div class="result-plot-head"><h3 id="result-plot-title">Signals</h3><p id="result-plot-subtitle"></p></div>
+              <div id="result-selected-signals" class="signal-row"></div>
+              <canvas id="result-plot-canvas" aria-label="Selected signals plot"></canvas>
+            </section>
+          </div>
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
             <aside class="workflow-list archive-sidebar">
               <h2>Results</h2>

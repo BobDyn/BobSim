@@ -673,6 +673,16 @@
     // holds the live camera, layers and clock.
     window.BobVis.viewer = state.viewer;
 
+    const displaySettings = $("replay-display-settings");
+    document.addEventListener("pointerdown", event => {
+      if (!displaySettings.contains(event.target)) displaySettings.open = false;
+    });
+    displaySettings.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        displaySettings.open = false;
+        displaySettings.querySelector("summary").focus();
+      }
+    });
     $("replay-run").addEventListener("change", (event) => loadRun(event.target.value));
     $("replay-play").addEventListener("click", () => {
       state.viewer.playing = !state.viewer.playing;
@@ -685,8 +695,7 @@
     $("replay-camera-view").addEventListener("change", event => state.viewer.resetView(event.target.value));
     $("replay-camera-follow").addEventListener("change", event => {
       state.viewer.follow = event.target.value;
-      state.viewer._anchor = null;
-      state.viewer._heading = null;
+      state.viewer.resetView($("replay-camera-view").value);
     });
     const exportButton = $("replay-export");
     if (canExport()) {

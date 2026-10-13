@@ -657,6 +657,10 @@ function selectedProcessingWorkflow() {
 }
 
 function selectedResultSource() {
+  const child = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
+  if (child?.kind === "signals") {
+    return (selectedSavedResult()?.files || []).find(file => file.path === state.selectedResultSourcePath) || null;
+  }
   const sources = resultSources();
   return sources.find((source) => source.path === state.selectedResultSourcePath) || sources[0] || null;
 }
@@ -4319,7 +4323,7 @@ function wireSimulationContextMenu() {
     if (!action) return;
     const id = target;
     close();
-    workspaceAction(() => action === "delete" ? removeSimulation(id) : openSimulation(id));
+    workspaceAction(() => action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
@@ -4338,9 +4342,33 @@ function wireSimulationContextMenu() {
   document.querySelector(".simulation-tree-pane").addEventListener("scroll", () => close());
 }
 
+async function addSimulationVisualization(id, kind = null) {
+  await saveSimulationEdits();
+  state.selectedSimulationId = id;
+  state.selectedVisualizationId = null;
+  state.simModalOpen = false;
+  state.simulationCatalogOpen = false;
+  state.simulationChildEditor = true;
+  state.collapsedSimulations.delete(state.selectedSimulationId);
+  const vehicleKey = activeVehicleKey();
+  const runs = savedResults().filter(run => run.simulation?.id === id);
+  const captures = ((await api("/api/visual/runs")).runs || []).filter(run =>
+    run.simulation_id === id && run.vehicle_key === vehicleKey);
+  if (state.selectedSimulationId !== id || activeVehicleKey() !== vehicleKey || !state.simulationChildEditor) return;
+  document.getElementById("simulation-visualization-run").innerHTML =
+    `<optgroup label="Plots and reports">${(kind && kind !== "report" ? [] : runs).map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
+    `<optgroup label="Signal explorer">${(kind && kind !== "signals" ? [] : runs.filter(run => run.files?.some(file => file.kind === "csv"))).map(run => `<option data-kind="signals" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
+    `<optgroup label="3D replay">${(kind && kind !== "replay" ? [] : captures).map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
+  document.getElementById("simulation-visualization-name").value = ({report: "Plots and report", replay: "3D replay", signals: "Signal explorer"})[kind] || "Visualization";
+  document.getElementById("simulation-visualization-add").disabled = !document.getElementById("simulation-visualization-run").options.length;
+  document.getElementById("simulation-visualization-empty").hidden = Boolean(document.getElementById("simulation-visualization-run").options.length);
+  setView("standard");
+}
+
 function mountSimulationWorkspace() {
   wireSimulationSplitter();
   wireSimulationContextMenu();
+  new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
   const detail = document.getElementById("simulation-detail");
   const config = document.getElementById("simulation-config-modal");
   config.classList.add("simulation-inline-config");
@@ -4375,25 +4403,7 @@ function mountSimulationWorkspace() {
   document.getElementById("simulation-tree").addEventListener("click", event => {
     const add = event.target.closest("[data-simulation-add-child]");
     if (add) {
-      workspaceAction(async () => {
-        await saveSimulationEdits();
-        state.selectedSimulationId = add.dataset.simulationAddChild;
-        state.selectedVisualizationId = null;
-        state.simModalOpen = false;
-        state.simulationCatalogOpen = false;
-        state.simulationChildEditor = true;
-        state.collapsedSimulations.delete(state.selectedSimulationId);
-        const runs = savedResults().filter(run => run.simulation?.id === state.selectedSimulationId);
-        const captures = ((await api("/api/visual/runs")).runs || []).filter(run =>
-          !run.simulation_id || (run.simulation_id === state.selectedSimulationId && run.vehicle_key === activeVehicleKey()));
-        document.getElementById("simulation-visualization-run").innerHTML =
-          `<optgroup label="Plots and reports">${runs.map(run => `<option data-kind="report" value="${escapeHtml(run.id)}">${escapeHtml(run.created_label)}</option>`).join("")}</optgroup>` +
-          `<optgroup label="3D replay">${captures.map(run => `<option data-kind="replay" value="${escapeHtml(run.id)}">${escapeHtml(run.label)}</option>`).join("")}</optgroup>`;
-        document.getElementById("simulation-visualization-name").value = "Visualization";
-        document.getElementById("simulation-visualization-add").disabled = !runs.length && !captures.length;
-        document.getElementById("simulation-visualization-empty").hidden = Boolean(runs.length || captures.length);
-        setView("standard");
-      });
+      workspaceAction(() => addSimulationVisualization(add.dataset.simulationAddChild));
       return;
     }
     const remove = event.target.closest("[data-remove-visualization]");
@@ -5196,6 +5206,24 @@ function renderStudies() {
   renderSavedResultCatalog();
   renderSavedResultSummary();
   renderSavedResultOutputs();
+  const signals = selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind === "signals";
+  const explorer = document.getElementById("signal-explorer");
+  if (!explorer) return;
+  explorer.hidden = !signals;
+  document.querySelector("#studies-view .archive-workspace").hidden = signals;
+  if (signals) {
+    const files = (selectedSavedResult()?.files || []).filter(file => file.kind === "csv");
+    const picker = document.getElementById("result-source-picker");
+    if (!files.some(file => file.path === state.selectedResultSourcePath)) {
+      state.selectedResultSourcePath = (files.find(file => file.label === "Signals") || files[0])?.path || null;
+      state.resultSourceDetail = null;
+      state.resultPlotPayload = null;
+      state.resultPlotStatus = "idle";
+    }
+    picker.innerHTML = files.map(file => `<option value="${escapeHtml(file.path)}"${file.path === state.selectedResultSourcePath ? " selected" : ""}>${escapeHtml(file.label)}</option>`).join("");
+    picker.onchange = event => selectResultSource(event.target.value);
+    renderResultExplorer();
+  }
 }
 
 function renderResultSaveControls() {
@@ -5405,7 +5433,7 @@ function renderResultControls(detail) {
   list.querySelectorAll("input[type='checkbox']").forEach((input) => {
     input.addEventListener("change", async () => {
       const signal = input.value;
-      if (input.checked) state.resultSelectedSignals = [...new Set([...state.resultSelectedSignals, signal])].slice(0, 8);
+      if (input.checked) state.resultSelectedSignals = [...new Set([...state.resultSelectedSignals, signal])];
       else state.resultSelectedSignals = state.resultSelectedSignals.filter((item) => item !== signal);
       renderResultControls(detail);
       renderResultSourceDiagnostic(detail);
@@ -5428,7 +5456,10 @@ async function refreshResultPlot() {
   state.resultPlotMessage = "";
   renderResultPlotCanvas();
   try {
-    state.resultPlotPayload = await api("/api/results/series", {
+    const path = detail.path;
+    const xAxis = state.resultXAxis;
+    const selected = state.resultSelectedSignals.join("\n");
+    const payload = await api("/api/results/series", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -5438,6 +5469,8 @@ async function refreshResultPlot() {
         max_points: 2200,
       }),
     });
+    if (state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultSelectedSignals.join("\n") !== selected) return;
+    state.resultPlotPayload = payload;
     state.resultPlotStatus = "ready";
   } catch (error) {
     state.resultPlotStatus = "error";
@@ -5469,10 +5502,10 @@ function drawResultPlotCanvas() {
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
   const payload = state.resultPlotPayload;
-  if (title) title.textContent = selectedResultSource()?.label || "Signal Plot";
+  if (title) title.textContent = "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
-    subtitle.textContent = detail ? `${detail.path} | x: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
+    subtitle.textContent = detail ? `X: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
   }
   if (state.resultPlotStatus === "loading") {
     drawCanvasText(ctx, "Loading result data", width / 2, height / 2, { align: "center", color: palette.muted, weight: 760 });

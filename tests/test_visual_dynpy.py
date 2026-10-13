@@ -13,7 +13,7 @@ from engines.dynpy.parameters import _combine_mass_properties, _mass_components
 
 
 @pytest.mark.parametrize("dof", [3, 6, 10, 14])
-def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
+def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch):
     vehicle = yaml.safe_load((Path(__file__).resolve().parents[1] / "vehicle.yml").read_text())
     signals = {"time": np.array([0., 1., 2.]), "x": np.array([0., 2., 4.]),
                "handwheelAngle": np.zeros(3), "y": np.zeros(3), "yaw": np.array([0., np.pi/2, np.pi]),
@@ -99,6 +99,20 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof):
     assert np.allclose(overlay["tireFzFL"], 500.)
     assert np.allclose(overlay["fl_spin"], signals["wheel_angle_fl"] if dof >= 10 else
                        np.array([0., 2., 0.]) / vehicle["front"]["wheel"]["radius_m"])
+    np.savetxt(tmp_path / "signals.csv", np.column_stack(list(signals.values())),
+               delimiter=",", header=",".join(signals), comments="")
+    with_grip = visual.reduced_scene_payload(tmp_path / "vehicle.yml", tmp_path / "signals.csv", dof)
+    assert len(with_grip.header["grip"]["corners"]) == 4
+    values = np.frombuffer(with_grip.buffer, dtype=np.float32)
+    layout = with_grip.header["layout"]["scalars"]
+    scalars = values[layout["offset"]:layout["offset"] + layout["count"]].reshape(3, -1)
+    assert all(np.all(scalars[:, corner["slot_usage"]] > 0) for corner in with_grip.header["grip"]["corners"])
+    def unavailable_tire(_path):
+        raise FileNotFoundError("Archived tire template is unavailable")
+    monkeypatch.setattr("visualization.from_results.axle_friction", unavailable_tire)
+    without_grip = visual.reduced_scene_payload(tmp_path / "vehicle.yml", tmp_path / "signals.csv", dof)
+    assert not without_grip.header["grip"]
+    assert "Tire grip unavailable" in without_grip.header["representation"]
     del signals["yaw"]
     with pytest.raises(ValueError, match="yaw channel"):
         build_scene(signals, vehicle, dof)

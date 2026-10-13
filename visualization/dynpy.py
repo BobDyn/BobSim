@@ -80,6 +80,7 @@ def build_scene(
         return np.einsum("nij,nj->ni", rotation, np.broadcast_to(local, (len(time), 3))) + translation
 
     point("body", translation)
+    point("body_forward", translation + rotation[:, :, 0])
     visible_joints = ["body"]
 
     for corner in ("fl", "fr", "rl", "rr"):
@@ -179,8 +180,7 @@ def build_scene(
                   "links": {"default": {"radius": 0.008, "color": "#8ba1bd"},
                             "groups": {"upper": {"color": "#9cb6d4"}, "lower": {"color": "#9cb6d4"},
                                        "steering": {"color": "#d46b7d"}, "upright": {"color": "#e2ac54"}}}},
-        "camera": {"attach_to": "body", "forward_pair": (["rear_axle", "front_axle"] if dof == 3
-                                                         else ["rl_lower_fore_i", "fl_lower_fore_i"])},
+        "camera": {"attach_to": "body", "forward_pair": ["body", "body_forward"]},
         "ground": {"tracks": {"points": [corner + "_contact" for corner in ("fl", "fr", "rl", "rr")],
                               "history": float(time[-1] - time[0]),
                               "colors": ["#58b6ff", "#ffad66", "#78d7bd", "#df8eb8"]},

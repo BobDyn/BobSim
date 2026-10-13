@@ -169,7 +169,10 @@ def test_follow_camera_and_home_views_preserve_geometry_conventions():
       viewer.simTime=0; viewer.aspect=()=>1.5;
       viewer.resetView(); const home=viewer.pose;
       viewer.resetView('top'); const top=viewer.pose;
-      console.log(JSON.stringify({moved,home,top}));
+      viewer.follow='heading'; viewer.headingAt=()=>Math.PI/2;
+      viewer.resetView('front'); const front=viewer.pose;
+      const followed=camera.followPose(front,front.focal,[3,4,1],Math.PI/2);
+      console.log(JSON.stringify({moved,home,top,front,followed}));
     """)
     assert result["moved"]["position"] == pytest.approx([4, 6, 2])
     assert result["moved"]["focal"] == [4, 5, 0]
@@ -182,3 +185,10 @@ def test_follow_camera_and_home_views_preserve_geometry_conventions():
     assert top["position"][:2] == top["focal"][:2]
     assert top["position"][2] > top["focal"][2]
     assert top["up"] == [1, 0, 0]
+    front = result["front"]
+    assert front["position"][0] == pytest.approx(front["focal"][0])
+    assert front["position"][1] > front["focal"][1]
+    assert front["up"] == [0, 0, 1]
+    followed = result["followed"]
+    assert followed["position"][0] < followed["focal"][0]
+    assert followed["position"][1] == pytest.approx(followed["focal"][1])

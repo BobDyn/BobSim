@@ -1050,16 +1050,16 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
         if action == "add-visualization":
             kind = payload.get("kind", "report")
             source_id = payload.get("source_id", payload.get("run_id"))
-            if kind == "report":
+            if kind in {"report", "signals"}:
                 valid = any(run["id"] == source_id and (run.get("simulation") or {}).get("id") == item["id"]
+                            and (kind != "signals" or any(file.get("kind") == "csv" for file in run.get("files", [])))
                             for run in saved_results_payload(key)["results"])
             elif kind == "replay":
                 valid = any(run["id"] == source_id
-                            and (not run.get("simulation_id") or
-                                 (run["simulation_id"] == item["id"] and run.get("vehicle_key") == key))
+                            and run.get("simulation_id") == item["id"] and run.get("vehicle_key") == key
                             for run in app_visual.available_runs(ROOT))
             else:
-                raise ValueError("Choose reports or 3D replay.")
+                raise ValueError("Choose reports, signal explorer or 3D replay.")
             if not valid:
                 raise ValueError("Choose a saved run from this simulation or an available captured scene.")
             child = {"id": uuid4().hex,

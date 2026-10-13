@@ -148,7 +148,8 @@ def test_start_named_simulation_loads_its_config_under_job_lock(archive_workspac
     assert not execution.LOCK.locked()
 
 
-def test_visualizations_belong_to_the_parent_simulation_and_keep_the_run(archive_workspace):
+@pytest.mark.parametrize("kind", ["report", "signals"])
+def test_visualizations_belong_to_the_parent_simulation_and_keep_the_run(archive_workspace, kind):
     root, _ = archive_workspace
     parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
     other = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
@@ -156,9 +157,9 @@ def test_visualizations_belong_to_the_parent_simulation_and_keep_the_run(archive
     snapshot["simulation"] = parent
     saved = app.save_active_results("study", input_snapshot=snapshot)["saved"]
     with pytest.raises(ValueError, match="saved run from this simulation"):
-        app.simulation_workspace("add-visualization", {"id": other["id"], "run_id": saved["id"]})
+        app.simulation_workspace("add-visualization", {"id": other["id"], "run_id": saved["id"], "kind": kind})
     child = app.simulation_workspace("add-visualization", {
-        "id": parent["id"], "run_id": saved["id"], "name": "Response plots",
+        "id": parent["id"], "run_id": saved["id"], "name": "Response plots", "kind": kind,
     })["visualization"]
     loaded = app.simulation_workspace("load", {"id": parent["id"]})["simulation"]
     assert loaded["visualizations"] == [child]
@@ -177,6 +178,13 @@ def test_replay_visualization_requires_an_existing_capture(archive_workspace, mo
             "id": parent["id"], "kind": "replay", "source_id": "missing",
         })
     monkeypatch.setattr(visual, "available_runs", lambda root: [{"id": "captured-rig"}])
+    with pytest.raises(ValueError, match="available captured scene"):
+        app.simulation_workspace("add-visualization", {
+            "id": parent["id"], "kind": "replay", "source_id": "captured-rig",
+        })
+    monkeypatch.setattr(visual, "available_runs", lambda root: [{
+        "id": "captured-rig", "simulation_id": parent["id"], "vehicle_key": "original",
+    }])
     child = app.simulation_workspace("add-visualization", {
         "id": parent["id"], "kind": "replay", "source_id": "captured-rig", "name": "Rig replay",
     })["visualization"]

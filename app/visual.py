@@ -413,7 +413,22 @@ def reduced_scene_payload(vehicle_path: Path, data_path: Path, dof: int) -> Scen
     from visualization.dynpy import build_scene
     from visualization.sim_data import _load_signal_file
 
-    config, signals = build_scene(_load_signal_file(data_path), yaml.safe_load(vehicle_path.read_text()), dof)
+    raw = _load_signal_file(data_path)
+    config, signals = build_scene(raw, yaml.safe_load(vehicle_path.read_text()), dof)
+    from visualization.from_results import axle_friction
+
+    corners = {}
+    for corner in ("fl", "fr", "rl", "rr"):
+        names = {axis.lower(): f"tire{axis}{corner.upper()}" for axis in ("Fx", "Fy", "Fz")}
+        names["gamma"] = f"camber{corner.upper()}"
+        if all(name in raw for name in names.values()):
+            signals.update({name: raw[name] for name in names.values()})
+            corners[corner] = {**names, "axle": "front" if corner.startswith("f") else "rear"}
+    if corners:
+        try:
+            config["tire_forces"] = {"corners": corners, "friction": axle_friction(vehicle_path)}
+        except (OSError, ValueError, KeyError):
+            config["representation"] += " · Tire grip unavailable"
     with tempfile.TemporaryDirectory(prefix="bobsim-replay-") as directory:
         root = Path(directory)
         config_file, data_file = root / "scene.yml", root / "scene.npz"

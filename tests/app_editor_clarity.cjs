@@ -383,6 +383,10 @@ vm.runInContext(`
   assert.equal(state.view,'studies');
   assert.equal(state.selectedResultId,'saved-run');
   assert.equal(state.selectedVisualizationId,'plot');
+  openSimulationVisualization({id:'signals',kind:'signals',run_id:'signal-run'});
+  assert.equal(state.view,'studies');
+  assert.equal(state.selectedResultId,'signal-run');
+  assert.equal(state.selectedVisualizationId,'signals');
   openSimulationVisualization({id:'animation',kind:'replay',run_id:'captured-scene'});
   assert.equal(state.view,'replay');
   assert.equal(replay.dataset.capture,'captured-scene');

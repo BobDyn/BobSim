@@ -24,12 +24,12 @@ These targets run in Docker by default.
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
 `visualization/results/`. Captured scenes lists these scenes and saved DynPy
 ramp- and step-steer runs. Reduced replay uses the run's archived signals and
-vehicle definition.
+vehicle definition. The display settings button selects geometry and tire overlays.
+The Tires panel shows each corner on its peak-grip ellipse and percent utilization.
 
 The camera uses the geometry editor's orbit, pan and zoom gestures. Home restores
-the isometric view. Top, front and side views are available. Follow vehicle
-tracks position, Follow heading also turns with the vehicle, and Fixed camera
-stays in world space.
+the isometric view. Top, front and side views are available. World frame follows position with a fixed heading. Vehicle frame also follows
+heading, keeping front and side views aligned during a turn. Roll stays visible.
 
 Reduced replay shows two axles and a center spine at 3 DOF, body motion at 6 DOF,
 and unsprung motion at 14 DOF. Wheel spin uses saved angles at 10/14 DOF and

@@ -4940,3 +4940,18 @@ summary:focus-visible {
   color: var(--muted); background: transparent; cursor: pointer; font-size: 17px;
 }
 .simulation-tree-more:hover { color: var(--ink); background: var(--surface-2); }
+
+#signal-explorer:not([hidden]) { height: 100%; min-height: 0; }
+#signal-explorer .workflow-list { overflow: auto; }
+#signal-explorer .workflow-list > label { display: grid; gap: 6px; margin-bottom: 12px; }
+#signal-explorer .result-plot-shell { min-height: 0; display: flex; flex-direction: column; }
+#signal-explorer #result-plot-canvas { flex: 1; min-height: 260px; }
+
+#signal-explorer[hidden], #studies-view .archive-workspace[hidden] { display: none; }
+
+.replay-display-settings { position: absolute; top: 12px; right: 12px; z-index: 5; }
+.replay-display-settings > summary { display: grid; place-items: center; width: 34px; height: 34px; list-style: none; cursor: pointer; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+.replay-display-settings > summary::-webkit-details-marker { display: none; }
+.replay-display-settings > summary:focus-visible { outline: 2px solid var(--accent); }
+.replay-display-panel { position: absolute; top: 42px; right: 0; width: 190px; padding: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px #0004; }
+.replay-display-panel h4 { margin: 0 0 10px; }

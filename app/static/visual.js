@@ -583,6 +583,9 @@
         position: add(focal, scale(direction, reach)), focal,
         up: view === "top" ? [1, 0, 0] : WORLD_UP.slice(), viewAngle: 30,
       };
+      if (this.follow === "heading") {
+        this.pose = followPose(this.pose, focal, focal, this.headingAt(f));
+      }
     }
 
     // Pointer gestures match the geometry editor, with two-finger touch support.
