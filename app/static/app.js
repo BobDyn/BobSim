@@ -10793,7 +10793,9 @@ function drawKinematicChart(
   else ctx.rect(x, y, width, height);
   ctx.fill();
   ctx.stroke();
-  drawCanvasText(ctx, title, x + 10, y + (focused ? 18 : 14), { size: focused ? 14 : 11, weight: 780 });
+  const titleStyle = { size: focused ? 14 : 11, weight: 780 };
+  drawCanvasText(ctx, fitCanvasText(ctx, title, width - (focused ? 20 : 44), titleStyle),
+    x + 10, y + (focused ? 18 : 14), titleStyle);
   const chart = createPlotChart({
     key,
     title,
