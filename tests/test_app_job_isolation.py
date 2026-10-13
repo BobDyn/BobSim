@@ -94,3 +94,35 @@ def test_signal_archive_selects_job_owner_not_timestamp(tmp_path: Path, monkeypa
     assert data_services._workflow_run_dirs(workflow, job_id='job-a') == [tmp_path / 'run_ours']
     unrelated = WorkflowSpec('different', 'standard', 'Different', None, ())
     assert data_services._workflow_run_dirs(unrelated) == []
+
+
+@pytest.mark.parametrize('query,run_id', [('id=analysis', None), ('id=analysis&run_id=run', 'run')])
+def test_comparison_can_be_read_during_a_job(monkeypatch, query, run_id):
+    handler = object.__new__(server.BobSimHandler)
+    handler.path = '/api/simulations/comparison?vehicle_key=original&' + query
+    responses = []
+    monkeypatch.setattr(server, 'sync_runtime', lambda: None)
+    monkeypatch.setattr(server, 'simulation_workspace', lambda action, payload: {'action': action, **payload})
+    handler._send_json = responses.append
+    execution.reserve()
+    try:
+        handler.do_GET()
+    finally:
+        execution.LOCK.release()
+    assert responses == [{'action': 'comparison', 'id': 'analysis', 'run_id': run_id, 'vehicle_key': 'original'}]
+
+
+def test_plot_settings_route_only_updates_visualizations_during_a_job(monkeypatch):
+    handler = object.__new__(server.BobSimHandler)
+    handler.path = '/api/simulations/visualization-settings'
+    responses = []
+    monkeypatch.setattr(server, 'sync_runtime', lambda: None)
+    monkeypatch.setattr(server, 'simulation_workspace', lambda action, payload: {'action': action})
+    handler._read_json_body = lambda: {'action': 'prepare-run', 'id': 'analysis'}
+    handler._send_json = responses.append
+    execution.reserve()
+    try:
+        handler.do_POST()
+    finally:
+        execution.LOCK.release()
+    assert responses == [{'action': 'update-visualization'}]

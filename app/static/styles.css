@@ -4979,3 +4979,10 @@ summary:focus-visible {
 #simulation-tree { position: relative; padding-right: 24px; }
 #simulation-ggv-connections { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; fill: none; stroke: var(--blue); stroke-width: 1.4; stroke-linejoin: round; opacity: .75; }
 .ggv-link-supplied .simulation-tree-label, .ggv-link-supplied > .simulation-tree-icon { opacity: .5; }
+.result-comparison { border-top: 1px solid var(--line); padding-top: 8px; }
+.result-comparison > summary { cursor: pointer; margin-bottom: 8px; }
+.result-comparison label { margin-bottom: 8px; }
+.result-comparison .result-compare-toggle { display: flex; align-items: center; gap: 6px; }
+.result-compare-toggle input { width: auto; }
+.result-input-change { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 5px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; overflow-wrap: anywhere; }
+.result-input-change strong { grid-column: 1 / -1; font-weight: 500; }

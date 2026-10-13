@@ -97,9 +97,14 @@ const state = {
   resultXAxis: "__index__",
   simulationGgvEditor: false,
   resultColorSignal: "",
+  resultViewKey: "",
+  resultCompareBaseline: false,
   resultHoverIndex: null,
   resultSignalSearch: "",
   resultPlotPayload: null,
+  resultBaselinePayload: null,
+  resultComparison: null,
+  resultComparisonMessage: "",
   resultPlotStatus: "idle",
   resultPlotMessage: "",
   savingResults: false,
@@ -537,8 +542,19 @@ async function refreshTireTemplates() {
   }
 }
 
+async function savedSimulationWorkspace() {
+  let workspace;
+  let savedSettings;
+  do {
+    savedSettings = resultSettingsSave;
+    await savedSettings;
+    workspace = await api("/api/simulations");
+  } while (savedSettings !== resultSettingsSave);
+  return workspace;
+}
+
 async function refreshSavedResults() {
-  const workspace = await api("/api/simulations");
+  const workspace = await savedSimulationWorkspace();
   if (state.simulationWorkspace?.vehicle_key !== workspace.vehicle_key) {
     state.selectedSimulationId = null;
     state.simModalOpen = false;
@@ -580,6 +596,9 @@ async function refreshResultSources() {
     state.resultSourceDetail = null;
     state.resultSelectedSignals = [];
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
   }
 }
 
@@ -4194,8 +4213,16 @@ function selectedSimulation() {
 }
 
 async function simulationRequest(action, values = {}) {
+  const vehicleKey = activeVehicleKey();
+  const savedSettings = resultSettingsSave;
+  await savedSettings;
   const payload = await api("/api/simulations", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action, vehicle_key: activeVehicleKey(), ...values})});
+    body: JSON.stringify({action, vehicle_key: vehicleKey, ...values})});
+  if (savedSettings !== resultSettingsSave) {
+    Object.assign(payload, await savedSimulationWorkspace());
+    if (payload.simulation) payload.simulation = payload.simulations.find(item => item.id === payload.simulation.id) || payload.simulation;
+  }
+  if (activeVehicleKey() !== vehicleKey) throw new Error("The active vehicle changed. Reopen the simulation.");
   state.simulationWorkspace = payload;
   return payload;
 }
@@ -4263,11 +4290,17 @@ function workspaceAction(action) {
 }
 
 function openSimulationVisualization(child) {
-  const previous = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
-  if (previous?.kind !== child.kind) {
+  const key = JSON.stringify([activeVehicleKey(), state.selectedSimulationId, child.id, child.run_id]);
+  if (state.resultViewKey !== key) {
+    state.resultViewKey = key;
+    state.resultSignalSearch = "";
+    state.resultPlotStatus = "idle";
     state.selectedResultSourcePath = null;
     state.resultSourceDetail = null;
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
   }
   state.selectedVisualizationId = child.id;
   state.simModalOpen = false;
@@ -4426,14 +4459,16 @@ function wireSimulationContextMenu() {
   const tree = document.getElementById("simulation-tree");
   const menu = document.getElementById("simulation-context-menu");
   let target = null;
+  let targetRunId = null;
   let trigger = null;
   const close = (restoreFocus = false) => {
     menu.hidden = true;
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
   };
-  const open = (id, x, y, element, group = false) => {
+  const open = (id, x, y, element, group = false, runId = null) => {
     target = id;
+    targetRunId = runId || savedResults().find(run => run.simulation?.id === id && run.vehicle_key === activeVehicleKey())?.id;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
@@ -4441,7 +4476,8 @@ function wireSimulationContextMenu() {
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
       button.hidden = group ? button.dataset.action !== "add" : button.dataset.action === "add"
-        || ((envelope || lap) && button.dataset.action === "replay") || (!lap && button.dataset.action === "lap");
+        || ((envelope || lap) && button.dataset.action === "replay") || (!lap && button.dataset.action === "lap")
+        || (button.dataset.action === "baseline" && !targetRunId);
     }
     menu.querySelector('[data-action="report"]').textContent = envelope ? "Add envelope plots and report" : "Add plots and report";
     menu.hidden = false;
@@ -4455,7 +4491,8 @@ function wireSimulationContextMenu() {
     const group = event.target.closest("[data-analysis-group]");
     if (!branch && !group) return;
     event.preventDefault();
-    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
+    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"), false,
+      event.target.closest("[data-simulation-run]")?.dataset.simulationRun);
     else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), true);
   });
   tree.addEventListener("click", event => {
@@ -4468,8 +4505,10 @@ function wireSimulationContextMenu() {
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     const id = target;
+    const runId = targetRunId;
     close();
-    workspaceAction(() => action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
+    workspaceAction(() => action === "duplicate" ? duplicateSimulation(id) : action === "baseline" ? setSimulationBaseline(id, runId)
+      : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
@@ -4663,7 +4702,7 @@ function renderSimulationWorkspace() {
         ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
-        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span>${item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>`).join("")}
+        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span>${item.baseline_run_id === run.id ? '<span class="simulation-tree-model">Baseline</span>' : ""}${item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>`).join("")}
       </div>
     </div>`;
       }).join("")}</div></section>`;
@@ -5377,6 +5416,97 @@ function optFigureHtml(data) {
   `;
 }
 
+async function duplicateSimulation(id) {
+  await saveSimulationEdits();
+  const payload = await simulationRequest("duplicate", {id});
+  await openSimulation(payload.simulation.id);
+}
+
+async function setSimulationBaseline(id, runId) {
+  await saveSimulationEdits();
+  await simulationRequest("set-baseline", {id, run_id: runId || null});
+  state.resultComparison = null;
+  state.resultBaselinePayload = null;
+  renderSimulationWorkspace();
+  if (state.view === "studies") await refreshResultPlot();
+}
+
+function renderResultComparisonControls() {
+  const panel = document.getElementById("result-comparison");
+  if (!panel) return;
+  const simulation = selectedSimulation();
+  panel.hidden = !simulation;
+  if (!simulation) return;
+  const select = document.getElementById("result-baseline-source");
+  const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.workflow?.id === simulation.workflow_id);
+  select.innerHTML = '<option value="">None</option>' + runs.map(run => `<option value="${escapeHtml(run.id)}"${run.id === simulation.baseline_run_id ? " selected" : ""}>${escapeHtml(run.simulation?.name || run.name || "Run")} · ${escapeHtml(run.created_label)}</option>`).join("");
+  if (simulation.baseline_run_id && !runs.some(run => run.id === simulation.baseline_run_id)) {
+    select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(simulation.baseline_run_id)}" selected>Unavailable baseline</option>`);
+  }
+  select.onchange = event => workspaceAction(() => setSimulationBaseline(simulation.id, event.target.value));
+  const toggle = document.getElementById("result-compare-baseline");
+  toggle.checked = state.resultCompareBaseline;
+  toggle.disabled = !simulation.baseline_run_id;
+  toggle.onchange = async () => {
+    state.resultCompareBaseline = toggle.checked;
+    saveResultSettings();
+    await refreshResultPlot();
+  };
+  const comparison = state.resultComparison;
+  document.getElementById("result-comparison-status").textContent = state.resultComparisonMessage;
+  const changes = document.getElementById("result-input-changes");
+  changes.hidden = !comparison?.available;
+  const list = document.getElementById("result-input-changes-list");
+  const value = input => input === null ? "None" : typeof input === "object" ? JSON.stringify(input) : String(input);
+  list.innerHTML = comparison?.changes?.length ? comparison.changes.map(change => `<div class="result-input-change"><strong>${escapeHtml(change.path.replaceAll("_", " ").replaceAll(".", " › "))}</strong><span>${escapeHtml(value(change.before))}</span><span aria-hidden="true">→</span><span>${escapeHtml(value(change.after))}</span></div>`).join("") : '<p class="muted">No vehicle or analysis setting changes.</p>';
+}
+
+async function refreshResultBaseline() {
+  state.resultBaselinePayload = null;
+  state.resultComparison = null;
+  state.resultComparisonMessage = "";
+  const simulation = selectedSimulation();
+  if (!simulation?.baseline_run_id || !state.resultPlotPayload) {
+    renderResultComparisonControls();
+    return;
+  }
+  const context = () => JSON.stringify([resultRequestContext(), selectedSimulation()?.baseline_run_id,
+    state.selectedResultSourcePath, state.resultXAxis, state.resultSelectedSignals, state.resultColorSignal, state.resultCompareBaseline]);
+  const requestContext = context();
+  const runId = selectedSavedResult()?.id;
+  try {
+    const query = new URLSearchParams({vehicle_key: activeVehicleKey(), id: simulation.id});
+    if (runId) query.set("run_id", runId);
+    const response = await api(`/api/simulations/comparison?${query}`);
+    if (context() !== requestContext) return;
+    const comparison = response.comparison;
+    state.resultComparison = comparison;
+    state.resultComparisonMessage = comparison.message || (comparison.baseline?.id === runId ? "This run is the baseline." : `${comparison.changes.length} setting changes`);
+    if (comparison.available && state.resultCompareBaseline && comparison.baseline.id !== runId) {
+      const label = selectedResultSource()?.label;
+      const file = comparison.baseline.files.find(file => file.kind === "csv" && file.label === label);
+      if (!file) throw new Error("The baseline has no matching signal file.");
+      const detail = await api(`/api/results/source?path=${encodeURIComponent(file.path)}`);
+      if (context() !== requestContext) return;
+      if (state.resultXAxis !== "__index__" && !detail.numeric_columns.includes(state.resultXAxis)) throw new Error("The baseline does not contain this X signal.");
+      const signals = state.resultSelectedSignals.filter(signal => detail.numeric_columns.includes(signal));
+      if (!signals.length) throw new Error("The baseline has none of the selected signals.");
+      const color = state.resultColorSignal;
+      if (color && !detail.numeric_columns.includes(color)) throw new Error("The baseline does not contain this color signal.");
+      const payload = await api("/api/results/series", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: file.path, x_axis: state.resultXAxis, signals, color_signal: color, max_points: 2200})});
+      if (context() !== requestContext) return;
+      state.resultBaselinePayload = payload;
+      if (signals.length !== state.resultSelectedSignals.length) state.resultComparisonMessage += ". Some signals are absent from the baseline.";
+    }
+  } catch (error) {
+    if (context() !== requestContext) return;
+    state.resultComparisonMessage = error.message;
+  }
+  renderResultComparisonControls();
+  renderResultPlotCanvas();
+}
+
 function renderStudies() {
   state.activeStudyTab = "saved";
   renderResultSaveControls();
@@ -5392,9 +5522,12 @@ function renderStudies() {
     const files = (selectedSavedResult()?.files || []).filter(file => file.kind === "csv");
     const picker = document.getElementById("result-source-picker");
     if (!files.some(file => file.path === state.selectedResultSourcePath)) {
-      state.selectedResultSourcePath = (files.find(file => file.label === "Signals") || files[0])?.path || null;
+      state.selectedResultSourcePath = (files.find(file => file.label === resultVisualization()?.settings?.source_label) || files.find(file => file.label === "Signals") || files[0])?.path || null;
       state.resultSourceDetail = null;
       state.resultPlotPayload = null;
+      state.resultBaselinePayload = null;
+      state.resultComparison = null;
+      state.resultComparisonMessage = "";
       state.resultPlotStatus = "idle";
     }
     picker.innerHTML = files.map(file => `<option value="${escapeHtml(file.path)}"${file.path === state.selectedResultSourcePath ? " selected" : ""}>${escapeHtml(file.label)}</option>`).join("");
@@ -5461,34 +5594,85 @@ function resultSourceCard(source) {
   `;
 }
 
+function resultVisualization() {
+  return selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId);
+}
+
+function resultRequestContext() {
+  return JSON.stringify([activeVehicleKey(), state.selectedSimulationId, state.selectedVisualizationId, state.selectedResultId]);
+}
+
+let resultSettingsSave = Promise.resolve();
+function saveResultSettings() {
+  const child = resultVisualization();
+  if (!child || !["signals", "lap"].includes(child.kind) || !state.resultSourceDetail) return;
+  const settings = {
+    x_axis: state.resultXAxis, signals: [...state.resultSelectedSignals],
+    color_signal: state.resultColorSignal, source_label: selectedResultSource()?.label || "",
+    compare_baseline: state.resultCompareBaseline,
+  };
+  child.settings = settings;
+  const context = resultRequestContext();
+  const body = JSON.stringify({action: "update-visualization", vehicle_key: activeVehicleKey(),
+    id: state.selectedSimulationId, child_id: child.id, settings});
+  // Keep rapid selections ordered without letting an old response replace the current workspace.
+  resultSettingsSave = resultSettingsSave.then(() => api("/api/simulations/visualization-settings", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body,
+  })).catch(error => {
+    if (resultRequestContext() !== context) return;
+    state.resultPlotMessage = `Could not save plot settings: ${error.message}`;
+    renderResultPlotCanvas();
+  });
+  return resultSettingsSave;
+}
+
+function restoreResultSettings(detail, settings = resultVisualization()?.settings || {}) {
+  const numeric = detail.numeric_columns || [];
+  const lap = isLapMap();
+  state.resultXAxis = lap ? "x_m" : settings.x_axis === "__index__" || numeric.includes(settings.x_axis)
+    ? settings.x_axis : defaultResultXAxis(detail);
+  state.resultSelectedSignals = lap ? ["y_m"] : (settings.signals || [])
+    .filter(signal => numeric.includes(signal) && signal !== state.resultXAxis);
+  if (!state.resultSelectedSignals.length && (!Array.isArray(settings.signals) || settings.signals.length)) {
+    state.resultSelectedSignals = defaultResultSignals(detail);
+  }
+  const color = settings.color_signal ?? (lap ? "speed_mps" : "");
+  state.resultColorSignal = numeric.includes(color) ? color : "";
+  state.resultCompareBaseline = settings.compare_baseline === true;
+}
+
 async function selectResultSource(path) {
   if (!path) return;
   state.selectedResultSourcePath = path;
   state.resultSourceDetail = null;
   state.resultPlotPayload = null;
+  state.resultBaselinePayload = null;
+  state.resultComparison = null;
+  state.resultComparisonMessage = "";
   state.resultPlotStatus = "loading";
   state.resultPlotMessage = "";
   state.resultSelectedSignals = [];
   renderStudies();
-  await loadResultSource(path);
+  await loadResultSource(path, true);
 }
 
-async function loadResultSource(path = state.selectedResultSourcePath) {
+async function loadResultSource(path = state.selectedResultSourcePath, saveSettings = false) {
   if (!path) return;
+  const context = resultRequestContext();
   state.resultPlotStatus = "loading";
   renderResultExplorer();
   try {
     const detail = await api(`/api/results/source?path=${encodeURIComponent(path)}`);
-    if (state.selectedResultSourcePath !== path) return;
+    if (state.selectedResultSourcePath !== path || resultRequestContext() !== context) return;
     state.resultSourceDetail = detail;
-    state.resultXAxis = isLapMap() ? "x_m" : defaultResultXAxis(detail);
-    state.resultSelectedSignals = isLapMap() ? ["y_m"] : defaultResultSignals(detail);
-    state.resultColorSignal = isLapMap() ? "speed_mps" : "";
+    restoreResultSettings(detail);
+    if (saveSettings) saveResultSettings();
     state.resultHoverIndex = null;
     state.resultPlotStatus = "idle";
     renderStudies();
     await refreshResultPlot();
   } catch (error) {
+    if (state.selectedResultSourcePath !== path || resultRequestContext() !== context) return;
     state.resultPlotStatus = "error";
     state.resultPlotMessage = error.message;
     renderResultExplorer();
@@ -5583,13 +5767,14 @@ function renderResultControls(detail) {
     selected.innerHTML = "";
     return;
   }
+  renderResultComparisonControls();
   const numeric = detail.numeric_columns || [];
   const colorSelect = document.getElementById("result-color-signal");
   if (colorSelect) {
     if (!numeric.includes(state.resultColorSignal)) state.resultColorSignal = "";
     colorSelect.innerHTML = '<option value="">None</option>' + numeric.map(column =>
       `<option value="${escapeHtml(column)}"${column === state.resultColorSignal ? " selected" : ""}>${escapeHtml(column)}</option>`).join("");
-    colorSelect.onchange = async event => { state.resultColorSignal = event.target.value; await refreshResultPlot(); };
+    colorSelect.onchange = async event => { state.resultColorSignal = event.target.value; saveResultSettings(); await refreshResultPlot(); };
     const lap = isLapMap();
     xSelect.parentElement.hidden = lap;
     search.parentElement.hidden = lap;
@@ -5600,7 +5785,6 @@ function renderResultControls(detail) {
     state.resultXAxis = defaultResultXAxis(detail);
   }
   state.resultSelectedSignals = state.resultSelectedSignals.filter((signal) => numeric.includes(signal) && signal !== state.resultXAxis);
-  if (!state.resultSelectedSignals.length) state.resultSelectedSignals = defaultResultSignals(detail);
   xSelect.innerHTML = [
     `<option value="__index__"${state.resultXAxis === "__index__" ? " selected" : ""}>Row index</option>`,
     ...numeric.map((column) => `<option value="${escapeHtml(column)}"${column === state.resultXAxis ? " selected" : ""}>${escapeHtml(column)}</option>`),
@@ -5611,6 +5795,7 @@ function renderResultControls(detail) {
     if (!state.resultSelectedSignals.length) state.resultSelectedSignals = defaultResultSignals(detail);
     renderResultControls(detail);
     renderResultSourceDiagnostic(detail);
+    saveResultSettings();
     await refreshResultPlot();
   };
   search.value = state.resultSignalSearch || "";
@@ -5637,6 +5822,7 @@ function renderResultControls(detail) {
       else state.resultSelectedSignals = state.resultSelectedSignals.filter((item) => item !== signal);
       renderResultControls(detail);
       renderResultSourceDiagnostic(detail);
+      saveResultSettings();
       await refreshResultPlot();
     });
   });
@@ -5647,8 +5833,13 @@ function renderResultControls(detail) {
 
 async function refreshResultPlot() {
   const detail = state.resultSourceDetail;
+  const context = resultRequestContext();
+  const selection = JSON.stringify([state.resultXAxis, state.resultColorSignal, state.resultSelectedSignals]);
   if (!detail?.path || !state.resultSelectedSignals.length) {
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
     renderResultPlotCanvas();
     return;
   }
@@ -5671,15 +5862,57 @@ async function refreshResultPlot() {
         max_points: 2200,
       }),
     });
-    if (state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultColorSignal !== colorSignal || state.resultSelectedSignals.join("\n") !== selected) return;
+    if (resultRequestContext() !== context || state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultColorSignal !== colorSignal || state.resultSelectedSignals.join("\n") !== selected) return;
     state.resultPlotPayload = payload;
     state.resultPlotStatus = "ready";
+    await refreshResultBaseline();
   } catch (error) {
+    if (resultRequestContext() !== context || state.resultSourceDetail !== detail
+        || JSON.stringify([state.resultXAxis, state.resultColorSignal, state.resultSelectedSignals]) !== selection) return;
     state.resultPlotStatus = "error";
     state.resultPlotMessage = error.message;
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
   }
   renderResultPlotCanvas();
+}
+
+const resultCursors = new Map();
+
+function readResultCursor(runId) {
+  return runId ? resultCursors.get(runId) || null : null;
+}
+
+function setResultCursor(runId, cursor) {
+  if (!runId) return;
+  resultCursors.set(runId, cursor);
+}
+
+function resultCursorIndex(payload, runId, path) {
+  const cursor = readResultCursor(runId);
+  if (!cursor) return null;
+  for (const key of ["time", "station_m", "row"]) {
+    const values = key === "row" ? (cursor.path === path ? payload.row_indices : null) : payload.coordinates?.[key];
+    if (!values || !Number.isFinite(cursor[key])) continue;
+    let nearest = null;
+    values.forEach((value, index) => {
+      if (value !== null && Number.isFinite(value) && (nearest === null || Math.abs(value - cursor[key]) < Math.abs(values[nearest] - cursor[key]))) nearest = index;
+    });
+    if (nearest !== null) return nearest;
+  }
+  return null;
+}
+
+function selectResultSample(payload, index) {
+  if (!Number.isInteger(index)) return;
+  setResultCursor(state.selectedResultId, {
+    time: payload.coordinates?.time?.[index],
+    station_m: payload.coordinates?.station_m?.[index],
+    row: payload.row_indices?.[index],
+    path: state.selectedResultSourcePath,
+  });
 }
 
 function renderResultPlotCanvas() {
@@ -5689,6 +5922,7 @@ function renderResultPlotCanvas() {
 function drawResultPlotCanvas() {
   const canvas = document.getElementById("result-plot-canvas");
   if (!canvas) return;
+  canvas.onclick = canvas.onpointermove = canvas.onpointerleave = canvas.onkeydown = null;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(360, Math.floor(rect.width || 760));
   const height = Math.max(260, Math.floor(rect.height || 420));
@@ -5704,6 +5938,8 @@ function drawResultPlotCanvas() {
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
   const payload = state.resultPlotPayload;
+  const legend = document.getElementById("result-selected-signals");
+  if (legend) legend.innerHTML = "";
   if (title) title.textContent = isLapMap() ? "Lap map" : "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
@@ -5730,8 +5966,9 @@ function drawResultPlotCanvas() {
     return;
   }
   const plot = { x: 58, y: 28, width: width - 78, height: height - 76 };
-  let xDomain = plotDomain(payload.x, { padFraction: 0.02 });
-  const yValues = payload.series.flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
+  const baseline = state.resultBaselinePayload;
+  let xDomain = plotDomain([...payload.x, ...(baseline?.x || [])], { padFraction: 0.02 });
+  const yValues = [...payload.series, ...(baseline?.series || [])].flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
   let yDomain = plotDomain(yValues, { padFraction: 0.1 });
   if (isLapMap()) {
     const scale = Math.max((xDomain[1] - xDomain[0]) / plot.width, (yDomain[1] - yDomain[0]) / plot.height);
@@ -5740,63 +5977,85 @@ function drawResultPlotCanvas() {
     yDomain = [yc - scale * plot.height / 2, yc + scale * plot.height / 2];
   }
   const colorValues = payload.color?.values;
-  const finiteColors = (colorValues || []).filter(value => value !== null && Number.isFinite(value));
+  const finiteColors = [...(colorValues || []), ...(baseline?.color?.values || [])].filter(value => value !== null && Number.isFinite(value));
   const colorDomain = finiteColors.length ? [Math.min(...finiteColors), Math.max(...finiteColors)] : null;
   drawPlotGrid(ctx, { plot, xDomain, yDomain });
   const toX = (value) => plot.x + ((value - xDomain[0]) / Math.max(1e-9, xDomain[1] - xDomain[0])) * plot.width;
   const toY = (value) => plot.y + plot.height - ((value - yDomain[0]) / Math.max(1e-9, yDomain[1] - yDomain[0])) * plot.height;
   const colors = [palette.blue, palette.green, palette.amber, palette.red, palette.tireFront, palette.tireRear, "#7c3aed", "#0f766e"];
-  payload.series.forEach((series, seriesIndex) => {
-    ctx.save();
-    ctx.strokeStyle = colors[seriesIndex % colors.length];
-    ctx.lineWidth = isLapMap() ? 3 : seriesIndex === 0 ? 2.1 : 1.7;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    let drawing = false;
-    series.values.forEach((value, index) => {
-      const x = Number(payload.x[index]);
-      const y = Number(value);
-      if (payload.x[index] === null || value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)
-          || (colorValues && (colorValues[index] === null || !Number.isFinite(colorValues[index])))) {
-        drawing = false;
-        return;
-      }
-      if (!drawing) {
-        ctx.moveTo(toX(x), toY(y));
-        drawing = true;
-      } else {
-        if (colorDomain) {
-          ctx.strokeStyle = resultSignalColor((colorValues[index - 1] + colorValues[index]) / 2, colorDomain);
-          ctx.beginPath();
-          ctx.moveTo(toX(payload.x[index - 1]), toY(series.values[index - 1]));
-          ctx.lineTo(toX(x), toY(y));
-          ctx.stroke();
-        } else ctx.lineTo(toX(x), toY(y));
-      }
+  const seriesColor = signal => colors[Math.max(0, payload.series.findIndex(series => series.signal === signal)) % colors.length];
+  for (const [data, isBaseline] of [[payload, false], [baseline, true]]) {
+    if (!data) continue;
+    const lineColors = data.color?.values;
+    data.series.forEach((series, seriesIndex) => {
+      ctx.save();
+      if (isBaseline) ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = seriesColor(series.signal);
+      ctx.lineWidth = isLapMap() ? 3 : seriesIndex === 0 ? 2.1 : 1.7;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      let drawing = false;
+      let distance = 0;
+      series.values.forEach((value, index) => {
+        const x = Number(data.x[index]);
+        const y = Number(value);
+        if (data.x[index] === null || value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)
+            || (lineColors && (lineColors[index] === null || !Number.isFinite(lineColors[index])))) {
+          drawing = false;
+          distance = 0;
+          return;
+        }
+        if (!drawing) {
+          ctx.moveTo(toX(x), toY(y));
+          drawing = true;
+        } else {
+          if (colorDomain && lineColors) {
+            if (isBaseline) ctx.lineDashOffset = -distance;
+            distance += Math.hypot(toX(x) - toX(data.x[index - 1]), toY(y) - toY(series.values[index - 1]));
+            ctx.strokeStyle = resultSignalColor((lineColors[index - 1] + lineColors[index]) / 2, colorDomain);
+            ctx.beginPath();
+            ctx.moveTo(toX(data.x[index - 1]), toY(series.values[index - 1]));
+            ctx.lineTo(toX(x), toY(y));
+            ctx.stroke();
+          } else ctx.lineTo(toX(x), toY(y));
+        }
+      });
+      if (!colorDomain || !lineColors) ctx.stroke();
+      ctx.restore();
     });
-    if (!colorDomain) ctx.stroke();
-    ctx.restore();
-  });
-  const legend = document.getElementById("result-selected-signals");
+  }
   legend.innerHTML = payload.series.map((series, index) =>
     `<span class="result-series-key">${colorDomain ? "" : `<i style="background:${colors[index % colors.length]}"></i>`}${escapeHtml(series.signal)}</span>`
   ).join("");
-  if (isLapMap()) legend.innerHTML = "";
-  if (colorDomain) legend.innerHTML += `<span class="result-color-key">${escapeHtml(payload.color.signal)}
+  if (baseline) legend.innerHTML += baseline.series.map(series =>
+    `<span class="result-series-key"><i style="background:${seriesColor(series.signal)}"></i>Baseline: ${escapeHtml(series.signal)}</span>`
+  ).join("");
+  if (isLapMap()) legend.innerHTML = baseline ? "Baseline: dashed" : "";
+  if (colorDomain) legend.innerHTML += `<span class="result-color-key">${escapeHtml(payload.color?.signal || baseline?.color?.signal)}
     <span>${formatNumber(colorDomain[0])}</span><i style="background:linear-gradient(to right,${[0,.25,.5,.75,1].map(t => resultSignalColor(t,[0,1])).join(',')})"></i><span>${formatNumber(colorDomain[1])}</span></span>`;
   const points = payload.x.map((x, index) => ({index, x: toX(x), y: toY(payload.series[0].values[index])}))
     .filter(point => payload.x[point.index] !== null && payload.series[0].values[point.index] !== null && Number.isFinite(point.x + point.y));
-  canvas.onpointermove = event => {
+  const nearestPoint = event => {
     const bounds = canvas.getBoundingClientRect();
     const x = (event.clientX - bounds.left) * width / bounds.width, y = (event.clientY - bounds.top) * height / bounds.height;
-    state.resultHoverIndex = points.reduce((best, point) => !best || Math.hypot(point.x-x,point.y-y) < Math.hypot(best.x-x,best.y-y) ? point : best, null)?.index;
+    return points.reduce((best, point) => !best || Math.hypot(point.x-x,point.y-y) < Math.hypot(best.x-x,best.y-y) ? point : best, null)?.index;
+  };
+  canvas.onpointermove = event => {
+    state.resultHoverIndex = nearestPoint(event);
+    renderResultPlotCanvas();
+  };
+  canvas.onclick = event => {
+    selectResultSample(payload, nearestPoint(event));
+    canvas.focus();
     renderResultPlotCanvas();
   };
   canvas.onpointerleave = () => { state.resultHoverIndex = null; renderResultPlotCanvas(); };
   canvas.onkeydown = event => {
     if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     event.preventDefault();
-    state.resultHoverIndex = clamp((state.resultHoverIndex ?? 0) + (event.key === "ArrowRight" ? 1 : -1), 0, payload.x.length - 1);
+    const index = clamp((resultCursorIndex(payload, state.selectedResultId, state.selectedResultSourcePath) ?? state.resultHoverIndex ?? 0) + (event.key === "ArrowRight" ? 1 : -1), 0, payload.x.length - 1);
+    selectResultSample(payload, index);
+    state.resultHoverIndex = null;
     renderResultPlotCanvas();
   };
   if (isLapMap() && points.length) {
@@ -5805,7 +6064,8 @@ function drawResultPlotCanvas() {
     ctx.strokeStyle = palette.amber; ctx.lineWidth = 2; ctx.stroke();
     drawCanvasText(ctx, "Start", start.x + 9, start.y - 9, {color: palette.muted, size: 11});
   }
-  const hovered = points.find(point => point.index === state.resultHoverIndex);
+  const selectedIndex = resultCursorIndex(payload, state.selectedResultId, state.selectedResultSourcePath);
+  const hovered = points.find(point => point.index === (state.resultHoverIndex ?? selectedIndex));
   if (hovered) {
     ctx.beginPath(); ctx.arc(hovered.x, hovered.y, 5, 0, Math.PI*2); ctx.fillStyle = palette.amber; ctx.fill();
     if (subtitle) subtitle.textContent = `${state.resultXAxis}: ${formatNumber(payload.x[hovered.index])} | `

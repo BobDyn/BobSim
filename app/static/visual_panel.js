@@ -86,6 +86,7 @@
       state.runId = runId;
       state.scene = new window.BobVis.Scene(header, buffer);
       state.viewer.load(state.scene);
+      restoreResultCursor();
       $("replay-camera-view").value = "iso";
       $("replay-model").textContent = header.representation || "Captured geometry";
       $("replay-run").value = runId;
@@ -311,9 +312,25 @@
   // Timeline
   // ==========================================================================
 
+  function cursorRunId() {
+    const run = state.runs.find(item => item.id === state.runId);
+    if (!run?.id.startsWith("saved-")) return null;
+    const archiveId = run.id.slice("saved-".length);
+    return run.data?.startsWith(`app/user_data/results/saved/${archiveId}/`) ? archiveId : null;
+  }
+
+  function restoreResultCursor() {
+    const time = window.readResultCursor?.(cursorRunId())?.time;
+    if (!state.scene || !Number.isFinite(time)) return;
+    state.viewer.playing = false;
+    state.viewer.simTime = Math.max(state.scene.time[0], Math.min(state.scene.time[state.scene.time.length - 1], time));
+    $("replay-play").textContent = "Play";
+  }
+
   function syncTimeline(simTime) {
     const scene = state.scene;
     if (!scene) return;
+    if (screenActive() && !state.recording) window.setResultCursor?.(cursorRunId(), {time: simTime});
     const slider = $("replay-time");
     if (document.activeElement !== slider) {
       slider.value = String(((simTime - scene.time[0]) / Math.max(scene.duration, 1e-6)) * 1000);
@@ -763,6 +780,7 @@
     const changed = capture !== state.capture;
     state.capture = capture;
     if (!state.started) start();
+    else if (!changed && state.viewer) restoreResultCursor();
     else if (changed && state.viewer) {
       state.loadVersion++;
       state.viewer.playing = false;

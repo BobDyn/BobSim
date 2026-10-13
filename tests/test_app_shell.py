@@ -2022,3 +2022,17 @@ def test_result_color_signal_stays_aligned_with_sampled_points(tmp_path, monkeyp
     assert len(result['x']) == len(result['color']['values']) == 50
     with pytest.raises(ValueError, match='color_signal'):
         app.result_series_payload(path.relative_to(tmp_path).as_posix(), color_signal='missing')
+
+
+@pytest.mark.parametrize('time_column', ['time', 'time_s'])
+def test_result_inspection_coordinates_follow_sample_rows(tmp_path, monkeypatch, time_column):
+    path = tmp_path / 'simulations/mbd/results/coordinates.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text(f'x,y,{time_column},station_m\n' + '\n'.join(
+        f'{i if i != 4 else ""},{i*2},{i/10},{i*3 if i != 6 else ""}' for i in range(100)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x', signals=['y'], max_points=50)
+    assert result['row_indices'][:4] == [0, 2, 6, 8]
+    assert result['coordinates']['time'][:4] == [0., .2, .6, .8]
+    assert result['coordinates']['station_m'][:4] == [0., 6., None, 24.]
+    assert len(result['coordinates']['time']) == len(result['x']) == 49

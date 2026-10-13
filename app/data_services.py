@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import re
 import shutil
+import threading
 import time
 from typing import Any
 import zipfile
@@ -36,6 +37,7 @@ from app.registry import (
 
 BELLCRANK_ORDER_CHOICES = app_registry.BELLCRANK_ORDER_CHOICES
 STABAR_BELLCRANK_ORDER_CHOICES = app_registry.STABAR_BELLCRANK_ORDER_CHOICES
+_SIMULATION_LOCK = threading.RLock()
 ROOT = Path.cwd()
 SAVED_VEHICLE_ROOT = app_storage.SAVED_VEHICLE_ROOT
 SAVED_SIM_CONFIG_ROOT = app_storage.SAVED_SIM_CONFIG_ROOT
@@ -261,6 +263,10 @@ def result_series_payload(
     row_count = int(source.get("row_count") or 0)
     point_limit = max(50, min(10_000, int(max_points or 1800)))
     stride = max(1, math.ceil(row_count / point_limit)) if row_count else 1
+    coordinate_columns = {name: next((column for column in columns if column in numeric_columns), None)
+                          for name, columns in (("time", ("time", "time_s")), ("station_m", ("station_m",)))}
+    coordinates: dict[str, list[float | None]] = {name: [] for name, column in coordinate_columns.items() if column}
+    row_indices: list[int] = []
     color_values: list[float | None] = []
     x_values: list[float] = []
     series: dict[str, list[float | None]] = {signal: [] for signal in selected_signals}
@@ -274,6 +280,9 @@ def result_series_payload(
             if x_value is None:
                 continue
             x_values.append(x_value)
+            row_indices.append(index)
+            for name in coordinates:
+                coordinates[name].append(_float_or_none(row.get(coordinate_columns[name] or "")))
             if color_signal:
                 color_values.append(_float_or_none(row.get(color_signal)))
             for signal in selected_signals:
@@ -282,6 +291,8 @@ def result_series_payload(
     return {
         "source": source,
         "color": {"signal": color_signal, "values": color_values} if color_signal else None,
+        "coordinates": coordinates,
+        "row_indices": row_indices,
         "x_axis": x_axis,
         "x": x_values,
         "stride": stride,
@@ -1125,6 +1136,75 @@ def _inherit_ggv_fidelity(items: list[dict[str, Any]]) -> None:
         lap["model"] = {**lap.get("model", {}), "model_dofs": [dof], "fidelity": f"{dof} DOF QSS"}
 
 
+def _snapshot_changes(before: Any, after: Any, path: str) -> list[dict[str, Any]]:
+    """## Archived Input Changes
+
+    Parameters
+    ----------
+    before, after : Any
+        Values from the baseline and current archived inputs.
+    path : str
+        Input field path.
+
+    Returns
+    -------
+    list of dict
+        Changed fields with their archived values.
+    """
+    if isinstance(before, dict) and isinstance(after, dict):
+        return [change for key in sorted(before.keys() | after.keys(), key=str)
+                for change in _snapshot_changes(before.get(key), after.get(key), f"{path}.{key}")]
+    if before == after:
+        return []
+    return [{"path": path, "before": before, "after": after}]
+
+
+def _simulation_comparison(item: dict[str, Any], runs: list[dict[str, Any]], run_id: str | None) -> dict[str, Any]:
+    """## Baseline Comparison
+
+    Parameters
+    ----------
+    item : dict
+        Analysis containing a pinned baseline ID.
+    runs : list of dict
+        Saved runs from the active vehicle.
+    run_id : str or None
+        Current run ID, or None for the analysis's latest run.
+
+    Returns
+    -------
+    dict
+        Saved runs and their vehicle and analysis input differences.
+    """
+    baseline = next((run for run in runs if run["id"] == item.get("baseline_run_id")), None)
+    current = next((run for run in runs if (run.get("simulation") or {}).get("id") == item["id"]
+                    and (run_id is None or run["id"] == run_id)), None)
+    if run_id and current is None:
+        raise ValueError("Choose a saved run from this simulation.")
+    result: dict[str, Any] = {"baseline": baseline, "current": current, "changes": [], "available": False}
+    if baseline is None or current is None:
+        return {**result, "message": "Choose a baseline and run this analysis to compare results."}
+    try:
+        for kind in ("vehicle", "config"):
+            before = yaml.safe_load(_safe_repo_path(baseline[f"{kind}_snapshot"]).read_text(encoding="utf-8"))
+            after = yaml.safe_load(_safe_repo_path(current[f"{kind}_snapshot"]).read_text(encoding="utf-8"))
+            if not isinstance(before, dict) or not isinstance(after, dict):
+                raise ValueError("Archived inputs must be mappings.")
+            if kind == "config":
+                for config in (before, after):
+                    if isinstance(config, dict) and isinstance(config.get("qss"), dict):
+                        linked = config["qss"].get("linked_ggv")
+                        if isinstance(linked, dict):
+                            config["qss"].pop("ggv_csv", None)
+                            config["qss"].pop("generate_if_missing", None)
+                            config["qss"]["linked_ggv"] = {key: linked.get(key) for key in ("source_id", "run_id")}
+            result["changes"].extend(_snapshot_changes(before, after, kind))
+    except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError):
+        return {**result, "changes": [], "message": "Archived inputs are unavailable for this comparison."}
+    result["available"] = True
+    return result
+
+
 def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """## Vehicle Simulations
 
@@ -1142,7 +1222,11 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
     dict[str, Any]
         Simulation list and, when loaded, its active configuration.
     """
-    payload = payload or {}
+    with _SIMULATION_LOCK:
+        return _simulation_workspace(action, payload or {})
+
+
+def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     key = _active_vehicle_workspace_key()
     if payload.get("vehicle_key", key) != key:
         raise ValueError("The active vehicle changed. Reopen the simulation.")
@@ -1161,6 +1245,28 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                 "model": workflow_model(workflow, root=ROOT),
                 "config_text": _config_file_path(spec).read_text(encoding="utf-8")}
         items.append(item)
+    elif action in {"duplicate", "set-baseline", "comparison"}:
+        if item is None:
+            raise ValueError("Simulation not found for this vehicle.")
+        runs = saved_results_payload(key)["results"]
+        if action == "duplicate":
+            latest = next((run for run in runs if (run.get("simulation") or {}).get("id") == item["id"]), None)
+            item = copy.deepcopy(item)
+            item["id"] = uuid4().hex
+            item["name"] = str(payload.get("name") or f"{item['name']} copy").strip()[:120] or "Copy"
+            item["baseline_run_id"] = latest["id"] if latest else None
+            for child in item.get("visualizations", []):
+                child["id"] = uuid4().hex
+                child["run_id"] = None
+            items.append(item)
+        elif action == "set-baseline":
+            run_id = payload.get("run_id") or None
+            if run_id is not None and not any(run["id"] == run_id
+                    and run.get("workflow", {}).get("id") == item["workflow_id"] for run in runs):
+                raise ValueError("Choose a baseline from this vehicle with the same analysis type.")
+            item["baseline_run_id"] = run_id
+        else:
+            result["comparison"] = _simulation_comparison(item, runs, payload.get("run_id"))
     elif action == "set-ggv":
         if item is None or item["workflow_id"] != "lap-qss":
             raise ValueError("GGV connections require a QSS lap analysis.")
@@ -1172,7 +1278,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
             data = yaml.safe_load(item["config_text"])
             data.setdefault("qss", {})["generate_if_missing"] = True
             item["config_text"] = yaml.safe_dump(data, sort_keys=False)
-    elif action in {"add-visualization", "delete-visualization"}:
+    elif action in {"add-visualization", "delete-visualization", "update-visualization"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
         children = item.setdefault("visualizations", [])
@@ -1197,6 +1303,25 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                      "name": str(payload.get("name") or "Visualization").strip()[:120] or "Visualization",
                      "kind": kind, "run_id": source_id}
             children.append(child)
+            result["visualization"] = child
+        elif action == "update-visualization":
+            child = next((child for child in children if child["id"] == payload.get("child_id")), None)
+            if child is None or child["kind"] not in {"signals", "lap"}:
+                raise ValueError("Choose a signal explorer or lap map from this simulation.")
+            settings = payload.get("settings")
+            allowed = {"x_axis", "signals", "color_signal", "source_label", "compare_baseline"}
+            if not isinstance(settings, dict) or settings.keys() - allowed:
+                raise ValueError("Invalid plot settings.")
+            for name, value in settings.items():
+                if name == "compare_baseline":
+                    if not isinstance(value, bool):
+                        raise ValueError("Invalid plot settings.")
+                    continue
+                values = value if name == "signals" else [value]
+                if not isinstance(values, list) or len(values) > 64 or any(
+                        not isinstance(entry, str) or len(entry) > 256 for entry in values):
+                    raise ValueError("Invalid plot settings.")
+            child["settings"] = copy.deepcopy(settings)
             result["visualization"] = child
         else:
             item["visualizations"] = [child for child in children if child["id"] != payload.get("child_id")]
@@ -1242,7 +1367,8 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
     elif action != "list":
         raise ValueError("Unknown simulation action.")
     _inherit_ggv_fidelity(items)
-    if action in {"create", "save", "delete", "set-ggv", "add-visualization", "delete-visualization"}:
+    if action in {"create", "save", "delete", "duplicate", "set-baseline", "set-ggv",
+                  "add-visualization", "delete-visualization", "update-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)

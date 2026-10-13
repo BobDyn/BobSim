@@ -345,3 +345,150 @@ def test_linked_lap_inherits_source_fidelity(linked_ggv_workspace):
     app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': None})
     app.simulation_workspace('load', {'id': lap['id']})
     assert yaml.safe_load((root / 'lap.yml').read_text())['model_dof'] == 6
+
+
+def test_baseline_is_pinned_and_compares_archived_inputs(archive_workspace):
+    root, active = archive_workspace
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+
+    def archive():
+        snapshot = app.capture_workflow_inputs('study')
+        snapshot['simulation'] = analysis
+        return app.save_active_results('study', input_snapshot=snapshot)['saved']
+
+    baseline = archive()
+    original = (root / baseline['config_snapshot']).read_bytes()
+    app.simulation_workspace('set-baseline', {'id': analysis['id'], 'run_id': baseline['id']})
+    active.write_text('simulation:\n  stop_time: 7\nmodel_dof: 14\n')
+    current = archive()
+    active.write_text('simulation:\n  stop_time: 1000\n')
+    result = app.simulation_workspace('comparison', {'id': analysis['id']})['comparison']
+    assert result['available']
+    assert result['baseline']['id'] == baseline['id']
+    assert result['current']['id'] == current['id']
+    assert {'path': 'config.simulation.stop_time', 'before': 99, 'after': 7} in result['changes']
+    assert (root / baseline['config_snapshot']).read_bytes() == original
+    newer = archive()
+    assert app.simulation_workspace('comparison', {'id': analysis['id']})['comparison']['current']['id'] == newer['id']
+    assert app.simulation_workspace()['simulations'][0]['baseline_run_id'] == baseline['id']
+    app.simulation_workspace('set-baseline', {'id': analysis['id'], 'run_id': None})
+    assert not app.simulation_workspace('comparison', {'id': analysis['id']})['comparison']['available']
+
+
+def test_duplicate_keeps_independent_configuration_and_views(archive_workspace):
+    _, active = archive_workspace
+    original = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    view = app.simulation_workspace('add-visualization', {'id': original['id'], 'kind': 'signals'})['visualization']
+    settings = {'x_axis': 'time', 'signals': ['speed'], 'color_signal': '', 'source_label': 'Report',
+                'compare_baseline': True}
+    app.simulation_workspace('update-visualization', {
+        'id': original['id'], 'child_id': view['id'], 'settings': settings})
+    snapshot = app.capture_workflow_inputs('study')
+    snapshot['simulation'] = original
+    baseline = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    duplicate = app.simulation_workspace('duplicate', {'id': original['id'], 'name': 'Variant'})['simulation']
+    assert duplicate['id'] != original['id']
+    assert duplicate['baseline_run_id'] == baseline['id']
+    assert duplicate['visualizations'][0]['id'] != view['id']
+    assert duplicate['visualizations'][0]['settings'] == settings
+    assert duplicate['visualizations'][0]['run_id'] is None
+    active.write_text('simulation:\n  stop_time: 3\n')
+    app.simulation_workspace('save', {'id': duplicate['id']})
+    app.simulation_workspace('load', {'id': original['id']})
+    assert yaml.safe_load(active.read_text())['simulation']['stop_time'] == 99
+    with pytest.raises(ValueError, match='from this simulation'):
+        app.simulation_workspace('update-visualization', {
+            'id': duplicate['id'], 'child_id': view['id'], 'settings': {}})
+
+
+@pytest.mark.parametrize('settings', [{'signals': 'speed'}, {'x_axis': 3}, {'other': 'x'}, {'compare_baseline': 'yes'}])
+def test_plot_settings_reject_invalid_payload(archive_workspace, settings):
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    view = app.simulation_workspace('add-visualization', {'id': analysis['id'], 'kind': 'signals'})['visualization']
+    with pytest.raises(ValueError, match='Invalid plot settings'):
+        app.simulation_workspace('update-visualization', {
+            'id': analysis['id'], 'child_id': view['id'], 'settings': settings})
+
+
+def test_baseline_and_current_run_validate_vehicle_and_analysis(archive_workspace):
+    root, _ = archive_workspace
+    original = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    snapshot = app.capture_workflow_inputs('study')
+    snapshot['simulation'] = original
+    saved = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    other = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    app.simulation_workspace('set-baseline', {'id': other['id'], 'run_id': saved['id']})
+    with pytest.raises(ValueError, match='from this simulation'):
+        app.simulation_workspace('comparison', {'id': other['id'], 'run_id': saved['id']})
+    (root / 'vehicle.yml').write_text('vehicle:\n  name: Other\n')
+    foreign = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    with pytest.raises(ValueError, match='same analysis type'):
+        app.simulation_workspace('set-baseline', {'id': foreign['id'], 'run_id': saved['id']})
+
+
+def test_baseline_rejects_different_workflow_and_missing_snapshot(archive_workspace):
+    import json
+
+    root, _ = archive_workspace
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    snapshot = app.capture_workflow_inputs('study')
+    snapshot['simulation'] = analysis
+    saved = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    manifest = root / saved['workspace_result_path'] / 'manifest.json'
+    original = manifest.read_text()
+    data = json.loads(original)
+    data['workflow']['id'] = 'other'
+    manifest.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='same analysis type'):
+        app.simulation_workspace('set-baseline', {'id': analysis['id'], 'run_id': saved['id']})
+    manifest.write_text(original)
+    app.simulation_workspace('set-baseline', {'id': analysis['id'], 'run_id': saved['id']})
+    (root / saved['config_snapshot']).unlink()
+    comparison = app.simulation_workspace('comparison', {'id': analysis['id']})['comparison']
+    assert not comparison['available']
+    assert 'unavailable' in comparison['message']
+
+
+def test_plot_setting_updates_do_not_overwrite_another_view(archive_workspace, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    import time
+
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    views = [app.simulation_workspace('add-visualization', {'id': analysis['id'], 'kind': 'signals'})['visualization']
+             for _ in range(2)]
+    original_read = Path.read_text
+
+    def slow_metadata_read(path, *args, **kwargs):
+        text = original_read(path, *args, **kwargs)
+        if path.name == 'simulations.json':
+            time.sleep(.03)
+        return text
+
+    monkeypatch.setattr(Path, 'read_text', slow_metadata_read)
+    start = threading.Barrier(2)
+
+    def update(index):
+        start.wait(timeout=2)
+        app.simulation_workspace('update-visualization', {'id': analysis['id'], 'child_id': views[index]['id'],
+                                                         'settings': {'signals': [f'signal_{index}']}})
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        list(workers.map(update, range(2)))
+    saved = app.simulation_workspace()['simulations'][0]['visualizations']
+    assert [view['settings']['signals'] for view in saved] == [['signal_0'], ['signal_1']]
+
+
+@pytest.mark.parametrize('text', ['', 'incomplete', '[1, 2]'])
+def test_comparison_rejects_incomplete_archived_inputs(archive_workspace, text):
+    root, _ = archive_workspace
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    snapshot = app.capture_workflow_inputs('study')
+    snapshot['simulation'] = analysis
+    saved = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    app.simulation_workspace('set-baseline', {'id': analysis['id'], 'run_id': saved['id']})
+    (root / saved['config_snapshot']).write_text(text)
+    comparison = app.simulation_workspace('comparison', {'id': analysis['id']})['comparison']
+    assert not comparison['available']
+    assert comparison['changes'] == []
+    assert 'unavailable' in comparison['message']

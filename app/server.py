@@ -125,6 +125,11 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(vehicle_template_payloads())
             elif parsed.path == "/api/simulations":
                 self._send_json(simulation_workspace())
+            elif parsed.path == "/api/simulations/comparison":
+                self._send_json(simulation_workspace("comparison", {
+                    "id": _query_one(parsed.query, "id"), "run_id": parse_qs(parsed.query).get("run_id", [None])[0],
+                    "vehicle_key": _query_one(parsed.query, "vehicle_key"),
+                }))
             elif parsed.path == "/api/sim-configs":
                 self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
             elif parsed.path == "/api/results":
@@ -186,7 +191,7 @@ class BobSimHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
         read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
-        if launches_job or read_only:
+        if launches_job or read_only or path == "/api/simulations/visualization-settings":
             self._handle_post()
             return
         try:
@@ -241,6 +246,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/modelica/generate":
                 payload = generate_modelica_payload()
                 self._send_json(payload)
+            elif parsed.path == "/api/simulations/visualization-settings":
+                self._send_json(simulation_workspace("update-visualization", body))
             elif parsed.path == "/api/simulations":
                 self._send_json(simulation_workspace(str(body.get("action", "list")), body))
             elif parsed.path == "/api/sim-configs/load":

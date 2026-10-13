@@ -495,7 +495,8 @@ vm.runInContext(`
     const fills=[];
     const pen=new Proxy({fillRect:(...args)=>fills.push(args)}, {get:(target,key)=>key in target?target[key]:()=>{}});
     const legend={innerHTML:''};
-    document={getElementById:id=>id==='result-plot-canvas'?{getBoundingClientRect:()=>({width:800,height:400}),getContext:()=>pen}:id==='result-selected-signals'?legend:{}};
+    const canvas={getBoundingClientRect:()=>({width:800,height:400,left:0,top:0}),getContext:()=>pen,focus(){}};
+    document={getElementById:id=>id==='result-plot-canvas'?canvas:id==='result-selected-signals'?legend:{}};
     window={devicePixelRatio:1};
     canvasPalette=()=>({surface:'#000',blue:'#00f',green:'#0f0'});
     let limits;
@@ -508,6 +509,20 @@ vm.runInContext(`
     assert.ok(limits.yDomain[0]<-1000&&limits.yDomain[1]>2000);
     assert.ok(legend.innerHTML.includes('small')&&legend.innerHTML.includes('large'));
     assert.equal(fills.length,1,'the legend must not paint over the plot');
+    state.resultBaselinePayload={x:[-5,7],series:[{signal:'small',values:[-3000,4000]}]};
+    drawResultPlotCanvas();
+    assert.ok(limits.xDomain[0]<-5 && limits.xDomain[1]>7);
+    assert.ok(limits.yDomain[0]<-3000 && limits.yDomain[1]>4000);
+    assert.ok(legend.innerHTML.includes('Baseline: small'));
+    state.resultBaselinePayload={x:[0,1],series:[{signal:'large',values:[2,3]}]};
+    drawResultPlotCanvas();
+    assert.equal(pen.strokeStyle,'#0f0','baseline must match the same signal color even when earlier signals are missing');
+    assert.ok(legend.innerHTML.includes('background:#0f0"></i>Baseline: large'));
+    state.resultPlotStatus='error';
+    drawResultPlotCanvas();
+    assert.equal(legend.innerHTML,'','failed source must not leave the previous legend');
+    assert.equal(canvas.onclick,null,'failed source must not retain a sample handler');
+    state.resultPlotStatus='ready'; state.resultBaselinePayload=null;
     const segments=[],strokes=[];
     pen.lineTo=(...point)=>segments.push(point);
     pen.stroke=()=>strokes.push(pen.strokeStyle);
@@ -517,11 +532,59 @@ vm.runInContext(`
     assert.notEqual(strokes[0],strokes[1]);
     assert.ok(legend.innerHTML.includes('speed'));
     assert.equal(resultSignalColor(5,[5,5]),resultSignalColor(.5,[0,1]));
+    state.selectedResultId='selected-run'; state.selectedResultSourcePath='run.csv';
+    state.resultPlotPayload.coordinates={time:[0,1,2,3,4]};
+    state.resultBaselinePayload={x:[-1,10],series:[{signal:'y',values:[-1,10]}],coordinates:{time:[99,100]}};
+    renderResultPlotCanvas=()=>{};
+    drawResultPlotCanvas();
+    canvas.onclick({clientX:100,clientY:100});
+    assert.ok(readResultCursor('selected-run').time<=4,'baseline coordinates must not become selected-run time');
+    state.resultBaselinePayload=null;
+    state.resultHoverIndex=null;
+    state.resultPlotPayload.color=null;
+    state.resultBaselinePayload={x:[0,1],series:[{signal:'y',values:[0,1]}],color:{signal:'speed',values:[1,2]}};
+    drawResultPlotCanvas();
+    assert.ok(legend.innerHTML.includes('speed'),'baseline-only color must not crash the legend');
+    state.resultBaselinePayload=null;
     isLapMap=()=>true;
     drawResultPlotCanvas();
     assert.ok(Math.abs((limits.xDomain[1]-limits.xDomain[0])/limits.plot.width
       -(limits.yDomain[1]-limits.yDomain[0])/limits.plot.height)<1e-9,'lap coordinates must have equal scale');
   `,plotContext);
+}
+
+{
+  const cursorContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source, cursorContext);
+  vm.runInContext(`
+    state.selectedResultId='run-a'; state.selectedResultSourcePath='a.csv';
+    const payload={coordinates:{time:[0,1,2],station_m:[0,10,20]},row_indices:[0,4,8]};
+    selectResultSample(payload,1);
+    assert.equal(readResultCursor('run-a').time,1);
+    assert.equal(readResultCursor('run-b'),null,'a new run must not inherit the selection');
+    assert.equal(resultCursorIndex({coordinates:{time:[0,.9,1.8]}},'run-a','other.csv'),1);
+    assert.equal(resultCursorIndex({coordinates:{station_m:[0,9,18]}},'run-a','lap.csv'),1);
+    assert.equal(resultCursorIndex({row_indices:[0,3,6]},'run-a','a.csv'),1);
+    assert.equal(resultCursorIndex({row_indices:[0,3,6]},'run-a','other.csv'),null);
+    setResultCursor('run-a',{time:1.9});
+    assert.equal(resultCursorIndex(payload,'run-a','a.csv'),2,'replay time maps to the nearest plotted sample');
+    assert.equal(resultCursorIndex({coordinates:{time:[null,NaN]}},'run-a','a.csv'),null);
+  `,cursorContext);
+  const panelSource=fs.readFileSync('app/static/visual_panel.js','utf8');
+  const restore=panelSource.slice(panelSource.indexOf('  function cursorRunId()'),panelSource.indexOf('  function syncTimeline('));
+  const replay={runId:'saved-2026-run-a',runs:[{id:'saved-2026-run-a',data:'app/user_data/results/saved/2026-run-a/files/signals.csv'}, {id:'saved-2026-capture',data:'visualization/results/saved-2026-capture.npz'}],scene:{time:[2,3,4]},viewer:{simTime:2,playing:true}};
+  const play={textContent:'Pause'};
+  const replayContext=vm.createContext({state:replay,window:{readResultCursor:id=>id==='2026-run-a'?{time:3.2}:null},$:()=>play});
+  vm.runInContext(restore+'; restoreResultCursor();',replayContext);
+  assert.equal(replay.viewer.simTime,3.2);
+  assert.equal(replay.viewer.playing,false);
+  assert.equal(play.textContent,'Play');
+  assert.equal(vm.runInContext('cursorRunId()',replayContext),'2026-run-a');
+  replay.runId='saved-2026-capture';
+  assert.equal(vm.runInContext('cursorRunId()',replayContext),null,'captured scenes must not collide with archived run IDs');
+  replay.runId='run-b'; replay.viewer.simTime=2;
+  vm.runInContext('restoreResultCursor()',replayContext);
+  assert.equal(replay.viewer.simTime,2,'unrelated replay retains its own start');
 }
 
 (async () => {
