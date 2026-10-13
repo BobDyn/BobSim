@@ -4597,6 +4597,8 @@ function simulationTreeIcon(kind) {
     lap: '<path d="M5 3C1 3 1 12 5 13c4 2 5-4 7-4s3-6 0-6Z"/>',
     report: '<path d="M4 2h6l3 3v9H4Z M10 2v4h3 M6 9h5 M6 11h4"/>',
     scene: '<path d="m6 4 6 4-6 4Z"/>',
+    grip: '<path d="M6 4h0 M10 4h0 M6 8h0 M10 8h0 M6 12h0 M10 12h0" stroke-width="2.4"/>',
+    link: '<path d="m6 10 4-4 M5 9l-1 1a2.1 2.1 0 0 0 3 3l2-2 M7 5l2-2a2.1 2.1 0 0 1 3 3l-1 1"/>',
     chevron: '<path d="m6 4 4 4-4 4"/>',
   };
   return `<svg class="simulation-tree-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind]}</svg>`;
@@ -4634,10 +4636,10 @@ function renderSimulationWorkspace() {
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
-        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}">${simulationTreeIcon("envelope")}<span class="simulation-tree-label">GGV${item.ggv_input?.name ? ` → ${escapeHtml(item.ggv_input.name)}` : ""}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
+        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : ""} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}" title="Drag a GGV result here, or click to choose.">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
-        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
+        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span>${item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>`).join("")}
       </div>
     </div>`;
       }).join("")}</div></section>`;

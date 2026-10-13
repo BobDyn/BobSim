@@ -4970,3 +4970,8 @@ summary:focus-visible {
 
 [data-ggv-source] { cursor: grab; }
 .ggv-drop-target > .simulation-tree-row { background: var(--surface-2); outline: 1px solid var(--blue); border-radius: 4px; }
+
+.simulation-drag-grip { display: flex; margin-left: auto; opacity: .65; }
+[data-ggv-source]:hover .simulation-drag-grip { opacity: 1; }
+.simulation-tree-run.ggv-link-empty { border: 1px dashed var(--line); border-radius: 4px; }
+.ggv-drop-target [data-simulation-ggv] { border-color: var(--blue); color: var(--ink); background: var(--surface-2); }
