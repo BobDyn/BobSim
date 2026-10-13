@@ -578,7 +578,8 @@ vm.runInContext(`
     document={getElementById:id=>elements[id] ||= {
       classList:{toggle(){}},setAttribute(){},querySelector(){return {};}
     }};
-    activeVehicleKey=()=> 'car'; activeVehicleName=()=> 'Car'; savedResults=()=> [];
+    activeVehicleKey=()=> 'car'; activeVehicleName=()=> 'Car';
+    savedResults=()=> [{id:'ggv-run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'Today'}];
     state.simulationWorkspace={vehicle_key:'car',simulations:[
       {id:'lap',workflow_id:'lap-qss',name:'QSS lap'},
       {id:'step',workflow_id:'reduced-step-steer',name:'Step steer',visualizations:[{id:'plot',kind:'report',name:'Plots'}]},
@@ -589,6 +590,8 @@ vm.runInContext(`
     const html=elements['simulation-tree'].innerHTML;
     const group=id=>html.split('data-analysis-group="'+id+'"')[1].split('</section>')[0];
     assert.match(group('steady-state'),/data-simulation-branch="ggv"/);
+    assert.match(html,/draggable="true" data-ggv-source="ggv"/);
+    assert.equal((html.match(/draggable="true"/g)||[]).length,1);
     assert.match(group('steady-state'),/data-simulation-branch="lap"/);
     assert.doesNotMatch(group('steady-state'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-branch="step"/);
@@ -642,3 +645,37 @@ vm.runInContext(`
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','replay','signals','delete']);
   `,menuContext);
 }
+
+(async () => {
+  const dragContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,dragContext);
+  await vm.runInContext(`(async () => {
+    const events={}, requests=[]; let action, opened, saved=false, highlighted=false;
+    const lap={dataset:{simulationBranch:'lap'},classList:{
+      add(){highlighted=true;},remove(){highlighted=false;}
+    }};
+    const tree={addEventListener:(name,fn)=>events[name]=fn,
+      querySelectorAll:()=>[lap],contains:()=>false};
+    document={getElementById:()=>tree};
+    state.simulationWorkspace={simulations:[{id:'lap',workflow_id:'lap-qss'},{id:'ggv',workflow_id:'ggv'}]};
+    workspaceAction=fn=>{action=fn();};
+    saveSimulationEdits=async()=>{saved=true;};
+    simulationRequest=async(...args)=>{assert.ok(saved);requests.push(args);};
+    openSimulationGgv=async id=>{opened=id;};
+    wireSimulationGgvDrag();
+    const transfer={setData(type,value){assert.equal(type,'text/plain');assert.equal(value,'ggv');}};
+    const start=()=>events.dragstart({target:{closest:()=>({dataset:{ggvSource:'ggv'}})},dataTransfer:transfer});
+    const drop={target:{closest:()=>lap},dataTransfer:transfer,preventDefault(){this.accepted=true;}};
+    events.dragover(drop); assert.equal(drop.accepted,undefined);
+    start(); assert.equal(transfer.effectAllowed,'link');
+    events.dragover(drop); assert.equal(drop.accepted,true); assert.equal(highlighted,true);
+    assert.equal(transfer.dropEffect,'link');
+    events.drop(drop); await action;
+    assert.deepEqual(requests,[['set-ggv',{id:'lap',source_id:'ggv'}]]);
+    assert.equal(opened,'lap'); assert.equal(highlighted,false);
+    start(); events.dragend(); events.drop(drop); assert.equal(requests.length,1);
+    start(); lap.dataset.simulationBranch='ggv';
+    const invalid={...drop,accepted:false}; events.dragover(invalid); events.drop(invalid);
+    assert.equal(invalid.accepted,false); assert.equal(requests.length,1);
+  })()`,dragContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});

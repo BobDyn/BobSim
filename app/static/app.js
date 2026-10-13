@@ -4314,6 +4314,49 @@ function renderSimulationGgv() {
   });
 }
 
+function wireSimulationGgvDrag() {
+  const tree = document.getElementById("simulation-tree");
+  let sourceId = null;
+  const clear = () => tree.querySelectorAll(".ggv-drop-target").forEach(node => node.classList.remove("ggv-drop-target"));
+  const targetFor = event => {
+    const branch = event.target.closest("[data-simulation-branch]");
+    return sourceId && state.simulationWorkspace?.simulations?.some(item =>
+      item.id === branch?.dataset.simulationBranch && item.workflow_id === "lap-qss") ? branch : null;
+  };
+  tree.addEventListener("dragstart", event => {
+    sourceId = event.target.closest("[data-ggv-source]")?.dataset.ggvSource || null;
+    if (!sourceId) return;
+    event.dataTransfer.setData("text/plain", sourceId);
+    event.dataTransfer.effectAllowed = "link";
+  });
+  tree.addEventListener("dragover", event => {
+    clear();
+    const target = targetFor(event);
+    if (!target) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "link";
+    target.classList.add("ggv-drop-target");
+  });
+  tree.addEventListener("dragleave", event => {
+    if (!tree.contains(event.relatedTarget)) clear();
+  });
+  tree.addEventListener("dragend", () => { sourceId = null; clear(); });
+  tree.addEventListener("drop", event => {
+    const target = targetFor(event);
+    const source = sourceId;
+    sourceId = null;
+    clear();
+    if (!target) return;
+    event.preventDefault();
+    const id = target.dataset.simulationBranch;
+    workspaceAction(async () => {
+      await saveSimulationEdits();
+      await simulationRequest("set-ggv", {id, source_id: source});
+      await openSimulationGgv(id);
+    });
+  });
+}
+
 function wireSimulationSplitter() {
   const splitter = document.getElementById("simulation-splitter");
   const workspace = document.querySelector(".simulation-workspace");
@@ -4447,6 +4490,7 @@ async function addSimulationVisualization(id, kind = null) {
 
 function mountSimulationWorkspace() {
   wireSimulationSplitter();
+  wireSimulationGgvDrag();
   document.getElementById("simulation-ggv-close").onclick = () => workspaceAction(() => openSimulation(state.selectedSimulationId));
   wireSimulationContextMenu();
   new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
@@ -4593,7 +4637,7 @@ function renderSimulationWorkspace() {
         ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}">${simulationTreeIcon("envelope")}<span class="simulation-tree-label">GGV${item.ggv_input?.name ? ` → ${escapeHtml(item.ggv_input.name)}` : ""}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
-        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
+        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
       </div>
     </div>`;
       }).join("")}</div></section>`;

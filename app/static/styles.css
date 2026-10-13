@@ -4967,3 +4967,6 @@ summary:focus-visible {
 
 .result-color-key { display:flex; align-items:center; gap:8px; font-size:12px; }
 .result-color-key i { width:100px; height:8px; border-radius:4px; }
+
+[data-ggv-source] { cursor: grab; }
+.ggv-drop-target > .simulation-tree-row { background: var(--surface-2); outline: 1px solid var(--blue); border-radius: 4px; }
