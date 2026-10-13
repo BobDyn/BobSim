@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
+import sys
 from types import SimpleNamespace
 import time
 from urllib.request import urlopen
@@ -18,6 +20,46 @@ from simulations.response.mbd import _modelica_runner
 from simulations.response.mbd._modelica_runner import ModelicaRunner
 from app import app
 from app import desktop
+
+
+def test_static_assets_allow_linked_root_but_reject_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resources = tmp_path / "Resources" / "static"
+    resources.mkdir(parents=True)
+    (resources / "styles.css").write_text("body { color: white; }")
+    linked_root = tmp_path / "static"
+    linked_root.symlink_to(resources, target_is_directory=True)
+    (resources / "outside").symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setattr(app, "STATIC_ROOT", linked_root)
+
+    assert app._safe_static_path("styles.css") == resources / "styles.css"
+    for path in ("../outside.txt", "outside/private.txt", str(tmp_path / "private.txt")):
+        with pytest.raises(ValueError, match="escapes app root"):
+            app._safe_static_path(path)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS archive tool")
+def test_macos_release_archive_preserves_bundle_symlinks(tmp_path: Path) -> None:
+    bundle = tmp_path / "build" / "BobSim.app"
+    resources = bundle / "Contents" / "Resources"
+    frameworks = bundle / "Contents" / "Frameworks"
+    resources.mkdir(parents=True)
+    frameworks.mkdir()
+    (resources / "asset.txt").write_text("bundled data")
+    (frameworks / "asset.txt").symlink_to("../Resources/asset.txt")
+    release = tmp_path / "BobSim-release"
+    release.mkdir()
+
+    deploy._copy_release_artifact(bundle, release)
+    archive = deploy._make_archive(release, tmp_path, release.name)
+    extracted = tmp_path / "extracted"
+    subprocess.run(["ditto", "-x", "-k", str(archive), str(extracted)], check=True)
+
+    asset = extracted / release.name / "BobSim.app/Contents/Frameworks/asset.txt"
+    assert asset.is_symlink()
+    assert asset.read_text() == "bundled data"
+
 
 def clear_openmodelica_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     app.OPENMODELICA_VERIFY_CACHE.clear()

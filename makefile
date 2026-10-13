@@ -317,7 +317,7 @@ typecheck:
 		--ignore-missing-imports \
 		--no-strict-optional \
 		--cache-dir $(MYPY_CACHE_DIR) \
-		--exclude '(^|/)$(BOBLIB_PATH)/'
+		--exclude '(^|/)($(BOBLIB_PATH)|common/deploy/(build|dist))/'
 
 test:
 	$(RUN) $(PYTHON) -m pytest tests

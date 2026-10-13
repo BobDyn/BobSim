@@ -2791,13 +2791,22 @@ function infoHint(label, text) {
   const rows = Array.isArray(text) ? text : null;
   const plain = rows ? rows.map(([key, value]) => `${key}: ${value}`).join(". ") : text;
   const content = rows ? `<dl>${rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : `<p>${escapeHtml(text)}</p>`;
-  return `<span class="info-hint"><button type="button" class="info-button" popovertarget="${id}" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><div id="${id}" class="info-popup" popover aria-label="${escapeHtml(label)}">${content}</div>`;
+  return `<span class="info-hint"><button type="button" class="info-button" data-info-popup="${id}" aria-controls="${id}" aria-haspopup="dialog" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><dialog id="${id}" class="info-popup" aria-label="${escapeHtml(label)}"><button type="button" class="info-close" aria-label="Close help">×</button>${content}</dialog>`;
 }
 
-function positionInfoPopup(event) {
-  const popup = event.target;
-  if (!popup.matches?.(".info-popup") || event.newState !== "open") return;
-  const button = document.querySelector(`[popovertarget="${popup.id}"]`);
+function handleInfoPopupClick(event) {
+  const button = event.target.closest("[data-info-popup]");
+  if (button) {
+    const popup = document.getElementById(button.dataset.infoPopup);
+    popup.showModal();
+    positionInfoPopup(popup);
+  }
+  const popup = event.target.closest(".info-popup");
+  if (popup && (event.target === popup || event.target.closest(".info-close"))) popup.close();
+}
+
+function positionInfoPopup(popup) {
+  const button = document.querySelector(`[data-info-popup="${popup.id}"]`);
   if (!button) return;
   const anchor = button.getBoundingClientRect();
   const box = popup.getBoundingClientRect();
@@ -12522,7 +12531,7 @@ function resetPreviewCamera() {
 }
 
 function wireEvents() {
-  document.addEventListener("toggle", positionInfoPopup, true);
+  document.addEventListener("click", handleInfoPopupClick);
   document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
   document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
     if (!event.target.value.trim()) {
