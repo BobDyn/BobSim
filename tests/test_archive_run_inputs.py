@@ -229,3 +229,101 @@ def test_analysis_views_follow_latest_results_without_a_source(archive_workspace
     loaded = app.simulation_workspace()["simulations"][0]["visualizations"][0]
     assert loaded["id"] == child["id"]
     assert loaded["run_id"] == ("saved-" if kind == "replay" else "") + second["id"]
+
+
+@pytest.fixture
+def linked_ggv_workspace(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from app import data_services
+    from simulations.envelope import vehicle_yaml
+
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    monkeypatch.setattr(data_services, '_ggv_link_signature', lambda: 'current-inputs')
+    monkeypatch.setattr(vehicle_yaml, 'project_vehicle_yaml', lambda _: SimpleNamespace(
+        ggv=SimpleNamespace(max_drive_power=80000.)))
+    (tmp_path / 'vehicle.yml').write_text('vehicle:\n  name: Linked\n')
+    ggv_path = 'simulations/envelope/ggv/ggv_config.yml'
+    (tmp_path / ggv_path).parent.mkdir(parents=True)
+    (tmp_path / ggv_path).write_text(yaml.safe_dump({
+        'vehicle_template': '../../../vehicle.yml', 'generation': {'model_dof': 14}}))
+    (tmp_path / 'lap.yml').write_text(yaml.safe_dump({
+        'model_dof': 14, 'qss': {'ggv_csv': 'local.csv', 'generate_if_missing': True}}))
+    (tmp_path / 'envelope.csv').write_text('speed_mps,ay_mps2,ax_accel_mps2,ax_brake_mps2\n5,0,10,-10\n')
+    workflows = (
+        app.WorkflowSpec('ggv', 'envelope', 'GGV', ggv_path, (),
+                         (app.OutputSpec('Raw CSV', 'envelope.csv', 'csv'),), engine='DynPy'),
+        app.WorkflowSpec('lap-qss', 'lap', 'Lap', 'lap.yml', (), engine='DynPy'),
+    )
+    monkeypatch.setattr(app, 'WORKFLOWS', workflows)
+    monkeypatch.setattr(app, 'BASE_CONFIG_SPECS', {
+        w.id: app.ConfigSpec(w.id, w.group, w.label, w.config, workflow_id=w.id) for w in workflows
+    })
+    source = app.simulation_workspace('create', {'workflow_id': 'ggv'})['simulation']
+    lap = app.simulation_workspace('create', {'workflow_id': 'lap-qss'})['simulation']
+    app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': source['id']})
+
+    def archive():
+        inputs = app.capture_workflow_inputs('ggv')
+        inputs['simulation'] = source
+        return app.save_active_results('ggv', input_snapshot=inputs)['saved']
+
+    return tmp_path, source, lap, archive
+
+
+def test_linked_ggv_requires_a_saved_compatible_result(linked_ggv_workspace):
+    root, source, lap, archive = linked_ggv_workspace
+    with pytest.raises(ValueError, match='Run the connected'):
+        app.simulation_workspace('prepare-run', {'id': lap['id']})
+    saved = archive()
+    assert saved['ggv_signature'] == 'current-inputs'
+    app.simulation_workspace('prepare-run', {'id': lap['id']})
+    config = yaml.safe_load((root / 'lap.yml').read_text())
+    assert config['qss']['linked_ggv']['run_id'] == saved['id']
+    assert config['qss']['generate_if_missing'] is False
+    assert config['qss']['ggv_csv'] != 'local.csv'
+    app.simulation_workspace('save', {'id': lap['id']})
+    app.simulation_workspace('load', {'id': lap['id']})
+    config = yaml.safe_load((root / 'lap.yml').read_text())
+    assert config['qss'] == {'ggv_csv': 'local.csv', 'generate_if_missing': True}
+    newer = archive()
+    app.simulation_workspace('prepare-run', {'id': lap['id']})
+    assert yaml.safe_load((root / 'lap.yml').read_text())['qss']['linked_ggv']['run_id'] == newer['id']
+    app.simulation_workspace('delete', {'id': source['id']})
+    with pytest.raises(ValueError, match='deleted'):
+        app.simulation_workspace('prepare-run', {'id': lap['id']})
+    app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': None})
+    app.simulation_workspace('prepare-run', {'id': lap['id']})
+    assert yaml.safe_load((root / 'lap.yml').read_text())['qss']['generate_if_missing'] is True
+
+
+@pytest.mark.parametrize('change,message', [
+    ('fidelity', 'same model fidelity'), ('power', 'Power limits differ'),
+    ('settings', 'settings changed'), ('physics', 'current vehicle'),
+])
+def test_linked_ggv_rejects_stale_or_incompatible_inputs(linked_ggv_workspace, monkeypatch, change, message):
+    from app import data_services
+    root, source, lap, archive = linked_ggv_workspace
+    archive()
+    if change == 'physics':
+        monkeypatch.setattr(data_services, '_ggv_link_signature', lambda: 'changed-tire')
+    else:
+        owner = source if change == 'settings' else lap
+        app.simulation_workspace('load', {'id': owner['id']})
+        path = root / ('simulations/envelope/ggv/ggv_config.yml' if change == 'settings' else 'lap.yml')
+        data = yaml.safe_load(path.read_text())
+        if change == 'settings':
+            data['generation']['ay_points'] = 31
+        elif change == 'fidelity':
+            data['model_dof'] = 6
+        else:
+            data['event'] = {'drive_power_limit_w': 32000}
+        path.write_text(yaml.safe_dump(data))
+        app.simulation_workspace('save', {'id': owner['id']})
+    with pytest.raises(ValueError, match=message):
+        app.simulation_workspace('prepare-run', {'id': lap['id']})
+
+
+def test_ggv_connection_rejects_non_ggv_source(linked_ggv_workspace):
+    _, _, lap, _ = linked_ggv_workspace
+    with pytest.raises(ValueError, match='Choose a GGV'):
+        app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': lap['id']})

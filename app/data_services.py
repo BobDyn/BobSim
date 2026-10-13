@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -242,12 +243,15 @@ def result_series_payload(
     x_axis: str = "__index__",
     signals: list[str] | None = None,
     max_points: int = 1800,
+    color_signal: str | None = None,
 ) -> dict[str, Any]:
     source = result_source_payload(raw_path)
     path = _safe_repo_path(raw_path)
     numeric_columns = set(source["numeric_columns"])
     if x_axis != "__index__" and x_axis not in numeric_columns:
         raise ValueError("x_axis must be __index__ or a numeric column")
+    if color_signal and color_signal not in numeric_columns:
+        raise ValueError("color_signal must be a numeric column")
     selected_signals = [signal for signal in signals or [] if signal in numeric_columns and signal != x_axis]
     if not selected_signals:
         selected_signals = [column for column in source["numeric_columns"] if column != x_axis][:3]
@@ -257,6 +261,7 @@ def result_series_payload(
     row_count = int(source.get("row_count") or 0)
     point_limit = max(50, min(10_000, int(max_points or 1800)))
     stride = max(1, math.ceil(row_count / point_limit)) if row_count else 1
+    color_values: list[float | None] = []
     x_values: list[float] = []
     series: dict[str, list[float | None]] = {signal: [] for signal in selected_signals}
 
@@ -269,11 +274,14 @@ def result_series_payload(
             if x_value is None:
                 continue
             x_values.append(x_value)
+            if color_signal:
+                color_values.append(_float_or_none(row.get(color_signal)))
             for signal in selected_signals:
                 series[signal].append(_float_or_none(row.get(signal)))
 
     return {
         "source": source,
+        "color": {"signal": color_signal, "values": color_values} if color_signal else None,
         "x_axis": x_axis,
         "x": x_values,
         "stride": stride,
@@ -1008,6 +1016,95 @@ def delete_saved_sim_config(source_id: str) -> dict[str, Any]:
     return sim_config_library_payload(workflow_id)
 
 
+def _ggv_link_signature() -> str:
+    """## GGV Input Signature
+
+    Returns
+    -------
+    str
+        Digest of the current vehicle, tires and envelope physics.
+    """
+    from simulations.lap.lap_time_eval_sim import _ggv_provenance
+
+    return str(_ggv_provenance(
+        vehicle_path=_safe_repo_path("vehicle.yml"), model_dof=3,
+        qss_config={}, effective_power_limit_w=0.,
+    )["fingerprint"])
+
+
+def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """## GGV Connection
+
+    Parameters
+    ----------
+    item : dict
+        Lap analysis with an optional source analysis ID.
+    items : list of dict
+        Analyses belonging to the same vehicle.
+    key : str
+        Vehicle workspace key.
+
+    Returns
+    -------
+    dict
+        Connection status and the latest compatible archived envelope.
+    """
+    source_id = item.get("ggv_source_id")
+    if not source_id:
+        return {"mode": "generate", "status": "Local", "message": "Generate with this lap's envelope settings."}
+    result: dict[str, Any] = {"mode": "linked", "source_id": source_id, "status": "Unavailable"}
+    try:
+        source = next((entry for entry in items if entry["id"] == source_id and entry["workflow_id"] == "ggv"), None)
+        if source is None:
+            return {**result, "message": "The connected GGV analysis was deleted. Choose another source."}
+        result["name"] = source["name"]
+        runs = saved_results_payload(key)["results"]
+        run = next((run for run in runs if (run.get("simulation") or {}).get("id") == source_id), None)
+        if run is None:
+            return {**result, "message": "Run the connected GGV analysis first."}
+        result["run_id"] = run["id"]
+        lap_config = yaml.safe_load(item["config_text"])
+        source_config = yaml.safe_load(source["config_text"])
+        if not isinstance(lap_config, dict) or not isinstance(source_config, dict):
+            raise ValueError("Invalid analysis settings")
+        if _safe_repo_path(lap_config.get("vehicle", "vehicle.yml")) != _safe_repo_path("vehicle.yml"):
+            return {**result, "status": "Incompatible", "message": "The linked lap must use this workspace's vehicle."}
+        if int(lap_config.get("model_dof", 3)) != int(source_config.get("generation", {}).get("model_dof", 3)):
+            return {**result, "status": "Incompatible", "message": "The lap and GGV must use the same model fidelity."}
+        archived_config = run.get("config_snapshot")
+        if not archived_config or yaml.safe_load(_safe_repo_path(archived_config).read_text()) != source_config:
+            return {**result, "status": "Stale", "message": "GGV settings changed. Rerun the connected analysis."}
+        if run.get("input_capture_phase") != "job_start" or not run.get("ggv_signature") \
+                or run["ggv_signature"] != _ggv_link_signature():
+            return {**result, "status": "Stale", "message": "Rerun the GGV for the current vehicle, tires and solver."}
+        from simulations.envelope.vehicle_yaml import project_vehicle_yaml
+
+        vehicle_data = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
+        available_power = project_vehicle_yaml(vehicle_data).ggv.max_drive_power
+        power_limit = lap_config.get("event", {}).get("drive_power_limit_w")
+        lap_power = min(available_power, float(power_limit) if power_limit is not None else available_power)
+        if not math.isclose(lap_power, available_power):
+            return {**result, "status": "Incompatible",
+                    "message": "Power limits differ. Generate for this lap or match the GGV power limit."}
+        file = next((file for file in run.get("files", []) if file.get("label") == "Raw CSV"), None)
+        if not file or not _safe_repo_path(file["path"]).is_file():
+            return {**result, "message": "The connected GGV has no saved envelope CSV. Rerun it."}
+        csv_digest = hashlib.sha256(_safe_repo_path(file["path"]).read_bytes()).hexdigest()
+        if file.get("sha256") != csv_digest:
+            return {**result, "status": "Stale", "message": "The saved GGV file changed. Rerun its analysis."}
+        latest_lap = next((entry for entry in runs if (entry.get("simulation") or {}).get("id") == item["id"]), None)
+        previous = {}
+        if latest_lap and latest_lap.get("config_snapshot"):
+            lap_snapshot = yaml.safe_load(_safe_repo_path(latest_lap["config_snapshot"]).read_text())
+            previous = lap_snapshot.get("qss", {}).get("linked_ggv", {})
+        return {**result, "status": "Ready", "message": "Uses the latest successful GGV run.",
+                "path": file["path"], "signature": run["ggv_signature"], "csv_sha256": csv_digest,
+                "model_dof": int(lap_config.get("model_dof", 3)), "power_limit_w": lap_power,
+                "needs_rerun": previous.get("run_id") != run["id"]}
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
+        return {**result, "message": "GGV inputs are unavailable. Rerun the source or choose another analysis."}
+
+
 def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """## Vehicle Simulations
 
@@ -1043,6 +1140,17 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                 "model": workflow_model(workflow, root=ROOT),
                 "config_text": _config_file_path(spec).read_text(encoding="utf-8")}
         items.append(item)
+    elif action == "set-ggv":
+        if item is None or item["workflow_id"] != "lap-qss":
+            raise ValueError("GGV connections require a QSS lap analysis.")
+        source_id = payload.get("source_id") or None
+        if source_id and not any(entry["id"] == source_id and entry["workflow_id"] == "ggv" for entry in items):
+            raise ValueError("Choose a GGV analysis from this vehicle.")
+        item["ggv_source_id"] = source_id
+        if source_id is None:
+            data = yaml.safe_load(item["config_text"])
+            data.setdefault("qss", {})["generate_if_missing"] = True
+            item["config_text"] = yaml.safe_dump(data, sort_keys=False)
     elif action in {"add-visualization", "delete-visualization"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
@@ -1050,7 +1158,9 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
         if action == "add-visualization":
             kind = payload.get("kind", "report")
             source_id = payload.get("source_id", payload.get("run_id"))
-            if kind in {"report", "signals"}:
+            if kind in {"report", "signals", "lap"}:
+                if kind == "lap" and item["workflow_id"] != "lap-qss":
+                    raise ValueError("Lap maps require a QSS lap analysis.")
                 valid = any(run["id"] == source_id and (run.get("simulation") or {}).get("id") == item["id"]
                             and (kind != "signals" or any(file.get("kind") == "csv" for file in run.get("files", [])))
                             for run in saved_results_payload(key)["results"])
@@ -1059,7 +1169,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
                             and run.get("simulation_id") == item["id"] and run.get("vehicle_key") == key
                             for run in app_visual.available_runs(ROOT))
             else:
-                raise ValueError("Choose reports, signal explorer or 3D replay.")
+                raise ValueError("Choose reports, signal explorer, lap map or 3D replay.")
             if source_id is not None and not valid:
                 raise ValueError("Choose a saved run from this simulation or an available captured scene.")
             child = {"id": uuid4().hex,
@@ -1069,29 +1179,55 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
             result["visualization"] = child
         else:
             item["visualizations"] = [child for child in children if child["id"] != payload.get("child_id")]
-    elif action in {"load", "save", "delete"}:
+    elif action in {"load", "prepare-run", "save", "delete"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
         if payload.get("workflow_id", item["workflow_id"]) != item["workflow_id"]:
             raise ValueError("Simulation workflow does not match.")
         spec = _sim_config_spec(item["workflow_id"])
-        if action == "load":
-            _config_file_path(spec).write_text(item["config_text"], encoding="utf-8")
+        if action in {"load", "prepare-run"}:
+            config_text = item["config_text"]
+            if action == "prepare-run" and item.get("ggv_source_id"):
+                dependency = _simulation_ggv_input(item, items, key)
+                if dependency["status"] != "Ready":
+                    raise ValueError(dependency["message"])
+                data = yaml.safe_load(config_text)
+                qss = data.setdefault("qss", {})
+                qss["ggv_csv"] = dependency["path"]
+                qss["generate_if_missing"] = False
+                qss["linked_ggv"] = {name: dependency[name] for name in (
+                    "source_id", "run_id", "signature", "csv_sha256", "model_dof", "power_limit_w",
+                )}
+                config_text = yaml.safe_dump(data, sort_keys=False)
+            _config_file_path(spec).write_text(config_text, encoding="utf-8")
             result["config"] = config_payload(spec.id)
             result["library"] = sim_config_library_payload(item["workflow_id"])
         elif action == "save":
             item["model"] = workflow_model(_workflow_by_id(item["workflow_id"]), root=ROOT)
-            item["config_text"] = _config_file_path(spec).read_text(encoding="utf-8")
+            config_text = _config_file_path(spec).read_text(encoding="utf-8")
+            data = yaml.safe_load(config_text)
+            if data.get("qss", {}).pop("linked_ggv", None):
+                original = yaml.safe_load(item["config_text"]).get("qss", {})
+                for name in ("ggv_csv", "generate_if_missing"):
+                    if name in original:
+                        data["qss"][name] = original[name]
+                    else:
+                        data["qss"].pop(name, None)
+                config_text = yaml.safe_dump(data, sort_keys=False)
+            item["config_text"] = config_text
             item["name"] = str(payload.get("name") or item["name"]).strip()[:120] or item["name"]
         else:
             items.remove(item)
     elif action != "list":
         raise ValueError("Unknown simulation action.")
-    if action in {"create", "save", "delete", "add-visualization", "delete-visualization"}:
+    if action in {"create", "save", "delete", "set-ggv", "add-visualization", "delete-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)
     summaries = [{k: v for k, v in item.items() if k != "config_text"} for item in items]
+    for summary, entry in zip(summaries, items):
+        if entry["workflow_id"] == "lap-qss":
+            summary["ggv_input"] = _simulation_ggv_input(entry, items, key)
     if any(summary.get("visualizations") for summary in summaries):
         runs = saved_results_payload(key)["results"]
         captures = app_visual.available_runs(ROOT) if any(
@@ -1481,6 +1617,8 @@ def _result_manifest_payload(path: Path) -> dict[str, Any]:
                 str(item.get("source_path") or ""),
             )
         )
+        if item.get("sha256"):
+            files[-1]["sha256"] = item["sha256"]
     manifest["files"] = files
     return manifest
 
@@ -1628,6 +1766,10 @@ def capture_workflow_inputs(workflow_id: str) -> dict[str, Any]:
         "vehicle_text": vehicle_path.read_text(encoding="utf-8") if vehicle_path.is_file() else None,
         "config_text": config_path.read_text(encoding="utf-8") if config_path and config_path.is_file() else None,
         "config_source": config_path.relative_to(ROOT).as_posix() if config_path else None,
+        "ggv_signature": _ggv_link_signature() if workflow_id == "ggv" and vehicle_path.is_file()
+        and config_path is not None and config_path.is_file()
+        and (config_path.parent / (yaml.safe_load(config_path.read_text()).get("vehicle_template")
+                                   or "../../../vehicle.yml")).resolve() == vehicle_path.resolve() else None,
         "captured_at": time.time(),
     }
 
@@ -1681,6 +1823,7 @@ def save_active_results(
                 "kind": output.kind,
                 "source_path": output.path,
                 "path": target.relative_to(ROOT).as_posix(),
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest() if workflow_id == "ggv" else None,
             }
         )
 
@@ -1718,6 +1861,7 @@ def save_active_results(
         "model": inputs.get("model"),
         "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
+        "ggv_signature": inputs.get("ggv_signature"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),
@@ -1752,6 +1896,7 @@ def save_active_results(
         "model": inputs.get("model"),
         "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
+        "ggv_signature": inputs.get("ggv_signature"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),
@@ -2012,4 +2157,3 @@ def apply_vehicle_template(template_id: str) -> dict[str, Any]:
     target = _safe_repo_path("vehicle.yml")
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     return config_payload("vehicle")
-

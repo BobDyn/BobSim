@@ -2007,3 +2007,18 @@ assert.equal(tirParameterGroup({key: 'QSY1'}), 'My');
 assert.equal(tirParameterGroup({key: 'LMUX'}, 'Fx friction scale'), 'Fx');
 assert.equal(tirParameterGroup({key: 'FITTYP'}), 'Reference');
 """], check=True)
+
+
+def test_result_color_signal_stays_aligned_with_sampled_points(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/colors.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('x,y,color\n' + '\n'.join(f'{i},{i*2},{i*3 if i != 4 else ""}' for i in range(100)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x',
+                                       signals=['y'], color_signal='color', max_points=50)
+    assert result['stride'] == 2
+    assert result['color']['values'][:4] == [0., 6., None, 18.]
+    assert result['series'][0]['values'][:4] == [0., 4., 8., 12.]
+    assert len(result['x']) == len(result['color']['values']) == 50
+    with pytest.raises(ValueError, match='color_signal'):
+        app.result_series_payload(path.relative_to(tmp_path).as_posix(), color_signal='missing')

@@ -369,7 +369,7 @@ def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
     for manifest in (base / "app/user_data/results/saved").glob("*/manifest.json"):
         try:
             saved = json.loads(manifest.read_text(encoding="utf-8"))
-            if saved.get("workflow", {}).get("id") not in {"reduced-step-steer", "reduced-ramp-steer"}:
+            if saved.get("workflow", {}).get("id") not in {"reduced-step-steer", "reduced-ramp-steer", "lap-transient"}:
                 continue
             dofs = (saved.get("model") or {}).get("model_dofs", [])
             if len(dofs) != 1 or dofs[0] not in (3, 6, 10, 14):

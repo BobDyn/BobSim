@@ -222,6 +222,7 @@
                 <button type="button" role="menuitem" data-action="setup">Open setup</button>
                 <button type="button" role="menuitem" data-action="report">Add plots and report</button>
                 <button type="button" role="menuitem" data-action="replay">Add 3D replay</button>
+                <button type="button" role="menuitem" data-action="lap" hidden>Add lap map</button>
                 <button type="button" role="menuitem" data-action="signals">Add signal explorer</button>
                 <button type="button" role="menuitem" data-action="delete">Delete simulation</button>
               </div>
@@ -236,6 +237,12 @@
               aria-orientation="vertical" aria-valuemin="180" aria-valuemax="560" aria-valuenow="230"
               tabindex="0" title="Drag to resize"></div>
             <div id="simulation-detail" class="simulation-detail">
+            <section id="simulation-ggv-editor" class="simulation-child-editor" hidden>
+              <header><h2>GGV input</h2><button id="simulation-ggv-close" type="button" class="ghost-button" aria-label="Close GGV input">×</button></header>
+              <label>Source<select id="simulation-ggv-source"></select></label>
+              <p id="simulation-ggv-status" role="status"></p>
+              <button id="simulation-ggv-open" type="button" class="ghost-button">Open GGV analysis</button>
+            </section>
             <section id="simulation-child-editor" class="simulation-child-editor" hidden>
               <header><h2>Add to simulation</h2><button id="simulation-child-close" type="button" class="ghost-button" aria-label="Close">×</button></header>
               <form id="simulation-visualization-form">
@@ -350,13 +357,14 @@
               <h2>Signal explorer</h2>
               <label>Source<select id="result-source-picker" aria-label="Signal file"></select></label>
               <label>X axis<select id="result-x-axis"></select></label>
+              <label>Color by<select id="result-color-signal"></select></label>
               <label>Y signals<input id="result-signal-search" type="search" placeholder="Find a signal"></label>
               <div id="result-signal-list" class="result-signal-list"></div>
             </aside>
             <section class="result-plot-shell">
               <div class="result-plot-head"><h3 id="result-plot-title">Signals</h3><p id="result-plot-subtitle"></p></div>
               <div id="result-selected-signals" class="signal-row"></div>
-              <canvas id="result-plot-canvas" aria-label="Selected signals plot"></canvas>
+              <canvas id="result-plot-canvas" tabindex="0" aria-label="Selected signals plot. Use arrow keys to inspect points."></canvas>
             </section>
           </div>
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">

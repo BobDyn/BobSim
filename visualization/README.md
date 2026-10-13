@@ -23,7 +23,7 @@ These targets run in Docker by default.
 
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
 `visualization/results/`. Captured scenes lists these scenes and saved DynPy
-ramp- and step-steer runs. Reduced replay uses the run's archived signals and
+ramp-steer, step-steer and transient-lap runs with saved state signals. Reduced replay uses the run's archived signals and
 vehicle definition. The display settings button selects geometry and tire overlays.
 The Tires panel shows each corner on its peak-grip ellipse and percent utilization.
 

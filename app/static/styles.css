@@ -4964,3 +4964,6 @@ summary:focus-visible {
 .result-series-key i { width: 16px; height: 3px; flex-shrink: 0; }
 
 .simulation-input-fields { display: grid; gap: 10px; border: 0; margin: 0; padding: 0; min-width: 0; }
+
+.result-color-key { display:flex; align-items:center; gap:8px; font-size:12px; }
+.result-color-key i { width:100px; height:8px; border-radius:4px; }

@@ -710,6 +710,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                 _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
                 _field("qss.speeds_mps", "Envelope speeds", kind="list", group="Envelope", unit="m/s"),
                 _field("qss.ay_points", "Lateral points", kind="integer", group="Envelope"),
+                _field("qss.regenerate", "Rebuild GGV", kind="boolean", group="Envelope"),
                 *(
                     (
                         _field("transient.sample_period_s", "Sample period",
@@ -1089,7 +1090,8 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                     OutputSpec("Report", f"simulations/lap/results/{name.removeprefix('lap-')}_report.pdf", "pdf"),
                     OutputSpec("QSS lap", "simulations/lap/results/qss_lap.csv", "csv"),
                     OutputSpec("Summary", "simulations/lap/results/summary.json", "json"),
-                    *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),)
+                    *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),
+                       OutputSpec("Signals", "simulations/lap/results/transient_signals.csv", "csv"))
                        if name == "lap-transient" else ()),
                 ),
             )
@@ -1167,4 +1169,3 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             outputs=(),
         ),
     )
-

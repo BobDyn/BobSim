@@ -508,6 +508,19 @@ vm.runInContext(`
     assert.ok(limits.yDomain[0]<-1000&&limits.yDomain[1]>2000);
     assert.ok(legend.innerHTML.includes('small')&&legend.innerHTML.includes('large'));
     assert.equal(fills.length,1,'the legend must not paint over the plot');
+    const segments=[],strokes=[];
+    pen.lineTo=(...point)=>segments.push(point);
+    pen.stroke=()=>strokes.push(pen.strokeStyle);
+    state.resultPlotPayload={x:[0,1,2,3,4],series:[{signal:'y',values:[0,1,2,3,4]}],color:{signal:'speed',values:[0,1,null,3,4]}};
+    drawResultPlotCanvas();
+    assert.equal(segments.length,2,'missing color must break the line');
+    assert.notEqual(strokes[0],strokes[1]);
+    assert.ok(legend.innerHTML.includes('speed'));
+    assert.equal(resultSignalColor(5,[5,5]),resultSignalColor(.5,[0,1]));
+    isLapMap=()=>true;
+    drawResultPlotCanvas();
+    assert.ok(Math.abs((limits.xDomain[1]-limits.xDomain[0])/limits.plot.width
+      -(limits.yDomain[1]-limits.yDomain[0])/limits.plot.height)<1e-9,'lap coordinates must have equal scale');
   `,plotContext);
 }
 
@@ -592,7 +605,7 @@ vm.runInContext(`
   vm.runInContext(source,menuContext);
   vm.runInContext(`
     const events={}; let focused, added;
-    const buttons=['add','setup','report','replay','signals','delete'].map(action=>({
+    const buttons=['add','setup','report','replay','lap','signals','delete'].map(action=>({
       dataset:{action},hidden:false,focus(){focused=action;}
     }));
     const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
@@ -607,7 +620,7 @@ vm.runInContext(`
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
     workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
-    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'}]};
+    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
       closest:selector=>selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
@@ -623,6 +636,8 @@ vm.runInContext(`
     rightClick('steady-state','envelope');
     assert.equal(focused,'setup');
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','signals','delete']);
+    rightClick('steady-state','lap');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','lap','signals','delete']);
     rightClick('transient','maneuver');
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','replay','signals','delete']);
   `,menuContext);

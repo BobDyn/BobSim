@@ -246,7 +246,7 @@ def _launch_job(actions, action_id, label, argv, workflow_id=None, simulation_id
     try:
         simulation = None
         if simulation_id:
-            loaded = simulation_workspace("load", {"id": simulation_id, "workflow_id": workflow_id,
+            loaded = simulation_workspace("prepare-run", {"id": simulation_id, "workflow_id": workflow_id,
                                                    "vehicle_key": vehicle_key})
             simulation = loaded["simulation"]
             label = f"Run {simulation['name']}"

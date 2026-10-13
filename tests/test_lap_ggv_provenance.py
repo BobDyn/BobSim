@@ -79,9 +79,39 @@ def test_ggv_cache_reused_only_while_inputs_match(provenance_workspace, monkeypa
         raise RuntimeError('regenerating stale envelope')
 
     monkeypatch.setattr(ggv_generation, 'generate_ggv', regenerate)
+    arguments['qss_config']['regenerate'] = True
+    with pytest.raises(RuntimeError, match='regenerating stale'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+    arguments['qss_config'].pop('regenerate')
     (root / 'tires/front.tir').write_text('PDX1 = 0.8\n')
     with pytest.raises(RuntimeError, match='regenerating stale'):
         lap._load_or_generate_ggv(path, model=None, **arguments)
     metadata.write_text('{broken metadata')
     with pytest.raises(RuntimeError, match='regenerating stale'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+
+
+def test_linked_ggv_is_verified_without_regeneration(provenance_workspace, monkeypatch):
+    import hashlib
+
+    root, arguments = provenance_workspace
+    path = root / 'saved.csv'
+    path.write_text('saved envelope')
+    signature_args = {**arguments, 'model_dof': 3, 'qss_config': {}, 'effective_power_limit_w': 0.}
+    linked = {'signature': lap._ggv_provenance(**signature_args)['fingerprint'],
+              'model_dof': 3, 'power_limit_w': 80000,
+              'csv_sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'run_id': 'saved-ggv'}
+    arguments['qss_config'] = {'linked_ggv': linked, 'generate_if_missing': False}
+    monkeypatch.setattr(lap.GGVMap, 'from_csv', lambda _: 'saved map')
+    result, provenance = lap._load_or_generate_ggv(path, model=None, **arguments)
+    assert result == 'saved map'
+    assert provenance['status'] == 'linked'
+    assert provenance['run_id'] == 'saved-ggv'
+    with pytest.raises(ValueError, match='model or power'):
+        lap._load_or_generate_ggv(path, model=None, **{**arguments, 'model_dof': 14})
+    path.write_text('modified envelope')
+    with pytest.raises(ValueError, match='file changed'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+    path.unlink()
+    with pytest.raises(FileNotFoundError, match='missing'):
         lap._load_or_generate_ggv(path, model=None, **arguments)

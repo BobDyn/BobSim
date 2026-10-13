@@ -95,6 +95,9 @@ const state = {
   resultSourceDetail: null,
   resultSelectedSignals: [],
   resultXAxis: "__index__",
+  simulationGgvEditor: false,
+  resultColorSignal: "",
+  resultHoverIndex: null,
   resultSignalSearch: "",
   resultPlotPayload: null,
   resultPlotStatus: "idle",
@@ -543,6 +546,7 @@ async function refreshSavedResults() {
     state.simConfigPayload = null;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
     delete document.getElementById("replay-view").dataset.capture;
   }
   state.simulationWorkspace = workspace;
@@ -664,7 +668,7 @@ function selectedProcessingWorkflow() {
 
 function selectedResultSource() {
   const child = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
-  if (child?.kind === "signals") {
+  if (["signals", "lap"].includes(child?.kind)) {
     return (selectedSavedResult()?.files || []).find(file => file.path === state.selectedResultSourcePath) || null;
   }
   const sources = resultSources();
@@ -4209,6 +4213,7 @@ async function openSimulation(id) {
     state.selectedSimulationId = id;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
     state.selectedWorkflowId = running.workflow_id;
     state.selectedJobId = running.id;
     state.simulationCatalogOpen = false;
@@ -4221,6 +4226,7 @@ async function openSimulation(id) {
   }
   state.selectedVisualizationId = null;
   state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
   await saveSimulationEdits();
   const payload = await simulationRequest("load", {id});
   state.selectedSimulationId = id;
@@ -4238,6 +4244,7 @@ async function openSimulation(id) {
 async function showSimulationCatalog(group = activeSimulationGroup) {
   state.selectedVisualizationId = null;
   state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
   await saveSimulationEdits();
   state.selectedSimulationId = null;
   state.simModalOpen = false;
@@ -4256,9 +4263,16 @@ function workspaceAction(action) {
 }
 
 function openSimulationVisualization(child) {
+  const previous = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
+  if (previous?.kind !== child.kind) {
+    state.selectedResultSourcePath = null;
+    state.resultSourceDetail = null;
+    state.resultPlotPayload = null;
+  }
   state.selectedVisualizationId = child.id;
   state.simModalOpen = false;
   state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
   if (child.kind === "replay") {
     document.getElementById("replay-view").dataset.capture = child.run_id || `pending:${state.selectedSimulationId}`;
     setView("replay");
@@ -4266,6 +4280,38 @@ function openSimulationVisualization(child) {
     state.selectedResultId = child.run_id;
     setView("studies");
   }
+}
+
+async function openSimulationGgv(id) {
+  await openSimulation(id);
+  state.simModalOpen = false;
+  state.simulationGgvEditor = true;
+  renderSimulationWorkspace();
+}
+
+function renderSimulationGgv() {
+  const simulation = selectedSimulation();
+  const panel = document.getElementById("simulation-ggv-editor");
+  if (!panel) return;
+  panel.hidden = state.view !== "standard" || !state.simulationGgvEditor;
+  if (panel.hidden) return;
+  const source = document.getElementById("simulation-ggv-source");
+  source.innerHTML = '<option value="">Generate for this lap</option>' + (state.simulationWorkspace?.simulations || [])
+    .filter(item => item.workflow_id === "ggv").map(item => `<option value="${escapeHtml(item.id)}"${item.id === simulation.ggv_source_id ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
+  if (simulation.ggv_source_id && ![...source.options].some(option => option.value === simulation.ggv_source_id)) {
+    source.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(simulation.ggv_source_id)}" selected>Unavailable GGV</option>`);
+  }
+  const input = simulation.ggv_input;
+  document.getElementById("simulation-ggv-status").textContent = `${input?.status || "Local"}: ${input?.message || "Generate with this lap's envelope settings."}`
+    + (input?.needs_rerun ? " Rerun the lap to use this result." : "");
+  const open = document.getElementById("simulation-ggv-open");
+  open.textContent = simulation.ggv_source_id ? "Open GGV analysis" : "Edit lap envelope settings";
+  open.disabled = Boolean(simulation.ggv_source_id && !(state.simulationWorkspace?.simulations || []).some(item => item.id === simulation.ggv_source_id));
+  open.onclick = () => workspaceAction(() => openSimulation(simulation.ggv_source_id || simulation.id));
+  source.onchange = () => workspaceAction(async () => {
+    await simulationRequest("set-ggv", {id: simulation.id, source_id: source.value || null});
+    renderSimulationWorkspace();
+  });
 }
 
 function wireSimulationSplitter() {
@@ -4326,8 +4372,10 @@ function wireSimulationContextMenu() {
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
     const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
+    const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
-      button.hidden = group ? button.dataset.action !== "add" : button.dataset.action === "add" || (envelope && button.dataset.action === "replay");
+      button.hidden = group ? button.dataset.action !== "add" : button.dataset.action === "add"
+        || ((envelope || lap) && button.dataset.action === "replay") || (!lap && button.dataset.action === "lap");
     }
     menu.querySelector('[data-action="report"]').textContent = envelope ? "Add envelope plots and report" : "Add plots and report";
     menu.hidden = false;
@@ -4381,10 +4429,12 @@ async function addSimulationVisualization(id, kind = null) {
   state.simModalOpen = false;
   state.simulationCatalogOpen = false;
   state.simulationChildEditor = true;
+  state.simulationGgvEditor = false;
   state.collapsedSimulations.delete(state.selectedSimulationId);
   const envelope = ["ggv", "ymd"].includes(selectedSimulation()?.workflow_id);
   const kinds = {report: envelope ? "Envelope plots and report" : "Plots and report", signals: "Signal explorer"};
-  if (!envelope) kinds.replay = "3D replay";
+  if (selectedSimulation()?.workflow_id === "lap-qss") kinds.lap = "Lap map";
+  else if (!envelope) kinds.replay = "3D replay";
   const picker = document.getElementById("simulation-visualization-kind");
   picker.innerHTML = Object.entries(kinds).map(([value, label]) =>
     `<option value="${value}">${label}</option>`).join("");
@@ -4397,6 +4447,7 @@ async function addSimulationVisualization(id, kind = null) {
 
 function mountSimulationWorkspace() {
   wireSimulationSplitter();
+  document.getElementById("simulation-ggv-close").onclick = () => workspaceAction(() => openSimulation(state.selectedSimulationId));
   wireSimulationContextMenu();
   new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
   const detail = document.getElementById("simulation-detail");
@@ -4430,6 +4481,8 @@ function mountSimulationWorkspace() {
     });
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
+    const ggv = event.target.closest("[data-simulation-ggv]");
+    if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
     const group = event.target.closest("[data-simulation-add-group]");
     if (group) {
       workspaceAction(() => showSimulationCatalog(group.dataset.simulationAddGroup));
@@ -4482,6 +4535,7 @@ function mountSimulationWorkspace() {
       await saveSimulationEdits();
       state.selectedVisualizationId = null;
       state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
       state.selectedResultId = run.dataset.simulationRun;
       state.selectedSimulationId = run.dataset.owner;
       state.simModalOpen = false;
@@ -4536,6 +4590,7 @@ function renderSimulationWorkspace() {
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
+        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run" data-simulation-ggv="${escapeHtml(item.id)}">${simulationTreeIcon("envelope")}<span class="simulation-tree-label">GGV${item.ggv_input?.name ? ` → ${escapeHtml(item.ggv_input.name)}` : ""}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
@@ -4552,11 +4607,12 @@ function renderSimulationWorkspace() {
     button.classList.toggle("active", selected);
     button.setAttribute("aria-pressed", String(selected));
   }
+  renderSimulationGgv();
   document.getElementById("simulation-child-editor").hidden = state.view !== "standard" || !state.simulationChildEditor;
   const empty = document.getElementById("simulation-empty");
   empty.querySelector("h3").textContent = simulations?.length ? "Select a simulation" : "Add a simulation";
   empty.querySelector("p").hidden = Boolean(simulations?.length);
-  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || state.simulationCatalogOpen || state.simulationChildEditor;
+  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || state.simulationCatalogOpen || state.simulationChildEditor || state.simulationGgvEditor;
   document.getElementById("simulation-catalog").hidden = state.view !== "standard" || !state.simulationCatalogOpen;
   document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
   const config = document.getElementById("simulation-config-modal");
@@ -4750,6 +4806,7 @@ async function removeSimulation(id = state.selectedSimulationId) {
     state.selectedSimulationId = null;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
     state.simModalOpen = false;
     state.dirtySimConfig = false;
     setView("standard");
@@ -5255,7 +5312,7 @@ function renderStudies() {
   renderSavedResultCatalog();
   renderSavedResultSummary();
   renderSavedResultOutputs();
-  const signals = selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind === "signals";
+  const signals = ["signals", "lap"].includes(selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind);
   const explorer = document.getElementById("signal-explorer");
   if (!explorer) return;
   explorer.hidden = !signals;
@@ -5353,8 +5410,10 @@ async function loadResultSource(path = state.selectedResultSourcePath) {
     const detail = await api(`/api/results/source?path=${encodeURIComponent(path)}`);
     if (state.selectedResultSourcePath !== path) return;
     state.resultSourceDetail = detail;
-    state.resultXAxis = defaultResultXAxis(detail);
-    state.resultSelectedSignals = defaultResultSignals(detail);
+    state.resultXAxis = isLapMap() ? "x_m" : defaultResultXAxis(detail);
+    state.resultSelectedSignals = isLapMap() ? ["y_m"] : defaultResultSignals(detail);
+    state.resultColorSignal = isLapMap() ? "speed_mps" : "";
+    state.resultHoverIndex = null;
     state.resultPlotStatus = "idle";
     renderStudies();
     await refreshResultPlot();
@@ -5431,6 +5490,15 @@ function renderResultSourceDiagnostic(source) {
   `;
 }
 
+function isLapMap() {
+  return selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind === "lap";
+}
+
+function resultSignalColor(value, domain) {
+  const fraction = domain[1] === domain[0] ? .5 : clamp((value - domain[0]) / (domain[1] - domain[0]), 0, 1);
+  return `hsl(${240 - 220 * fraction}, 80%, 58%)`;
+}
+
 function renderResultControls(detail) {
   const xSelect = document.getElementById("result-x-axis");
   const search = document.getElementById("result-signal-search");
@@ -5445,6 +5513,18 @@ function renderResultControls(detail) {
     return;
   }
   const numeric = detail.numeric_columns || [];
+  const colorSelect = document.getElementById("result-color-signal");
+  if (colorSelect) {
+    if (!numeric.includes(state.resultColorSignal)) state.resultColorSignal = "";
+    colorSelect.innerHTML = '<option value="">None</option>' + numeric.map(column =>
+      `<option value="${escapeHtml(column)}"${column === state.resultColorSignal ? " selected" : ""}>${escapeHtml(column)}</option>`).join("");
+    colorSelect.onchange = async event => { state.resultColorSignal = event.target.value; await refreshResultPlot(); };
+    const lap = isLapMap();
+    xSelect.parentElement.hidden = lap;
+    search.parentElement.hidden = lap;
+    list.hidden = lap;
+    document.querySelector("#signal-explorer h2").textContent = lap ? "Lap map" : "Signal explorer";
+  }
   if (state.resultXAxis !== "__index__" && !numeric.includes(state.resultXAxis)) {
     state.resultXAxis = defaultResultXAxis(detail);
   }
@@ -5507,6 +5587,7 @@ async function refreshResultPlot() {
   try {
     const path = detail.path;
     const xAxis = state.resultXAxis;
+    const colorSignal = state.resultColorSignal;
     const selected = state.resultSelectedSignals.join("\n");
     const payload = await api("/api/results/series", {
       method: "POST",
@@ -5514,11 +5595,12 @@ async function refreshResultPlot() {
       body: JSON.stringify({
         path: detail.path,
         x_axis: state.resultXAxis,
+        color_signal: colorSignal,
         signals: state.resultSelectedSignals,
         max_points: 2200,
       }),
     });
-    if (state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultSelectedSignals.join("\n") !== selected) return;
+    if (state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultColorSignal !== colorSignal || state.resultSelectedSignals.join("\n") !== selected) return;
     state.resultPlotPayload = payload;
     state.resultPlotStatus = "ready";
   } catch (error) {
@@ -5551,7 +5633,7 @@ function drawResultPlotCanvas() {
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
   const payload = state.resultPlotPayload;
-  if (title) title.textContent = "Signals";
+  if (title) title.textContent = isLapMap() ? "Lap map" : "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
     subtitle.textContent = detail ? `X: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
@@ -5577,9 +5659,18 @@ function drawResultPlotCanvas() {
     return;
   }
   const plot = { x: 58, y: 28, width: width - 78, height: height - 76 };
-  const xDomain = plotDomain(payload.x, { padFraction: 0.02 });
+  let xDomain = plotDomain(payload.x, { padFraction: 0.02 });
   const yValues = payload.series.flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
-  const yDomain = plotDomain(yValues, { padFraction: 0.1 });
+  let yDomain = plotDomain(yValues, { padFraction: 0.1 });
+  if (isLapMap()) {
+    const scale = Math.max((xDomain[1] - xDomain[0]) / plot.width, (yDomain[1] - yDomain[0]) / plot.height);
+    const xc = (xDomain[0] + xDomain[1]) / 2, yc = (yDomain[0] + yDomain[1]) / 2;
+    xDomain = [xc - scale * plot.width / 2, xc + scale * plot.width / 2];
+    yDomain = [yc - scale * plot.height / 2, yc + scale * plot.height / 2];
+  }
+  const colorValues = payload.color?.values;
+  const finiteColors = (colorValues || []).filter(value => value !== null && Number.isFinite(value));
+  const colorDomain = finiteColors.length ? [Math.min(...finiteColors), Math.max(...finiteColors)] : null;
   drawPlotGrid(ctx, { plot, xDomain, yDomain });
   const toX = (value) => plot.x + ((value - xDomain[0]) / Math.max(1e-9, xDomain[1] - xDomain[0])) * plot.width;
   const toY = (value) => plot.y + plot.height - ((value - yDomain[0]) / Math.max(1e-9, yDomain[1] - yDomain[0])) * plot.height;
@@ -5587,13 +5678,15 @@ function drawResultPlotCanvas() {
   payload.series.forEach((series, seriesIndex) => {
     ctx.save();
     ctx.strokeStyle = colors[seriesIndex % colors.length];
-    ctx.lineWidth = seriesIndex === 0 ? 2.1 : 1.7;
+    ctx.lineWidth = isLapMap() ? 3 : seriesIndex === 0 ? 2.1 : 1.7;
+    ctx.lineCap = "round";
     ctx.beginPath();
     let drawing = false;
     series.values.forEach((value, index) => {
       const x = Number(payload.x[index]);
       const y = Number(value);
-      if (value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
+      if (payload.x[index] === null || value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)
+          || (colorValues && (colorValues[index] === null || !Number.isFinite(colorValues[index])))) {
         drawing = false;
         return;
       }
@@ -5601,16 +5694,53 @@ function drawResultPlotCanvas() {
         ctx.moveTo(toX(x), toY(y));
         drawing = true;
       } else {
-        ctx.lineTo(toX(x), toY(y));
+        if (colorDomain) {
+          ctx.strokeStyle = resultSignalColor((colorValues[index - 1] + colorValues[index]) / 2, colorDomain);
+          ctx.beginPath();
+          ctx.moveTo(toX(payload.x[index - 1]), toY(series.values[index - 1]));
+          ctx.lineTo(toX(x), toY(y));
+          ctx.stroke();
+        } else ctx.lineTo(toX(x), toY(y));
       }
     });
-    ctx.stroke();
+    if (!colorDomain) ctx.stroke();
     ctx.restore();
   });
   const legend = document.getElementById("result-selected-signals");
   legend.innerHTML = payload.series.map((series, index) =>
-    `<span class="result-series-key"><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(series.signal)}</span>`
+    `<span class="result-series-key">${colorDomain ? "" : `<i style="background:${colors[index % colors.length]}"></i>`}${escapeHtml(series.signal)}</span>`
   ).join("");
+  if (isLapMap()) legend.innerHTML = "";
+  if (colorDomain) legend.innerHTML += `<span class="result-color-key">${escapeHtml(payload.color.signal)}
+    <span>${formatNumber(colorDomain[0])}</span><i style="background:linear-gradient(to right,${[0,.25,.5,.75,1].map(t => resultSignalColor(t,[0,1])).join(',')})"></i><span>${formatNumber(colorDomain[1])}</span></span>`;
+  const points = payload.x.map((x, index) => ({index, x: toX(x), y: toY(payload.series[0].values[index])}))
+    .filter(point => payload.x[point.index] !== null && payload.series[0].values[point.index] !== null && Number.isFinite(point.x + point.y));
+  canvas.onpointermove = event => {
+    const bounds = canvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * width / bounds.width, y = (event.clientY - bounds.top) * height / bounds.height;
+    state.resultHoverIndex = points.reduce((best, point) => !best || Math.hypot(point.x-x,point.y-y) < Math.hypot(best.x-x,best.y-y) ? point : best, null)?.index;
+    renderResultPlotCanvas();
+  };
+  canvas.onpointerleave = () => { state.resultHoverIndex = null; renderResultPlotCanvas(); };
+  canvas.onkeydown = event => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    state.resultHoverIndex = clamp((state.resultHoverIndex ?? 0) + (event.key === "ArrowRight" ? 1 : -1), 0, payload.x.length - 1);
+    renderResultPlotCanvas();
+  };
+  if (isLapMap() && points.length) {
+    const start = points[0];
+    ctx.beginPath(); ctx.arc(start.x, start.y, 4, 0, Math.PI*2); ctx.fillStyle = palette.surface; ctx.fill();
+    ctx.strokeStyle = palette.amber; ctx.lineWidth = 2; ctx.stroke();
+    drawCanvasText(ctx, "Start", start.x + 9, start.y - 9, {color: palette.muted, size: 11});
+  }
+  const hovered = points.find(point => point.index === state.resultHoverIndex);
+  if (hovered) {
+    ctx.beginPath(); ctx.arc(hovered.x, hovered.y, 5, 0, Math.PI*2); ctx.fillStyle = palette.amber; ctx.fill();
+    if (subtitle) subtitle.textContent = `${state.resultXAxis}: ${formatNumber(payload.x[hovered.index])} | `
+      + payload.series.map(series => `${series.signal}: ${series.values[hovered.index] === null ? "—" : formatNumber(series.values[hovered.index])}`).join(" | ")
+      + (colorValues ? ` | ${payload.color.signal}: ${colorValues[hovered.index] === null ? "missing" : formatNumber(colorValues[hovered.index])}` : "");
+  }
   drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : state.resultXAxis, plot.x + plot.width / 2, height - 18, {
     align: "center",
     size: 11,
@@ -6159,7 +6289,8 @@ function renderSimConfigForm() {
     return;
   }
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
-  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(state.simConfigPayload.fields || [], "sim-config")}</fieldset>`;
+  const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && field.group === "Envelope"));
+  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(fields, "sim-config")}</fieldset>`;
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
   form.onclick = handleArrayEditorClick;

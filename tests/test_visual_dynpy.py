@@ -118,14 +118,15 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch)
         build_scene(signals, vehicle, dof)
 
 
-def test_archived_replay_uses_snapshots_and_rejects_paths_outside_root(tmp_path):
+@pytest.mark.parametrize("workflow", ("reduced-step-steer", "reduced-ramp-steer", "lap-transient"))
+def test_archived_replay_uses_snapshots_and_rejects_paths_outside_root(tmp_path, workflow):
     archive = tmp_path / "app/user_data/results/saved/run"
     archive.mkdir(parents=True)
     (archive / "signals.csv").write_text("time,x,y,yaw\n0,0,0,0\n1,1,0,0\n")
     (archive / "vehicle.yml").write_text("vehicle: {}")
     relative = archive.relative_to(tmp_path).as_posix()
     saved = {"id": "run", "label": "Step", "created_label": "Today", "vehicle_key": "car",
-             "simulation": {"id": "step"}, "workflow": {"id": "reduced-step-steer"},
+             "simulation": {"id": "step"}, "workflow": {"id": workflow},
              "model": {"model_dofs": [6]}, "vehicle_snapshot": relative + "/vehicle.yml",
              "files": [{"label": "Signals", "path": relative + "/signals.csv"}]}
     manifest = archive / "manifest.json"

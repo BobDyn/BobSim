@@ -279,6 +279,7 @@ class BobSimHandler(BaseHTTPRequestHandler):
                     x_axis=str(body.get("x_axis", "__index__")),
                     signals=[str(signal) for signal in raw_signals],
                     max_points=int(body.get("max_points", 1800)),
+                    color_signal=str(body["color_signal"]) if body.get("color_signal") else None,
                 )
                 self._send_json(payload)
             elif parsed.path == "/api/kinematics/curves":

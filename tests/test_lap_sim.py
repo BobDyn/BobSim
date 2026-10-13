@@ -173,7 +173,15 @@ def test_forward_transient_executes_against_same_qss_reference(
     assert np.all(np.isfinite(result.lateral_error_m))
 
 
-def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
+@pytest.mark.parametrize("scenario", ("qss", "transient"))
+def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -> None:
+    from simulations.lap import lap_time_eval_sim as runner
+    original = runner.simulate_transient_lap
+
+    def short_lap(*args, **kwargs):
+        return original(*args, **kwargs, stop_time_s=0.1)
+
+    monkeypatch.setattr(runner, "simulate_transient_lap", short_lap)
     ggv_path = tmp_path / "ggv.csv"
     with ggv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -206,7 +214,7 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    summary = run_lap_time_evaluation(config_path, scenario="qss")
+    summary = run_lap_time_evaluation(config_path, scenario=scenario)
 
     assert summary["model_dof"] == 3
     assert summary["effective_drive_power_limit_w"] == pytest.approx(32_000.0)
@@ -216,4 +224,11 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
     assert summary["optimized_qss_lap_time_s"] > 0.0
     assert (output_path / "qss_lap.csv").is_file()
     assert (output_path / "summary.json").is_file()
-    assert not (output_path / "transient_lap.csv").exists()
+    assert (output_path / "transient_lap.csv").exists() == (scenario == "transient")
+    if scenario == "transient":
+        from app.visual import reduced_scene_payload
+        from common.vehicle_io import repo_root
+        path = output_path / "transient_signals.csv"
+        assert path.is_file()
+        replay = reduced_scene_payload(repo_root() / "vehicle.yml", path, 3)
+        assert replay.header["frames"] > 1

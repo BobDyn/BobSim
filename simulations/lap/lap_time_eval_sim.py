@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import hashlib
+import csv
 import time
 import json
 from pathlib import Path
@@ -132,6 +133,10 @@ def run_lap_time_evaluation(
             ),
         )
         write_transient_lap_csv(output_directory / "transient_lap.csv", transient)
+        with (output_directory / "transient_signals.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["time", *transient.transient.signals])
+            writer.writerows(zip(transient.transient.time_s, *transient.transient.signals.values()))
         if transient.completed_lap:
             finish_index = int(
                 np.flatnonzero(
@@ -176,13 +181,26 @@ def _load_or_generate_ggv(
         effective_power_limit_w=effective_power_limit_w,
     )
     metadata_path = path.with_suffix(path.suffix + ".metadata.json")
+    if qss_config.get("linked_ggv") and not path.is_file():
+        raise FileNotFoundError("The linked GGV result is missing. Reconnect a saved envelope.")
     if path.exists():
+        if qss_config.get("linked_ggv"):
+            linked = qss_config["linked_ggv"]
+            signature = _ggv_provenance(
+                vehicle_path=vehicle_path, model_dof=3, qss_config={}, effective_power_limit_w=0.,
+            )["fingerprint"]
+            if linked.get("signature") != signature or linked.get("model_dof") != model_dof \
+                    or linked.get("power_limit_w") != effective_power_limit_w:
+                raise ValueError("The linked GGV no longer matches the vehicle, model or power limit.")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != linked.get("csv_sha256"):
+                raise ValueError("The linked GGV file changed. Reconnect its saved result.")
+            return GGVMap.from_csv(path), {**linked, "status": "linked"}
         if not bool(qss_config.get("generate_if_missing", True)):
             return GGVMap.from_csv(path), {
                 "status": "supplied_unverified",
                 "fingerprint": None,
             }
-        if metadata_path.exists():
+        if metadata_path.exists() and not bool(qss_config.get("regenerate", False)):
             try:
                 raw = json.loads(metadata_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
