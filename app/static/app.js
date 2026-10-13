@@ -546,7 +546,7 @@ async function refreshSavedResults() {
     state.simConfigPayload = null;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
-  state.simulationGgvEditor = false;
+    state.simulationGgvEditor = false;
     delete document.getElementById("replay-view").dataset.capture;
   }
   state.simulationWorkspace = workspace;
@@ -4213,7 +4213,7 @@ async function openSimulation(id) {
     state.selectedSimulationId = id;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
-  state.simulationGgvEditor = false;
+    state.simulationGgvEditor = false;
     state.selectedWorkflowId = running.workflow_id;
     state.selectedJobId = running.id;
     state.simulationCatalogOpen = false;
@@ -4535,7 +4535,7 @@ function mountSimulationWorkspace() {
       await saveSimulationEdits();
       state.selectedVisualizationId = null;
       state.simulationChildEditor = false;
-  state.simulationGgvEditor = false;
+      state.simulationGgvEditor = false;
       state.selectedResultId = run.dataset.simulationRun;
       state.selectedSimulationId = run.dataset.owner;
       state.simModalOpen = false;
@@ -4589,8 +4589,8 @@ function renderSimulationWorkspace() {
         <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
-        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
-        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run" data-simulation-ggv="${escapeHtml(item.id)}">${simulationTreeIcon("envelope")}<span class="simulation-tree-label">GGV${item.ggv_input?.name ? ` → ${escapeHtml(item.ggv_input.name)}` : ""}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
+        <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
+        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}">${simulationTreeIcon("envelope")}<span class="simulation-tree-label">GGV${item.ggv_input?.name ? ` → ${escapeHtml(item.ggv_input.name)}` : ""}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
@@ -4806,7 +4806,7 @@ async function removeSimulation(id = state.selectedSimulationId) {
     state.selectedSimulationId = null;
     state.selectedVisualizationId = null;
     state.simulationChildEditor = false;
-  state.simulationGgvEditor = false;
+    state.simulationGgvEditor = false;
     state.simModalOpen = false;
     state.dirtySimConfig = false;
     setView("standard");
