@@ -23,6 +23,7 @@ from scipy.optimize import minimize
 from engines.dynpy.models import DOFModel, ReducedVehicleModel
 from engines.dynpy.qss import (
     QSSResult, solve_acceleration_trim, _algebraic_residual, _trim_state_and_inputs,
+    _generalized_acceleration_target, _residual_scales,
     _tire_state_error, _algebraic_slip_slopes,
 )
 
@@ -420,18 +421,17 @@ def solve_ax_limit(
         returns most negative feasible ax.
     """
     if reduced_model is not None:
-        if reduced_model.dof == 3:
-            try:
-                boundary = _solve_planar_limit(
-                    vehicle, reduced_model, speed=speed, ay=ay,
-                    ax_bounds=(float(np.min(ax_grid)), float(np.max(ax_grid))), mode=mode,
-                    max_abs_beta_rad=max_abs_beta_rad, max_abs_steering_rad=max_abs_steering_rad,
-                    enforce_tire_load_range=enforce_tire_load_range,
-                )
-            except (ValueError, RuntimeError):
-                boundary = None
-            if boundary is not None and (boundary.success or not trim_multistart):
-                return boundary.longitudinal_acceleration_mps2 if boundary.success else float("nan")
+        try:
+            boundary = _solve_envelope_limit(
+                vehicle, reduced_model, speed=speed, ay=ay,
+                ax_bounds=(float(np.min(ax_grid)), float(np.max(ax_grid))), mode=mode,
+                max_abs_beta_rad=max_abs_beta_rad, max_abs_steering_rad=max_abs_steering_rad,
+                enforce_tire_load_range=enforce_tire_load_range,
+            )
+        except (ValueError, RuntimeError):
+            boundary = None
+        if boundary is not None and (boundary.success or not trim_multistart):
+            return boundary.longitudinal_acceleration_mps2 if boundary.success else float("nan")
         return _solve_ax_limit_qss(
             vehicle,
             reduced_model,
@@ -473,20 +473,20 @@ def solve_ax_limit(
     return float(np.min(valid_ax))
 
 
-def _solve_planar_limit(
+def _solve_envelope_limit(
     vehicle: VehicleParams, model: ReducedVehicleModel, *,
     speed: float, ay: float, ax_bounds: tuple[float, float], mode: Literal["drive", "brake", "lateral"],
     max_abs_beta_rad: float, max_abs_steering_rad: float, enforce_tire_load_range: bool,
     initial_unknowns: Mapping[str, float] | None = None,
 ) -> QSSResult | None:
-    """## Planar Envelope Boundary
+    """## Envelope Boundary
 
     Parameters
     ----------
     vehicle : VehicleParams
         Workflow power and brake limits.
     model : ReducedVehicleModel
-        Shared 3 DOF force equations.
+        Shared vehicle force equations.
     speed : float
         Speed in meters per second.
     ay : float
@@ -513,49 +513,80 @@ def _solve_planar_limit(
     kinematics = model.parameters.kinematics
     _, _, drag = aero_loads(vehicle, speed)
     coast = -drag / vehicle.mass
-    names = ("beta_rad", "rack_displacement_m", "total_wheel_torque_nm",
-             "load_fl_n", "load_fr_n", "load_rl_n", "load_rr_n",
-             "slip_fl", "slip_fr", "slip_rl", "slip_rr")
-    scales = np.array([1., .05, force_scale * float(np.mean(radius)), *([force_scale] * 4), *([1.] * 4)])
+    names = ["beta_rad", "rack_displacement_m", "total_wheel_torque_nm"]
+    scales = [1., .05, force_scale * float(np.mean(radius))]
+    rack_bounds = sorted(kinematics.rack_from_steering(a) for a in (-max_abs_steering_rad, max_abs_steering_rad))
+    bounds = [(-max_abs_beta_rad, max_abs_beta_rad), (rack_bounds[0] / .05, rack_bounds[1] / .05),
+              (-20_000. / scales[2], 20_000. / scales[2])]
+    if model.dof >= 6:
+        names.extend(("heave_m", "roll_rad", "pitch_rad"))
+        scales.extend((.05, .1, .1))
+        bounds.extend(((-4., 4.), (-5., 5.), (-5., 5.)))
+    slip_bounds = [(tire.coefficients["KPUMIN"], tire.coefficients["KPUMAX"]) for tire in model.parameters.tires]
+    if model.dof >= 10:
+        names.extend(("slip_fl", "slip_fr", "slip_rl", "slip_rr"))
+        scales.extend((1.,) * 4)
+        bounds.extend(slip_bounds)
+    if model.dof == 14:
+        names.extend(("unsprung_z_fl_m", "unsprung_z_fr_m", "unsprung_z_rl_m", "unsprung_z_rr_m"))
+        scales.extend((.05,) * 4)
+        bounds.extend(((-4., 4.),) * 4)
+    else:
+        names.extend(("load_fl_n", "load_fr_n", "load_rl_n", "load_rr_n"))
+        scales.extend((force_scale,) * 4)
+        bounds.extend((max(1e-6, tire.fz_min_n if enforce_tire_load_range else 0.) / force_scale,
+                       tire.fz_max_n / force_scale if enforce_tire_load_range else np.inf)
+                      for tire in model.parameters.tires)
+    if model.dof < 10:
+        names.extend(("slip_fl", "slip_fr", "slip_rl", "slip_rr"))
+        scales.extend((1.,) * 4)
+        bounds.extend(slip_bounds)
+    scale_array = np.asarray(scales)
     seed = initial_unknowns
     if seed is None:
         trim = solve_acceleration_trim(
             model, speed_mps=speed, longitudinal_acceleration_mps2=coast,
-            lateral_acceleration_mps2=0. if mode == "lateral" else ay, max_nfev=60, tolerance=1e-8,
+            lateral_acceleration_mps2=0., max_nfev=60, tolerance=1e-8,
         )
         if not trim.success:
             return None
         seed = trim.unknowns
-    guess = np.array([seed[name] for name in names]) / scales
+    guess = np.array([seed[name] for name in names]) / scale_array
     if initial_unknowns is not None:
         # Move off the previous tire peak before changing the lateral demand.
         guess[2] *= 0.9
-        guess[7:] *= 0.9
-    rack_bounds = sorted(kinematics.rack_from_steering(a) for a in (-max_abs_steering_rad, max_abs_steering_rad))
-    bounds = [(-max_abs_beta_rad, max_abs_beta_rad), (rack_bounds[0] / .05, rack_bounds[1] / .05),
-              (-20_000. / scales[2], 20_000. / scales[2])]
-    bounds.extend((max(1e-6, tire.fz_min_n if enforce_tire_load_range else 0.) / force_scale,
-                   tire.fz_max_n / force_scale if enforce_tire_load_range else np.inf)
-                  for tire in model.parameters.tires)
-    bounds.extend((tire.coefficients["KPUMIN"], tire.coefficients["KPUMAX"]) for tire in model.parameters.tires)
+        for index, name in enumerate(names):
+            if name.startswith("slip_"):
+                guess[index] *= 0.9
     guess = np.clip(guess, np.array(bounds)[:, 0], np.array(bounds)[:, 1])
 
     @lru_cache(maxsize=256)
     def evaluate(values: tuple[float, ...]):
-        physical = np.asarray(values) * scales
-        state, inputs = _trim_state_and_inputs(model, physical[:3], speed_mps=speed, yaw_rate_radps=0., rack_input=True)
-        output = model.evaluate(state, inputs, normal_loads_n=physical[3:7], algebraic_slips=physical[7:])
+        physical = np.asarray(values) * scale_array
+        state, inputs = _trim_state_and_inputs(
+            model, physical[:model.dof], speed_mps=speed, yaw_rate_radps=0., rack_input=True,
+        )
+        output = model.evaluate(
+            state, inputs,
+            normal_loads_n=physical[model.dof:model.dof + 4] if model.dof < 14 else None,
+            algebraic_slips=physical[-4:] if model.dof < 10 else None,
+        )
         return state, inputs, output
 
     def equality(values: FloatArray) -> FloatArray:
-        _, inputs, output = evaluate(tuple(values))
-        ax, lateral, yaw = output.generalized_acceleration
-        return np.r_[(ax - coast if mode == "lateral" else lateral - ay) / G,
-                     yaw / 10., _algebraic_residual(model, inputs, output) / force_scale]
+        state, inputs, output = evaluate(tuple(values))
+        ax, lateral = output.generalized_acceleration[:2]
+        target = _generalized_acceleration_target(
+            model, state, output, longitudinal_mps2=coast if mode == "lateral" else float(ax),
+            lateral_mps2=float(lateral) if mode == "lateral" else ay,
+        )
+        residual = (output.generalized_acceleration - target) / _residual_scales(model)
+        return np.r_[np.delete(residual, 1 if mode == "lateral" else 0),
+                     _algebraic_residual(model, inputs, output) / force_scale]
 
     def inequality(values: FloatArray) -> FloatArray:
         _, _, output = evaluate(tuple(values))
-        ax, lateral, _ = output.generalized_acceleration
+        ax, lateral = output.generalized_acceleration[:2]
         required = vehicle.mass * ax + drag
         constraints = []
         if mode != "drive" and np.isfinite(ax_bounds[0]):
@@ -575,7 +606,13 @@ def _solve_planar_limit(
             constraints.extend((lateral, ay - lateral))
         for alpha, tire in zip(output.slip_angles_rad, model.parameters.tires):
             constraints.extend((alpha - tire.coefficients["ALPMIN"], tire.coefficients["ALPMAX"] - alpha))
-        constraints.extend(_algebraic_slip_slopes(model, output) / force_scale)
+        if model.dof < 10:
+            constraints.extend(_algebraic_slip_slopes(model, output) / force_scale)
+        if model.dof == 14:
+            for load, tire in zip(output.normal_loads_n, model.parameters.tires):
+                constraints.append((load - (tire.fz_min_n if enforce_tire_load_range else 0.)) / force_scale)
+                if enforce_tire_load_range:
+                    constraints.append((tire.fz_max_n - load) / force_scale)
         return np.asarray(constraints)
 
     def objective(values: FloatArray) -> float:
@@ -591,7 +628,7 @@ def _solve_planar_limit(
     if not result.success or np.linalg.norm(equality(result.x)) > 1e-5 or np.min(inequality(result.x)) < -1e-7:
         return None
     state, inputs, output = evaluate(tuple(result.x))
-    physical = result.x * scales
+    physical = result.x * scale_array
     steering = float(np.mean(kinematics.at(np.zeros(4), float(physical[1])).toe_rad[:2]))
     inputs = replace(inputs, steering_rad=steering)
     if _tire_state_error(model, inputs, output):
@@ -825,9 +862,9 @@ def solve_lateral_limit(
 
     _front_aero, _rear_aero, drag = aero_loads(vehicle, speed)
     coast_ax = -drag / vehicle.mass
-    if reduced_model is not None and reduced_model.dof == 3:
+    if reduced_model is not None:
         try:
-            boundary = _solve_planar_limit(
+            boundary = _solve_envelope_limit(
                 vehicle, reduced_model, speed=speed, ay=ay_upper,
                 ax_bounds=(-np.inf, np.inf), mode="lateral",
                 max_abs_beta_rad=max_abs_beta_rad, max_abs_steering_rad=max_abs_steering_rad,
@@ -972,6 +1009,8 @@ def generate_ggv(
                 flush=True,
             )
 
+        if config.verbose:
+            print("  Solving lateral limit...", flush=True)
         lateral_limit, coast_ax = solve_lateral_limit(
             vehicle,
             speed=speed,
@@ -983,6 +1022,8 @@ def generate_ggv(
             enforce_tire_load_range=config.enforce_tire_load_range,
             trim_multistart=config.trim_multistart,
         )
+        if config.verbose:
+            print(f"  Lateral limit = {lateral_limit / G:.3f} g", flush=True)
         ax_accel_pos = np.full_like(ay_positive, np.nan)
         ax_brake_pos = np.full_like(ay_positive, np.nan)
         interior_indices = np.flatnonzero(ay_positive < lateral_limit - 1e-9)
@@ -994,9 +1035,9 @@ def generate_ggv(
             )
             for mode, grid, branch in branches:
                 boundary = None
-                if reduced_model is not None and reduced_model.dof == 3:
+                if reduced_model is not None:
                     try:
-                        boundary = _solve_planar_limit(
+                        boundary = _solve_envelope_limit(
                             vehicle, reduced_model, speed=speed, ay=ay, mode=mode,
                             ax_bounds=(float(grid.min()), float(grid.max())),
                             max_abs_beta_rad=config.max_abs_beta_rad,

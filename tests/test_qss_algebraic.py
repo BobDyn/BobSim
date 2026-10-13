@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from engines.dynpy import Vehicle, solve_acceleration_trim
-from engines.dynpy.qss import _algebraic_residual, _algebraic_slip_slopes
-from simulations.envelope.ggv.ggv_generation import _solve_planar_limit, aero_loads, powertrain_force_limit
+from engines.dynpy.qss import _algebraic_residual, _algebraic_slip_slopes, _generalized_acceleration_target
+from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit, aero_loads, powertrain_force_limit
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
 
@@ -70,16 +70,25 @@ def test_trial_wheel_states_reject_invalid_values(vehicle, argument, value):
 
 
 @pytest.mark.parametrize("mode,ay", [("drive", 0.), ("drive", 8.), ("brake", 0.), ("brake", 8.), ("lateral", 30.)])
-def test_planar_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay):
-    model = vehicle.model(3)
+@pytest.mark.parametrize("dof", (3, 6, 10, 14))
+def test_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay, dof):
+    model = vehicle.model(dof)
     projection = project_vehicle_yaml(load_vehicle_yaml()).ggv
-    result = _solve_planar_limit(
+    result = _solve_envelope_limit(
         projection, model, speed=10., ay=ay, ax_bounds=(-31.4, 27.5), mode=mode,
         max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
     )
     assert result is not None
     np.testing.assert_allclose(_algebraic_residual(model, result.inputs, result.output), 0., atol=1e-3)
-    assert abs(result.output.generalized_acceleration[2]) < 1e-5
+    target = _generalized_acceleration_target(
+        model, result.state, result.output,
+        longitudinal_mps2=result.longitudinal_acceleration_mps2,
+        lateral_mps2=result.lateral_acceleration_mps2,
+    )
+    np.testing.assert_allclose(result.output.generalized_acceleration, target, atol=1e-5)
+    if dof >= 10:
+        forward = model.evaluate(result.state, result.inputs)
+        np.testing.assert_allclose(forward.generalized_acceleration, target, atol=1e-4)
     if mode != "lateral":
         assert result.lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
     for load, alpha, slip, tire in zip(
@@ -87,19 +96,20 @@ def test_planar_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay
     ):
         assert tire.fz_min_n - 1e-8 <= load <= tire.fz_max_n + 1e-8
         assert tire.slip_in_fit_range(alpha, slip)
-    assert np.all(_algebraic_slip_slopes(model, result.output) >= -1e-4)
+    if dof < 10:
+        assert np.all(_algebraic_slip_slopes(model, result.output) >= -1e-4)
     if mode == "drive":
         drag = aero_loads(projection, 10.)[2]
         required_force = projection.mass * result.longitudinal_acceleration_mps2 + drag
         assert required_force <= powertrain_force_limit(projection, 10.) + 1e-4
-    if mode == "brake" and ay == 0.:
+    if dof == 3 and mode == "brake" and ay == 0.:
         # The former binary solver returned -22.62 with its looser torque closure.
         assert result.longitudinal_acceleration_mps2 == pytest.approx(-22.584, abs=.005)
 
 
 def test_planar_boundary_honors_finite_brake_cap(vehicle):
     projection = replace(project_vehicle_yaml(load_vehicle_yaml()).ggv, max_brake_force=1000.)
-    result = _solve_planar_limit(
+    result = _solve_envelope_limit(
         projection, vehicle.model(3), speed=10., ay=0., ax_bounds=(-31.4, 0.), mode="brake",
         max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
     )
@@ -145,3 +155,19 @@ def test_negative_drive_maximum_preserves_optional_branch_audit(vehicle, monkeyp
     else:
         assert not attempts
         assert np.isnan(value)
+
+
+def test_14dof_envelope_uses_direct_boundaries(vehicle, monkeypatch):
+    from simulations.envelope.ggv import ggv_generation as ggv
+
+    def nested_search(*args, **kwargs):
+        pytest.fail("A converged direct boundary must not repeat the nested trim search.")
+
+    monkeypatch.setattr(ggv, "_solve_racing_trim", nested_search)
+    envelopes = ggv.generate_ggv(
+        project_vehicle_yaml(load_vehicle_yaml()).ggv,
+        ggv.GGVConfig(speeds=(5.,), model_dof=14, ay_points=3, ay_max_g=4., trim_multistart=True, verbose=False),
+        reduced_model=vehicle.model(14),
+    )
+    assert len(envelopes) == 1
+    assert np.isfinite(envelopes[0].ax_accel).any()

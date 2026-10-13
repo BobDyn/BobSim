@@ -190,7 +190,7 @@ equations and constrains selected generalized accelerations:
 Acceleration and constant-radius trims solve rack travel directly. Tire loads
 and massless-wheel slips are algebraic unknowns solved alongside body equilibrium.
 MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
-These algebraic unknowns do not add dynamic DOFs. The 3 DOF GGV solver maximizes
+These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
 each boundary with the same equations and retains the trim search as a fallback.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio

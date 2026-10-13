@@ -217,7 +217,7 @@ def _load_or_generate_ggv(
         enforce_tire_load_range=bool(qss_config.get("enforce_tire_load_range", True)),
         trim_multistart=bool(qss_config.get("trim_multistart", True)),
         verbose=True,
-        progress_every=5,
+        progress_every=1,
         warn_tire_load_range=False,
     )
     envelopes = generate_ggv(ggv_vehicle, generation, reduced_model=model)
