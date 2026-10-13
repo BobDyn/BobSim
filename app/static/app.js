@@ -4314,6 +4314,29 @@ function renderSimulationGgv() {
   });
 }
 
+function drawSimulationGgvConnections() {
+  const tree = document.getElementById("simulation-tree");
+  const svg = document.getElementById("simulation-ggv-connections");
+  if (!tree || !svg) return;
+  const bounds = tree.getBoundingClientRect();
+  const visible = node => node?.getClientRects().length > 0;
+  const sources = [...tree.querySelectorAll("[data-ggv-source]")];
+  const titles = [...tree.querySelectorAll("[data-simulation-id]")];
+  svg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
+  svg.innerHTML = [...tree.querySelectorAll("[data-ggv-linked]")].map(input => {
+    const sourceId = input.dataset.ggvLinked;
+    const source = sources.find(node => node.dataset.ggvSource === sourceId && visible(node))
+      || titles.find(node => node.dataset.simulationId === sourceId && visible(node));
+    const target = visible(input) ? input : titles.find(node => node.dataset.simulationId === input.dataset.simulationGgv && visible(node));
+    if (!source || !target) return "";
+    const a = source.getBoundingClientRect(), b = target.getBoundingClientRect();
+    const sx = a.right - bounds.left, sy = a.top + a.height / 2 - bounds.top;
+    const tx = b.right - bounds.left, ty = b.top + b.height / 2 - bounds.top;
+    const lane = bounds.width - 8;
+    return `<path d="M${sx} ${sy}H${lane}V${ty}H${tx}"/><circle cx="${sx}" cy="${sy}" r="2.5"/><path d="m${tx + 4} ${ty - 3}-4 3 4 3"/>`;
+  }).join("");
+}
+
 function wireSimulationGgvDrag() {
   const tree = document.getElementById("simulation-tree");
   let sourceId = null;
@@ -4491,6 +4514,7 @@ async function addSimulationVisualization(id, kind = null) {
 function mountSimulationWorkspace() {
   wireSimulationSplitter();
   wireSimulationGgvDrag();
+  new ResizeObserver(drawSimulationGgvConnections).observe(document.getElementById("simulation-tree"));
   document.getElementById("simulation-ggv-close").onclick = () => workspaceAction(() => openSimulation(state.selectedSimulationId));
   wireSimulationContextMenu();
   new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
@@ -4636,14 +4660,15 @@ function renderSimulationWorkspace() {
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
-        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : ""} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}" title="Drag a GGV result here, or click to choose.">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
+        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span>${item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>`).join("")}
       </div>
     </div>`;
       }).join("")}</div></section>`;
-  }).join("") + "</div>";
+  }).join("") + '</div><svg id="simulation-ggv-connections" aria-hidden="true"></svg>';
+  drawSimulationGgvConnections();
   for (const [id, label, icon, selected] of [
     ["simulation-saved-runs", "Saved runs", "report", state.view === "studies" && !state.selectedSimulationId],
     ["simulation-captures", "Captured scenes", "scene", state.view === "replay" && !state.selectedVisualizationId],
@@ -6335,7 +6360,7 @@ function renderSimConfigForm() {
     return;
   }
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
-  const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && field.group === "Envelope"));
+  const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof")));
   form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(fields, "sim-config")}</fieldset>`;
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();

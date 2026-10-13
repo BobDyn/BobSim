@@ -297,7 +297,7 @@ def test_linked_ggv_requires_a_saved_compatible_result(linked_ggv_workspace):
 
 
 @pytest.mark.parametrize('change,message', [
-    ('fidelity', 'same model fidelity'), ('power', 'Power limits differ'),
+    ('power', 'Power limits differ'),
     ('settings', 'settings changed'), ('physics', 'current vehicle'),
 ])
 def test_linked_ggv_rejects_stale_or_incompatible_inputs(linked_ggv_workspace, monkeypatch, change, message):
@@ -313,8 +313,6 @@ def test_linked_ggv_rejects_stale_or_incompatible_inputs(linked_ggv_workspace, m
         data = yaml.safe_load(path.read_text())
         if change == 'settings':
             data['generation']['ay_points'] = 31
-        elif change == 'fidelity':
-            data['model_dof'] = 6
         else:
             data['event'] = {'drive_power_limit_w': 32000}
         path.write_text(yaml.safe_dump(data))
@@ -327,3 +325,23 @@ def test_ggv_connection_rejects_non_ggv_source(linked_ggv_workspace):
     _, _, lap, _ = linked_ggv_workspace
     with pytest.raises(ValueError, match='Choose a GGV'):
         app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': lap['id']})
+
+
+def test_linked_lap_inherits_source_fidelity(linked_ggv_workspace):
+    root, source, lap, archive = linked_ggv_workspace
+    app.simulation_workspace('load', {'id': source['id']})
+    source_path = root / 'simulations/envelope/ggv/ggv_config.yml'
+    config = yaml.safe_load(source_path.read_text())
+    config['generation']['model_dof'] = 6
+    source_path.write_text(yaml.safe_dump(config))
+    app.simulation_workspace('save', {'id': source['id']})
+    loaded = app.simulation_workspace('load', {'id': lap['id']})
+    assert loaded['simulation']['model']['model_dofs'] == [6]
+    assert yaml.safe_load((root / 'lap.yml').read_text())['model_dof'] == 6
+    archive()
+    app.simulation_workspace('prepare-run', {'id': lap['id']})
+    prepared = yaml.safe_load((root / 'lap.yml').read_text())
+    assert prepared['model_dof'] == prepared['qss']['linked_ggv']['model_dof'] == 6
+    app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': None})
+    app.simulation_workspace('load', {'id': lap['id']})
+    assert yaml.safe_load((root / 'lap.yml').read_text())['model_dof'] == 6

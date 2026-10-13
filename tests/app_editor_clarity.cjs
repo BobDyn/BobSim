@@ -578,6 +578,7 @@ vm.runInContext(`
     document={getElementById:id=>elements[id] ||= {
       classList:{toggle(){}},setAttribute(){},querySelector(){return {};}
     }};
+    drawSimulationGgvConnections=()=>{};
     activeVehicleKey=()=> 'car'; activeVehicleName=()=> 'Car';
     savedResults=()=> [{id:'ggv-run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'Today'}];
     state.simulationWorkspace={vehicle_key:'car',simulations:[
@@ -605,6 +606,8 @@ vm.runInContext(`
     renderSimulationWorkspace();
     assert.doesNotMatch(elements['simulation-tree'].innerHTML,/ggv-link-empty/);
     assert.match(elements['simulation-tree'].innerHTML,/GGV → GGV/);
+    assert.match(elements['simulation-tree'].innerHTML,/ggv-link-supplied/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-ggv-linked="ggv"/);
     state.collapsedSimulations.add('group:transient');
     renderSimulationWorkspace();
     assert.match(elements['simulation-tree'].innerHTML,/data-simulation-toggle="group:transient" aria-expanded="false"/);
@@ -687,3 +690,23 @@ vm.runInContext(`
     assert.equal(invalid.accepted,false); assert.equal(requests.length,1);
   })()`,dragContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+{
+  const connectionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,connectionContext);
+  vm.runInContext(`
+    let width=240, sourceVisible=true, titleVisible=true;
+    const rect=top=>({right:width-24,top,height:28});
+    const sourceNode={dataset:{ggvSource:'ggv'},getClientRects:()=>sourceVisible?[1]:[],getBoundingClientRect:()=>rect(100)};
+    const title={dataset:{simulationId:'ggv'},getClientRects:()=>titleVisible?[1]:[],getBoundingClientRect:()=>rect(40)};
+    const input={dataset:{ggvLinked:'ggv',simulationGgv:'lap'},getClientRects:()=>[1],getBoundingClientRect:()=>rect(220)};
+    const svg={setAttribute(){},innerHTML:''};
+    const tree={getBoundingClientRect:()=>({left:0,top:20,width,height:400}),
+      querySelectorAll:selector=>selector==='[data-ggv-source]'?[sourceNode]:selector==='[data-simulation-id]'?[title]:[input]};
+    document={getElementById:id=>id==='simulation-tree'?tree:svg};
+    drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M216 94H232V214H216'));
+    width=300; drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M276 94H292V214H276'));
+    sourceVisible=false; drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M276 34H292V214H276'));
+    titleVisible=false; drawSimulationGgvConnections(); assert.equal(svg.innerHTML,'');
+  `,connectionContext);
+}

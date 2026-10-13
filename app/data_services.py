@@ -1105,6 +1105,26 @@ def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key
         return {**result, "message": "GGV inputs are unavailable. Rerun the source or choose another analysis."}
 
 
+def _inherit_ggv_fidelity(items: list[dict[str, Any]]) -> None:
+    """## Linked Lap Fidelity
+
+    Parameters
+    ----------
+    items : list of dict
+        Workspace analyses whose linked lap configurations are updated in place.
+    """
+    for lap in items:
+        source = next((item for item in items if item["id"] == lap.get("ggv_source_id")
+                       and item["workflow_id"] == "ggv"), None)
+        if lap["workflow_id"] != "lap-qss" or source is None:
+            continue
+        dof = int(yaml.safe_load(source["config_text"]).get("generation", {}).get("model_dof", 3))
+        config = yaml.safe_load(lap["config_text"])
+        config["model_dof"] = dof
+        lap["config_text"] = yaml.safe_dump(config, sort_keys=False)
+        lap["model"] = {**lap.get("model", {}), "model_dofs": [dof], "fidelity": f"{dof} DOF QSS"}
+
+
 def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """## Vehicle Simulations
 
@@ -1128,6 +1148,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
         raise ValueError("The active vehicle changed. Reopen the simulation.")
     path = _vehicle_workspace_dir(key) / "simulations.json"
     items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+    _inherit_ggv_fidelity(items)
     item = next((item for item in items if item["id"] == payload.get("id")), None)
     result: dict[str, Any] = {}
     if action == "create":
@@ -1220,6 +1241,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
             items.remove(item)
     elif action != "list":
         raise ValueError("Unknown simulation action.")
+    _inherit_ggv_fidelity(items)
     if action in {"create", "save", "delete", "set-ggv", "add-visualization", "delete-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
