@@ -556,3 +556,33 @@ vm.runInContext(`
     assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
   })()`, simulationContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+{
+  const treeContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,treeContext);
+  vm.runInContext(`
+    const elements={};
+    document={getElementById:id=>elements[id] ||= {
+      classList:{toggle(){}},setAttribute(){},querySelector(){return {};}
+    }};
+    activeVehicleKey=()=> 'car'; activeVehicleName=()=> 'Car'; savedResults=()=> [];
+    state.simulationWorkspace={vehicle_key:'car',simulations:[
+      {id:'lap',workflow_id:'lap-qss',name:'QSS lap'},
+      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer',visualizations:[{id:'plot',kind:'report',name:'Plots'}]},
+      {id:'ggv',workflow_id:'ggv',name:'GGV'},
+      {id:'rig',workflow_id:'four-post',name:'Rig'}
+    ]};
+    renderSimulationWorkspace();
+    const html=elements['simulation-tree'].innerHTML;
+    const group=id=>html.split('data-analysis-group="'+id+'"')[1].split('</section>')[0];
+    assert.match(group('steady-state'),/data-simulation-branch="ggv"/);
+    assert.match(group('steady-state'),/data-simulation-branch="lap"/);
+    assert.doesNotMatch(group('steady-state'),/data-simulation-branch="step"/);
+    assert.match(group('transient'),/data-simulation-branch="step"/);
+    assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
+    assert.match(group('four-post'),/data-simulation-branch="rig"/);
+    state.collapsedSimulations.add('group:transient');
+    renderSimulationWorkspace();
+    assert.match(elements['simulation-tree'].innerHTML,/data-simulation-toggle="group:transient" aria-expanded="false"/);
+  `,treeContext);
+}

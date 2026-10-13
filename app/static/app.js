@@ -4235,13 +4235,14 @@ async function openSimulation(id) {
   setView("standard");
 }
 
-async function showSimulationCatalog() {
+async function showSimulationCatalog(group = activeSimulationGroup) {
   state.selectedVisualizationId = null;
   state.simulationChildEditor = false;
   await saveSimulationEdits();
   state.selectedSimulationId = null;
   state.simModalOpen = false;
   state.simulationCatalogOpen = true;
+  activeSimulationGroup = group;
   setView("standard");
 }
 
@@ -4425,6 +4426,11 @@ function mountSimulationWorkspace() {
     });
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
+    const group = event.target.closest("[data-simulation-add-group]");
+    if (group) {
+      workspaceAction(() => showSimulationCatalog(group.dataset.simulationAddGroup));
+      return;
+    }
     const add = event.target.closest("[data-simulation-add-child]");
     if (add) {
       workspaceAction(() => addSimulationVisualization(add.dataset.simulationAddChild));
@@ -4499,7 +4505,16 @@ function renderSimulationWorkspace() {
   if (!tree) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
-  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + (simulations || []).map(item => {
+  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
+    const groupId = `group:${group.id}`;
+    const expanded = !state.collapsedSimulations.has(groupId);
+    return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
+      <div class="simulation-tree-row">
+        <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${groupId}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${group.label}">${simulationTreeIcon("chevron")}</button>
+        <button type="button" class="simulation-tree-item simulation-analysis-label" data-simulation-toggle="${groupId}" aria-expanded="${expanded}">${group.label}</button>
+        <button type="button" class="simulation-tree-add" data-simulation-add-group="${group.id}" aria-label="Add ${group.label.toLowerCase()} analysis" title="Add analysis">+</button>
+      </div>
+      <div class="simulation-tree-children"${expanded ? "" : " hidden"}>${(simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id).map(item => {
     const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id).slice(0, 1);
     const expanded = !state.collapsedSimulations.has(item.id);
     const selected = state.view === "standard" && state.simModalOpen && item.id === state.selectedSimulationId;
@@ -4516,12 +4531,13 @@ function renderSimulationWorkspace() {
         <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
-        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>${escapeHtml(SIMULATION_GROUPS.find(group => group.id === simulationAnalysisGroup({id: item.workflow_id}))?.label || "Setup")} setup</span></button>
+        <button type="button" class="simulation-tree-run ${selected ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
         ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
         ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
         ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span></button>`).join("")}
       </div>
     </div>`;
+      }).join("")}</div></section>`;
   }).join("") + "</div>";
   for (const [id, label, icon, selected] of [
     ["simulation-saved-runs", "Saved runs", "report", state.view === "studies" && !state.selectedSimulationId],
@@ -4717,6 +4733,7 @@ async function configureSimulationWorkflow(workflowId) {
   const count = (state.simulationWorkspace?.simulations || []).filter(item => item.workflow_id === workflowId).length;
   const payload = await simulationRequest("create", {workflow_id: workflowId,
     name: `${simWorkflowMeta(workflow).title || workflow.label}${count ? ` ${count + 1}` : ""}`});
+  state.collapsedSimulations.delete(`group:${simulationAnalysisGroup(workflow)}`);
   await openSimulation(payload.simulation.id);
 }
 

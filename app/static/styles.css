@@ -4845,6 +4845,9 @@ summary:focus-visible {
 .simulation-tree-root { display: flex; align-items: center; gap: 6px; padding: 4px; font-size: 12px; }
 .simulation-tree-root strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .simulation-tree-children { margin-left: 11px; border-left: 1px solid var(--line); }
+.simulation-tree-children[hidden] { display: none; }
+.simulation-analysis-label { font-weight: 600; }
+.simulation-analysis-group > .simulation-tree-children { margin-left: 9px; }
 .simulation-tree-row { display: flex; align-items: center; min-width: 0; }
 .simulation-tree-toggle, .simulation-tree-spacer { width: 18px; flex: 0 0 18px; }
 .simulation-tree-toggle {
