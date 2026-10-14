@@ -17,7 +17,7 @@ model_14dof = vehicle.model(14)                               # 14DOF transient
 trim = vehicle.steady_state(14, speed_mps=12.0)              # QSS trim at 12 m/s
 ```
 
-The vehicle definition and kinematics lookup are built once and shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
+The vehicle definition and kinematics cache are shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
 transient solvers are exposed by `engines.dynpy`.
 
 ## Fidelity ladder
@@ -123,28 +123,20 @@ but remains valid when the 3D wishbone pivot axes are swept and a simple 2D
 hardpoint projection is not. Left/right geometry is mirrored at the lookup
 boundary; longitudinal coefficients retain their axle sign.
 
-Two interchangeable backends are available:
+The app selects cached KinPy evaluation automatically. Front corners use a
+jounce/rack grid that fills as a run visits new regions. The 3 DOF model stays
+on the zero-jounce steering row. Rear corners use jounce curves. Each front
+cell is checked against an exact midpoint solve before interpolation. Failed
+checks and travel outside the grid use the direct solve. Contact positions
+and their jounce derivatives share the same interpolation polynomial.
 
-- `lookup` (default) interpolates precomputed jounce curves at zero rack travel.
-  At nonzero rack travel it uses direct KinPy solves for the coupled pose and
-  its contact-patch derivative. Steered evaluations therefore cost the same as
-  the nonlinear backend.
-- `nonlinear` solves each corner and the centered contact-patch derivative
-  inside every force evaluation. It is intended for short correlation runs and
-  as the accuracy reference for choosing a lookup grid.
-
-Run the repeatable trade study or a short exact-kinematics transient with:
+The Python API retains `nonlinear` evaluation as a correlation reference.
+The existing benchmark covers zero-rack travel curves:
 
 ```bash
 make reduced-kinematics-benchmark
 make reduced-eval REDUCED_KINEMATICS=nonlinear
 ```
-
-On the default vehicle, the 49-point lookup built in about 0.67 s and differed
-from off-grid nonlinear solutions by at most 2.25 micrometers at the contact
-patch, 0.00014 degrees camber, 0.00010 degrees toe, and `4.6e-6` in an
-instant-link coefficient. These errors describe the zero-rack lookup. Steered
-evaluations now use direct solves with both backends. The zero-rack lookup retains 49 points.
 
 Spring/damper and stabilizer-bar forces remain a separate elastic path. Spring
 and damper tables are projected through the nominal geometry-derived motion
@@ -291,9 +283,10 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
 
 ## Current reduction limits
 
-- The fast lookup remains one-dimensional in jounce. Steered poses use direct
-  KinPy solves. Left and right corners have independent travel, but their
-  hardpoints still come from mirrored axle geometry.
+- Left and right corners have independent travel and opposite rack inputs,
+  but their hardpoints still come from mirrored axle geometry. Midpoint checks
+  limit interpolation error locally, but do not prove an error bound throughout
+  every grid cell.
 - Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.

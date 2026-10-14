@@ -639,8 +639,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("ramp_end_time_s", "Ramp end (then hold)", kind="number", group="Input", unit="s"),
             _field("stop_time_s", "Simulation end", kind="number", group="Run", unit="s"),
             _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
-            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
-                   choices=("lookup", "nonlinear")),
         ),
     ),
     "reduced-step-steer": ConfigSpec(
@@ -658,8 +656,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("rise_time_s", "Rise time", kind="number", group="Input", unit="s"),
             _field("stop_time_s", "Duration", kind="number", group="Run", unit="s"),
             _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
-            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
-                   choices=("lookup", "nonlinear")),
         ),
     ),
     **{

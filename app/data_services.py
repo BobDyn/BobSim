@@ -369,6 +369,11 @@ def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
                 data.pop(section, None)
             _write_yaml_config(path, data)
             raw = path.read_text(encoding="utf-8")
+    if spec.id in {"reduced-ramp-steer", "reduced-step-steer"} and isinstance(data, dict):
+        if data.get("kinematics_mode") != "lookup":
+            data["kinematics_mode"] = "lookup"
+            _write_yaml_config(path, data)
+            raw = path.read_text(encoding="utf-8")
     if spec.id == "reduced-ramp-steer" and isinstance(data, dict):
         data.setdefault("ramp_end_time_s", data["stop_time_s"])
     return path, raw, data

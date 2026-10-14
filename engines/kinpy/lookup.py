@@ -154,16 +154,17 @@ class AxleKinematicLookup:
 
     def at(self, jounce_m: float) -> AxleKinematicState:
         lower, upper, fraction = _interpolation_bracket(self.jounce_m, jounce_m)
+        contact, tangent = _hermite_contact(
+            np.asarray(self.contact_patch_offset_m[lower]), np.asarray(self.contact_patch_offset_m[upper]),
+            np.asarray(self.contact_patch_tangent[lower]), np.asarray(self.contact_patch_tangent[upper]),
+            self.jounce_m[upper] - self.jounce_m[lower], fraction,
+        )
         return AxleKinematicState(
-            contact_patch_offset_m=_lerp_vector(
-                self.contact_patch_offset_m, lower, upper, fraction
-            ),
+            contact_patch_offset_m=_tuple3(contact),
             wheel_center_offset_m=_lerp_vector(
                 self.wheel_center_offset_m, lower, upper, fraction
             ),
-            contact_patch_tangent=_lerp_vector(
-                self.contact_patch_tangent, lower, upper, fraction
-            ),
+            contact_patch_tangent=_tuple3(tangent),
             camber_rad=_lerp_scalar(self.camber_rad, lower, upper, fraction),
             toe_rad=_lerp_scalar(self.toe_rad, lower, upper, fraction),
             caster_rad=_lerp_scalar(self.caster_rad, lower, upper, fraction),
@@ -184,6 +185,7 @@ class DoubleWishboneKinematicLookup:
     front: AxleKinematicLookup
     rear: AxleKinematicLookup
     nonlinear: NonlinearDoubleWishboneKinematics
+    steering: _SteeredCornerLookup
     mode: KinematicsMode = "lookup"
 
     @classmethod
@@ -199,10 +201,12 @@ class DoubleWishboneKinematicLookup:
         if sample_count < 5 or sample_count % 2 == 0:
             raise ValueError("sample_count must be an odd integer of at least five.")
         grid = np.linspace(-travel_limit_m, travel_limit_m, sample_count)
+        nonlinear = NonlinearDoubleWishboneKinematics(vehicle)
         return cls(
             front=_derive_axle_lookup(vehicle, "front", grid),
             rear=_derive_axle_lookup(vehicle, "rear", grid),
-            nonlinear=NonlinearDoubleWishboneKinematics(vehicle),
+            nonlinear=nonlinear,
+            steering=_SteeredCornerLookup(nonlinear, tuple(float(value) for value in grid)),
         )
 
     def at(self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0) -> VehicleKinematicState:
@@ -220,16 +224,21 @@ class DoubleWishboneKinematicLookup:
         VehicleKinematicState
             Wheel poses and contact-patch tangents at fixed rack displacement.
         """
-        if rack_displacement_m != 0.0:
-            return self.nonlinear.at(jounce_m, rack_displacement_m)
+        if not math.isfinite(rack_displacement_m):
+            raise ValueError("Rack displacement must be finite.")
         jounce = _validate_jounce(jounce_m)
         return _assemble_vehicle_state(
             jounce,
-            self.front.at(float(jounce[0])),
-            self.front.at(float(jounce[1])),
-            self.rear.at(float(jounce[2])),
-            self.rear.at(float(jounce[3])),
+            self.steering.at(float(jounce[0]), rack_displacement_m),
+            self.steering.at(float(jounce[1]), -rack_displacement_m),
+            self._rear_at(float(jounce[2])),
+            self._rear_at(float(jounce[3])),
         )
+
+    def _rear_at(self, jounce_m: float) -> AxleKinematicState:
+        if not self.rear.jounce_m[0] <= jounce_m <= self.rear.jounce_m[-1]:
+            return self.nonlinear._solve("rear", jounce_m)
+        return self.rear.at(jounce_m)
 
     def rack_from_steering(self, steering_rad: float) -> float:
         """Convert nominal mean front-wheel steer using the KinPy assembly.
@@ -244,7 +253,7 @@ class DoubleWishboneKinematicLookup:
         float
             Lateral rack displacement in meters.
         """
-        return self.nonlinear.rack_from_steering(steering_rad)
+        return self.steering.rack_from_steering(steering_rad)
 
     def instant_links_at(
         self, jounce_m: ArrayLike, rack_displacement_m: float = 0.0,
@@ -355,6 +364,146 @@ class NonlinearDoubleWishboneKinematics:
             - np.asarray(below.contact_patch, dtype=float)
         ) / (2.0 * step)
         return _state_from_solution(corner, points, tangent)
+
+
+class _SteeredCornerLookup:
+    """Lazy front-corner grid with exact fallback for unverified cells.
+
+    Parameters
+    ----------
+    nonlinear : NonlinearDoubleWishboneKinematics
+        Exact geometry solver used for grid samples and cell checks.
+    jounce : tuple[float, ...]
+        Increasing travel samples, including zero, in meters.
+    """
+
+    def __init__(self, nonlinear: NonlinearDoubleWishboneKinematics, jounce: tuple[float, ...]) -> None:
+        self.nonlinear = nonlinear
+        self.jounce = jounce
+        self.rack_step_m = 0.0005
+        self._node = lru_cache(maxsize=4096)(self._solve_node)
+        self._cell_valid = lru_cache(maxsize=2048)(self._validate_cell)
+        self.rack_from_steering = lru_cache(maxsize=512)(self._rack_from_steering)
+
+    def _rack_from_steering(self, steering_rad: float) -> float:
+        if not math.isfinite(steering_rad):
+            raise ValueError("Steering angle must be finite.")
+        if steering_rad == 0.0:
+            return 0.0
+
+        def residual(rack: float) -> float:
+            return 0.5 * (self.at(0.0, rack).toe_rad - self.at(0.0, -rack).toe_rad) - steering_rad
+
+        result = root_scalar(residual, x0=0.0, x1=1e-4, xtol=1e-11)
+        if not result.converged or abs(residual(result.root)) > 1e-8:
+            raise ValueError("Could not solve rack displacement for requested steering.")
+        return float(result.root)
+
+    def _solve_node(self, jounce_index: int, rack_index: int) -> FloatArray:
+        return _state_array(self.nonlinear._solve(
+            "front", self.jounce[jounce_index], rack_index * self.rack_step_m,
+        ))
+
+    def _validate_cell(self, lower: int, upper: int, rack_index: int) -> bool:
+        try:
+            estimate = self._interpolate(lower, upper, rack_index, 0.5, 0.5)
+            exact = _state_array(self.nonlinear._solve(
+                "front", 0.5 * (self.jounce[lower] + self.jounce[upper]),
+                (rack_index + 0.5) * self.rack_step_m,
+            ))
+        except ValueError:
+            return False
+        # Validate positions, tangents, angles and lever arms in their native SI units.
+        tolerance = np.array([1e-5] * 6 + [1e-4] * 3 + [2e-5] * 4 + [1e-5] * 2)
+        return bool(np.all(np.abs(estimate - exact) <= tolerance))
+
+    def at(self, jounce_m: float, rack_m: float) -> AxleKinematicState:
+        """Evaluate one corner from a checked cell or the exact solver.
+
+        Parameters
+        ----------
+        jounce_m : float
+            Corner jounce in meters.
+        rack_m : float
+            Rack displacement in meters, signed for the left-corner geometry.
+
+        Returns
+        -------
+        AxleKinematicState
+            Corner pose and contact-motion tangent at fixed rack displacement.
+        """
+        if not self.jounce[0] <= jounce_m <= self.jounce[-1]:
+            return self.nonlinear._solve("front", jounce_m, rack_m)
+        lower, upper, fraction = _interpolation_bracket(self.jounce, jounce_m)
+        if fraction == 0.0:
+            upper = lower
+        rack_index = math.floor(rack_m / self.rack_step_m)
+        rack_fraction = rack_m / self.rack_step_m - rack_index
+        if not self._cell_valid(lower, upper, rack_index):
+            return self.nonlinear._solve("front", jounce_m, rack_m)
+        return _array_state(self._interpolate(lower, upper, rack_index, fraction, rack_fraction))
+
+    def _interpolate(
+        self, lower: int, upper: int, rack_index: int, fraction: float, rack_fraction: float,
+    ) -> FloatArray:
+        low = self._node(lower, rack_index) * (1.0 - rack_fraction) + self._node(lower, rack_index + 1) * rack_fraction
+        high = self._node(upper, rack_index) * (1.0 - rack_fraction) + self._node(upper, rack_index + 1) * rack_fraction
+        result = low * (1.0 - fraction) + high * fraction
+        result[:3], result[6:9] = _hermite_contact(
+            low[:3], high[:3], low[6:9], high[6:9], self.jounce[upper] - self.jounce[lower], fraction,
+        )
+        return result
+
+
+def _hermite_contact(
+    lower: FloatArray, upper: FloatArray, lower_tangent: FloatArray, upper_tangent: FloatArray,
+    width: float, fraction: float,
+) -> tuple[FloatArray, FloatArray]:
+    """Interpolate contact position and its consistent jounce derivative.
+
+    Parameters
+    ----------
+    lower, upper : FloatArray
+        Contact positions at the bounding jounce samples, in meters.
+    lower_tangent, upper_tangent : FloatArray
+        Contact-position derivatives with respect to jounce at those samples.
+    width : float
+        Separation of the jounce samples, in meters.
+    fraction : float
+        Position between the samples, from zero to one.
+
+    Returns
+    -------
+    tuple[FloatArray, FloatArray]
+        Contact position and its derivative with respect to jounce.
+    """
+    if width == 0.0:
+        return lower, lower_tangent
+    t = fraction
+    position = (
+        (2*t**3 - 3*t**2 + 1)*lower + (t**3 - 2*t**2 + t)*width*lower_tangent
+        + (-2*t**3 + 3*t**2)*upper + (t**3 - t**2)*width*upper_tangent
+    )
+    tangent = (
+        (6*t**2 - 6*t)*(lower - upper)/width
+        + (3*t**2 - 4*t + 1)*lower_tangent + (3*t**2 - 2*t)*upper_tangent
+    )
+    return position, tangent
+
+
+def _state_array(state: AxleKinematicState) -> FloatArray:
+    return np.asarray((
+        *state.contact_patch_offset_m, *state.wheel_center_offset_m, *state.contact_patch_tangent,
+        state.camber_rad, state.toe_rad, state.caster_rad, state.kpi_rad,
+        state.mechanical_trail_m, state.scrub_radius_m,
+    ))
+
+
+def _array_state(values: FloatArray) -> AxleKinematicState:
+    return AxleKinematicState(
+        _tuple3(values[:3]), _tuple3(values[3:6]), _tuple3(values[6:9]),
+        *(float(value) for value in values[9:]),
+    )
 
 
 def create_kinematics(
