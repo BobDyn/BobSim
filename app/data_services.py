@@ -1228,7 +1228,7 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
     Parameters
     ----------
     action : str
-        List, create, load, save or delete a simulation, or edit its visualizations.
+        List, create, load, save, rename or delete a simulation, or edit its visualizations.
     payload : dict[str, Any] | None
         Simulation ID, workflow and name supplied by the editor.
 
@@ -1305,6 +1305,10 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             item["baseline_run_id"] = run_id
         else:
             result["comparison"] = _simulation_comparison(item, runs, payload.get("run_id"))
+    elif action == "rename":
+        if item is None:
+            raise ValueError("Simulation not found for this vehicle.")
+        item["name"] = str(payload.get("name") or item["name"]).strip()[:120] or item["name"]
     elif action == "set-ggv":
         if item is None or item["workflow_id"] != "lap-qss":
             raise ValueError("GGV connections require a QSS lap analysis.")
@@ -1407,8 +1411,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     _inherit_ggv_fidelity(items)
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
-    if action in {"add-analysis", "remove-analysis", "create", "save", "delete", "duplicate", "set-baseline", "set-ggv",
-                  "add-visualization", "delete-visualization", "update-visualization"}:
+    if action in {"add-analysis", "remove-analysis", "create", "save", "rename", "delete", "duplicate", "set-baseline",
+                  "set-ggv", "add-visualization", "delete-visualization", "update-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)

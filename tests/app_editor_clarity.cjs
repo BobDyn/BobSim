@@ -620,10 +620,12 @@ vm.runInContext(`
     refreshSelectedSimConfig=async()=>{};
     refreshStatus=async()=>{};
     setView=view=>{state.view=view;};
+    const runLogMenu={open:false};
+    document.getElementById=()=>runLogMenu;
     await openSimulation('ggv-test');
     assert.equal(state.selectedSimulationId,'ggv-test');
     assert.equal(state.selectedJobId,'job');
-    assert.equal(state.activeSimTab,'jobs');
+    assert.equal(runLogMenu.open,true);
     assert.equal(state.simModalOpen,true);
     assert.equal(state.view,'standard');
     assert.deepEqual(requests,['/api/jobs']);
@@ -719,7 +721,7 @@ vm.runInContext(`
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
-      closest:selector=>selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
+      closest:selector=>selector==='.simulation-tree-runs' ? null : selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
         : {dataset:{analysisGroup:group},querySelector:()=>trigger}
     }});
     for (const group of ['kinematic','steady-state','transient']) {
@@ -742,6 +744,8 @@ vm.runInContext(`
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','lap','signals','delete']);
     rightClick('transient','maneuver');
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','replay','signals','delete']);
+    events['tree:contextmenu']({preventDefault(){},target:{closest:selector=>selector==='.simulation-tree-runs' ? {} : null}});
+    assert.equal(menu.hidden,true,'simulation children have no context menu');
   `,menuContext);
 }
 
@@ -872,3 +876,50 @@ for (const [value, scale, display, edited, expected] of [
   assert.ok(Math.abs(collectScalarValue(input,'number',false)-expected)<1e-12);
 }
 `, ctx);
+
+(async () => {
+  const context=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,context);
+  await vm.runInContext(`(async()=>{
+    const elements={};
+    document.getElementById=id=>elements[id] ||= {open:true,textContent:'',scrollHeight:100,scrollTop:0,clientHeight:100,classList:{toggle(){}},querySelectorAll:()=>[]};
+    state.selectedSimulationId='other-sim';
+    state.view='setup';
+    state.status={jobs:[{id:'done',label:'Completed',status:'completed',argv:[]},
+      {id:'active',label:'GGV',status:'running',argv:[],simulation:{id:'ggv',name:'Envelope'}}]};
+    const originalLoad=loadJobLog;
+    let logLoads=0; loadJobLog=()=>{logLoads++;};
+    renderRunLog();
+    assert.equal(state.selectedJobId,'active');
+    assert.match(elements['job-list'].innerHTML,/Completed/);
+    assert.match(elements['job-list'].innerHTML,/Envelope/);
+    assert.equal(elements['run-status'].textContent,'GGV · running');
+    elements['run-log-menu'].open=false;
+    renderRunLog();
+    assert.equal(logLoads,1,'closed log does not fetch job output');
+    state.status.jobs=[]; elements['run-log-menu'].open=true;
+    renderRunLog();
+    assert.equal(elements['run-status'].textContent,'');
+    assert.match(elements['job-list'].innerHTML,/No jobs yet/);
+    loadJobLog=originalLoad;
+    let resolve;
+    api=()=>new Promise(done=>{resolve=done;});
+    state.selectedJobId='old';
+    const pending=loadJobLog();
+    state.selectedJobId='new';
+    elements['job-log'].textContent='new output';
+    resolve({log:'stale output'});await pending;
+    assert.equal(elements['job-log'].textContent,'new output','late logs cannot replace a different job');
+    api=async()=>({log:'updated output'});
+    elements['job-log'].scrollHeight=1000; elements['job-log'].scrollTop=100;
+    await loadJobLog();assert.equal(elements['job-log'].scrollTop,100,'reading position survives refresh');
+    const saves=[];
+    state.simulationWorkspace={simulations:[{id:'sim',name:'Original'}]};
+    simulationRequest=async(action,values)=>saves.push({action,...values});
+    renderSimulationWorkspace=()=>{};
+    await renameSimulation('sim','  Changed  ');
+    await renameSimulation('sim','  ');
+    await renameSimulation('sim','Original');
+    assert.deepEqual(saves,[{action:'rename',id:'sim',name:'Changed'}]);
+  })()`,context);
+})().catch(error=>{console.error(error);process.exitCode=1;});

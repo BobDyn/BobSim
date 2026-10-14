@@ -51,6 +51,19 @@
         </details>
       </header>
 
+      <div class="run-status-bar">
+        <details id="run-log-menu" class="model-menu run-log-menu">
+          <summary><span id="run-status" role="status"></span><span>Run log</span></summary>
+          <div class="model-menu-body run-log-body">
+            <div class="panel-heading"><h3>Run log</h3><button id="close-run-log" class="icon-button" type="button" aria-label="Close run log">×</button></div>
+            <div class="run-log-content">
+              <div id="job-list" class="job-list" aria-label="Jobs"></div>
+              <pre id="job-log" class="log-view" tabindex="0" aria-label="Selected job log"></pre>
+            </div>
+          </div>
+        </details>
+      </div>
+
       <main class="workspace">
         <section id="setup-view" class="screen active">
           <div class="screen-head setup-head">
@@ -474,19 +487,12 @@
         <div class="simulation-modal-head">
           <div>
             <span class="context-label">Simulation</span>
-            <h2 id="simulation-modal-title">Configure Simulation</h2>
-            <input id="simulation-instance-name" class="name-input" aria-label="Simulation name" maxlength="120" />
+            <h2 id="simulation-modal-title">Setup</h2>
             <p id="simulation-modal-subtitle"></p>
           </div>
           <div class="simulation-run-actions">
             <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
-            <button id="simulation-modal-close" class="ghost-button danger-button" type="button">Remove simulation</button>
           </div>
-        </div>
-
-        <div class="sim-tabs simulation-modal-tabs">
-          <button class="tab active" data-tab="setup" type="button">Configure</button>
-          <button class="tab" data-tab="jobs" type="button">Run Log</button>
         </div>
 
         <div id="setup-panel" class="panel active">
@@ -501,14 +507,6 @@
           </div>
         </div>
 
-        <div id="jobs-panel" class="panel">
-          <div class="panel-heading">
-            <h3>Jobs</h3>
-            <button id="clear-log-btn" class="ghost-button" type="button">Clear View</button>
-          </div>
-          <div id="job-list" class="job-list"></div>
-          <pre id="job-log" class="log-view"></pre>
-        </div>
       </div>
     </div>
 

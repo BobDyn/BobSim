@@ -80,7 +80,6 @@ const state = {
   toolchainSaving: false,
   toolchainInputsDirty: false,
   toolchainStatusMessage: "",
-  activeSimTab: "setup",
   simModalOpen: false,
   activeStudyTab: "saved",
   simConfigPayload: null,
@@ -894,6 +893,7 @@ function render() {
 }
 
 function renderTopbar() {
+  renderRunLog();
   const toolchainButton = document.getElementById("toolchain-settings-btn");
   if (toolchainButton) {
     const toolchain = openmodelicaToolchain();
@@ -3383,7 +3383,6 @@ async function generateModelicaFromVehicle({ actionKey = "rail-write-mbd" } = {}
     setSaveStatus(`Wrote ${generated.record?.name || "vehicle definition"} to MBD`);
     renderTopbar();
     renderModelicaStack();
-    state.activeSimTab = "setup";
     setView("standard");
   } catch (error) {
     setSaveStatus(error.message);
@@ -4235,10 +4234,30 @@ function renderSimulationOverview() {
   } else {
     const workflow = state.status?.workflows?.find(item => item.id === simulation.workflow_id) || {id: simulation.workflow_id};
     const meta = simWorkflowMeta(workflow);
-    panel.innerHTML = `<header><h2>${escapeHtml(simulation.name)}</h2><p>${escapeHtml(meta.summary)}</p></header>
+    if (document.activeElement?.id === "simulation-instance-name" && document.activeElement.dataset.simulationId === simulation.id) return true;
+    const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+    panel.innerHTML = `<header><h2><input id="simulation-instance-name" data-simulation-id="${escapeHtml(simulation.id)}" aria-label="Simulation name" maxlength="120" value="${escapeHtml(simulation.name)}"${busy ? ' disabled title="Simulation names are locked while a job runs."' : ''}></h2><p>${escapeHtml(meta.summary)}</p></header>
       ${simulationMethodHtml(workflow)}`;
+    const name = document.getElementById("simulation-instance-name");
+    name.onchange = () => {
+      name.value = name.value.trim() || simulation.name;
+      workspaceAction(() => renameSimulation(simulation.id, name.value));
+    };
+    name.onkeydown = event => {
+      if (event.key === "Escape") { name.value = simulation.name; name.blur(); }
+      if (event.key === "Enter") name.blur();
+    };
   }
   return true;
+}
+
+async function renameSimulation(id, name) {
+  const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+  try {
+    if (name.trim() && name.trim() !== simulation?.name) await simulationRequest("rename", {id, name: name.trim()});
+  } finally {
+    renderSimulationWorkspace();
+  }
 }
 
 async function openSimulation(id) {
@@ -4253,9 +4272,9 @@ async function openSimulation(id) {
     state.simulationGgvEditor = false;
     state.selectedWorkflowId = running.workflow_id;
     state.selectedJobId = running.id;
+    document.getElementById("run-log-menu").open = true;
     state.simulationCatalogOpen = false;
     state.simModalOpen = true;
-    state.activeSimTab = "jobs";
     await refreshSelectedSimConfig();
     await refreshStatus();
     setView("standard");
@@ -4272,7 +4291,6 @@ async function openSimulation(id) {
   acceptCleanSimConfigPayload();
   state.simulationCatalogOpen = false;
   state.simModalOpen = true;
-  state.activeSimTab = "setup";
   await refreshStatus();
   setView("standard");
 }
@@ -4521,9 +4539,9 @@ function wireSimulationContextMenu() {
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
   };
-  const open = (id, x, y, element, group = false, runId = null) => {
+  const open = (id, x, y, element, group = false) => {
     target = id;
-    targetRunId = runId || savedResults().find(run => run.simulation?.id === id && run.vehicle_key === activeVehicleKey())?.id;
+    targetRunId = savedResults().find(run => run.simulation?.id === id && run.vehicle_key === activeVehicleKey())?.id;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
@@ -4543,13 +4561,17 @@ function wireSimulationContextMenu() {
     menu.querySelector("button:not([hidden])").focus();
   };
   tree.addEventListener("contextmenu", event => {
+    if (event.target.closest(".simulation-tree-runs")) {
+      event.preventDefault();
+      close();
+      return;
+    }
     const branch = event.target.closest("[data-simulation-branch]");
     const group = event.target.closest("[data-analysis-group]");
     const root = event.target.closest(".simulation-tree-root");
     if (!branch && !group && !root) return;
     event.preventDefault();
-    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"), false,
-      event.target.closest("[data-simulation-run]")?.dataset.simulationRun);
+    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
     else if (group) open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), true);
     else open(null, event.clientX, event.clientY, document.getElementById("add-simulation-btn"), true);
   });
@@ -4609,6 +4631,7 @@ async function addSimulationVisualization(id, kind = null) {
 }
 
 function mountSimulationWorkspace() {
+  let overviewClickTimer;
   wireSimulationCatalog();
   wireSimulationSplitter();
   wireSimulationGgvDrag();
@@ -4628,10 +4651,27 @@ function mountSimulationWorkspace() {
   document.getElementById("simulation-captures").addEventListener("click", () => workspaceAction(async () => {
     await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
   }));
-  document.getElementById("simulation-instance-name").addEventListener("change", event => workspaceAction(async () => {
-    await simulationRequest("save", {id: state.selectedSimulationId, name: event.target.value});
-    renderSimulationWorkspace();
-  }));
+  document.getElementById("simulation-tree").addEventListener("dblclick", event => {
+    const button = event.target.closest("[data-simulation-overview]");
+    clearTimeout(overviewClickTimer);
+    if (!button || (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status))) return;
+    const id = button.dataset.simulationOverview;
+    const simulation = state.simulationWorkspace.simulations.find(item => item.id === id);
+    const input = document.createElement("input");
+    input.className = "simulation-tree-name";
+    input.setAttribute("aria-label", "Simulation name");
+    input.maxLength = 120;
+    input.value = simulation.name;
+    button.replaceWith(input);
+    input.focus();
+    input.select();
+    input.onclick = event => event.stopPropagation();
+    input.onkeydown = event => {
+      if (event.key === "Escape") { input.value = simulation.name; input.blur(); }
+      if (event.key === "Enter") input.blur();
+    };
+    input.onblur = () => workspaceAction(() => renameSimulation(id, input.value));
+  });
   document.getElementById("simulation-child-close").addEventListener("click", () => workspaceAction(() => openSimulation(state.selectedSimulationId)));
   document.getElementById("simulation-visualization-form").addEventListener("submit", event => {
     event.preventDefault();
@@ -4646,6 +4686,7 @@ function mountSimulationWorkspace() {
     });
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
+    clearTimeout(overviewClickTimer);
     if (event.target.closest("#add-simulation-btn")) { workspaceAction(showAnalysisPicker); return; }
     const ggv = event.target.closest("[data-simulation-ggv]");
     if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
@@ -4712,8 +4753,10 @@ function mountSimulationWorkspace() {
       state.simModalOpen = false;
       setView("studies");
     });
-    else if (simulation) workspaceAction(() => simulation.dataset.simulationOverview
-      ? openSimulationOverview(simulation.dataset.simulationId) : openSimulation(simulation.dataset.simulationId));
+    else if (simulation?.dataset.simulationOverview) {
+      clearTimeout(overviewClickTimer);
+      overviewClickTimer = setTimeout(() => workspaceAction(() => openSimulationOverview(simulation.dataset.simulationId)), 250);
+    } else if (simulation) workspaceAction(() => openSimulation(simulation.dataset.simulationId));
   });
 }
 
@@ -4734,7 +4777,7 @@ function simulationTreeIcon(kind) {
 
 function renderSimulationWorkspace() {
   const tree = document.getElementById("simulation-tree");
-  if (!tree) return;
+  if (!tree || document.activeElement?.classList?.contains("simulation-tree-name")) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
   const enabled = new Set(state.simulationWorkspace?.vehicle_key === activeVehicleKey() ? state.simulationWorkspace.analysis_groups || [] : []);
@@ -4808,22 +4851,11 @@ function renderStandard() {
   const nextStep = document.getElementById("simulation-next-btn");
   nextStep.hidden = notice.hidden;
   nextStep.textContent = "Go to setup";
-  syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
   renderJobs();
   renderSimulationModal(workflow);
   renderSimulationWorkspace();
-}
-
-function syncSimTabs() {
-  if (!["setup", "jobs"].includes(state.activeSimTab)) state.activeSimTab = "setup";
-  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((item) => {
-    item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
-  });
-  document.querySelectorAll(".panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `${state.activeSimTab}-panel`);
-  });
 }
 
 const RESPONSE_MODEL_VARIANTS = {
@@ -4924,7 +4956,6 @@ function renderWorkflows() {
 async function selectStandardWorkflow(workflowId) {
   if (!workflowId || workflowId === state.selectedWorkflowId) return;
   state.selectedWorkflowId = workflowId;
-  state.activeSimTab = "setup";
   state.simConfigPayload = null;
   renderStandard();
   await refreshSelectedSimConfig();
@@ -5004,13 +5035,8 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
   const meta = simWorkflowMeta(workflow);
-  if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
-  const name = document.getElementById("simulation-instance-name");
-  if (name && document.activeElement !== name) name.value = selectedSimulation()?.name || "";
-  if (name) name.disabled = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
-  if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
-    ? "Run log"
-    : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
+  if (title) title.textContent = `${selectedSimulation()?.name || meta.title || workflow?.label || "Simulation"} · Setup`;
+  if (subtitle) subtitle.textContent = workflowModelLabel(workflow);
   if (state.simModalOpen && workflow?.config_id && state.simConfigPayload?.id !== workflow.config_id) {
     ensureSelectedSimConfigLoaded();
   }
@@ -7230,8 +7256,6 @@ function csvTable(data) {
 }
 
 function renderJobs() {
-  const jobs = (state.status?.jobs || []).filter(job => !state.selectedSimulationId || job.simulation?.id === state.selectedSimulationId);
-  const list = document.getElementById("job-list");
   const runButton = document.getElementById("run-workflow-btn");
   const workflow = selectedWorkflow();
   const busy = (state.status?.jobs || []).find(job => ["queued", "running"].includes(job.status));
@@ -7250,18 +7274,31 @@ function renderJobs() {
   prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
   prepare.disabled = !canWriteMbd();
   prepare.title = prepare.disabled ? mbdWriteDisabledReason() : "";
+  renderRunLog();
+}
+
+function renderRunLog() {
+  const jobs = state.status?.jobs || [];
+  const menu = document.getElementById("run-log-menu");
+  const status = document.getElementById("run-status");
+  const busy = jobs.find(job => ["queued", "running"].includes(job.status));
+  status.textContent = busy ? `${busy.label} · ${busy.status}` : "";
+  status.classList.toggle("running", Boolean(busy));
+  if (!menu.open) return;
+  const list = document.getElementById("job-list");
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
     return;
   }
-  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = jobs[0].id;
+  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = busy?.id || jobs[0].id;
   list.innerHTML = jobs.map(jobItem).join("");
   list.querySelectorAll("[data-job]").forEach((item) => {
-    item.addEventListener("click", async () => {
+    item.addEventListener("click", event => {
+      event.stopPropagation();
       state.selectedJobId = item.dataset.job;
-      await loadJobLog();
-      renderJobs();
+      document.getElementById("job-log").textContent = "";
+      renderRunLog();
     });
   });
   loadJobLog();
@@ -7269,23 +7306,30 @@ function renderJobs() {
 
 function jobItem(job) {
   return `
-    <div class="job-item ${job.id === state.selectedJobId ? "active" : ""}" data-job="${job.id}">
+    <button type="button" class="job-item ${job.id === state.selectedJobId ? "active" : ""}" data-job="${escapeHtml(job.id)}" aria-pressed="${job.id === state.selectedJobId}">
       <div class="job-line">
         <strong>${escapeHtml(job.label)}</strong>
         <span class="job-status ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span>
       </div>
-      <div class="output-meta">${escapeHtml(job.argv.join(" -> "))}</div>
-    </div>
+      <div class="output-meta">${escapeHtml(job.simulation?.name || job.argv.join(" → "))}</div>
+    </button>
   `;
 }
 
 async function loadJobLog(targetId = "job-log") {
-  if (!state.selectedJobId) return;
-  const job = await api(`/api/jobs/${state.selectedJobId}`);
+  const id = state.selectedJobId;
+  if (!id) return;
   const log = document.getElementById(targetId);
   if (!log) return;
-  log.textContent = job.log || "";
-  log.scrollTop = log.scrollHeight;
+  try {
+    const job = await api(`/api/jobs/${id}`);
+    if (id !== state.selectedJobId) return;
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    log.textContent = job.log || "";
+    if (atEnd) log.scrollTop = log.scrollHeight;
+  } catch (error) {
+    if (id === state.selectedJobId) log.textContent = error.message;
+  }
 }
 
 async function startSelectedWorkflow() {
@@ -7308,12 +7352,12 @@ async function startSelectedWorkflow() {
       body: JSON.stringify({simulation_id: state.selectedSimulationId, vehicle_key: activeVehicleKey()}),
     });
     state.selectedJobId = job.id;
-    state.activeSimTab = "jobs";
+    document.getElementById("run-log-menu").open = true;
     state.simModalOpen = true;
     state.status = await api("/api/status");
     renderStandard();
   } catch (error) {
-    state.activeSimTab = "jobs";
+    document.getElementById("run-log-menu").open = true;
     state.simModalOpen = true;
     state.status = await api("/api/status").catch(() => state.status);
     renderStandard();
@@ -13914,7 +13958,6 @@ function wireEvents() {
     importVehicleFile(event.target.files?.[0]);
     event.target.value = "";
   });
-  document.getElementById("simulation-modal-close").addEventListener("click", () => workspaceAction(() => removeSimulation()));
   document.getElementById("toolchain-settings-btn").addEventListener("click", openModelicaToolchain);
   document.getElementById("toolchain-close-btn").addEventListener("click", closeModelicaToolchain);
   document.getElementById("toolchain-save-btn").addEventListener("click", saveOpenModelicaToolchain);
@@ -14063,9 +14106,11 @@ function wireEvents() {
     state.selectedStudyConfigSource = event.target.value;
     renderStudyConfigLibrary();
   });
-  document.getElementById("clear-log-btn").addEventListener("click", () => {
-    document.getElementById("job-log").textContent = "";
-  });
+  document.getElementById("run-log-menu").addEventListener("toggle", renderRunLog);
+  document.getElementById("close-run-log").onclick = () => {
+    document.getElementById("run-log-menu").open = false;
+    document.querySelector("#run-log-menu summary").focus();
+  };
   document.getElementById("clear-study-log-btn")?.addEventListener("click", () => {
     document.getElementById("study-job-log").textContent = "";
   });
@@ -14102,12 +14147,6 @@ function wireEvents() {
       await saveSimulationEdits();
       setView(button.dataset.view);
     }));
-  });
-  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeSimTab = button.dataset.tab;
-      syncSimTabs();
-    });
   });
   document.querySelectorAll(".study-tab").forEach((button) => {
     button.addEventListener("click", () => {

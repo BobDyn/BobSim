@@ -102,6 +102,20 @@ def test_named_simulations_keep_independent_configs_and_vehicle_ownership(archiv
         app.simulation_workspace('create', {'workflow_id': 'study', 'vehicle_key': 'original'})
 
 
+def test_rename_keeps_saved_simulation_config(archive_workspace):
+    _, active = archive_workspace
+    simulation = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    original = active.read_text()
+    active.write_text('simulation:\n  stop_time: 12\n')
+    renamed = app.simulation_workspace('rename', {'id': simulation['id'], 'name': ' Renamed '})
+    assert renamed['simulation']['name'] == 'Renamed'
+    assert 'stop_time: 12' in active.read_text()
+    app.simulation_workspace('load', {'id': simulation['id']})
+    assert active.read_text() == original
+    with pytest.raises(ValueError, match='not found'):
+        app.simulation_workspace('rename', {'id': 'missing', 'name': 'Other'})
+
+
 def test_named_simulation_run_metadata_survives_edits_and_removal(archive_workspace):
     root, _ = archive_workspace
     simulation = app.simulation_workspace('create', {'workflow_id': 'study', 'name': 'Initial'})['simulation']
