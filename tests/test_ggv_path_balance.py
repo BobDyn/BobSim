@@ -7,6 +7,7 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from engines.dynpy import Vehicle, solve_steady_state
+from engines.dynpy.qss import _algebraic_residual
 from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit, _solve_racing_trim, solve_ax_limit
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
@@ -68,7 +69,7 @@ def test_ggv_pure_corner_matches_independent_constant_radius_trim(vehicle, dof):
 
 @pytest.mark.parametrize("dof", (3, 6, 10, 14))
 @pytest.mark.parametrize("mode", ("drive", "brake"))
-def test_ggv_combined_boundary_closes_actual_transient_path_motion(vehicle, dof, mode):
+def test_ggv_combined_boundary_closes_coupled_equilibrium_path_motion(vehicle, dof, mode):
     model = vehicle.model(dof)
     speed, normal_acceleration = 10., 6.
     result = _solve_envelope_limit(
@@ -91,8 +92,11 @@ def test_ggv_combined_boundary_closes_actual_transient_path_motion(vehicle, dof,
             enforce_tire_load_range=True, trim_multistart=False,
         )
     assert result is not None and result.success
-    # This evaluates the ordinary transient force path, without trial tire loads or slips.
-    forward = model.evaluate(result.state, result.inputs)
+    # Invert wheel torque independently at the solved loads, then check load closure.
+    forward = model.evaluate(result.state, result.inputs,
+                             normal_loads_n=result.output.normal_loads_n if model.dof < 14 else None)
+    force_scale = model.parameters.mass_kg * 9.80665 / 4.
+    assert np.linalg.norm(_algebraic_residual(model, result.inputs, forward)) / force_scale <= 1e-5
     acceleration, beta_rate, yaw_rate, world_acceleration = _path_motion(model, result.state, forward)
     np.testing.assert_allclose(
         acceleration, [result.path_longitudinal_acceleration_mps2, normal_acceleration], atol=2e-4,
@@ -147,7 +151,7 @@ def test_ggv_combined_boundary_closes_actual_transient_path_motion(vehicle, dof,
         assert tire.slip_in_fit_range(alpha, slip)
 
 
-def test_near_peak_braking_repairs_locally_without_restarting_grid(vehicle, monkeypatch):
+def test_near_peak_braking_retains_coupled_equilibrium_without_restarting_grid(vehicle, monkeypatch):
     from simulations.envelope.ggv import ggv_generation as ggv
 
     model = vehicle.model(3)
@@ -173,7 +177,10 @@ def test_near_peak_braking_repairs_locally_without_restarting_grid(vehicle, monk
     )
     result = boundaries[-1]
     assert result is not None and np.isfinite(acceleration)
-    forward = model.evaluate(result.state, result.inputs)
+    forward = model.evaluate(result.state, result.inputs,
+                             normal_loads_n=result.output.normal_loads_n if model.dof < 14 else None)
+    force_scale = model.parameters.mass_kg * 9.80665 / 4.
+    assert np.linalg.norm(_algebraic_residual(model, result.inputs, forward)) / force_scale <= 1e-5
     path_acceleration, beta_rate, _, _ = _path_motion(model, result.state, forward)
     np.testing.assert_allclose(path_acceleration, [acceleration, normal_acceleration], atol=2e-4)
     assert beta_rate == pytest.approx(0., abs=2e-5)

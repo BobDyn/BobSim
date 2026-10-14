@@ -612,12 +612,6 @@ def _solve_envelope_limit(
             return None
         seed = trim.unknowns
     guess = np.array([seed.get(name, coast if name == "path_ax_mps2" else 0.) for name in names]) / scale_array
-    if initial_unknowns is not None:
-        # Move off the previous tire peak before changing the lateral demand.
-        guess[2] *= 0.9
-        for index, name in enumerate(names):
-            if name.startswith("slip_"):
-                guess[index] *= 0.9
     guess = np.clip(guess, np.array(bounds)[:, 0], np.array(bounds)[:, 1])
 
     @lru_cache(maxsize=256)
@@ -668,12 +662,22 @@ def _solve_envelope_limit(
     def objective(values: FloatArray) -> float:
         return float(values[-1]) * (1. if mode == "brake" else -1.)
 
-    result = minimize(  # type: ignore[call-overload]
-        objective, guess, method="SLSQP", bounds=bounds,
-        constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
-        options={"ftol": 1e-9, "maxiter": 100},
-    )
-    if not result.success or np.linalg.norm(equality(result.x)) > 1e-5 or np.min(inequality(result.x)) < -1e-7:
+    for attempt in range(2 if initial_unknowns is not None else 1):
+        if attempt:
+            # Back off a tire peak only when direct continuation fails.
+            guess[2] *= .9
+            for index, name in enumerate(names):
+                if name.startswith("slip_"):
+                    guess[index] *= .9
+        result = minimize(  # type: ignore[call-overload]
+            objective, guess, method="SLSQP", bounds=bounds,
+            constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
+            options={"ftol": 1e-9, "maxiter": 100},
+        )
+        if (result.success and np.all(np.isfinite(result.x))
+                and np.linalg.norm(equality(result.x)) <= 1e-5 and np.min(inequality(result.x)) >= -1e-7):
+            break
+    else:
         return None
     state, inputs, output = evaluate(tuple(result.x))
     physical = result.x * scale_array
@@ -683,12 +687,13 @@ def _solve_envelope_limit(
         return None
     unknowns = {**dict(zip(names, map(float, physical))), "steering_rad": steering}
     if model.dof < 14:
-        forward = model.evaluate(state, inputs)
+        # Check the solved load equilibrium, not a static-start iteration's saturation branch.
+        forward = model.evaluate(state, inputs, normal_loads_n=output.normal_loads_n)
         loads_valid = all((tire.fz_min_n <= load <= tire.fz_max_n) if enforce_tire_load_range else load > 0.
                           for tire, load in zip(model.parameters.tires, forward.normal_loads_n))
         if (np.linalg.norm((forward.generalized_acceleration - output.generalized_acceleration)
                            / _residual_scales(model)) > 1e-5
-                or np.linalg.norm(forward.normal_loads_n - output.normal_loads_n) / force_scale > 1e-5
+                or np.linalg.norm(_algebraic_residual(model, inputs, forward)) / force_scale > 1e-5
                 or _tire_state_error(model, inputs, forward) or not loads_valid):
             # The trial equilibrium is on a different force-inversion root.
             # Retain it as a local bracket rather than restarting the full range.
@@ -758,9 +763,10 @@ def _consistent_boundary(
             vehicle, model, trial.state, trial.inputs, trial.output, speed,
         ) >= -1e-7) else None
 
-    step = 0.05
+    # Start at the required boundary precision, avoiding a coarse inward jump and repeated retrims.
+    step = 1e-4
     accepted = None
-    for _ in range(16):
+    while True:
         value = rejected + direction * min(step, abs(interior_bound - rejected))
         accepted = feasible(value)
         if accepted is not None:
@@ -768,8 +774,6 @@ def _consistent_boundary(
         if value == interior_bound:
             return None
         step *= 2.
-    if accepted is None:
-        return None
     interior = value
     for _ in range(20):
         if abs(interior - rejected) <= 1e-4:
@@ -801,12 +805,13 @@ def _solve_ax_limit_qss(
     ax_binary_iterations: int,
     enforce_tire_load_range: bool,
     trim_multistart: bool,
+    initial_unknowns: Mapping[str, float] | None = None,
 ) -> float:
     """Find the QSS boundary with a bounded binary search."""
 
     ax_values = np.asarray(ax_grid, dtype=float)
     lower, upper = float(np.min(ax_values)), float(np.max(ax_values))
-    seed_unknowns: Mapping[str, float] | None = None
+    seed_unknowns = initial_unknowns
 
     def feasible(ax: float) -> bool:
         nonlocal seed_unknowns
@@ -932,10 +937,13 @@ def _solve_racing_trim(
             max_abs_steering_rad=max_abs_steering_rad,
             enforce_tire_load_range=enforce_tire_load_range,
         ):
-            forward = model.evaluate(trim.state, trim.inputs)
+            forward = model.evaluate(
+                trim.state, trim.inputs,
+                normal_loads_n=trim.output.normal_loads_n if model.dof < 14 else None,
+            )
             if (np.linalg.norm((forward.generalized_acceleration - trim.output.generalized_acceleration)
                                / _residual_scales(model)) <= 1e-5
-                    and np.linalg.norm(forward.normal_loads_n - trim.output.normal_loads_n)
+                    and np.linalg.norm(_algebraic_residual(model, trim.inputs, forward))
                         / (model.parameters.mass_kg * G / 4.) <= 1e-5
                     and not _tire_state_error(model, trim.inputs, forward)
                     and _trim_is_racing_feasible(
@@ -1124,7 +1132,7 @@ def generate_ggv(
             )
 
         if config.verbose:
-            print("  Solving lateral limit...", flush=True)
+            print(f"  {speed:.2f} m/s | Solving lateral limit...", flush=True)
         lateral_limit, endpoint_ax = solve_lateral_limit(
             vehicle,
             speed=speed,
@@ -1141,7 +1149,7 @@ def generate_ggv(
                 f"Lateral search bound reached at {speed:g} m/s. Increase ay_max_g to close the envelope."
             )
         if config.verbose:
-            print(f"  Lateral limit = {lateral_limit / G:.3f} g", flush=True)
+            print(f"  {speed:.2f} m/s | Lateral limit = {lateral_limit / G:.3f} g", flush=True)
         ax_accel_pos = np.full_like(ay_positive, np.nan)
         ax_brake_pos = np.full_like(ay_positive, np.nan)
         interior_indices = np.flatnonzero(ay_positive < lateral_limit - 1e-9)
@@ -1156,23 +1164,41 @@ def generate_ggv(
                     grid = np.array([config.ax_search_min_g * G, config.ax_search_max_g * G])
                 boundary = None
                 if reduced_model is not None:
-                    try:
-                        boundary = _solve_envelope_limit(
-                            vehicle, reduced_model, speed=speed, ay=ay, mode=mode,
-                            ax_bounds=(float(grid.min()), float(grid.max())),
-                            max_abs_beta_rad=config.max_abs_beta_rad,
-                            max_abs_steering_rad=config.max_abs_steering_rad,
-                            enforce_tire_load_range=config.enforce_tire_load_range,
-                            initial_unknowns=seeds[mode],
-                        )
-                    except (ValueError, RuntimeError):
-                        pass
+                    candidates = [seeds[mode]]
+                    other = seeds["brake" if mode == "drive" else "drive"]
+                    if other is not None and other != seeds[mode]:
+                        candidates.append(other)
+                    if seeds[mode] is not None:
+                        candidates.append(None)
+                    for candidate in candidates:
+                        try:
+                            boundary = _solve_envelope_limit(
+                                vehicle, reduced_model, speed=speed, ay=ay, mode=mode,
+                                ax_bounds=(float(grid.min()), float(grid.max())),
+                                max_abs_beta_rad=config.max_abs_beta_rad,
+                                max_abs_steering_rad=config.max_abs_steering_rad,
+                                enforce_tire_load_range=config.enforce_tire_load_range,
+                                initial_unknowns=candidate,
+                            )
+                        except (ValueError, RuntimeError):
+                            continue
+                        if boundary is not None and boundary.success:
+                            break
                 if boundary is not None and (boundary.success or not config.trim_multistart):
                     branch[i] = boundary.path_longitudinal_acceleration_mps2 if boundary.success else np.nan
                     seeds[mode] = boundary.unknowns
+                elif reduced_model is not None:
+                    branch[i] = _solve_ax_limit_qss(
+                        vehicle, reduced_model, speed=speed, ay=ay, ax_grid=grid, mode=mode,
+                        max_abs_beta_rad=config.max_abs_beta_rad,
+                        max_abs_steering_rad=config.max_abs_steering_rad,
+                        ax_binary_iterations=config.ax_binary_iterations,
+                        enforce_tire_load_range=config.enforce_tire_load_range,
+                        trim_multistart=config.trim_multistart, initial_unknowns=seeds[mode],
+                    )
                 else:
                     branch[i] = solve_ax_limit(
-                        vehicle, speed=speed, ay=ay, ax_grid=grid, mode=mode, reduced_model=reduced_model,
+                        vehicle, speed=speed, ay=ay, ax_grid=grid, mode=mode,
                         max_abs_beta_rad=config.max_abs_beta_rad,
                         max_abs_steering_rad=config.max_abs_steering_rad,
                         ax_binary_iterations=config.ax_binary_iterations,
@@ -1201,7 +1227,7 @@ def generate_ggv(
                 )
 
                 print(
-                    f"  ay {i + 1:>4}/{len(interior_indices)} "
+                    f"  {speed:.2f} m/s | ay {i + 1:>4}/{len(interior_indices)} "
                     f"({percent:5.1f}%) | "
                     f"ay={ay / G: .3f} g | "
                     f"ax_accel={accel_text:>10} | "
@@ -3094,7 +3120,7 @@ def main() -> None:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    from engines.dynpy import Vehicle
+    from simulations.envelope.ggv.parallel import generate_ggv_from_vehicle
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     config_path = DEFAULT_GGV_CONFIG
@@ -3140,10 +3166,9 @@ def main() -> None:
 
     config = config_to_ggv_config(ggv_report_config)
 
-    reduced_model = Vehicle.from_yaml(vehicle_path).model(config.model_dof)
     print(f"  Engine: DynPy | {config.model_dof} DOF QSS | Runtime: Python")
 
-    envelopes = generate_ggv(vehicle, config, reduced_model=reduced_model)
+    envelopes = generate_ggv_from_vehicle(vehicle_path, config)
 
     report_cfg = ggv_report_config.get("report") or {}
     results_dir = ENVELOPE_DIR / "results"
