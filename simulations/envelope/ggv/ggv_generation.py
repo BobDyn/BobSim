@@ -683,10 +683,11 @@ def _solve_envelope_limit(
                     index = model.dof + corner
                     seed_bounds[index] = (max(bounds[index][0], fraction * tire.fz_min_n / force_scale),
                                           bounds[index][1])
+                # Avoid zero-load stagnation while retaining strict equilibrium checks.
                 interior = minimize(  # type: ignore[call-overload]
                     objective, load_guess, method="SLSQP", bounds=seed_bounds,
                     constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
-                    options={"ftol": 1e-9, "maxiter": 100},
+                    options={"ftol": 1e-7, "maxiter": 100},
                 )
                 if (not interior.success or not np.all(np.isfinite(interior.x))
                         or not np.linalg.norm(equality(interior.x)) <= 1e-5
