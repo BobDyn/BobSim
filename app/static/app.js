@@ -986,7 +986,7 @@ function setActionButton(button, { label, busy = false, busyLabel = label, disab
   button.disabled = Boolean(disabled || busy);
   button.classList.toggle("is-loading", busy);
   button.setAttribute("aria-busy", busy ? "true" : "false");
-  button.title = title || "";
+  button.title = busy ? `${busyLabel} in progress.` : title;
 }
 
 function renderVehicleMenuActions() {
@@ -996,6 +996,7 @@ function renderVehicleMenuActions() {
     busy: state.vehicleSaving && actionBusy("menu-save-vehicle"),
     busyLabel: "Saving",
     disabled: state.vehicleSaving || state.modelicaWriting || !state.vehiclePayload,
+    title: state.vehicleSaving ? "Vehicle save in progress." : state.modelicaWriting ? "MBD preparation in progress." : !state.vehiclePayload ? "No vehicle is loaded." : "",
   });
 }
 
@@ -1055,6 +1056,7 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-load"),
     busyLabel: "Loading",
     disabled: !loadSources.length || startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : !loadSources.length ? "No saved vehicles are available." : "",
   });
 
   const templates = state.vehicleTemplates?.templates || [];
@@ -1069,6 +1071,7 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-create"),
     busyLabel: "Creating",
     disabled: !templates.length || startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : !templates.length ? "No vehicle templates are available." : "",
   });
   const nameInput = document.getElementById("start-vehicle-name");
   if (nameInput && !nameInput.value) nameInput.value = nextVehicleName();
@@ -1078,10 +1081,12 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-import"),
     busyLabel: "Importing",
     disabled: startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : "",
   });
   setActionButton(activeButton, {
     label: "Open vehicle",
     disabled: startBusy || !state.vehiclePayload,
+    title: startBusy ? "A vehicle is being opened or imported." : !state.vehiclePayload ? "No vehicle is loaded." : "",
   });
 }
 
@@ -1199,7 +1204,10 @@ function renderRailActions() {
       busy: state.vehicleSaving && actionBusy("rail-save-vehicle"),
       busyLabel: "Saving",
       disabled: !canSaveVehicle || state.modelicaWriting || state.vehicleSaving,
-      title: state.dirtyVehicle
+      title: state.vehicleSaving ? "Vehicle save in progress."
+        : state.modelicaWriting ? "MBD preparation in progress."
+        : !state.vehiclePayload ? "No vehicle is loaded."
+        : state.dirtyVehicle
         ? "Save active vehicle edits and update the saved config"
         : needsVehicleConfig
         ? "Save this vehicle config"
@@ -1210,7 +1218,7 @@ function renderRailActions() {
       busy: state.modelicaWriting && actionBusy("rail-write-mbd"),
       busyLabel: "Writing",
       disabled: !canWriteMbd() || state.vehicleSaving,
-      title: mbdWriteDisabledReason(),
+      title: state.vehicleSaving ? "Vehicle save in progress." : mbdWriteDisabledReason(),
     });
     return;
   }
@@ -2946,7 +2954,7 @@ function vectorControl(field) {
       ${variableQueue ? `
         <div class="array-queue-actions" aria-label="List controls">
           <button class="array-icon-button" type="button" data-array-action="add-item" aria-label="Add item" title="Add item">+</button>
-          <button class="array-icon-button" type="button" data-array-action="remove-item" aria-label="Remove last item" title="Remove last item"${displayValues.length <= 1 ? " disabled" : ""}>-</button>
+          <button class="array-icon-button" type="button" data-array-action="remove-item" aria-label="Remove last item" title="${displayValues.length <= 1 ? "At least one item is required." : "Remove last item"}"${displayValues.length <= 1 ? " disabled" : ""}>-</button>
         </div>
       ` : ""}
     </div>
@@ -3177,7 +3185,10 @@ function renumberArrayEditor(container) {
   });
   vectorRows.forEach((row) => {
     const removeButton = row.querySelector('[data-array-action="remove-item"]');
-    if (removeButton) removeButton.disabled = vectorRows.length <= 1;
+    if (removeButton) {
+      removeButton.disabled = vectorRows.length <= 1;
+      removeButton.title = removeButton.disabled ? "At least one item is required." : "Remove last item";
+    }
   });
 
   const matrixRows = Array.from(container.querySelectorAll("[data-matrix-row]"));
@@ -3193,7 +3204,10 @@ function renumberArrayEditor(container) {
   });
   matrixRows.forEach((row) => {
     const removeButton = row.querySelector('[data-array-action="remove-row"]');
-    if (removeButton) removeButton.disabled = matrixRows.length <= 1;
+    if (removeButton) {
+      removeButton.disabled = matrixRows.length <= 1;
+      removeButton.title = removeButton.disabled ? "At least one row is required." : "Remove last row";
+    }
   });
 }
 
@@ -3829,9 +3843,9 @@ function renderTirActionState() {
       ? "Updating plot..."
       : "Save .tir + Update Plot";
     saveButton.disabled = !state.activeTir || !dirty || busy;
-    saveButton.title = dirty
-      ? "Save the edited .tir file and update the tire plot"
-      : "Edit a tire parameter before saving";
+    saveButton.title = busy ? "Tire save or plot update in progress."
+      : !state.activeTir ? "No tire file is loaded."
+      : !dirty ? "The tire has no unsaved changes." : "";
   }
   if (spinner) spinner.hidden = !busy;
   if (status) {
@@ -4159,8 +4173,11 @@ function renderToolchainModal() {
   }
   if (!state.toolchainInputsDirty) fillToolchainInputsFromStatus();
   renderToolchainCandidates(toolchain);
-  if (saveButton) saveButton.disabled = state.toolchainSaving;
-  if (resetButton) resetButton.disabled = state.toolchainSaving;
+  for (const button of [saveButton, resetButton]) {
+    if (!button) continue;
+    button.disabled = state.toolchainSaving;
+    button.title = state.toolchainSaving ? "Toolchain settings are being saved." : "";
+  }
   if (status) status.textContent = state.toolchainSaving ? "Saving." : state.toolchainStatusMessage;
 }
 
@@ -4326,11 +4343,12 @@ async function showAnalysisPicker() {
 function renderAnalysisPicker() {
   const enabled = state.simulationWorkspace?.analysis_groups || [];
   const target = document.getElementById("analysis-picker-options");
-  target.innerHTML = SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="analysis-picker-option" data-add-analysis="${id}"${enabled.includes(id) ? " disabled" : ""}>
+  target.innerHTML = SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="analysis-picker-option" data-add-analysis="${id}"${enabled.includes(id) ? ' disabled title="This analysis is already in the tree."' : ""}>
     ${simulationTreeIcon({kinematic: "vehicle", "steady-state": "envelope", transient: "response"}[id])}<strong>${label}</strong>${enabled.includes(id) ? '<span>Added</span>' : ''}</button>`).join("");
   target.querySelectorAll("[data-add-analysis]").forEach(button => {
     button.onclick = () => workspaceAction(async () => {
       button.disabled = true;
+      button.title = "Analysis creation in progress.";
       try {
         const group = button.dataset.addAnalysis;
         await simulationRequest("add-analysis", {group});
@@ -4432,6 +4450,7 @@ function renderSimulationGgv() {
   const open = document.getElementById("simulation-ggv-open");
   open.textContent = simulation.ggv_source_id ? "Open GGV analysis" : "Edit lap envelope settings";
   open.disabled = Boolean(simulation.ggv_source_id && !(state.simulationWorkspace?.simulations || []).some(item => item.id === simulation.ggv_source_id));
+  open.title = open.disabled ? "The linked GGV analysis is no longer available." : "";
   open.onclick = () => workspaceAction(() => openSimulation(simulation.ggv_source_id || simulation.id));
   source.onchange = () => workspaceAction(async () => {
     await simulationRequest("set-ggv", {id: simulation.id, source_id: source.value || null});
@@ -4945,11 +4964,13 @@ function renderWorkflows() {
       event.stopPropagation();
       workspaceAction(async () => {
         button.disabled = true;
+        button.title = "Simulation creation in progress.";
         try {
           await configureSimulationWorkflow(button.dataset.configureWorkflow);
         } catch (error) {
           document.getElementById("simulation-catalog-status").textContent = error.message;
           button.disabled = false;
+          button.title = "";
         }
       });
     });
@@ -5074,7 +5095,7 @@ function workflowCard(workflow) {
         </details>
       </div>
       <div class="card-actions">
-        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Add simulation">Add simulation</button>
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${canConfigure ? "Add simulation" : "This workflow has no configurable simulation setup."}">Add simulation</button>
       </div>
     </article>
   `;
@@ -5943,6 +5964,7 @@ function renderResultComparisonControls() {
   const toggle = document.getElementById("result-compare-baseline");
   toggle.checked = state.resultCompareBaseline;
   toggle.disabled = !simulation.baseline_run_id;
+  toggle.title = toggle.disabled ? "No baseline run is selected." : "";
   toggle.onchange = async () => {
     state.resultCompareBaseline = toggle.checked;
     saveResultSettings();
@@ -6652,7 +6674,7 @@ function renderSavedResultSummary() {
       ${result.config_snapshot ? resultSummaryLink("Run Config", result.config_snapshot) : ""}
     </div>
     <div class="result-summary-actions">
-      <button class="ghost-button danger-button" type="button" data-delete-selected-result="${escapeHtml(result.id)}"${deleting ? " disabled" : ""}>${deleting ? "Deleting Archived Run" : "Delete Archived Run"}</button>
+      <button class="ghost-button danger-button" type="button" data-delete-selected-result="${escapeHtml(result.id)}"${deleting ? ' disabled title="Archived run deletion in progress."' : ""}>${deleting ? "Deleting Archived Run" : "Delete Archived Run"}</button>
     </div>
   `;
   panel.querySelector("[data-delete-selected-result]")?.addEventListener("click", () => {
@@ -6777,6 +6799,7 @@ function renderProcessingForm() {
     ? "Save result CSVs before adding processing"
     : "";
   removeButton.disabled = !selectedProcessingWorkflow();
+  removeButton.title = removeButton.disabled ? "No processing workflow is selected." : "";
   status.textContent = state.processingStatusMessage || `${processingWorkflows().length} workflow${processingWorkflows().length === 1 ? "" : "s"} for ${activeVehicleKey() || "this vehicle"}.`;
 }
 
@@ -6966,6 +6989,7 @@ function renderStudyConfigLibrary() {
     const canDelete = selected?.type === "saved";
     deleteButton.hidden = !canDelete;
     deleteButton.disabled = !canDelete;
+    deleteButton.title = canDelete ? "" : "Only saved presets can be deleted.";
   }
   const workflow = selectedStudyWorkflow();
   const saveName = document.getElementById("save-study-config-name");
@@ -7096,6 +7120,7 @@ function renderSimConfigLibrary() {
     const canDelete = selected?.type === "saved";
     deleteButton.hidden = !canDelete;
     deleteButton.disabled = !canDelete;
+    deleteButton.title = canDelete ? "" : "Only saved presets can be deleted.";
   }
   const saveName = document.getElementById("save-sim-config-name");
   if (saveName && selectedWorkflow() && saveName.dataset.workflow !== selectedWorkflow().id) {
@@ -7118,6 +7143,9 @@ function renderSimConfigForm() {
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
   const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof")));
   form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(fields, "sim-config")}</fieldset>`;
+  if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
+    control.title = "Simulation settings are locked while a run is active.";
+  });
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
   form.onclick = handleArrayEditorClick;
@@ -7230,10 +7258,10 @@ function outputItem(output) {
   const meta = output.exists ? `${escapeHtml(output.modified_label)} | ${fmtBytes(output.size)}` : "missing";
   const previewButton = output.exists && isPreviewableFile(output.kind)
     ? `<button class="file-button" type="button" data-file-path="${escapeHtml(output.path)}" data-file-kind="${escapeHtml(output.kind)}">Preview</button>`
-    : `<button class="file-button" type="button" disabled>Preview</button>`;
+    : `<button class="file-button" type="button" disabled title="No preview file is available.">Preview</button>`;
   const downloadButton = output.exists
     ? `<a class="file-button" href="${fileDownloadUrl(output.path)}" download>Download</a>`
-    : `<button class="file-button" type="button" disabled>Download</button>`;
+    : `<button class="file-button" type="button" disabled title="No output file is available.">Download</button>`;
   return `
     <div class="output-item">
       <div>
@@ -7303,12 +7331,13 @@ function renderJobs() {
     : workflow
     ? runVerb
     : "No Workflow";
-  runButton.title = busy ? "A simulation is running." : canRun ? "" : standardWorkflowLockedMessage(workflow);
+  runButton.title = busy ? "A simulation is running." : !state.selectedSimulationId ? "No simulation is selected." : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
   readiness.textContent = busy ? `${busy.label}. Settings are locked while it runs.` : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const prepare = document.getElementById("sim-prepare-mbd");
   prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
   prepare.disabled = !canWriteMbd();
+  prepare.title = prepare.disabled ? mbdWriteDisabledReason() : "";
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
@@ -9259,6 +9288,8 @@ function syncGeometryAxleToggles() {
   rear.checked = state.geometryShowRear;
   front.disabled = state.geometryShowFront && !state.geometryShowRear;
   rear.disabled = state.geometryShowRear && !state.geometryShowFront;
+  front.title = front.disabled ? "At least one axle must remain visible." : "";
+  rear.title = rear.disabled ? "At least one axle must remain visible." : "";
 }
 
 function updateGeometryAxleVisibility(axle, visible) {

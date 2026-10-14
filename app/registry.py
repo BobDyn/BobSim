@@ -610,34 +610,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         relocatable=True,
         fields=COMMON_SIM_FIELDS
         + (
-            _field(
-                "model_overrides.suspension.front.spring_rate_n_per_m",
-                "Front spring rate",
-                kind="number",
-                group="Suspension",
-                unit="N/m",
-            ),
-            _field(
-                "model_overrides.suspension.front.stabar_rate_n_m_per_rad",
-                "Front stabar rate",
-                kind="number",
-                group="Suspension",
-                unit="N m/rad",
-            ),
-            _field(
-                "model_overrides.suspension.rear.spring_rate_n_per_m",
-                "Rear spring rate",
-                kind="number",
-                group="Suspension",
-                unit="N/m",
-            ),
-            _field(
-                "model_overrides.suspension.rear.stabar_rate_n_m_per_rad",
-                "Rear stabar rate",
-                kind="number",
-                group="Suspension",
-                unit="N m/rad",
-            ),
             _field("procedure.steerMagnitude", "Steer magnitude", kind="number", group="Procedure", unit="rad"),
             _field("procedure.heaveMagnitude", "Heave magnitude", kind="number", group="Procedure", unit="m"),
             _field("procedure.rollMagnitude", "Roll magnitude", kind="number", group="Procedure", unit="rad"),

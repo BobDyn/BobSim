@@ -2036,3 +2036,28 @@ def test_result_inspection_coordinates_follow_sample_rows(tmp_path, monkeypatch,
     assert result['coordinates']['time'][:4] == [0., .2, .6, .8]
     assert result['coordinates']['station_m'][:4] == [0., 6., None, 24.]
     assert len(result['coordinates']['time']) == len(result['x']) == 49
+
+
+def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = app.BASE_CONFIG_SPECS["four-post"]
+    seed = tmp_path / spec.path
+    seed.parent.mkdir(parents=True)
+    original = yaml.safe_load((app.PACKAGE_ROOT / spec.path).read_text())
+    seed.write_text(yaml.safe_dump(original))
+    (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Test\n")
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.delenv("BOBSIM_SEED_CONFIGS", raising=False)
+    # Older named simulations and presets can still contain the removed overrides.
+    simulation = app.simulation_workspace("create", {"workflow_id": "four-post"})["simulation"]
+    result = app.simulation_workspace("prepare-run", {"id": simulation["id"]})
+    config = result["config"]
+    suspension = config["data"]["model_overrides"]["suspension"]
+    assert "front" not in suspension and "rear" not in suspension
+    assert suspension["static_balance_iterations"] == (
+        original["model_overrides"]["suspension"]["static_balance_iterations"]
+    )
+    assert config["data"]["procedure"] == original["procedure"]
+    assert all(field["group"] != "Suspension" for field in config["fields"])
+    path, _, _ = app._load_yaml_config(spec)
+    assert yaml.safe_load(path.read_text()) == config["data"] == yaml.safe_load(config["raw"])
+    assert yaml.safe_load(seed.read_text()) == original

@@ -360,6 +360,13 @@ def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
     data = yaml.safe_load(raw) or {}
     if not isinstance(data, (dict, list)):
         raise TypeError(f"{spec.path} must contain a YAML mapping or list")
+    if spec.id == "four-post" and isinstance(data, dict):
+        suspension = data.get("model_overrides", {}).get("suspension", {})
+        if "front" in suspension or "rear" in suspension:
+            suspension.pop("front", None)
+            suspension.pop("rear", None)
+            _write_yaml_config(path, data)
+            raw = path.read_text(encoding="utf-8")
     if spec.id == "reduced-ramp-steer" and isinstance(data, dict):
         data.setdefault("ramp_end_time_s", data["stop_time_s"])
     return path, raw, data

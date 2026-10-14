@@ -47,7 +47,7 @@ vm.runInContext(`
 
   await showAnalysisPicker();
   assert.equal(element('analysis-picker').open, true);
-  assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="transient" disabled/);
+  assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="transient" disabled title="This analysis is already in the tree\."/);
   assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="kinematic">/);
   assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="steady-state">/);
   element('[data-close-analysis-picker]').onclick();

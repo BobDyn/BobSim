@@ -833,3 +833,18 @@ vm.runInContext(`
     assert.equal(panel.hidden,true);
   })()`,overviewContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+vm.runInContext(`
+{
+  const button = {classList:{toggle(){}},setAttribute(){}};
+  setActionButton(button, {label:'Run',disabled:true,title:'The saved vehicle has changed.'});
+  assert.equal(button.disabled,true);
+  assert.equal(button.title,'The saved vehicle has changed.');
+  setActionButton(button, {label:'Run',busy:true,busyLabel:'Running'});
+  assert.equal(button.disabled,true);
+  assert.equal(button.title,'Running in progress.');
+  setActionButton(button, {label:'Run'});
+  assert.equal(button.disabled,false);
+  assert.equal(button.title,'');
+}
+`, ctx);

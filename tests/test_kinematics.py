@@ -1119,3 +1119,28 @@ def test_roll_center_height_uses_both_corners() -> None:
         # A symmetric axle has the same height for equal left and right roll.
         assert heights[0] == pytest.approx(heights[2], abs=1e-5)
         assert heights[1] == pytest.approx(curves["bump_rc_height_mm"][0], abs=1e-5)
+
+
+def test_four_post_preserves_vehicle_spring_curves_without_rate_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    tables = {
+        "front": [[-0.05, -500.0], [0.0, 0.0], [0.02, 500.0], [0.05, 1800.0]],
+        "rear": [[-0.05, -600.0], [0.0, 0.0], [0.02, 700.0], [0.05, 2300.0]],
+    }
+    for axle, table in tables.items():
+        side = vehicle[axle]
+        assert isinstance(side, dict)
+        side["actuation"]["shock"]["spring_table"]["table"] = table
+        side["actuation"]["stabar"]["rate_n_m_per_rad"] = 321.0
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    setup = four_post_eval._configured_suspension_setup({})
+    for axle, table in tables.items():
+        np.testing.assert_array_equal(setup[f"{axle}_spring_table"], table)
+        assert setup[f"{axle}_stabar_rate"] == 321.0
+    overridden = four_post_eval._configured_suspension_setup({
+        "model_overrides": {"suspension": {"front": {"spring_rate_n_per_m": 10000.0}}},
+    })
+    np.testing.assert_array_equal(overridden["front_spring_table"][:, 1], np.asarray(tables["front"])[:, 0] * 10000.0)
+    np.testing.assert_array_equal(overridden["rear_spring_table"], tables["rear"])

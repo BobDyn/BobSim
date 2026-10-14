@@ -454,8 +454,16 @@ def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
         if _side_has_stabar(rear_side)
         else 0.0
     )
-    front_spring_table = _linearize_spring_table_rate(front_vehicle_table, front_spring_rate)
-    rear_spring_table = _linearize_spring_table_rate(rear_vehicle_table, rear_spring_rate)
+    front_spring_table = (
+        _linearize_spring_table_rate(front_vehicle_table, front_spring_rate)
+        if _configured_optional_float(front_cfg, ("spring_rate_n_per_m", "spring_rate")) is not None
+        else front_vehicle_table
+    )
+    rear_spring_table = (
+        _linearize_spring_table_rate(rear_vehicle_table, rear_spring_rate)
+        if _configured_optional_float(rear_cfg, ("spring_rate_n_per_m", "spring_rate")) is not None
+        else rear_vehicle_table
+    )
     corner_loads = _sprung_corner_loads(vehicle)
 
     return {
