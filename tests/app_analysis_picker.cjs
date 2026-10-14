@@ -1,9 +1,9 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const source = fs.readFileSync('app/static/vendor/katex/katex.min.js', 'utf8') + '\n' + fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert,
-  document:{body:{classList:{toggle(){}}}}});
+  document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
 (async () => {
@@ -95,10 +95,16 @@ assert.match(source, /simulation-tree-root[^\n]*add-simulation-btn/);
 
 for (const id of ['four-post','steady-state','transient','ramp-steer','mbd-step-steer','reduced-ramp-steer','reduced-step-steer','ggv','ymd','lap-qss','lap-transient']) {
   const math = vm.runInContext(`simulationMathHtml(${JSON.stringify(id)})`,ctx);
-  assert.match(math,/role="math"/);
+  assert.match(math,/class="katex"/);
+  assert.match(math,/<math /);
+  assert.doesNotMatch(math,/katex-error/);
   assert.match(math,/<p>/);
   assert.doesNotMatch(math,/undefined/);
 }
-assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/R\(w; v, aₓ, aᵧ\) = 0/);
-assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Accelerate forward and brake backward/);
-assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/not dx\/dt = 0/);
+assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/steering and wheel torque/);
+assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Accelerate forward, brake backward/);
+assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/Position and heading still change/);
+
+const katexCSS = fs.readFileSync('app/static/vendor/katex/katex.min.css','utf8');
+for (const [,font] of katexCSS.matchAll(/url\(([^)]+)\)/g)) assert.ok(fs.existsSync('app/static/vendor/katex/'+font));
+assert.ok(markup.indexOf('/static/vendor/katex/katex.min.js') < markup.indexOf('/static/app.js'));

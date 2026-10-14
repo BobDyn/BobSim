@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
-const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+const source = fs.readFileSync('app/static/vendor/katex/katex.min.js', 'utf8') + '\n' + fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
 for (const view of ['iso','top','side']) {
@@ -226,7 +226,7 @@ for (const axle of ['front','rear']) for (const slip of ['pure','combined']) for
 }
 `,ctx);
 
-const momentCtx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+const momentCtx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, momentCtx);
 vm.runInContext(`
 currentTireCombinedFz=()=>150;
@@ -438,7 +438,7 @@ vm.runInContext(`
 `,ctx);
 
 (async () => {
-  const deletionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const deletionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,deletionContext);
   await vm.runInContext(`
   (async () => {
@@ -472,7 +472,7 @@ vm.runInContext(`
     get:(target,key)=>key in target ? target[key] : ()=>{},
   });
   const canvas = {clientWidth:240,clientHeight:240,getContext:()=>drawing};
-  const panel = vm.createContext({window:{devicePixelRatio:1},document:{readyState:'loading',body:{},
+  const panel = vm.createContext({window:{devicePixelRatio:1},document:{compatMode:"CSS1Compat",readyState:'loading',body:{},
     addEventListener(){},getElementById:id=>id==='replay-tires-canvas'?canvas:{}},
     getComputedStyle:()=>({getPropertyValue:()=>''})});
   const panelSource = fs.readFileSync('app/static/visual_panel.js','utf8').replace(
@@ -492,7 +492,7 @@ vm.runInContext(`
   assert.ok(labels.includes('410% of peak'));
 }
 {
-  const plotContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const plotContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,plotContext);
   vm.runInContext(`
     const fills=[];
@@ -557,7 +557,7 @@ vm.runInContext(`
 }
 
 {
-  const cursorContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const cursorContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source, cursorContext);
   vm.runInContext(`
     state.selectedResultId='run-a'; state.selectedResultSourcePath='a.csv';
@@ -592,7 +592,7 @@ vm.runInContext(`
 
 (async () => {
   const simulationContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,
-    document:{body:{classList:{toggle(){}}}}});
+    document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source, simulationContext);
   await vm.runInContext(`(async () => {
     for (const [id, group] of [['four-post','kinematic'], ['steady-state','steady-state'],
@@ -637,7 +637,7 @@ vm.runInContext(`
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
 {
-  const treeContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const treeContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,treeContext);
   vm.runInContext(`
     const elements={};
@@ -688,7 +688,7 @@ vm.runInContext(`
 }
 
 {
-  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,menuContext);
   vm.runInContext(`
     const events={}; let focused, added;
@@ -737,7 +737,7 @@ vm.runInContext(`
 }
 
 (async () => {
-  const dragContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const dragContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,dragContext);
   await vm.runInContext(`(async () => {
     const events={}, requests=[]; let action, opened, saved=false, highlighted=false;
@@ -771,7 +771,7 @@ vm.runInContext(`
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
 {
-  const connectionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{body:{classList:{toggle(){}}}}});
+  const connectionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,connectionContext);
   vm.runInContext(`
     let width=240, sourceVisible=true, titleVisible=true;
@@ -792,7 +792,7 @@ vm.runInContext(`
 
 (async () => {
   const overviewContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,
-    document:{body:{classList:{toggle(){}}}}});
+    document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,overviewContext);
   await vm.runInContext(`(async()=>{
     const controls={};

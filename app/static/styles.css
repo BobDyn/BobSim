@@ -5070,8 +5070,11 @@ summary:focus-visible {
 .simulation-math { margin-top: 32px; border-top: 1px solid var(--line); }
 .simulation-math section { padding: 24px 0; border-bottom: 1px solid var(--line); }
 .simulation-math h3 { margin: 0 0 16px; font-size: 16px; }
-.simulation-equation { font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif; font-size: 21px; line-height: 1.9; padding: 8px 16px; overflow-x: auto; white-space: nowrap; background: var(--surface-2); }
-.simulation-equation sub, .simulation-equation sup { font-size: 70%; }
+.simulation-equation { padding: 16px; margin-top: 16px; overflow-x: auto; background: var(--surface-2); border-radius: 6px; }
+.simulation-equation .katex-display { margin: 0; font-size: 1.1em; }
+.simulation-symbols { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 16px 0 0; font-size: 13px; }
+.simulation-symbols dd { margin: 0; color: var(--muted); }
+.simulation-math-intro { font-size: 15px !important; }
 .simulation-math p { font-size: 13px; line-height: 1.7; margin: 14px 0 0; max-width: 88ch; }
 .simulation-method-notes { margin-top: 24px; }
 .simulation-method-notes > summary { cursor: pointer; font-size: 13px; }
