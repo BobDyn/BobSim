@@ -204,10 +204,10 @@ but do not prove global optimality. The generated opposite-turn branch remains
 a reflection, not an independent asymmetric solve.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
-range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected
-when any normal load falls outside the active `.tir` file's `FZMIN`/`FZMAX`
-range; warning-only extrapolation is available only through an explicit config
-override. Study-grade GGV and lap configs enable a deterministic beta/steer
+range. GGV requires positive load at every wheel. Below `FZMIN`, the existing
+tire model scales the wrench toward zero load. This region is outside the fitted
+data. `enforce_tire_load_range` retains the upper `FZMAX` check. YMD still checks
+both fitted load limits. Study-grade GGV and lap configs enable a deterministic beta/steer
 multistart search after the warm start fails, which protects the reported
 boundary from a disconnected local trim branch. The routine all-DOF visual
 smoke config disables that expensive audit explicitly. Sideslip and roadwheel-

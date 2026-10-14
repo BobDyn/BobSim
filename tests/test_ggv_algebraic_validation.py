@@ -146,3 +146,38 @@ def test_dense_planar_tail_uses_neighbor_boundary_without_full_trim_search(vehic
     assert np.all(envelope.ax_accel >= envelope.ax_brake - 1e-5)
     assert envelope.ay[-1] > 7.
     assert envelope.ax_accel[-1] == envelope.ax_brake[-1]
+
+
+def test_ggv_allows_low_load_extension_with_every_wheel_in_contact(vehicle):
+    model = vehicle.model(3)
+    result = ggv._solve_envelope_limit(
+        project_vehicle_yaml(load_vehicle_yaml()).ggv, model, speed=15., ay=15.,
+        ax_bounds=(-3.2 * ggv.G, 2.8 * ggv.G), mode='brake',
+        max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
+    )
+    assert result is not None and result.success
+    loads = result.output.normal_loads_n
+    assert np.all(loads > 0.)
+    assert any(load < tire.fz_min_n for load, tire in zip(loads, model.parameters.tires))
+    assert all(load <= tire.fz_max_n for load, tire in zip(loads, model.parameters.tires))
+    inverse = model.evaluate(result.state, result.inputs, normal_loads_n=loads)
+    np.testing.assert_allclose(_algebraic_residual(model, result.inputs, inverse), 0., atol=1e-4)
+
+
+@pytest.mark.parametrize('dof', (3, 6, 14))
+@pytest.mark.parametrize('load', (0., -1.))
+@pytest.mark.parametrize('enforce_range', (False, True))
+def test_ggv_rejects_lifted_wheel_even_without_fit_range_check(vehicle, dof, load, enforce_range):
+    from engines.dynpy import solve_acceleration_trim
+
+    model = vehicle.model(dof)
+    trim = solve_acceleration_trim(model, speed_mps=12., longitudinal_acceleration_mps2=0.,
+                                   lateral_acceleration_mps2=0.)
+    assert trim.success
+    loads = trim.output.normal_loads_n.copy()
+    loads[0] = load
+    trim = replace(trim, output=replace(trim.output, normal_loads_n=loads))
+    assert not ggv._trim_is_racing_feasible(
+        trim, model=model, ay=0., max_abs_beta_rad=.25, max_abs_steering_rad=.5,
+        enforce_tire_load_range=enforce_range,
+    )

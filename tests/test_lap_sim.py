@@ -233,6 +233,9 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -
 
     summary = run_lap_time_evaluation(config_path, scenario=scenario)
 
+    assert summary["ggv_speed_min_mps"] == 2.
+    assert summary["ggv_speed_max_mps"] == 30.
+    assert summary["ggv_range_limited"] == (summary["qss_max_speed_mps"] >= 30. - 1e-6)
     assert summary["model_dof"] == 3
     assert summary["effective_drive_power_limit_w"] == pytest.approx(32_000.0)
     assert summary["ggv_provenance"]["status"] == "supplied_unverified"

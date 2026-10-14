@@ -147,7 +147,7 @@ def test_ggv_combined_boundary_closes_coupled_equilibrium_path_motion(vehicle, d
     assert -actuator.max_brake_force - .1 <= equivalent_force <= actuator.max_drive_force + .1
     for load, alpha, slip, tire in zip(forward.normal_loads_n, forward.slip_angles_rad,
                                       forward.slip_ratios, model.parameters.tires):
-        assert tire.fz_min_n - 1e-3 <= load <= tire.fz_max_n + 1e-3
+        assert 0. < load <= tire.fz_max_n + 1e-3
         assert tire.slip_in_fit_range(alpha, slip)
 
 

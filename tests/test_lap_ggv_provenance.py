@@ -16,7 +16,7 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lap, 'repo_root', lambda: tmp_path)
     monkeypatch.setattr(lap, '__file__', str(tmp_path / 'lap.py'))
     for name in ('lap.py', 'simulations/envelope/ggv/ggv_generation.py',
-                 'simulations/envelope/ggv/ggv_generation.py',
+                 'simulations/envelope/ggv/parallel.py',
     'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
                  'engines/dynpy/parameters.py', 'engines/kinpy/geometry.py'):
         path = tmp_path / name
@@ -41,7 +41,7 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
     'simulations/mbd/generated_results/four_post_eval_report_metrics.csv',
     'simulations/mbd/results/four_post_eval_report_metrics.csv',
     'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
-    'engines/kinpy/geometry.py',
+    'engines/kinpy/geometry.py', 'simulations/envelope/ggv/parallel.py',
 ])
 def test_ggv_fingerprint_tracks_referenced_physics(provenance_workspace, relative):
     root, arguments = provenance_workspace
@@ -73,6 +73,7 @@ def test_ggv_cache_reused_only_while_inputs_match(provenance_workspace, monkeypa
     @dataclass
     class Projection:
         max_drive_power: float = 80000
+        max_drive_speed: float = 42.0
 
     monkeypatch.setattr(vehicle_yaml, 'project_vehicle_yaml', lambda _: SimpleNamespace(ggv=Projection()))
 
@@ -154,3 +155,28 @@ def test_supplied_ggv_rejects_known_legacy_formulation(provenance_workspace, mon
     result, external = lap._load_or_generate_ggv(path, model=None, **arguments)
     assert result == 'external map'
     assert external['status'] == 'supplied_unverified'
+
+
+def test_generated_lap_envelope_covers_vehicle_speed(provenance_workspace, monkeypatch):
+    from simulations.envelope.ggv import ggv_generation
+    from simulations.envelope import vehicle_yaml
+
+    root, arguments = provenance_workspace
+
+    @dataclass
+    class Projection:
+        max_drive_power: float = 100000
+        max_drive_speed: float = 22.
+
+    monkeypatch.setattr(vehicle_yaml, 'project_vehicle_yaml', lambda _: SimpleNamespace(ggv=Projection()))
+    arguments['qss_config'] = {'speeds_mps': [5., 10.]}
+    captured = []
+    monkeypatch.setattr(ggv_generation, 'generate_ggv',
+                        lambda vehicle, config, **kwargs: captured.append((vehicle, config)) or [])
+    monkeypatch.setattr(ggv_generation, 'save_ggv_csv', lambda *args: None)
+    monkeypatch.setattr(lap.GGVMap, 'from_csv', lambda _: 'generated map')
+    result, provenance = lap._load_or_generate_ggv(root / 'new.csv', model=None, **arguments)
+    assert result == 'generated map'
+    assert provenance['status'] == 'generated'
+    assert captured[0][1].speeds == (5., 10., 15., 20., 22.)
+    assert captured[0][0].max_drive_power == 80000

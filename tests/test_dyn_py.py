@@ -506,7 +506,11 @@ def test_ggv_lateral_endpoint_closes_path_acceleration(parameters):
     assert trim.path_longitudinal_acceleration_mps2 == pytest.approx(ax, abs=1e-5)
     assert trim.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
     assert trim.yaw_rate_radps == pytest.approx(ay / 12.0)
-    forward = model.evaluate(trim.state, trim.inputs)
+    from engines.dynpy.qss import _algebraic_residual
+
+    # Verify the coupled QSS root independently of static-start load iteration.
+    forward = model.evaluate(trim.state, trim.inputs, normal_loads_n=trim.output.normal_loads_n)
+    np.testing.assert_allclose(_algebraic_residual(model, trim.inputs, forward), 0., atol=1e-4)
     np.testing.assert_allclose(forward.normal_loads_n, trim.output.normal_loads_n, atol=1e-5)
     np.testing.assert_allclose(forward.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-5)
     forward_trim = replace(trim, output=forward)
@@ -536,7 +540,7 @@ def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
     invalid_output = replace(
         result.output,
         normal_loads_n=np.array(
-            [parameters.front_tire.fz_min_n - 1.0, 500.0, 500.0, 500.0]
+            [parameters.front_tire.fz_max_n + 1.0, 500.0, 500.0, 500.0]
         ),
     )
     invalid_trim = replace(result, output=invalid_output)

@@ -111,6 +111,13 @@ def run_lap_time_evaluation(
         "effective_drive_power_limit_w": vehicle.parameters.peak_drive_power_w,
         "ggv_csv": _display_path(ggv_path, root),
         "ggv_provenance": ggv_provenance,
+        "ggv_speed_min_mps": ggv.min_speed_mps,
+        "ggv_speed_max_mps": ggv.max_speed_mps,
+        "qss_max_speed_mps": float(np.max(optimized.qss_lap.speed_mps)),
+        "ggv_range_limited": bool(
+            ggv.max_speed_mps < vehicle.parameters.maximum_drive_speed_mps - 1e-6
+            and np.max(optimized.qss_lap.speed_mps) >= ggv.max_speed_mps - 1e-6
+        ),
         "line_mode": line_mode,
         "track_length_m": optimized.line.track_length_m,
         "centerline_qss_lap_time_s": optimized.centerline_lap_time_s,
@@ -224,6 +231,7 @@ def _load_or_generate_ggv(
 
     # This layer may compose EnvelopeSim and dyn_py; neither lower layer imports it.
     from simulations.envelope.ggv.ggv_generation import GGVConfig, generate_ggv, save_ggv_csv
+    from simulations.envelope.ggv.parallel import vehicle_speed_grid
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     ggv_vehicle = project_vehicle_yaml(load_vehicle_yaml(vehicle_path)).ggv
@@ -232,7 +240,10 @@ def _load_or_generate_ggv(
         max_drive_power=min(ggv_vehicle.max_drive_power, effective_power_limit_w),
     )
     generation = GGVConfig(
-        speeds=tuple(float(value) for value in qss_config.get("speeds_mps", (5, 10, 15, 20, 25))),
+        speeds=vehicle_speed_grid(
+            tuple(float(value) for value in qss_config.get("speeds_mps", (5, 10, 15, 20, 25))),
+            ggv_vehicle.max_drive_speed,
+        ),
         model_dof=model_dof,
         ay_max_g=float(qss_config.get("ay_max_g", 4.0)),
         ay_points=int(qss_config.get("ay_points", 21)),
@@ -270,6 +281,7 @@ def _ggv_provenance(
     physics_inputs = [
         Path(__file__),
         root / "simulations/envelope/ggv/ggv_generation.py",
+        root / "simulations/envelope/ggv/parallel.py",
         root / "simulations/envelope/vehicle_yaml.py",
         root / "common/vehicle_io.py",
         *sorted((root / "engines/dynpy").rglob("*.py")),

@@ -367,7 +367,7 @@ def is_feasible(
     if np.any(fz <= 0.0):
         return False
     if enforce_tire_load_range and (
-        np.any(fz < vehicle.fz_min_valid) or np.any(fz > vehicle.fz_max_valid)
+        np.any(fz > vehicle.fz_max_valid)
     ):
         return False
 
@@ -542,7 +542,7 @@ def _solve_envelope_limit(
     max_abs_beta_rad, max_abs_steering_rad : float
         Sideslip and nominal steering limits in radians.
     enforce_tire_load_range : bool
-        Constrain each tire to its fitted load range.
+        Enforce each tire’s upper fitted load. Every tire must remain loaded.
     initial_unknowns : Mapping or None
         Previous equilibrium for continuation.
 
@@ -580,7 +580,7 @@ def _solve_envelope_limit(
     else:
         names.extend(("load_fl_n", "load_fr_n", "load_rl_n", "load_rr_n"))
         scales.extend((force_scale,) * 4)
-        bounds.extend((max(1e-6, tire.fz_min_n + 1e-5 if enforce_tire_load_range else 0.) / force_scale,
+        bounds.extend((1e-6 / force_scale,
                        (tire.fz_max_n - 1e-5) / force_scale if enforce_tire_load_range else np.inf)
                       for tire in model.parameters.tires)
     if model.dof < 10:
@@ -654,7 +654,7 @@ def _solve_envelope_limit(
             constraints.extend(_algebraic_slip_slopes(model, output) / force_scale)
         if model.dof == 14:
             for load, tire in zip(output.normal_loads_n, model.parameters.tires):
-                constraints.append((load - (tire.fz_min_n if enforce_tire_load_range else 0.)) / force_scale)
+                constraints.append((load - 1e-6) / force_scale)
                 if enforce_tire_load_range:
                     constraints.append((tire.fz_max_n - load) / force_scale)
         return np.asarray(constraints)
@@ -674,6 +674,27 @@ def _solve_envelope_limit(
             constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
             options={"ftol": 1e-9, "maxiter": 100},
         )
+        if not result.success and mode == "lateral" and initial_unknowns is None and model.dof < 14:
+            # Approach wheel lift gradually, then solve again with the original load bounds.
+            load_guess = guess
+            for fraction in (1., .1, .01, .001, .0001, 0.):
+                seed_bounds = list(bounds)
+                for corner, tire in enumerate(model.parameters.tires):
+                    index = model.dof + corner
+                    seed_bounds[index] = (max(bounds[index][0], fraction * tire.fz_min_n / force_scale),
+                                          bounds[index][1])
+                interior = minimize(  # type: ignore[call-overload]
+                    objective, load_guess, method="SLSQP", bounds=seed_bounds,
+                    constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
+                    options={"ftol": 1e-9, "maxiter": 100},
+                )
+                if (not interior.success or not np.all(np.isfinite(interior.x))
+                        or not np.linalg.norm(equality(interior.x)) <= 1e-5
+                        or not np.min(inequality(interior.x)) >= -1e-7):
+                    break
+                load_guess = interior.x
+                if fraction == 0.:
+                    result = interior
         if (result.success and np.all(np.isfinite(result.x))
                 and np.linalg.norm(equality(result.x)) <= 1e-5 and np.min(inequality(result.x)) >= -1e-7):
             break
@@ -683,13 +704,13 @@ def _solve_envelope_limit(
     physical = result.x * scale_array
     steering = float(np.mean(kinematics.at(np.zeros(4), float(physical[1])).toe_rad[:2]))
     inputs = replace(inputs, steering_rad=steering)
-    if _tire_state_error(model, inputs, output):
+    if np.any(output.normal_loads_n <= 0.) or _tire_state_error(model, inputs, output):
         return None
     unknowns = {**dict(zip(names, map(float, physical))), "steering_rad": steering}
     if model.dof < 14:
         # Check the solved load equilibrium, not a static-start iteration's saturation branch.
         forward = model.evaluate(state, inputs, normal_loads_n=output.normal_loads_n)
-        loads_valid = all((tire.fz_min_n <= load <= tire.fz_max_n) if enforce_tire_load_range else load > 0.
+        loads_valid = all((0. < load <= tire.fz_max_n) if enforce_tire_load_range else load > 0.
                           for tire, load in zip(model.parameters.tires, forward.normal_loads_n))
         if (np.linalg.norm((forward.generalized_acceleration - output.generalized_acceleration)
                            / _residual_scales(model)) > 1e-5
@@ -736,7 +757,7 @@ def _consistent_boundary(
     max_abs_beta_rad, max_abs_steering_rad : float
         Sideslip and steering bounds in radians.
     enforce_tire_load_range : bool
-        Enforce fitted normal-load limits.
+        Enforce upper fitted normal-load limits. Every tire must remain loaded.
 
     Returns
     -------
@@ -876,7 +897,7 @@ def _trim_is_racing_feasible(
             return False
 
     loads = np.asarray(trim.output.normal_loads_n, dtype=float)
-    tire_domain_valid = not _trim_outside_tire_domain(trim, model)
+    tire_domain_valid = not _trim_above_tire_load_range(trim, model)
     return bool(
         trim.success
         and np.all(loads > 0.0)
@@ -955,13 +976,13 @@ def _solve_racing_trim(
     return None
 
 
-def _trim_outside_tire_domain(
+def _trim_above_tire_load_range(
     trim: QSSResult,
     model: ReducedVehicleModel,
 ) -> bool:
     loads = np.asarray(trim.output.normal_loads_n, dtype=float)
     return any(
-        load < tire.fz_min_n or load > tire.fz_max_n
+        load > tire.fz_max_n
         for load, tire in zip(loads, model.parameters.tires)
     )
 

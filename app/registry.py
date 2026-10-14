@@ -675,7 +675,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                 _field("racing_line.mode", "Racing line", kind="select", group="Track",
                        choices=("centerline", "minimum_curvature", "minimum_time_qss")),
                 _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
-                _field("qss.speeds_mps", "Envelope speeds", kind="list", group="Envelope", unit="m/s"),
+                _field("qss.speeds_mps", "Initial envelope speeds", kind="list", group="Envelope", unit="m/s",
+                       help_text="Coverage extends to the vehicle speed limit using the final speed spacing."),
                 _field("qss.ay_points", "Lateral points", kind="integer", group="Envelope"),
                 _field("qss.regenerate", "Rebuild GGV", kind="boolean", group="Envelope"),
                 *(
@@ -699,7 +700,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("generation.model_dof", "Model DOF", kind="select", group="Model",
                    choices=("3", "6", "10", "14"),
                    help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
-            _field("generation.speeds_mps", "Speeds", kind="list", group="Generation", unit="m/s"),
+            _field("generation.speeds_mps", "Initial speeds", kind="list", group="Generation", unit="m/s",
+                   help_text="Coverage extends to the vehicle speed limit using the final speed spacing."),
             _field("generation.ay_max_g", "Max lateral acceleration", kind="number", group="Generation", unit="g"),
             _field("generation.ay_points", "Lateral points", kind="integer", group="Generation"),
             _field(

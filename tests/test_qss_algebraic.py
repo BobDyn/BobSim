@@ -91,6 +91,8 @@ def test_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay, dof):
             enforce_tire_load_range=True, trim_multistart=False,
         )
     assert result is not None
+    if mode == "lateral" and dof in (6, 10):
+        assert np.min(result.output.normal_loads_n) < 1., "Temporary continuation bounds must be released."
     np.testing.assert_allclose(_algebraic_residual(model, result.inputs, result.output), 0., atol=1e-3)
     target = _generalized_acceleration_target(
         model, result.state, result.output,
@@ -107,7 +109,7 @@ def test_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay, dof):
     for load, alpha, slip, tire in zip(
         result.output.normal_loads_n, result.output.slip_angles_rad, result.output.slip_ratios, model.parameters.tires,
     ):
-        assert tire.fz_min_n - 1e-8 <= load <= tire.fz_max_n + 1e-8
+        assert 0. < load <= tire.fz_max_n + 1e-8
         assert tire.slip_in_fit_range(alpha, slip)
     if dof < 10:
         assert np.all(_algebraic_slip_slopes(model, result.output) >= -1e-4)
