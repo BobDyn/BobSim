@@ -5311,7 +5311,7 @@ function simulationMethodGuide(workflowId) {
       "Step-response metrics and PDF report."
     ],
     "limits": [
-      "This workflow runs predefined steering maneuvers rather than an arbitrary driver input trace.",
+      "This workflow runs predefined steering maneuvers rather than an arbitrary driver input trace. The current case generator requires step cases to remain enabled to include sine cases.",
       "Frequency-response fits use at most two analysis cycles after the configured skipped cycles.",
       "At large inputs, fitted gain and phase describe that maneuver amplitude rather than a universal linear response.",
       "A short or unsettled step history can distort final-response and overshoot metrics."
