@@ -188,7 +188,7 @@ def test_lateral_search_cap_is_not_reported_as_a_closed_envelope(vehicle, monkey
     from simulations.envelope.ggv import ggv_generation as ggv
 
     monkeypatch.setattr(ggv, "solve_lateral_limit", lambda *args, **kwargs: (kwargs["ay_upper"], 0.))
-    with pytest.raises(RuntimeError, match="Increase ay_max_g"):
+    with pytest.raises(RuntimeError, match="Lateral envelope did not close"):
         ggv.generate_ggv(
             project_vehicle_yaml(load_vehicle_yaml()).ggv,
             ggv.GGVConfig(speeds=(10.,), model_dof=3, ay_points=3, verbose=False),

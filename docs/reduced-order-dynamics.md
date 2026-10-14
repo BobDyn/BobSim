@@ -207,11 +207,13 @@ QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
 range. GGV requires positive load at every wheel. Below `FZMIN`, the existing
 tire model scales the wrench toward zero load. This region is outside the fitted
 data. `enforce_tire_load_range` retains the upper `FZMAX` check. YMD still checks
-both fitted load limits. Study-grade GGV and lap configs enable a deterministic beta/steer
-multistart search after the warm start fails, which protects the reported
-boundary from a disconnected local trim branch. The routine all-DOF visual
-smoke config disables that expensive audit explicitly. Sideslip and roadwheel-
-steer bounds remain study assumptions and are written into lap summaries.
+both fitted load limits. GGV and lap workflows select numerical settings internally
+and ignore legacy search controls in saved configs. Speed samples follow the
+vehicle's drivetrain limit. Acceleration bounds expand until the envelope closes,
+then lateral samples span the solved range. A failed search reports an error
+rather than a clipped envelope. Multistart follows failed continuation. Sideslip
+and roadwheel-steer limits remain model assumptions, recorded in lap summaries.
+
 
 Select the backend in `simulations/envelope/ggv/ggv_config.yml` or `simulations/envelope/ymd/ymd_config.yml`:
 

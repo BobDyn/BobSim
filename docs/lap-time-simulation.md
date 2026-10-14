@@ -20,7 +20,7 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 - Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
 **GGV behavior:**
-- Generated speed grids extend to the vehicle's drivetrain speed limit using the final requested spacing. Linked and supplied envelopes retain their original range.
+- Generated envelopes use nine speed slices through the vehicle's drivetrain limit and automatically expand acceleration search bounds. Linked and supplied envelopes retain their original range.
 - The lap summary and report show the GGV speed range and whether its upper edge limits the lap.
 - Cached GGV files are reused only when the model, settings, and physical inputs match. Otherwise they are regenerated.
 - With `generate_if_missing: false`, an external CSV without provenance is explicitly unverified. Known older BobSim envelopes are rejected. A missing CSV fails.

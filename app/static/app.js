@@ -5328,15 +5328,15 @@ function simulationMethodGuide(workflowId) {
   },
   "ggv": {
     "method": [
-      "The selected DynPy model supplies algebraic vehicle equations at each requested speed. Feasible solutions define longitudinal and lateral acceleration states.",
+      "The selected DynPy model supplies algebraic vehicle equations across the vehicle speed range. Feasible solutions define longitudinal and lateral acceleration states.",
       "A constrained search identifies the lateral endpoint and the acceleration and braking boundaries at lower lateral demands. Constraints cover vehicle balance, tires, steering, torque and power.",
-      "Neighboring solutions provide initial guesses. Ordinary vehicle evaluation verifies each point. Near ill-conditioned tire peaks, a bracketed trim search can return a conservative endpoint.",
-      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint, with optional mirroring of the positive lateral branch."
+      "Neighboring solutions provide initial guesses. Independent tire inversion verifies force and torque closure at the solved wheel loads. Near tire peaks, a bracketed trim search can return a conservative endpoint.",
+      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint. The negative lateral branch mirrors the positive branch."
     ],
     "inputs": [
       "Vehicle geometry, mass, front and rear tire curves, suspension, aero and powertrain limits.",
       "DynPy 3, 6, 10 or 14 DOF. This workflow runs in Python and uses quasi-steady constraints, not time integration.",
-      "Speed slices, lateral sampling, acceleration search bounds, steering and sideslip limits, and tire-load-range enforcement.",
+      "The vehicle speed limit determines nine speed slices. Sampling and boundary searches are automatic.",
       "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
     ],
     "outputs": [
@@ -5714,9 +5714,8 @@ function studyMetric(label, value) {
 function studyMetrics(workflow, data) {
   if (workflow?.id === "ggv") {
     return [
-      studyMetric("Speeds", arrayRangeLabel(configValue(data, "generation.speeds_mps"), "m/s")),
-      studyMetric("Lat grid", scalarLabel(configValue(data, "generation.ay_points"), "pts")),
-      studyMetric("Long grid", scalarLabel(configValue(data, "generation.ax_search_points"), "pts")),
+      studyMetric("Model", scalarLabel(configValue(data, "generation.model_dof"), "DOF")),
+      studyMetric("Speed range", "Vehicle limit"),
     ];
   }
   if (workflow?.id === "ymd") {
@@ -5785,25 +5784,22 @@ function studyDiagnosticHtml(workflow, data) {
 }
 
 function studyFigureHtml(workflow, data) {
-  if (workflow?.id === "ggv") return ggvFigureHtml(data);
+  if (workflow?.id === "ggv") return ggvFigureHtml();
   if (workflow?.id === "ymd") return ymdFigureHtml(data);
   if (workflow?.id === "vehicle-review") return reviewFigureHtml(data);
   if (workflow?.group === "opt") return optFigureHtml(data);
   return `<div class="study-figure-empty">Study diagnostic</div>`;
 }
 
-function ggvFigureHtml(data) {
-  const ay = Number(configValue(data, "generation.ay_max_g", 0));
-  const axMin = Number(configValue(data, "generation.ax_search_min_g", 0));
-  const axMax = Number(configValue(data, "generation.ax_search_max_g", 0));
+function ggvFigureHtml() {
   return `
     <div class="study-figure ggv-figure">
       <div class="ggv-axis ggv-axis-x"></div>
       <div class="ggv-axis ggv-axis-y"></div>
       <div class="ggv-envelope"></div>
-      <span class="ggv-label top">Ay ${escapeHtml(scalarLabel(ay, "g"))}</span>
-      <span class="ggv-label left">${escapeHtml(scalarLabel(axMin, "g"))}</span>
-      <span class="ggv-label right">${escapeHtml(scalarLabel(axMax, "g"))}</span>
+      <span class="ggv-label top">Lateral</span>
+      <span class="ggv-label left">Braking</span>
+      <span class="ggv-label right">Acceleration</span>
     </div>
   `;
 }
@@ -7066,9 +7062,7 @@ function updateSimConfigStatus() {
     status.textContent = "Loading run configuration.";
     return;
   }
-  const generation = state.simConfigPayload.data?.generation;
-  const cases = workflow.id === "ggv" ? (generation?.speeds_mps?.length || 0) * Number(generation?.ay_points || 0) : 0;
-  status.textContent = state.dirtySimConfig ? "Unsaved changes" : cases ? `${formatNumber(cases)} lateral cases, each with nonlinear acceleration and braking trims.` : "";
+  status.textContent = state.dirtySimConfig ? "Unsaved changes" : "";
   document.getElementById("apply-sim-config-btn").hidden = !state.dirtySimConfig;
 }
 

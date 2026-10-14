@@ -675,9 +675,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                 _field("racing_line.mode", "Racing line", kind="select", group="Track",
                        choices=("centerline", "minimum_curvature", "minimum_time_qss")),
                 _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
-                _field("qss.speeds_mps", "Initial envelope speeds", kind="list", group="Envelope", unit="m/s",
-                       help_text="Coverage extends to the vehicle speed limit using the final speed spacing."),
-                _field("qss.ay_points", "Lateral points", kind="integer", group="Envelope"),
                 _field("qss.regenerate", "Rebuild GGV", kind="boolean", group="Envelope"),
                 *(
                     (
@@ -700,30 +697,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("generation.model_dof", "Model DOF", kind="select", group="Model",
                    choices=("3", "6", "10", "14"),
                    help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
-            _field("generation.speeds_mps", "Initial speeds", kind="list", group="Generation", unit="m/s",
-                   help_text="Coverage extends to the vehicle speed limit using the final speed spacing."),
-            _field("generation.ay_max_g", "Max lateral acceleration", kind="number", group="Generation", unit="g"),
-            _field("generation.ay_points", "Lateral points", kind="integer", group="Generation"),
-            _field(
-                "generation.ax_search_min_g", "Min longitudinal search", kind="number", group="Generation", unit="g"
-            ),
-            _field(
-                "generation.ax_search_max_g", "Max longitudinal search", kind="number", group="Generation", unit="g"
-            ),
-            _field("generation.ax_binary_iterations", "Longitudinal refinement steps",
-                   kind="integer", group="Generation"),
-            _field("generation.include_left_right", "Include left/right", kind="boolean", group="Generation"),
-            _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
-            _field("report.title", "Title", kind="string", group="Report"),
-            _field("report.reference_speed_mps", "Reference speed", kind="number", group="Report", unit="m/s"),
-            _field(
-                "performance_index.track_profile.integration_step_m",
-                "Track integration step",
-                kind="number",
-                group="Track profile",
-                unit="m",
-            ),
-            _field("performance_index.track_profile.maneuvers", "Maneuvers", kind="json", group="Track profile"),
         ),
     ),
     "ymd": ConfigSpec(

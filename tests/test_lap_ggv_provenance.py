@@ -169,7 +169,7 @@ def test_generated_lap_envelope_covers_vehicle_speed(provenance_workspace, monke
         max_drive_speed: float = 22.
 
     monkeypatch.setattr(vehicle_yaml, 'project_vehicle_yaml', lambda _: SimpleNamespace(ggv=Projection()))
-    arguments['qss_config'] = {'speeds_mps': [5., 10.]}
+    arguments['qss_config'] = {'speeds_mps': [5., 10.], 'ay_max_g': .1, 'ay_points': 3}
     captured = []
     monkeypatch.setattr(ggv_generation, 'generate_ggv',
                         lambda vehicle, config, **kwargs: captured.append((vehicle, config)) or [])
@@ -178,5 +178,14 @@ def test_generated_lap_envelope_covers_vehicle_speed(provenance_workspace, monke
     result, provenance = lap._load_or_generate_ggv(root / 'new.csv', model=None, **arguments)
     assert result == 'generated map'
     assert provenance['status'] == 'generated'
-    assert captured[0][1].speeds == (5., 10., 15., 20., 22.)
+    assert captured[0][1].speeds == pytest.approx(tuple(22. * i / 9 for i in range(1, 10)))
+    assert captured[0][1].ay_points == 161
+    assert captured[0][1].ay_max_g > .1
     assert captured[0][0].max_drive_power == 80000
+
+
+def test_legacy_numerical_settings_do_not_change_automatic_cache(provenance_workspace):
+    _, arguments = provenance_workspace
+    before = lap._ggv_provenance(**arguments)['fingerprint']
+    arguments['qss_config'] = {'ay_max_g': .1, 'ax_search_max_g': .1, 'speeds_mps': [2.]}
+    assert lap._ggv_provenance(**arguments)['fingerprint'] == before

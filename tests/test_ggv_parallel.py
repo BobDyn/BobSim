@@ -29,6 +29,7 @@ def test_spawned_speed_slices_match_serial_in_configured_order(monkeypatch):
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
     serial = parallel._generate_speed((ROOT / "vehicle.yml").as_posix(), asdict(config))
     set_projected_limit(monkeypatch, 12.)
+    monkeypatch.setattr(parallel, "automatic_vehicle_speed_grid", lambda _: config.speeds)
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 2)
     spawned = parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", config)
     assert [envelope.speed for envelope in spawned] == list(config.speeds)
@@ -38,10 +39,11 @@ def test_spawned_speed_slices_match_serial_in_configured_order(monkeypatch):
         np.testing.assert_allclose(actual.ax_brake, expected.ax_brake, atol=1e-5, rtol=0)
 
 
-def test_single_speed_does_not_spawn(monkeypatch):
+def test_single_cpu_does_not_spawn(monkeypatch):
     set_projected_limit(monkeypatch, 5.)
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
     def unexpected_pool(*args, **kwargs):
-        pytest.fail("One speed must use the serial worker.")
+        pytest.fail("One CPU must use the serial worker.")
 
     expected = []
     monkeypatch.setattr(parallel, "ProcessPoolExecutor", unexpected_pool)
@@ -61,30 +63,37 @@ def test_worker_failure_propagates(tmp_path, monkeypatch):
         )
 
 
-@pytest.mark.parametrize("speeds, maximum, expected", [
-    ((5., 10., 15., 20., 25.), 42.054, (5., 10., 15., 20., 25., 30., 35., 40., 42.054)),
-    ((10., 5., 10.), 20., (10., 5., 10., 15., 20.)),
-    ((5., 12.), 12., (5., 12.)),
-    ((12., 5.), 10., (12., 5.)),
-    ((5.,), 12., (5., 12.)),
-])
-def test_speed_grid_preserves_samples_and_covers_vehicle(speeds, maximum, expected):
-    assert parallel.vehicle_speed_grid(speeds, maximum) == expected
+@pytest.mark.parametrize("maximum", [0.5, 9., 42.054, 100.])
+def test_automatic_speed_grid_covers_vehicle(maximum):
+    speeds = parallel.automatic_vehicle_speed_grid(maximum)
+    assert len(speeds) == 9
+    assert speeds[-1] == maximum
+    assert 0. < speeds[0] < maximum
+    np.testing.assert_allclose(np.diff((0., *speeds)), maximum / 9)
 
 
-@pytest.mark.parametrize("speeds, maximum", [
-    ((), 12.), ((0.,), 12.), ((float("nan"),), 12.),
-    ((5.,), float("inf")), ((5.,), 0.),
-])
-def test_speed_grid_rejects_unknown_limits_and_invalid_samples(speeds, maximum):
+@pytest.mark.parametrize("maximum", [float("inf"), float("nan"), 0., -1.])
+def test_speed_grid_rejects_unknown_limits(maximum):
     with pytest.raises(ValueError):
-        parallel.vehicle_speed_grid(speeds, maximum)
+        parallel.automatic_vehicle_speed_grid(maximum)
 
 
-def test_file_workflow_extends_grid_before_dispatch(monkeypatch):
-    set_projected_limit(monkeypatch, 22.)
+def test_file_workflow_ignores_saved_speed_grid(monkeypatch):
+    set_projected_limit(monkeypatch, 45.)
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
     captured = []
     monkeypatch.setattr(parallel, "_generate_speed", lambda path, config: captured.append(config) or [])
-    parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", GGVConfig(speeds=(5., 10.)))
-    assert captured[0]["speeds"] == (5., 10., 15., 20., 22.)
+    for speeds in ((5., 10.), (100.,), ()):
+        parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", GGVConfig(speeds=speeds))
+    assert all(config["speeds"] == (5., 10., 15., 20., 25., 30., 35., 40., 45.) for config in captured)
+
+
+def test_app_envelope_settings_only_expose_model_choice():
+    from app.registry import BASE_CONFIG_SPECS
+
+    ggv = BASE_CONFIG_SPECS["ggv"]
+    assert [field.path for field in ggv.fields] == [("generation", "model_dof")]
+    for name in ("lap-qss", "lap-transient"):
+        assert [field.path for field in BASE_CONFIG_SPECS[name].fields if field.path[0] == "qss"] == [
+            ("qss", "regenerate"),
+        ]
