@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync('app/static/vendor/katex/katex.min.js', 'utf8') + '\n' + fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const source = fs.readFileSync('app/static/simulation_diagrams.js', 'utf8') + '\n' + fs.readFileSync('app/static/vendor/katex/katex.min.js', 'utf8') + '\n' + fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert,
   document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
@@ -86,6 +86,9 @@ for (const id of ['four-post', 'steady-state', 'transient', 'ramp-steer', 'mbd-s
   for (const path of guide.sources) assert.ok(fs.existsSync(path), `${id}: missing source ${path}`);
   const html = vm.runInContext(`simulationMethodHtml({id:${JSON.stringify(id)}})`, ctx);
   assert.match(html, /How it works/);
+  assert.match(html, /class="simulation-diagram"/);
+  assert.match(html, /role="img" aria-labelledby="simulation-diagram-/);
+  assert.doesNotMatch(html, /undefined|NaN/);
   assert.match(html, /Assumptions and limits/);
   assert.match(html, /Implementation sources/);
 }
@@ -119,3 +122,10 @@ const ggvMath = vm.runInContext("simulationMathHtml('ggv')",ctx);
 assert.match(ggvMath, /This does not set yaw rate to zero/);
 assert.match(ggvMath, /tangential acceleration free/);
 assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx), /path-frame GGV/);
+
+assert.ok(markup.indexOf('/static/simulation_diagrams.js') < markup.indexOf('/static/app.js'));
+assert.equal(vm.runInContext("simulationDiagramHtml('unsupported')", ctx), '');
+assert.match(vm.runInContext("simulationDiagramHtml('ggv')", ctx), /Heading rate/);
+assert.match(vm.runInContext("simulationDiagramHtml('four-post')", ctx), /Wheel travel is a result/);
+assert.match(vm.runInContext("simulationDiagramHtml('reduced-ramp-steer')", ctx), /Ramp end/);
+assert.doesNotMatch(vm.runInContext("simulationDiagramHtml('ramp-steer')", ctx), />Hold</);

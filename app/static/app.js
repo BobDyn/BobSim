@@ -4285,7 +4285,7 @@ function renderSimulationOverview() {
       <dt>Results</dt><dd>${escapeHtml(latest?.created_label || "Not run yet")}</dd>
       ${simulation.ggv_source_id ? `<dt>GGV input</dt><dd>${escapeHtml(simulation.ggv_input?.name || "Unavailable")} (${escapeHtml(simulation.ggv_input?.status || "Unknown")})</dd>` : ""}</dl>
       <div class="simulation-overview-actions"><button type="button" class="primary" data-overview-setup>Setup</button><button type="button" data-overview-view>Add view</button></div></div>
-      ${simulationVisualHtml(workflow)}</div>${simulationMethodHtml(workflow)}`;
+      </div>${simulationMethodHtml(workflow)}`;
     panel.querySelector("[data-overview-setup]").onclick = () => workspaceAction(() => openSimulation(simulation.id));
     panel.querySelector("[data-overview-view]").onclick = () => workspaceAction(() => addSimulationVisualization(simulation.id));
   }
@@ -5102,15 +5102,16 @@ function simulationVisualHtml(workflow) {
   let caption;
   if (id.includes('ramp-steer') || id.includes('step-steer')) {
     const ramp = id.includes('ramp-steer');
-    drawing = `${axes}<path d="${ramp ? 'M27 94H65L165 24H224' : 'M27 94H91V26H224'}" ${stroke} stroke-width="2.5"/>`;
-    caption = ramp ? 'Steering ramps to a target and holds.' : 'Steering changes to a new value and holds.';
+    const continuous = id === 'ramp-steer';
+    drawing = `${axes}<path d="${ramp ? (continuous ? 'M27 94H65L224 24' : 'M27 94H65L165 24H224') : 'M27 94H91L105 26H224'}" ${stroke} stroke-width="2.5"/>`;
+    caption = ramp ? (continuous ? 'Steering ramps until the run ends.' : 'Steering ramps to a target and holds.') : 'Steering rises to a new value and holds.';
   } else if (id === 'steady-state' || id === 'transient') {
     const steady = id === 'steady-state';
     drawing = '<text x="48" y="43" text-anchor="middle" fill="currentColor" font-size="23">x</text>'
       + '<circle cx="48" cy="22" r="1.6" fill="currentColor"/>'
-      + text(58, 43, steady ? ' = f(x, u) = 0' : ' = f(x, u, t)', 23)
-      + `<g opacity=".6"><text x="130" y="83" text-anchor="middle" fill="currentColor" font-size="20">${steady ? 'g(x, u) = 0' : 'g(x, u, t) = 0'}</text>`
-      + '<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">Constraints, if present</text></g>';
+      + text(58, 43, steady ? ' = f(x, u)' : ' = f(x, u, t)', 23)
+      + `<g opacity=".6"><text x="130" y="83" text-anchor="middle" fill="currentColor" font-size="${steady ? 16 : 20}">${steady ? 'Settled handling response' : 'g(x, u, t) = 0'}</text>`
+      + `<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">${steady ? 'Position and heading continue to evolve' : 'Constraints, if present'}</text></g>`;
     caption = steady ? 'Solve a steady operating point.' : 'Evolve the state while satisfying the model constraints.';
   } else if (id === 'four-post') {
     drawing = `<path d="M49 104L91 72L211 83L169 115Z" ${stroke} opacity=".2"/>`
@@ -5121,7 +5122,7 @@ function simulationVisualHtml(workflow) {
         + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<ellipse cx="${x}" cy="${top}" rx="19" ry="6" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
       ).join('');
-    caption = 'Four hydraulic posts move the wheels independently.';
+    caption = 'Chassis heave and roll with fixed contact heights.';
   } else if (id === 'ggv') {
     drawing = `<path d="M127 112V7M127 105L34 119M127 105L225 119" ${stroke} opacity=".35"/>`
       + [[92, 30, 9], [70, 42, 12], [45, 58, 16], [20, 76, 20]].map(([y,rx,ry]) => `<ellipse cx="127" cy="${y}" rx="${rx}" ry="${ry}" ${stroke}/>`).join('')
@@ -5577,7 +5578,7 @@ function simulationMathHtml(id) {
     intro += reduced ? " Steering is nominal mean front roadwheel angle." : " Steering is handwheel angle.";
   }
   const math = (value, displayMode = false) => katex.renderToString(value, {displayMode, throwOnError: true, trust: false});
-  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
+  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
 }
 
 function simulationMethodHtml(workflow) {

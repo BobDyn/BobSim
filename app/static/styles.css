@@ -3967,18 +3967,15 @@ body.resizing-panes * {
 #simulation-overview header { margin-bottom: 28px; }
 #simulation-overview h2 { margin: 0 0 8px; font-size: 24px; }
 #simulation-overview header p { margin: 0; color: var(--muted); }
-.simulation-overview-body { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); gap: 40px; align-items: center; }
+.simulation-overview-body { max-width: 640px; }
 .simulation-overview-body dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 14px 24px; margin: 0 0 28px; }
 .simulation-overview-body dt { color: var(--muted); }
 .simulation-overview-body dd { margin: 0; overflow-wrap: anywhere; }
-.simulation-overview-body .simulation-visual { justify-content: center; }
-.simulation-overview-body .simulation-visual svg { flex: 1 1 auto; width: 100%; max-width: 400px; height: auto; }
 .simulation-overview-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .simulation-overview-list { display: grid; gap: 8px; margin-top: 24px; max-width: 540px; }
 .simulation-overview-list button { text-align: left; padding: 12px 16px; }
 
 @media (max-width: 780px) {
-  .simulation-overview-body { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   #simulation-overview { padding: 24px; }
 }
 
@@ -5078,3 +5075,15 @@ summary:focus-visible {
 .simulation-math p { font-size: 13px; line-height: 1.7; margin: 14px 0 0; max-width: 88ch; }
 .simulation-method-notes { margin-top: 24px; }
 .simulation-method-notes > summary { cursor: pointer; font-size: 13px; }
+
+.simulation-diagram { margin: 24px 0 0; padding: 16px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
+.simulation-diagram svg { display: block; width: 100%; min-width: 540px; height: auto; }
+.simulation-diagram text { fill: var(--ink); stroke: none; font-family: inherit; font-size: 15px; }
+.simulation-diagram path, .simulation-diagram rect, .simulation-diagram circle { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.simulation-diagram .muted { stroke: var(--muted); opacity: .55; }
+.simulation-diagram .body { fill: var(--surface); stroke: var(--muted); }
+.simulation-diagram .force { stroke: #c07835; }
+.simulation-diagram .motion { stroke: var(--blue); }
+.simulation-diagram .accent { stroke: var(--blue); }
+.simulation-diagram circle.accent { fill: var(--blue); }
+.simulation-diagram figcaption { max-width: 88ch; margin: 12px 8px 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
