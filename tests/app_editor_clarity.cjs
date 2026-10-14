@@ -710,8 +710,8 @@ vm.runInContext(`
   const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,menuContext);
   vm.runInContext(`
-    const events={}; let focused, added;
-    const buttons=['add','duplicate','replay','signals','delete'].map(action=>({
+    const events={}; let focused;
+    const buttons=['duplicate','replay','signals','delete'].map(action=>({
       dataset:{action},hidden:false,focus(){focused=action;}
     }));
     const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
@@ -725,7 +725,7 @@ vm.runInContext(`
       addEventListener:(name,fn)=>events['tree:'+name]=fn
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
-    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
+    workspaceAction=fn=>fn();
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
@@ -733,11 +733,10 @@ vm.runInContext(`
         : {dataset:{analysisGroup:group},querySelector:()=>trigger}
     }});
     for (const group of ['kinematic','steady-state','transient']) {
+      rightClick('transient','maneuver');
+      assert.equal(menu.hidden,false);
       rightClick(group);
-      assert.equal(menu.hidden,false); assert.equal(focused,'add');
-      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add']);
-      events['menu:click']({target:{closest:()=>buttons[0]}});
-      assert.equal(added,group); assert.equal(menu.hidden,true);
+      assert.equal(menu.hidden,true,'analysis groups close menus without opening an action');
     }
     rightClick('steady-state','envelope');
     assert.equal(focused,'duplicate');

@@ -4515,12 +4515,11 @@ function wireSimulationContextMenu() {
     const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
-      const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
+      const actions = scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
       button.hidden = !actions.includes(button.dataset.action);
       button.disabled = button.dataset.action === "replay" && (envelope || lap);
       button.title = button.disabled ? "This analysis produces steady-state results, not an animation." : "";
     }
-    menu.querySelector('[data-action="add"]').textContent = id ? "Add simulation" : "Add analysis";
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
     menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
@@ -4544,7 +4543,7 @@ function wireSimulationContextMenu() {
     if (!branch && !group) return;
     event.preventDefault();
     if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
-    else if (group) open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
+    else close();
   });
   tree.addEventListener("click", event => {
     const button = event.target.closest("[data-simulation-menu]");
@@ -4559,7 +4558,7 @@ function wireSimulationContextMenu() {
     const id = target;
     close();
     workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
-      : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
+      : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
