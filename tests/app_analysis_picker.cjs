@@ -108,3 +108,9 @@ assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/Position
 const katexCSS = fs.readFileSync('app/static/vendor/katex/katex.min.css','utf8');
 for (const [,font] of katexCSS.matchAll(/url\(([^)]+)\)/g)) assert.ok(fs.existsSync('app/static/vendor/katex/'+font));
 assert.ok(markup.indexOf('/static/vendor/katex/katex.min.js') < markup.indexOf('/static/app.js'));
+
+const fourpost = vm.runInContext("simulationMathHtml('four-post')",ctx);
+assert.match(fourpost, /Rotate about global x, translate along local z/);
+assert.match(fourpost, /Global x and y translation and all contact-frame rotations remain free/);
+assert.match(fourpost, /not a prescribed wheel-travel value/);
+assert.doesNotMatch(fourpost, /Move the fixtures|z_\{\\mathrm\{rig\}/);

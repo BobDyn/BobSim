@@ -5179,7 +5179,7 @@ function simulationMethodGuide(workflowId) {
   return {
   "four-post": {
     "method": [
-      "Run the BobLib multibody suspension on prescribed contact-patch fixtures in OpenModelica.",
+      "Run the BobLib multibody suspension with chassis heave/roll actuators and fixed-height contact-patch fixtures in OpenModelica.",
       "Apply the built-in heave sweep, then the roll sweep, with contact-patch force pulses and the selected steering offset.",
       "Compare static contact loads with the vehicle weight distribution and adjust spring free lengths within the configured iteration limit.",
       "Extract suspension geometry, force-transfer curves and setup metrics from the recorded sweep."
@@ -5196,14 +5196,16 @@ function simulationMethodGuide(workflowId) {
       "PDF report and metrics CSV."
     ],
     "limits": [
-      "The rig prescribes suspension motion and applied forces. It does not predict a driven lap.",
-      "The sweep schedule is built into the Modelica rig. The setup changes its amplitudes.",
+      "Heave and roll are chassis actuator coordinates. Wheel travel is solved from the suspension and contact constraints. The imposed roll axis is global x through the world origin, distinct from the reported force-based roll center.",
+      "The sweep schedule is built into the Modelica rig. Front and rear share heave and roll commands, so there is no independent pitch input.",
       "Contact loss can invalidate roll-force metrics and is rejected when contact validation is enabled.",
-      "Vehicle geometry and mass changes must be present in the compiled BobLib model."
+      "This rig sets world gravity to zero and uses configured spring preload and applied test forces. It is not a free-running vehicle simulation. Vehicle changes must be present in the compiled model."
     ],
     "sources": [
       "simulations/response/mbd/four_post/four_post_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
+      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo",
+      "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ChassisActuator.mo",
+      "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ContactPatchFixture.mo"
     ]
   },
   "steady-state": {
@@ -5550,10 +5552,11 @@ function simulationMathHtml(id) {
       {title: "Accept only settled cases", equation: tex`|e_v|<\varepsilon_v,\qquad |e_a|<\varepsilon_a,\qquad |\dot y_j|<\varepsilon_j`, text: "Check errors and the rates of the monitored handling signals. Position and heading still change as the vehicle travels around a corner.", symbols: [[tex`y_j`, "Monitored acceleration, yaw rate, sideslip, roll or steering"], [tex`\varepsilon`, "Configured settling tolerance"]]}
     ];
   } else if (id === "four-post") {
-    intro = "Prescribe contact-patch motion and test forces, then measure how the constrained suspension moves and transfers load.";
+    intro = "Move the chassis in heave and roll while the contact patches remain at their reference heights. The suspension determines the resulting wheel travel.";
     sections = [
-      {title: "Move the fixtures", equation: tex`z_i(t)=z_{\mathrm{rig},i}(t)`, text: "The built-in schedule applies heave and roll sweeps plus test-force pulses.", symbols: [[tex`z_i`, "Vertical position of contact patch i"]]}, dae,
-      {title: "Read geometry and load response", equation: tex`\gamma_i=\gamma_i(\mathbf q),\qquad\delta_i=\delta_i(\mathbf q)`, text: "Read camber, toe and the other suspension metrics from the solved poses and reaction loads throughout the sweep.", symbols: [[tex`\gamma_i,\delta_i`, "Corner camber and toe"]]}
+      {title: "1. Rotate about global x, translate along local z", equation: tex`\begin{aligned}\mathbf R &= \mathbf R_x(\phi) \\ \mathbf r_A^{\mathrm{world}} &= \mathbf R_x(\phi)\left(\mathbf r_{A,0}+h\,\mathbf e_z\right)\end{aligned}`, text: "The actuator starts at the world origin. Its revolute joint rolls about global x. The axle reference offset follows that rotation, then the prismatic joint translates the chassis along the rotated local z axis. Positive heave therefore follows local z, not global vertical when roll is nonzero. Front and rear receive the same commands.", symbols: [[tex`\phi`, "Commanded roll about global x (forward)"], [tex`h`, "Commanded heave along the actuator's local z axis"], [tex`\mathbf r_{A,0}`, "Nominal axle reference: wheel-center x and z, with y = 0"], [tex`\mathbf R_x,\mathbf e_z`, "Local-to-world roll rotation and local z unit vector"]]},
+      {title: "2. Constrain the contact patches", equation: tex`z_{\mathrm{CP},i}=z_{\mathrm{ground},i}=z_{\mathrm{CP},i}^{\mathrm{initial}}`, text: "Each contact patch stays on the ground at its initial global z. Global x and y translation and all contact-frame rotations remain free. These constraints allow the contact patch to migrate and the wheel to change orientation as the suspension moves. The rig also applies scheduled longitudinal and lateral test forces.", symbols: [[tex`i`, "One of the four contact patches"], [tex`z_{\mathrm{ground},i}`, "Ground height taken from the initial global contact-patch z"]]},
+      {title: "3. Solve suspension closure and reactions", equation: tex`\boldsymbol\Phi(\mathbf q;h,\phi)=\mathbf0`, text: "Solve the multibody equations with the imposed chassis pose and contact constraints. Wheel travel, camber, toe, spring motion and reaction loads follow from the linkage geometry. Heave is an actuator displacement, not a prescribed wheel-travel value. The built-in schedule sweeps heave first, then roll.", symbols: [[tex`\mathbf q`, "Suspension coordinates solved by the model"], [tex`\boldsymbol\Phi`, "Joint, chassis-pose and contact-fixture constraints"]]}
     ];
   } else if (id === "lap-transient") {
     intro = "A feedback driver follows a QSS reference line and speed profile while the vehicle states evolve through time.";
@@ -5669,8 +5672,8 @@ function simWorkflowMeta(workflow) {
     "four-post": {
       title: "Four Post",
       summary: "Suspension response to heave, roll, and corner loads.",
-      sequence: ["Build FourPostSim if needed", "Initialize corner positions", "Apply vertical actuator procedures", "Sweep heave/roll/force cases", "Collect suspension metrics"],
-      parameters: ["Corner input magnitudes", "Heave and roll sweeps", "Override rates and initial conditions", "Solver and output controls"],
+      sequence: ["Build FourPostSim if needed", "Fix contact-patch reference heights", "Command chassis heave and roll", "Apply contact-patch test forces", "Collect suspension metrics"],
+      parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Override rates and initial conditions", "Solver and output controls"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
     },
   }[workflow?.id] || fallback;
