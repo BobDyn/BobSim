@@ -4900,6 +4900,7 @@ summary:focus-visible {
 }
 .simulation-tree-runs { margin-left: 25px; padding-left: 8px; border-left: 1px solid var(--line); }
 .simulation-tree-runs[hidden] { display: none; }
+.simulation-result-children { margin-left: 27px; padding-left: 8px; }
 .simulation-tree-run { position: relative; color: var(--muted); font-size: 11px; }
 .simulation-tree-run::before { content: ""; position: absolute; left: -9px; width: 8px; border-top: 1px solid var(--line); }
 .simulation-library-links { display: grid; padding: 6px 10px; margin-top: 8px; border-top: 1px solid var(--line); }

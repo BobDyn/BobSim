@@ -4532,35 +4532,39 @@ function wireSimulationContextMenu() {
   const tree = document.getElementById("simulation-tree");
   const menu = document.getElementById("simulation-context-menu");
   let target = null;
-  let targetRunId = null;
   let trigger = null;
   const close = (restoreFocus = false) => {
     menu.hidden = true;
     trigger?.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger?.focus();
   };
-  const open = (id, x, y, element, group = false) => {
+  const open = (id, x, y, element, scope = "simulation") => {
     target = id;
-    targetRunId = savedResults().find(run => run.simulation?.id === id && run.vehicle_key === activeVehicleKey())?.id;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
     const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
-      button.hidden = group ? button.dataset.action !== "add" : button.dataset.action === "add"
-        || ((envelope || lap) && button.dataset.action === "replay") || (!lap && button.dataset.action === "lap")
-        || (button.dataset.action === "baseline" && !targetRunId);
+      const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
+      button.hidden = !actions.includes(button.dataset.action);
+      button.disabled = button.dataset.action === "replay" && (envelope || lap);
+      button.title = button.disabled ? "This analysis produces steady-state results, not an animation." : "";
     }
     menu.querySelector('[data-action="add"]').textContent = id ? "Add simulation" : "Add analysis";
-    menu.querySelector('[data-action="report"]').textContent = envelope ? "Add envelope plots and report" : "Add plots and report";
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
     menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
     trigger?.setAttribute("aria-expanded", "true");
-    menu.querySelector("button:not([hidden])").focus();
+    menu.querySelector("button:not([hidden]):not([disabled])").focus();
   };
   tree.addEventListener("contextmenu", event => {
+    const results = event.target.closest("[data-simulation-results]");
+    if (results) {
+      event.preventDefault();
+      open(results.dataset.simulationResults, event.clientX, event.clientY, results.querySelector("[data-simulation-run]"), "results");
+      return;
+    }
     if (event.target.closest(".simulation-tree-runs")) {
       event.preventDefault();
       close();
@@ -4572,8 +4576,8 @@ function wireSimulationContextMenu() {
     if (!branch && !group && !root) return;
     event.preventDefault();
     if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
-    else if (group) open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), true);
-    else open(null, event.clientX, event.clientY, document.getElementById("add-simulation-btn"), true);
+    else if (group) open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
+    else open(null, event.clientX, event.clientY, document.getElementById("add-simulation-btn"), "group");
   });
   tree.addEventListener("click", event => {
     const button = event.target.closest("[data-simulation-menu]");
@@ -4582,20 +4586,20 @@ function wireSimulationContextMenu() {
     open(button.dataset.simulationMenu, rect.left, rect.bottom, button);
   });
   menu.addEventListener("click", event => {
-    const action = event.target.closest("[data-action]")?.dataset.action;
-    if (!action) return;
+    const button = event.target.closest("[data-action]");
+    const action = button?.dataset.action;
+    if (!action || button.disabled) return;
     const id = target;
-    const runId = targetRunId;
     close();
-    workspaceAction(() => action === "duplicate" ? duplicateSimulation(id) : action === "baseline" ? setSimulationBaseline(id, runId)
-      : action === "add" ? (id ? showSimulationCatalog(id) : showAnalysisPicker()) : action === "delete" ? removeSimulation(id) : action === "setup" ? openSimulation(id) : addSimulationVisualization(id, action));
+    workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
+      : action === "add" ? (id ? showSimulationCatalog(id) : showAnalysisPicker()) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
     if (event.key === "Tab") close();
     if (["ArrowDown", "ArrowUp"].includes(event.key)) {
       event.preventDefault();
-      const buttons = [...menu.querySelectorAll("button")].filter(button => !button.hidden);
+      const buttons = [...menu.querySelectorAll("button")].filter(button => !button.hidden && !button.disabled);
       const index = buttons.indexOf(document.activeElement);
       buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
     }
@@ -4616,14 +4620,15 @@ async function addSimulationVisualization(id, kind = null) {
   state.simulationChildEditor = true;
   state.simulationGgvEditor = false;
   state.collapsedSimulations.delete(state.selectedSimulationId);
+  state.collapsedSimulations.delete(`results:${id}`);
   const envelope = ["ggv", "ymd"].includes(selectedSimulation()?.workflow_id);
-  const kinds = {report: envelope ? "Envelope plots and report" : "Plots and report", signals: "Signal explorer"};
+  const kinds = {signals: "Signal explorer"};
   if (selectedSimulation()?.workflow_id === "lap-qss") kinds.lap = "Lap map";
-  else if (!envelope) kinds.replay = "3D replay";
+  else if (!envelope) kinds.replay = "Animation";
   const picker = document.getElementById("simulation-visualization-kind");
   picker.innerHTML = Object.entries(kinds).map(([value, label]) =>
     `<option value="${value}">${label}</option>`).join("");
-  picker.value = kind && kinds[kind] ? kind : "report";
+  picker.value = kind && kinds[kind] ? kind : "signals";
   const name = document.getElementById("simulation-visualization-name");
   name.value = kinds[picker.value];
   picker.onchange = () => { name.value = kinds[picker.value]; };
@@ -4698,11 +4703,6 @@ function mountSimulationWorkspace() {
     const analysis = event.target.closest("[data-analysis-overview]");
     if (analysis) {
       workspaceAction(() => openAnalysisOverview(analysis.dataset.analysisOverview));
-      return;
-    }
-    const add = event.target.closest("[data-simulation-add-child]");
-    if (add) {
-      workspaceAction(() => addSimulationVisualization(add.dataset.simulationAddChild));
       return;
     }
     const remove = event.target.closest("[data-remove-visualization]");
@@ -4794,6 +4794,7 @@ function renderSimulationWorkspace() {
       <div class="simulation-tree-children"${expanded ? "" : " hidden"}>${(simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id).map(item => {
     const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id).slice(0, 1);
     const expanded = !state.collapsedSimulations.has(item.id);
+    const children = (item.visualizations || []).filter(child => child.kind !== "report");
     const selected = state.view === "standard" && state.simModalOpen && item.id === state.selectedSimulationId;
     const workflow = state.status?.workflows?.find(w => w.id === item.workflow_id);
     const model = item.model ? `${item.model.engine} · ${item.model.fidelity}` : workflow?.label || item.workflow_id;
@@ -4804,15 +4805,18 @@ function renderSimulationWorkspace() {
         <button type="button" data-simulation-id="${escapeHtml(item.id)}" data-simulation-overview="${escapeHtml(item.id)}" class="simulation-tree-item ${state.view === "standard" && state.simulationOverview?.id === item.id ? "active" : ""}" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
           ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.model_dofs?.length ? item.model.model_dofs.join("/") + " DOF" : item.model?.fidelity || "")}</span>
         </button>
-        <button type="button" class="simulation-tree-add" data-simulation-add-child="${escapeHtml(item.id)}" aria-label="Add to ${escapeHtml(item.name)}" title="Add visualization or optimization">+</button>
         <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
         ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
-        ${(item.visualizations || []).map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" title="${escapeHtml(child.name)}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
-        ${runs.length ? '<div class="simulation-tree-group">Results</div>' : ""}
-        ${runs.map(run => `<button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id && run.id === state.selectedResultId ? "active" : ""}" data-simulation-run="${escapeHtml(run.id)}" data-owner="${escapeHtml(item.id)}"${item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : ""} title="${item.workflow_id === "ggv" ? "Drag onto QSS Lap to connect. " : ""}${escapeHtml(run.created_label)}">${simulationTreeIcon("report")}<span class="simulation-tree-label">${escapeHtml(run.created_label)}</span>${item.baseline_run_id === run.id ? '<span class="simulation-tree-model">Baseline</span>' : ""}${item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>`).join("")}
+        <div class="simulation-tree-row" data-simulation-results="${escapeHtml(item.id)}">
+          ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : '<span class="simulation-tree-spacer"></span>'}
+          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (item.workflow_id === "ggv" ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
+        </div>
+        <div class="simulation-tree-children simulation-result-children"${state.collapsedSimulations.has(`results:${item.id}`) ? " hidden" : ""}>
+          ${children.map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}"${runs.length ? "" : " disabled"} title="${runs.length ? escapeHtml(child.name) : "Results are available after a successful run."}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
+        </div>
       </div>
     </div>`;
       }).join("")}</div></section>`;

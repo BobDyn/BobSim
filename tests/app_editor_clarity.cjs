@@ -637,10 +637,10 @@ vm.runInContext(`
     state.simulationWorkspace={simulations:[{id:'ggv-test',workflow_id:'ggv'}]};
     api=()=>{throw new Error('An envelope must not request replay captures');};
     await addSimulationVisualization('ggv-test');
-    assert.match(elements['simulation-visualization-kind'].innerHTML,/Envelope plots and report/);
+    assert.doesNotMatch(elements['simulation-visualization-kind'].innerHTML,/report/);
     assert.match(elements['simulation-visualization-kind'].innerHTML,/Signal explorer/);
     assert.doesNotMatch(elements['simulation-visualization-kind'].innerHTML,/3D replay/);
-    assert.equal(elements['simulation-visualization-name'].value,'Envelope plots and report');
+    assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
     elements['simulation-visualization-kind'].value='signals';
     elements['simulation-visualization-kind'].onchange();
     assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
@@ -660,7 +660,7 @@ vm.runInContext(`
     savedResults=()=> [{id:'ggv-run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'Today'}];
     state.simulationWorkspace={vehicle_key:'car',simulations:[
       {id:'lap',workflow_id:'lap-qss',name:'QSS lap'},
-      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer',visualizations:[{id:'plot',kind:'report',name:'Plots'}]},
+      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer',visualizations:[{id:'plot',kind:'signals',name:'Signals'},{id:'legacy-report',kind:'report',name:'Old report'}]},
       {id:'ggv',workflow_id:'ggv',name:'GGV'},
       {id:'rig',workflow_id:'four-post',name:'Rig'}
     ]};
@@ -671,6 +671,12 @@ vm.runInContext(`
     assert.match(html,/draggable="true" data-ggv-source="ggv"/);
     assert.equal((html.match(/draggable="true"/g)||[]).length,1);
     assert.match(html,/simulation-drag-grip/);
+    assert.equal(html.split('>Results</span>').length-1,4,'every simulation has Results');
+    assert.match(html,/data-simulation-run="" data-owner="step" aria-haspopup="menu" disabled/);
+    assert.match(html,/data-simulation-run="ggv-run" data-owner="ggv" aria-haspopup="menu" draggable/);
+    assert.match(html,/data-simulation-toggle="results:step"/);
+    assert.doesNotMatch(html,/data-simulation-visualization="legacy-report"/);
+    assert.ok(html.indexOf('data-simulation-toggle="results:step"') < html.indexOf('data-simulation-visualization="plot"'));
     assert.match(html,/ggv-link-empty/);
     assert.ok(html.includes('>Link GGV</span>'));
     assert.match(group('steady-state'),/data-simulation-branch="lap"/);
@@ -679,6 +685,8 @@ vm.runInContext(`
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
     assert.match(group('kinematic'),/data-simulation-branch="rig"/);
     assert.match(html,/data-analysis-overview="steady-state"/);
+    assert.doesNotMatch(html,/data-simulation-add-child/);
+    assert.match(html,/data-simulation-results="ggv"/);
     assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
     state.simulationWorkspace.simulations[0].ggv_source_id='ggv';
     state.simulationWorkspace.simulations[0].ggv_input={name:'GGV',status:'Ready'};
@@ -703,12 +711,12 @@ vm.runInContext(`
   vm.runInContext(source,menuContext);
   vm.runInContext(`
     const events={}; let focused, added;
-    const buttons=['add','setup','report','replay','lap','signals','delete'].map(action=>({
+    const buttons=['add','duplicate','replay','signals','delete'].map(action=>({
       dataset:{action},hidden:false,focus(){focused=action;}
     }));
     const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
       querySelectorAll:()=>buttons,
-      querySelector:selector=>selector==='button:not([hidden])' ? buttons.find(b=>!b.hidden)
+      querySelector:selector=>selector==='button:not([hidden]):not([disabled])' ? buttons.find(b=>!b.hidden&&!b.disabled)
         : buttons.find(b=>selector.includes('"'+b.dataset.action+'"')),
       addEventListener:(name,fn)=>events['menu:'+name]=fn
     };
@@ -721,7 +729,7 @@ vm.runInContext(`
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
-      closest:selector=>selector==='.simulation-tree-runs' ? null : selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
+      closest:selector=>selector==='[data-simulation-results]' || selector==='.simulation-tree-runs' ? null : selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
         : {dataset:{analysisGroup:group},querySelector:()=>trigger}
     }});
     for (const group of ['kinematic','steady-state','transient']) {
@@ -738,12 +746,17 @@ vm.runInContext(`
     events['menu:click']({target:{closest:()=>buttons[0]}});
     assert.equal(added,'analysis');
     rightClick('steady-state','envelope');
-    assert.equal(focused,'setup');
-    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','signals','delete']);
-    rightClick('steady-state','lap');
-    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','lap','signals','delete']);
-    rightClick('transient','maneuver');
-    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','replay','signals','delete']);
+    assert.equal(focused,'duplicate');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['duplicate','delete']);
+    const resultsClick=id=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
+      closest:selector=>selector==='[data-simulation-results]' ? {dataset:{simulationResults:id},querySelector:()=>trigger} : null
+    }});
+    resultsClick('envelope');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['replay','signals']);
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,true);
+    assert.match(buttons.find(b=>b.dataset.action==='replay').title,/steady-state/);
+    resultsClick('maneuver');
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,false);
     events['tree:contextmenu']({preventDefault(){},target:{closest:selector=>selector==='.simulation-tree-runs' ? {} : null}});
     assert.equal(menu.hidden,true,'simulation children have no context menu');
   `,menuContext);
