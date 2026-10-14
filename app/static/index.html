@@ -51,19 +51,6 @@
         </details>
       </header>
 
-      <div class="run-status-bar">
-        <details id="run-log-menu" class="model-menu run-log-menu">
-          <summary><span id="run-status" role="status"></span><span>Run log</span></summary>
-          <div class="model-menu-body run-log-body">
-            <div class="panel-heading"><h3>Run log</h3><button id="close-run-log" class="icon-button" type="button" aria-label="Close run log">×</button></div>
-            <div class="run-log-content">
-              <div id="job-list" class="job-list" aria-label="Jobs"></div>
-              <pre id="job-log" class="log-view" tabindex="0" aria-label="Selected job log"></pre>
-            </div>
-          </div>
-        </details>
-      </div>
-
       <main class="workspace">
         <section id="setup-view" class="screen active">
           <div class="screen-head setup-head">
@@ -226,6 +213,16 @@
                 <button id="simulation-next-btn" class="ghost-button" type="button" hidden>Go to setup</button>
               </div>
             </div>
+            <details id="run-log-menu" class="model-menu run-log-menu">
+              <summary><span id="run-status" role="status"></span><span>Run log</span></summary>
+              <div class="model-menu-body run-log-body">
+                <div class="panel-heading"><h3>Run log</h3><button id="close-run-log" class="icon-button" type="button" aria-label="Close run log">×</button></div>
+                <div class="run-log-content">
+                  <div id="job-list" class="job-list" aria-label="Jobs"></div>
+                  <pre id="job-log" class="log-view" tabindex="0" aria-label="Selected job log"></pre>
+                </div>
+              </div>
+            </details>
           </div>
 
           <div class="standard-workspace simulation-workspace">

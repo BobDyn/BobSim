@@ -884,7 +884,7 @@ for (const [value, scale, display, edited, expected] of [
     const elements={};
     document.getElementById=id=>elements[id] ||= {open:true,textContent:'',scrollHeight:100,scrollTop:0,clientHeight:100,classList:{toggle(){}},querySelectorAll:()=>[]};
     state.selectedSimulationId='other-sim';
-    state.view='setup';
+    state.view='standard';
     state.status={jobs:[{id:'done',label:'Completed',status:'completed',argv:[]},
       {id:'active',label:'GGV',status:'running',argv:[],simulation:{id:'ggv',name:'Envelope'}}]};
     const originalLoad=loadJobLog;
@@ -897,6 +897,9 @@ for (const [value, scale, display, edited, expected] of [
     elements['run-log-menu'].open=false;
     renderRunLog();
     assert.equal(logLoads,1,'closed log does not fetch job output');
+    elements['run-log-menu'].open=true;state.view='setup';renderRunLog();
+    assert.equal(logLoads,1,'vehicle Setup does not fetch hidden logs');
+    state.view='standard';
     state.status.jobs=[]; elements['run-log-menu'].open=true;
     renderRunLog();
     assert.equal(elements['run-status'].textContent,'');

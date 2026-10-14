@@ -7284,7 +7284,7 @@ function renderRunLog() {
   const busy = jobs.find(job => ["queued", "running"].includes(job.status));
   status.textContent = busy ? `${busy.label} · ${busy.status}` : "";
   status.classList.toggle("running", Boolean(busy));
-  if (!menu.open) return;
+  if (!menu.open || state.view === "setup") return;
   const list = document.getElementById("job-list");
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
