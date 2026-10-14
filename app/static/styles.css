@@ -5055,7 +5055,8 @@ summary:focus-visible {
 #run-status.running::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--blue); }
 .run-log-menu .run-log-body { width: min(900px, calc(100vw - 48px)); }
 .run-log-body h3 { margin: 0; }
-#close-run-log { margin-left: auto; }
+#cancel-run { margin-left: auto; }
+#cancel-run[hidden] + #close-run-log { margin-left: auto; }
 .run-log-content { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr); gap: 12px; height: min(440px, calc(100vh - 180px)); margin-top: 12px; }
 .run-log-content .job-list { display: flex; flex-direction: column; overflow: auto; min-height: 0; margin: 0; }
 .run-log-content .job-item { text-align: left; flex: none; }

@@ -139,11 +139,16 @@ def _run_subprocess_action(action: ActionSpec, job_id: str) -> int:
         errors="replace",
         bufsize=1,
         creationflags=_subprocess_creation_flags(),
+        start_new_session=sys.platform != "win32",
     ) as process:
-        assert process.stdout is not None
-        for line in process.stdout:
-            JOBS.append_log(job_id, line)
-        return process.wait()
+        JOBS.set_process(job_id, process)
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                JOBS.append_log(job_id, line)
+            return process.wait()
+        finally:
+            JOBS.set_process(job_id, None)
 
 
 def _run_action_process(action: ActionSpec, job_id: str) -> int:
@@ -177,6 +182,8 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
         returncode = 0
         action_wall_time_s: dict[str, float] = {}
         for action in actions:
+            if (JOBS.get(job_id) or {}).get("cancel_requested"):
+                break
             action_started = time.perf_counter()
             returncode = _run_action_process(action, job_id)
             elapsed = time.perf_counter() - action_started
@@ -186,8 +193,9 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
                 break
         if input_snapshot is not None:
             input_snapshot["action_wall_time_s"] = action_wall_time_s
+        cancelled = JOBS.finish_execution(job_id)
         review = None
-        if returncode == 0 and workflow_id:
+        if returncode == 0 and workflow_id and not cancelled:
             workflow = _workflow_by_id(workflow_id)
             JOBS.append_log(job_id, "\nPackaging review outputs...\n")
             try:
@@ -205,14 +213,15 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
                 returncode = -1
         JOBS.update(
             job_id,
-            status="succeeded" if returncode == 0 else "failed",
+            status="cancelled" if cancelled else "succeeded" if returncode == 0 else "failed",
             returncode=returncode,
             review=review,
             ended_at=time.time(),
         )
     except Exception as exc:  # pragma: no cover - defensive job boundary
         JOBS.append_log(job_id, f"\n{type(exc).__name__}: {exc}\n")
-        JOBS.update(job_id, status="failed", returncode=-1, ended_at=time.time())
+        cancelled = JOBS.finish_execution(job_id)
+        JOBS.update(job_id, status="cancelled" if cancelled else "failed", returncode=-1, ended_at=time.time())
 
 
 def start_job(action_id: str) -> dict[str, Any]:

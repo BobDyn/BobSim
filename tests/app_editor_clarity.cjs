@@ -919,7 +919,7 @@ for (const [value, scale, display, edited, expected] of [
   vm.runInContext(source,context);
   await vm.runInContext(`(async()=>{
     const elements={};
-    document.getElementById=id=>elements[id] ||= {open:true,textContent:'',scrollHeight:100,scrollTop:0,clientHeight:100,classList:{toggle(){}},querySelectorAll:()=>[]};
+    document.getElementById=id=>elements[id] ||= {open:true,textContent:'',setAttribute(){},scrollHeight:100,scrollTop:0,clientHeight:100,classList:{toggle(){}},querySelectorAll:()=>[]};
     state.selectedSimulationId='other-sim';
     state.view='standard';
     state.status={jobs:[{id:'done',label:'Completed',status:'completed',argv:[]},
@@ -931,11 +931,19 @@ for (const [value, scale, display, edited, expected] of [
     assert.match(elements['job-list'].innerHTML,/Completed/);
     assert.match(elements['job-list'].innerHTML,/Envelope/);
     assert.equal(elements['run-status'].textContent,'GGV · running');
+    assert.equal(elements['cancel-run'].hidden,false);
+    assert.equal(elements['cancel-run'].disabled,false);
+    assert.equal(elements['cancel-run'].title,'Cancel GGV');
+    state.status.jobs[1].cancel_requested=true;
+    renderRunLog();
+    assert.equal(elements['cancel-run'].disabled,true);
+    assert.match(elements['job-list'].innerHTML,/cancelling/);
+    state.status.jobs[1].cancel_requested=false;
     elements['run-log-menu'].open=false;
     renderRunLog();
-    assert.equal(logLoads,1,'closed log does not fetch job output');
+    assert.equal(logLoads,2,'closed log does not fetch job output');
     elements['run-log-menu'].open=true;state.view='setup';renderRunLog();
-    assert.equal(logLoads,1,'vehicle Setup does not fetch hidden logs');
+    assert.equal(logLoads,2,'vehicle Setup does not fetch hidden logs');
     state.view='standard';
     state.status.jobs=[]; elements['run-log-menu'].open=true;
     renderRunLog();

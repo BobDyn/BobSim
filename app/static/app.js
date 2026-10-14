@@ -7244,6 +7244,24 @@ function renderRunLog() {
   status.classList.toggle("running", Boolean(busy));
   if (!menu.open || state.view === "setup") return;
   const list = document.getElementById("job-list");
+  const cancel = document.getElementById("cancel-run");
+  const selected = jobs.find(job => job.id === state.selectedJobId) || busy || jobs[0];
+  cancel.hidden = !selected || !["queued", "running"].includes(selected.status);
+  cancel.disabled = Boolean(selected?.cancel_requested) || selected?.cancellable === false;
+  cancel.title = selected?.cancel_requested ? "Cancellation requested" : selected?.cancellable === false
+    ? "This run is saving its results" : `Cancel ${selected?.label || "selected run"}`;
+  cancel.setAttribute("aria-label", cancel.title);
+  cancel.onclick = async () => {
+    cancel.disabled = true;
+    try {
+      await api(`/api/jobs/${selected.id}/cancel`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+      state.status = await api("/api/status");
+      renderRunLog();
+    } catch (error) {
+      cancel.disabled = false;
+      document.getElementById("job-log").textContent = error.message;
+    }
+  };
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
@@ -7267,7 +7285,7 @@ function jobItem(job) {
     <button type="button" class="job-item ${job.id === state.selectedJobId ? "active" : ""}" data-job="${escapeHtml(job.id)}" aria-pressed="${job.id === state.selectedJobId}">
       <div class="job-line">
         <strong>${escapeHtml(job.label)}</strong>
-        <span class="job-status ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span>
+        <span class="job-status ${escapeHtml(job.status)}">${job.cancel_requested && job.status === "running" ? "cancelling" : escapeHtml(job.status)}</span>
       </div>
       <div class="output-meta">${escapeHtml(job.simulation?.name || job.argv.join(" → "))}</div>
     </button>

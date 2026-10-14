@@ -191,7 +191,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
         read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
-        if launches_job or read_only or path == "/api/simulations/visualization-settings":
+        cancels_job = path.startswith("/api/jobs/") and path.endswith("/cancel")
+        if launches_job or cancels_job or read_only or path == "/api/simulations/visualization-settings":
             self._handle_post()
             return
         try:
@@ -212,6 +213,9 @@ class BobSimHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/jobs":
                 job = start_job(str(body.get("action_id", "")))
                 self._send_json(job, status=HTTPStatus.CREATED)
+            elif parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):
+                job_id = parsed.path.removeprefix("/api/jobs/").removesuffix("/cancel")
+                self._send_json(JOBS.cancel(job_id))
             elif parsed.path == "/api/toolchain/openmodelica":
                 payload = save_openmodelica_toolchain_settings(body)
                 self._send_json(payload)
