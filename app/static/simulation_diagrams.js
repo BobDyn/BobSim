@@ -1,5 +1,11 @@
 function simulationDiagramHtml(id) {
+  // Keep KaTeX outside SVG so WebKit positions labels consistently.
+  const labels = [];
   const draw = {
+    math: (x, y, value) => {
+      labels.push(`<span class="simulation-diagram-math" style="left:${x / 7.6}%;top:${y / 3}%">${katex.renderToString(value, {throwOnError: true, trust: false})}</span>`);
+      return '';
+    },
     text: (x, y, label, options = '') => `<text x="${x}" y="${y}" ${options}>${escapeHtml(label)}</text>`,
     path: (d, kind = 'structure') => `<path d="${d}" class="${kind}"/>`,
     rect: (x, y, width, height, kind = 'body') => `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="3" class="${kind}"/>`,
@@ -13,38 +19,30 @@ function simulationDiagramHtml(id) {
   };
   const drawing = simulationBalanceDrawing(id, draw) || simulationResponseDrawing(id, draw) || simulationLapDrawing(id, draw);
   if (!drawing) return '';
-  return `<figure class="simulation-diagram"><svg viewBox="0 0 760 300" role="img" aria-labelledby="simulation-diagram-${id}"><title id="simulation-diagram-${id}">${escapeHtml(drawing.caption)}</title>${drawing.body}</svg><figcaption>${escapeHtml(drawing.caption)}</figcaption></figure>`;
+  return `<figure class="simulation-diagram"><div class="simulation-diagram-canvas"><svg viewBox="0 0 760 300" role="img" aria-labelledby="simulation-diagram-${id}"><title id="simulation-diagram-${id}">${escapeHtml(drawing.caption)}</title>${drawing.body}</svg>${labels.join('')}</div><figcaption>${escapeHtml(drawing.caption)}</figcaption></figure>`;
 }
 
 function simulationBalanceDrawing(id, draw) {
-  const {text, arrow, path, rect, circle} = draw;
+  const {text, math, arrow, path, rect, circle} = draw;
   if (id === 'four-post') {
     const body = [
-      text(32, 29, 'Chassis motion'),
+      '<g transform="translate(140 0)">',
       path('M 70 235 H 394', 'muted'),
       path('M 87 244 l 9 -9 M 117 244 l 9 -9 M 337 244 l 9 -9 M 367 244 l 9 -9', 'muted'),
       rect(106, 187, 28, 48), rect(326, 187, 28, 48),
       circle(120, 235, 5, 'accent'), circle(340, 235, 5, 'accent'),
       path('M 120 208 L 146 158 M 340 208 L 272 126'),
       `<g transform="translate(232 235) rotate(-14)">${rect(-80, -110, 160, 28)}${path('M 0 0 V -96')}${circle(0, -96, 4, 'accent')}${arrow(0, -96, 0, -174, 'motion')}</g>`,
-      text(243, 79, 'Local z: heave'),
+      math(358, 77, 'h'), math(364, 144, String.raw`\mathbf r_A`),
       path('M 219 56 Q 183 58 163 98', 'motion'),
-      arrow(170, 85, 163, 98, 'motion'),
-      text(80, 67, 'Roll'),
+      arrow(170, 85, 163, 98, 'motion'), math(299, 59, String.raw`\phi`),
       circle(232, 235, 9), circle(232, 235, 2, 'accent'),
-      text(207, 273, 'Global x'),
-      text(433, 56, 'Prescribed'),
-      text(433, 84, 'Roll, then local heave'),
-      path('M 433 105 H 718', 'muted'),
-      text(433, 140, 'At each contact patch'),
-      text(433, 170, 'z fixed'),
-      text(433, 198, 'x, y and rotations free'),
-      path('M 433 218 H 718', 'muted'),
-      text(433, 250, 'Wheel travel is a result'),
+      math(372, 269, 'x'), math(260, 267, 'z_{\\mathrm{CP},R}'), math(480, 267, 'z_{\\mathrm{CP},L}'),
+      '</g>',
     ].join('');
     return {
       body,
-      caption: 'Front-view schematic of one axle. Both axles use chassis actuation: rotation about global x, followed by translation along the rotated local z axis. Contact height is fixed. Suspension motion determines wheel travel.',
+      caption: 'Front view. Chassis roll and local heave are prescribed. Contact height is fixed, while horizontal contact motion and rotations remain free.',
     };
   }
   if (id !== 'ggv' && id !== 'ymd') return null;
@@ -60,94 +58,74 @@ function simulationBalanceDrawing(id, draw) {
   ];
   if (id === 'ggv') {
     const body = [
-      text(32, 29, 'Plan-view force balance'),
+      '<g transform="translate(160 0)">',
       ...vehicle,
       ...[[123, 103], [301, 103], [123, 207], [301, 207]].flatMap(([x, y]) => [
-        arrow(x, y, x - 42, y, 'force'),
-        arrow(x, y, x, y - 34, 'force'),
+        arrow(x, y, x - 42, y, 'force'), arrow(x, y, x, y - 34, 'force'),
       ]),
-      text(63, 264, 'Four tire force vectors'),
+      math(468, 54, 'F_{x,i}'), math(424, 119, 'F_{y,i}'),
       path('M 323 181 Q 354 157 318 133', 'motion'),
-      arrow(329, 141, 318, 133, 'motion'),
-      text(353, 160, 'ψ̇'),
-      text(438, 42, 'Path frame'),
-      arrow(557, 151, 622, 86, 'motion'),
-      arrow(557, 151, 492, 86, 'motion'),
-      text(632, 88, 't'), text(472, 88, 'n'),
-      circle(557, 151, 4, 'accent'),
-      text(468, 184, 'Heading rate = aₙ / V'),
-      path('M 438 205 H 720', 'muted'),
-      text(438, 234, 'ΣF = m a'),
-      text(438, 261, 'Angular acceleration = 0'),
-      text(438, 284, 'on retained axes'),
+      arrow(329, 141, 318, 133, 'motion'), math(518, 158, String.raw`\dot\psi`),
+      path('M 212 272 C 229 233 246 204 212 155 C 179 107 134 74 93 45', 'muted'),
+      arrow(212, 155, 158, 77, 'motion'),
+      arrow(212, 155, 153, 196, 'motion'),
+      math(304, 64, String.raw`V\mathbf t`), math(302, 212, String.raw`\mathbf n`),
+      '</g>',
     ].join('');
     return {
       body,
-      caption: 'Plan-view schematic of a frozen cornering condition. Tire arrows show force components. The full model supplies aero, vertical balance and moments.',
+      caption: 'Plan view. The tangent follows velocity through the vehicle, with the normal pointing into the turn. Orange arrows show tire-force components in body axes.',
     };
   }
   const body = [
-    text(32, 29, 'Imposed steering and sideslip'),
-    ...vehicle,
-    path('M 123 75 V 49', 'muted'),
-    arrow(123, 75, 109, 41, 'motion'),
-    text(89, 56, 'δ'),
-    arrow(212, 155, 212, 43, 'muted'),
-    arrow(212, 155, 167, 46, 'motion'),
+    '<g transform="translate(160 0)">', ...vehicle,
+    path('M 123 75 V 49', 'muted'), arrow(123, 75, 109, 41, 'motion'),
+    math(252, 54, String.raw`\delta`),
+    arrow(212, 155, 212, 43, 'muted'), arrow(212, 155, 167, 46, 'motion'),
     path('M 212 111 Q 203 111 195 115', 'motion'),
-    text(184, 102, 'β'), text(147, 49, 'V'),
-    arrow(123, 103, 76, 103, 'force'),
-    arrow(301, 103, 255, 103, 'force'),
-    arrow(123, 207, 83, 207, 'force'),
-    arrow(301, 207, 262, 207, 'force'),
-    path('M 283 247 Q 375 205 320 140', 'force'),
-    arrow(328, 152, 320, 140, 'force'),
-    '<text x="350" y="204">M<tspan baseline-shift="sub" style="font-size:11px">z</tspan></text>',
-    text(116, 272, 'Net yaw moment'),
-    text(461, 61, 'Steering + sideslip'),
-    arrow(568, 80, 568, 111, 'muted'),
-    text(440, 143, 'Tire forces and moments'),
-    arrow(568, 161, 568, 192, 'muted'),
-    '<text x="482" y="224">aᵧ and M<tspan baseline-shift="sub" style="font-size:11px">z</tspan></text>',
-    text(440, 269, 'Yaw moment is not fixed to zero'),
+    math(342, 111, String.raw`\beta`), math(312, 40, 'V'),
+    arrow(123, 103, 76, 103, 'force'), arrow(301, 103, 255, 103, 'force'),
+    arrow(123, 207, 83, 207, 'force'), arrow(301, 207, 262, 207, 'force'),
+    path('M 283 247 Q 375 205 320 140', 'force'), arrow(328, 152, 320, 140, 'force'),
+    math(518, 205, 'M_z'), math(232, 126, 'F_{y,i}'),
+    '</g>',
   ].join('');
   return {
     body,
-    caption: 'Each point imposes steering and sideslip at the configured speed and yaw rate. The remaining trim equations are solved, then lateral acceleration and net body yaw moment are reported. Arrows are schematic, not calculated forces.',
+    caption: 'Steering and sideslip are inputs. Lateral acceleration and yaw moment are outputs. Arrows are schematic.',
   };
 }
 function simulationResponseDrawing(id, draw) {
-  const {text, arrow, path, rect} = draw;
+  const {text, math, arrow, path, rect} = draw;
   const label = (x, y, value, anchor = "middle") => text(x, y, value, `text-anchor="${anchor}" font-size="16"`);
   const axis = (left, right, bottom) => `${arrow(left, bottom, right, bottom, "muted")}${arrow(left, bottom, left, 62, "muted")}`;
-  const timeLabel = (right, bottom) => label(right, bottom + 24, "Time", "end");
+  const timeLabel = (right, bottom) => math(right - 10, bottom + 24, "t");
 
   if (id === "steady-state") {
     const body = [
       rect(24, 40, 164, 62), rect(278, 40, 160, 62), rect(544, 40, 192, 62),
-      label(106, 65, "Speed and lateral"), label(106, 88, "acceleration targets"),
+      math(106, 72, String.raw`v_{\mathrm{target}},\ a_{y,\mathrm{target}}`),
       label(358, 76, "Controller"), label(640, 76, "BobLib vehicle"),
       arrow(194, 71, 268, 71, "motion"), arrow(446, 71, 534, 71, "force"),
-      label(490, 30, "Steering + torque"),
+      math(490, 30, String.raw`\mathbf u`),
       path("M640 103 V140 H358", "muted"), arrow(358, 140, 358, 108, "muted"),
-      label(537, 162, "Measured speed and lateral acceleration"),
-      label(38, 198, "Handling signals settle", "start"),
+      math(537, 162, "v, a_y"),
+      math(39, 199, "y_j"),
       arrow(54, 263, 722, 263, "muted"), arrow(54, 263, 54, 209, "muted"),
       path("M60 224 H706", "muted"),
       path("M60 256 C118 256 120 209 158 214 S204 240 240 230 S295 218 330 223 S406 224 452 224 H706", "motion"),
-      label(720, 286, "Time", "end"),
-      label(348, 292, "Position and heading keep changing"),
+      math(715, 284, "t"),
     ].join("");
     return {body, caption: "Schematic response. Feedback settles the monitored handling signals. The vehicle continues around the corner."};
   }
 
   if (id === "transient") {
     const body = [
-      label(124, 30, "Steering cases"), label(374, 30, "Integrate the vehicle"), label(630, 30, "Time response"),
-      label(42, 69, "Finite-rise step", "start"),
+      label(124, 30, "Steering cases"), label(374, 30, "Vehicle"), math(630, 30, String.raw`\mathbf x(t)` ),
+      label(42, 69, "Step", "start"),
       path("M42 119 H96 L110 83 H220", "accent"),
       arrow(42, 129, 230, 129, "muted"),
-      label(42, 168, "Sustained sine", "start"),
+      label(42, 168, "Sine", "start"),
       path("M42 211 C57 211 57 185 72 185 S87 237 102 237 S117 185 132 185 S147 237 162 237 S177 185 192 185 S207 211 222 211", "accent"),
       arrow(42, 246, 230, 246, "muted"),
       path("M235 107 H254 V207 H235", "muted"), arrow(254, 154, 282, 154, "force"),
@@ -155,7 +133,7 @@ function simulationResponseDrawing(id, draw) {
       arrow(464, 154, 506, 154, "motion"),
       arrow(518, 234, 734, 234, "muted"), arrow(518, 234, 518, 80, "muted"),
       path("M526 156 C548 156 548 120 568 120 S590 192 610 192 S632 120 652 120 S674 192 694 192 S716 156 724 156", "motion"),
-      label(628, 267, "Gain and phase"),
+      math(724, 267, "t"),
     ].join("");
     return {body, caption: "Schematic response. Step cases measure timing and overshoot. Sine cases measure response gain and phase."};
   }
@@ -170,7 +148,7 @@ function simulationResponseDrawing(id, draw) {
     input = [
       path("M48 192 H100 L222 88 H330", "accent"),
       path("M222 88 V203 M330 67 V203", "muted"),
-      label(100, 227, "Start"), label(222, 227, "Ramp end"), label(330, 251, "Simulation end", "end"),
+      math(100, 227, "t_0"), math(222, 227, "t_{\\mathrm{end}}"), label(330, 251, "Simulation end", "end"),
       label(276, 73, "Hold"),
     ].join("");
     response = path("M436 192 H488 C514 192 560 129 610 107 S681 87 720 88", "motion");
@@ -178,7 +156,7 @@ function simulationResponseDrawing(id, draw) {
   } else if (ramp) {
     input = [
       path("M48 192 H100 L330 76", "accent"),
-      path("M330 62 V203", "muted"), label(100, 227, "Start"), label(330, 251, "Run stops", "end"),
+      path("M330 62 V203", "muted"), math(100, 227, "t_0"), label(330, 251, "Run stops", "end"),
     ].join("");
     response = path("M436 192 H486 C516 192 543 170 578 140 S656 89 720 73", "motion");
     caption = "The handwheel ramp continues until the run ends or a termination condition is reached.";
@@ -186,7 +164,7 @@ function simulationResponseDrawing(id, draw) {
     input = [
       path("M48 192 H104 L136 88 H330", "accent"),
       path("M104 194 V216 M136 91 V216", "muted"),
-      label(120, 244, "Rise time"), label(250, 73, "Hold"),
+      math(120, 242, String.raw`\tau`), label(250, 73, "Hold"),
     ].join("");
     response = path("M436 192 H483 C507 192 519 69 561 72 S598 113 628 100 S670 88 696 92 H720", "motion");
     caption = "A finite-rise steering step is held while the vehicle response develops. Speed is controlled.";
@@ -195,12 +173,12 @@ function simulationResponseDrawing(id, draw) {
     label(190, 30, inputTitle), label(582, 30, "Vehicle response"),
     axis(42, 346, 204), axis(430, 736, 204), input, response,
     arrow(364, 139, 407, 139, "force"), timeLabel(736, 204),
-    label(582, 265, "Yaw rate and lateral acceleration"),
+    math(22, 65, String.raw`\delta`), math(407, 65, "a_y"),
   ].join("");
   return {body, caption: `Schematic response. ${caption}`};
 }
 function simulationLapDrawing(id, draw) {
-  const {text, arrow, path, rect, circle} = draw;
+  const {text, math, arrow, path, rect, circle} = draw;
   const centered = 'text-anchor="middle"';
   if (id === 'lap-qss') {
     const track = 'M54 30C84 2 131 12 153 32C169 47 199 28 216 48C244 83 200 112 173 91C151 74 125 80 97 97C58 120 17 90 30 62Z';
@@ -208,28 +186,26 @@ function simulationLapDrawing(id, draw) {
     const body = [
       text(125, 29, 'Racing line', centered),
       `<g transform="translate(0 55) scale(.95)"><path d="${track}" fill="none" style="stroke:var(--ink);stroke-width:20" opacity=".12"/>${path(reference, 'accent')}</g>`,
-      text(125, 200, 'Curvature κ(s)', centered),
+      math(125, 200, String.raw`\kappa(s)`),
       arrow(220, 172, 262, 172, 'motion'),
       text(339, 29, 'GGV limits', centered),
       arrow(339, 159, 339, 50, 'muted'),
-      text(352, 57, 'V'),
+      math(356, 49, 'V'),
       ...[[83, 50, 15], [112, 39, 12], [139, 28, 9]].map(([y, rx, ry]) =>
         path(`M ${339-rx} ${y} a ${rx} ${ry} 0 1 0 ${2*rx} 0 a ${rx} ${ry} 0 1 0 ${-2*rx} 0`, 'force')),
       text(339, 200, 'Acceleration bounds', centered),
       arrow(414, 172, 459, 172, 'motion'),
       text(598, 29, 'Speed profile', centered),
       path('M480 61V190H733', 'structure'),
-      text(463, 71, 'v'),
+      math(463, 63, 'v'),
       path('M487 109C514 66 537 70 551 145S585 175 596 134S631 63 652 99S696 179 724 115', 'accent'),
-      text(606, 210, 'Distance along line', centered),
+      math(727, 214, 's'),
       text(602, 240, 'Forward acceleration', centered),
       arrow(493, 251, 716, 251, 'force'),
       arrow(716, 270, 493, 270, 'motion'),
       text(602, 293, 'Backward braking', centered),
-      text(31, 256, 'Static speed calculation'),
-      text(31, 281, 'No integrated vehicle trajectory'),
     ].join('');
-    return {body, caption: 'Curvature sets lateral demand. GGV limits constrain forward acceleration and backward braking to produce the lap speed profile. The illustrated line reuses the solved minimum-curvature example. The speed profile is schematic.'};
+    return {body, caption: 'A solved minimum-curvature example feeds the GGV lookup and speed passes. The speed profile is schematic.'};
   }
   if (id !== 'lap-transient') return null;
   const body = [
@@ -244,25 +220,25 @@ function simulationLapDrawing(id, draw) {
     arrow(198, 147, 253, 117, 'motion'),
     `<g stroke-dasharray="5 4">${path('M179 157L216 102', 'muted')}</g>`,
     path('M207 141A32 32 0 0 0 197 131', 'motion'),
-    text(227, 98, 'Heading error'),
+    math(238, 96, String.raw`e_\psi`),
     arrow(158, 155, 146, 143, 'force'),
-    text(35, 113, 'Cross-track error'),
+    math(110, 104, 'e_y'),
     path('M112 119L147 142', 'muted'),
     text(584, 29, 'Feedback driver', centered),
     rect(444, 52, 280, 50),
     text(584, 83, 'Reference line + speed', centered),
     arrow(584, 104, 584, 134, 'motion'),
-    text(598, 124, 'Targets'),
+
     rect(444, 139, 280, 51),
     text(584, 171, 'Driver', centered),
     arrow(584, 192, 584, 222, 'force'),
-    text(597, 213, 'Steering + torque'),
+    math(657, 211, String.raw`\delta_{\mathrm{cmd}},a_{\mathrm{cmd}}`),
     rect(444, 227, 280, 50),
     text(584, 259, 'Vehicle dynamics', centered),
     path('M444 251H393V165', 'motion'),
     arrow(393, 165, 440, 165, 'motion'),
-    text(372, 149, 'Errors'),
-    text(385, 294, 'Position, heading and speed'),
+    math(391, 133, String.raw`e_y,e_\psi`),
+    math(564, 286, String.raw`\mathbf x`),
   ].join('');
-  return {body, caption: 'Schematic of a driven corner. The reference line and speed are targets. Steering and wheel torque respond to tracking errors as the vehicle states evolve through time.'};
+  return {body, caption: 'The driver follows a reference line and speed. The driven trajectory is a simulation result, not a constraint.'};
 }

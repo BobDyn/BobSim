@@ -5077,9 +5077,10 @@ summary:focus-visible {
 .simulation-method-notes > summary { cursor: pointer; font-size: 13px; }
 
 .simulation-diagram { margin: 24px 0 0; padding: 16px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; }
-.simulation-diagram svg { display: block; width: 100%; min-width: 540px; height: auto; }
+.simulation-diagram-canvas { position: relative; min-width: 540px; }
+.simulation-diagram-canvas > svg { display: block; width: 100%; height: auto; }
 .simulation-diagram text { fill: var(--ink); stroke: none; font-family: inherit; font-size: 15px; }
-.simulation-diagram path, .simulation-diagram rect, .simulation-diagram circle { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.simulation-diagram :where(path[class], rect[class], circle[class]) { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .simulation-diagram .muted { stroke: var(--muted); opacity: .55; }
 .simulation-diagram .body { fill: var(--surface); stroke: var(--muted); }
 .simulation-diagram .force { stroke: #c07835; }
@@ -5087,3 +5088,5 @@ summary:focus-visible {
 .simulation-diagram .accent { stroke: var(--blue); }
 .simulation-diagram circle.accent { fill: var(--blue); }
 .simulation-diagram figcaption { max-width: 88ch; margin: 12px 8px 4px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.simulation-diagram-math { position: absolute; transform: translate(-50%, -50%); color: var(--ink); font-size: 17px; white-space: nowrap; }

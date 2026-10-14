@@ -87,6 +87,7 @@ for (const id of ['four-post', 'steady-state', 'transient', 'ramp-steer', 'mbd-s
   const html = vm.runInContext(`simulationMethodHtml({id:${JSON.stringify(id)}})`, ctx);
   assert.match(html, /How it works/);
   assert.match(html, /class="simulation-diagram"/);
+  assert.match(html, /class="simulation-diagram-math"/);
   assert.match(html, /role="img" aria-labelledby="simulation-diagram-/);
   assert.doesNotMatch(html, /undefined|NaN/);
   assert.match(html, /Assumptions and limits/);
@@ -125,7 +126,7 @@ assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx), /path-frame G
 
 assert.ok(markup.indexOf('/static/simulation_diagrams.js') < markup.indexOf('/static/app.js'));
 assert.equal(vm.runInContext("simulationDiagramHtml('unsupported')", ctx), '');
-assert.match(vm.runInContext("simulationDiagramHtml('ggv')", ctx), /Heading rate/);
-assert.match(vm.runInContext("simulationDiagramHtml('four-post')", ctx), /Wheel travel is a result/);
-assert.match(vm.runInContext("simulationDiagramHtml('reduced-ramp-steer')", ctx), /Ramp end/);
+assert.match(vm.runInContext("simulationDiagramHtml('ggv')", ctx), /V.*tangent|tangent.*velocity/);
+assert.match(vm.runInContext("simulationDiagramHtml('four-post')", ctx), /Contact height is fixed/);
+assert.match(vm.runInContext("simulationDiagramHtml('reduced-ramp-steer')", ctx), /t_\{\\mathrm\{end\}\}/);
 assert.doesNotMatch(vm.runInContext("simulationDiagramHtml('ramp-steer')", ctx), />Hold</);
