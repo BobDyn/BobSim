@@ -4269,25 +4269,12 @@ function renderSimulationOverview() {
   if (group) {
     const simulations = (state.simulationWorkspace?.simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id);
     panel.innerHTML = `<header><h2>${escapeHtml(group.label)}</h2><p>${escapeHtml(group.description)}</p></header>
-      <button type="button" class="primary" data-overview-add>Add simulation</button>
-      <div class="simulation-overview-list">${simulations.map(item => `<button type="button" data-overview-simulation="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>`).join("")}</div>`;
-    panel.querySelector("[data-overview-add]").onclick = () => workspaceAction(() => showSimulationCatalog(group.id));
-    panel.querySelectorAll("[data-overview-simulation]").forEach(button => {
-      button.onclick = () => workspaceAction(() => openSimulationOverview(button.dataset.overviewSimulation));
-    });
+      ${simulations.length ? `<ul class="simulation-overview-list">${simulations.map(item => `<li>${escapeHtml(item.name)}</li>`).join("")}</ul>` : '<p class="muted">No simulations in this analysis.</p>'}`;
   } else {
     const workflow = state.status?.workflows?.find(item => item.id === simulation.workflow_id) || {id: simulation.workflow_id};
     const meta = simWorkflowMeta(workflow);
-    const latest = savedResults().find(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === simulation.id);
-    const model = simulation.model;
     panel.innerHTML = `<header><h2>${escapeHtml(simulation.name)}</h2><p>${escapeHtml(meta.summary)}</p></header>
-      <div class="simulation-overview-body"><div><dl><dt>Model</dt><dd>${escapeHtml(model ? [model.engine, model.fidelity].filter(Boolean).join(" · ") : workflow.label || simulation.workflow_id)}</dd>
-      <dt>Results</dt><dd>${escapeHtml(latest?.created_label || "Not run yet")}</dd>
-      ${simulation.ggv_source_id ? `<dt>GGV input</dt><dd>${escapeHtml(simulation.ggv_input?.name || "Unavailable")} (${escapeHtml(simulation.ggv_input?.status || "Unknown")})</dd>` : ""}</dl>
-      <div class="simulation-overview-actions"><button type="button" class="primary" data-overview-setup>Setup</button><button type="button" data-overview-view>Add view</button></div></div>
-      </div>${simulationMethodHtml(workflow)}`;
-    panel.querySelector("[data-overview-setup]").onclick = () => workspaceAction(() => openSimulation(simulation.id));
-    panel.querySelector("[data-overview-view]").onclick = () => workspaceAction(() => addSimulationVisualization(simulation.id));
+      ${simulationMethodHtml(workflow)}`;
   }
   return true;
 }
@@ -4854,7 +4841,7 @@ function renderStandard() {
     activeVehicleName();
   const notice = document.getElementById("simulation-notice");
   notice.hidden = activeVehicleConfigReady() && !state.dirtyVehicle;
-  notice.textContent = notice.hidden ? "" : "Save your vehicle before running a simulation.";
+  notice.textContent = notice.hidden ? "" : "Vehicle changes must be saved before simulation.";
   const nextStep = document.getElementById("simulation-next-btn");
   nextStep.hidden = notice.hidden;
   nextStep.textContent = "Go to setup";
