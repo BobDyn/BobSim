@@ -196,8 +196,11 @@ api=async()=>({jobs:[]});
 simulationRequest=async()=>({simulation:{id:'test',workflow_id:'mbd'},config:{id:'mbd',data:{}},library:{sources:[]}});
 refreshStatus=async()=>{};
 setView=()=>{};
+closeSimulationCatalog=()=>{};
+let createdOverview = null;
+openSimulationOverview=async(id)=>{createdOverview=id;};
 `,ctx);
-(async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('state.simModalOpen',ctx),true); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('createdOverview',ctx),'test'); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
 
 vm.runInContext(`
 state.activeTireTab='load-maps';
@@ -664,6 +667,8 @@ vm.runInContext(`
     assert.match(group('transient'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
     assert.match(group('kinematic'),/data-simulation-branch="rig"/);
+    assert.match(html,/data-analysis-overview="steady-state"/);
+    assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
     state.simulationWorkspace.simulations[0].ggv_source_id='ggv';
     state.simulationWorkspace.simulations[0].ggv_input={name:'GGV',status:'Ready'};
     renderSimulationWorkspace();
@@ -674,6 +679,11 @@ vm.runInContext(`
     state.collapsedSimulations.add('group:transient');
     renderSimulationWorkspace();
     assert.match(elements['simulation-tree'].innerHTML,/data-simulation-toggle="group:transient" aria-expanded="false"/);
+    state.simulationWorkspace={vehicle_key:'car',simulations:[],analysis_groups:['steady-state']};
+    renderSimulationWorkspace();
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="steady-state"/);
+    assert.doesNotMatch(elements['simulation-tree'].innerHTML,/data-analysis-group="kinematic"/);
+    assert.doesNotMatch(elements['simulation-tree'].innerHTML,/data-analysis-group="transient"/);
   `,treeContext);
 }
 
@@ -692,11 +702,11 @@ vm.runInContext(`
       addEventListener:(name,fn)=>events['menu:'+name]=fn
     };
     const trigger={setAttribute(){},focus(){}};
-    document={getElementById:id=>id==='simulation-context-menu' ? menu : {
+    document={getElementById:id=>id==='simulation-context-menu' ? menu : id==='add-simulation-btn' ? trigger : {
       addEventListener:(name,fn)=>events['tree:'+name]=fn
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
-    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
+    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;}; showAnalysisPicker=()=>{added='analysis';};
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
@@ -710,6 +720,12 @@ vm.runInContext(`
       events['menu:click']({target:{closest:()=>buttons[0]}});
       assert.equal(added,group); assert.equal(menu.hidden,true);
     }
+    events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
+      closest:selector=>selector==='.simulation-tree-root' ? {} : null
+    }});
+    assert.equal(buttons[0].textContent,'Add analysis');
+    events['menu:click']({target:{closest:()=>buttons[0]}});
+    assert.equal(added,'analysis');
     rightClick('steady-state','envelope');
     assert.equal(focused,'setup');
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['setup','report','signals','delete']);
@@ -773,3 +789,50 @@ vm.runInContext(`
     titleVisible=false; drawSimulationGgvConnections(); assert.equal(svg.innerHTML,'');
   `,connectionContext);
 }
+
+(async () => {
+  const overviewContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,overviewContext);
+  await vm.runInContext(`(async()=>{
+    const controls={};
+    const panel={hidden:true,innerHTML:'',querySelector:key=>controls[key] ||= {},querySelectorAll:()=>[]};
+    document.getElementById=()=>panel;
+    state.simulationWorkspace={vehicle_key:'car',analysis_groups:['steady-state'],simulations:[
+      {id:'ggv',workflow_id:'ggv',name:'Envelope <A>',model:{engine:'DynPy <test>',fidelity:'6 DOF'}},
+      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer'}
+    ]};
+    activeVehicleKey=()=> 'car';
+    savedResults=()=>[{id:'run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'2026-10-15'}];
+    let saves=0, opened=null, catalog=null;
+    saveSimulationEdits=async()=>{saves++;};
+    api=()=>{throw new Error('Overview must not load config or start a job');};
+    simulationRequest=api;
+    setView=view=>{state.view=view;};
+    workspaceAction=fn=>fn();
+    simulationVisualHtml=()=>'<div class="existing-visual"></div>';
+    openSimulation=id=>{opened=id;};
+    showSimulationCatalog=group=>{catalog=group;};
+    await openSimulationOverview('ggv');
+    assert.equal(saves,1);
+    assert.equal(state.simModalOpen,false);
+    assert.equal(state.simulationOverview.id,'ggv');
+    assert.equal(renderSimulationOverview(),true);
+    assert.match(panel.innerHTML,/Envelope &lt;A&gt;/);
+    assert.match(panel.innerHTML,/DynPy &lt;test&gt;/);
+    assert.match(panel.innerHTML,/2026-10-15/);
+    controls['[data-overview-setup]'].onclick();
+    assert.equal(opened,'ggv');
+    await openAnalysisOverview('steady-state');
+    assert.equal(saves,2);
+    assert.equal(state.selectedSimulationId,null);
+    assert.equal(renderSimulationOverview(),true);
+    assert.match(panel.innerHTML,/data-overview-simulation="ggv"/);
+    assert.doesNotMatch(panel.innerHTML,/data-overview-simulation="step"/);
+    controls['[data-overview-add]'].onclick();
+    assert.equal(catalog,'steady-state');
+    state.simModalOpen=true;
+    assert.equal(renderSimulationOverview(),false);
+    assert.equal(panel.hidden,true);
+  })()`,overviewContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1226,16 +1226,39 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
         return _simulation_workspace(action, payload or {})
 
 
+def _simulation_analysis_group(workflow_id: str) -> str:
+    if workflow_id == "four-post":
+        return "kinematic"
+    if workflow_id in {"steady-state", "ggv", "ymd", "lap-qss"}:
+        return "steady-state"
+    return "transient"
+
+
 def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     key = _active_vehicle_workspace_key()
     if payload.get("vehicle_key", key) != key:
         raise ValueError("The active vehicle changed. Reopen the simulation.")
     path = _vehicle_workspace_dir(key) / "simulations.json"
     items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+    groups_path = path.with_name("analysis_groups.json")
+    group_order = ("kinematic", "steady-state", "transient")
+    saved_groups = json.loads(groups_path.read_text(encoding="utf-8")) if groups_path.is_file() else []
+    groups = {group for group in saved_groups if isinstance(group, str) and group in group_order}
+    groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     _inherit_ggv_fidelity(items)
     item = next((item for item in items if item["id"] == payload.get("id")), None)
     result: dict[str, Any] = {}
-    if action == "create":
+    if action in {"add-analysis", "remove-analysis"}:
+        group = payload.get("group")
+        if group not in group_order:
+            raise ValueError("Choose Kinematic, Steady state or Transient.")
+        if action == "remove-analysis":
+            if any(_simulation_analysis_group(entry["workflow_id"]) == group for entry in items):
+                raise ValueError("Remove the simulations in this analysis first.")
+            groups.discard(group)
+        else:
+            groups.add(group)
+    elif action == "create":
         workflow = _workflow_by_id(str(payload.get("workflow_id", "")))
         if workflow.group not in {"standard", "response", "envelope", "lap"}:
             raise ValueError("Choose a simulation workflow.")
@@ -1367,11 +1390,16 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     elif action != "list":
         raise ValueError("Unknown simulation action.")
     _inherit_ggv_fidelity(items)
-    if action in {"create", "save", "delete", "duplicate", "set-baseline", "set-ggv",
+    groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
+    analysis_groups = [group for group in group_order if group in groups]
+    if action in {"add-analysis", "remove-analysis", "create", "save", "delete", "duplicate", "set-baseline", "set-ggv",
                   "add-visualization", "delete-visualization", "update-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)
+        temporary = groups_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(analysis_groups, indent=2), encoding="utf-8")
+        temporary.replace(groups_path)
     summaries = [{k: v for k, v in item.items() if k != "config_text"} for item in items]
     for summary, entry in zip(summaries, items):
         if entry["workflow_id"] == "lap-qss":
@@ -1391,7 +1419,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                              or latest and run["id"] == "saved-" + latest["id"])), None)
                 else:
                     child["run_id"] = latest["id"] if latest else None
-    result.update(vehicle_key=key, simulations=summaries)
+    result.update(vehicle_key=key, simulations=summaries, analysis_groups=analysis_groups)
     if item is not None and action != "delete":
         result["simulation"] = {k: v for k, v in item.items() if k != "config_text"}
     return result

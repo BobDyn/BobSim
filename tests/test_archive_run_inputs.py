@@ -492,3 +492,55 @@ def test_comparison_rejects_incomplete_archived_inputs(archive_workspace, text):
     assert not comparison['available']
     assert comparison['changes'] == []
     assert 'unavailable' in comparison['message']
+
+
+def test_analysis_groups_are_explicit_unique_and_vehicle_owned(archive_workspace):
+    root, _ = archive_workspace
+    assert app.simulation_workspace()['analysis_groups'] == []
+    for group in ('transient', 'kinematic', 'transient'):
+        result = app.simulation_workspace('add-analysis', {'group': group})
+    assert result['analysis_groups'] == ['kinematic', 'transient']
+    assert result['simulations'] == []
+    assert app.simulation_workspace()['analysis_groups'] == ['kinematic', 'transient']
+    with pytest.raises(ValueError, match='Choose Kinematic'):
+        app.simulation_workspace('add-analysis', {'group': 'unknown'})
+    with pytest.raises(ValueError, match='active vehicle changed'):
+        app.simulation_workspace('add-analysis', {'group': 'steady-state', 'vehicle_key': 'other'})
+    result = app.simulation_workspace('remove-analysis', {'group': 'kinematic'})
+    assert result['analysis_groups'] == ['transient']
+    (root / 'vehicle.yml').write_text('vehicle:\n  name: Other\n')
+    assert app.simulation_workspace()['analysis_groups'] == []
+
+
+def test_existing_simulations_infer_groups_and_empty_group_survives_delete(archive_workspace):
+    import json
+
+    root, _ = archive_workspace
+    analysis = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    groups_path = root / 'app/user_data/workspaces/vehicles/original/analysis_groups.json'
+    assert json.loads(groups_path.read_text()) == ['transient']
+    groups_path.unlink()
+    assert app.simulation_workspace()['analysis_groups'] == ['transient']
+    with pytest.raises(ValueError, match='Remove the simulations'):
+        app.simulation_workspace('remove-analysis', {'group': 'transient'})
+    app.simulation_workspace('delete', {'id': analysis['id']})
+    assert app.simulation_workspace()['analysis_groups'] == ['transient']
+    app.simulation_workspace('remove-analysis', {'group': 'transient'})
+    assert app.simulation_workspace()['analysis_groups'] == []
+
+
+@pytest.mark.parametrize('workflow,group', [('four-post', 'kinematic'), ('ggv', 'steady-state'),
+                                           ('lap-qss', 'steady-state'), ('reduced-ramp-steer', 'transient')])
+def test_existing_analysis_group_mapping(archive_workspace, workflow, group):
+    import json
+
+    from app import data_services
+
+    root, _ = archive_workspace
+    app.simulation_workspace()
+    workspace = data_services._vehicle_workspace_dir('original')
+    (workspace / 'simulations.json').write_text(json.dumps([
+        {'id': 'legacy', 'workflow_id': workflow, 'name': 'Legacy', 'config_text': '{}'}]))
+    result = app.simulation_workspace()
+    assert result['analysis_groups'] == [group]
+    assert result['simulations'][0]['id'] == 'legacy'
