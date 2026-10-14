@@ -9022,7 +9022,7 @@ function drawGeometryPlotPanel() {
     return;
   }
   const descriptors = geometryPlotDescriptors();
-  const columns = Math.min(Math.max(1, descriptors.length), canvas.clientWidth > 760 ? 3 : canvas.clientWidth > 520 ? 2 : 1);
+  const columns = 1;
   const rows = Math.max(1, Math.ceil(descriptors.length / columns));
   canvas.style.height = `${rows * 230}px`;
   const closeButtons = document.getElementById("geometry-plot-close-buttons");
@@ -9041,6 +9041,14 @@ function drawGeometryPlotPanel() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
   const palette = canvasPalette();
+  if (!descriptors.length) {
+    drawCanvasText(ctx, "Plots can be added above", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
   if (!state.kinematicsPayload) {
     drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
       align: "center",
@@ -9053,14 +9061,6 @@ function drawGeometryPlotPanel() {
     drawCanvasText(ctx, state.kinematicsPayload.warnings?.[0] || "Kinematics unavailable", width / 2, height / 2, {
       align: "center",
       color: palette.amber,
-    });
-    clearGeometryPlotScene();
-    return;
-  }
-  if (!descriptors.length) {
-    drawCanvasText(ctx, "Add a signal above", width / 2, height / 2, {
-      align: "center",
-      color: palette.muted,
     });
     clearGeometryPlotScene();
     return;
@@ -9130,6 +9130,13 @@ function handleGeometryPlotClick(event) {
   drawGeometryPlotPanel();
 }
 
+function toggleGeometryExpanded() {
+  const workspace = document.querySelector(".setup-workspace");
+  workspace.classList.toggle("geometry-expanded");
+  drawVehicleFromForm();
+  drawGeometryPlotPanel();
+}
+
 function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
@@ -9137,7 +9144,18 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
   const usesSpatialView = isSpatialPreviewArea(area);
-  const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
+  const workspace = document.querySelector(".setup-workspace");
+  if (area.id !== "hardpoints") workspace.classList.remove("geometry-expanded");
+  const expanded = workspace.classList.contains("geometry-expanded");
+  const expandButton = document.getElementById("geometry-expand-btn");
+  expandButton.hidden = area.id !== "hardpoints";
+  expandButton.setAttribute("aria-expanded", String(expanded));
+  expandButton.setAttribute("aria-label", expanded ? "Restore geometry layout" : "Expand geometry");
+  expandButton.title = expanded ? "Restore geometry layout" : "Expand geometry";
+  expandButton.querySelector("path").setAttribute("d", expanded
+    ? "M3 9h6V3m6 0v6h6M9 21v-6H3m18 0h-6v6"
+    : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6");
+  const usesGeometryPlots = area.id === "hardpoints" && (expanded || state.activeGeometryTab === "kinematics");
   geometryTabs.hidden = area.id !== "hardpoints";
   document.getElementById("config-form").hidden = usesGeometryPlots;
   geometryTabs.querySelectorAll("[data-geometry-tab]").forEach((button) => {
@@ -14084,6 +14102,7 @@ function wireEvents() {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
   document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
+  document.getElementById("geometry-expand-btn").addEventListener("click", toggleGeometryExpanded);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {

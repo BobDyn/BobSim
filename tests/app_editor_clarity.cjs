@@ -963,3 +963,21 @@ for (const [value, scale, display, edited, expected] of [
     assert.deepEqual(saves,[{action:'rename',id:'sim',name:'Changed'}]);
   })()`,context);
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+
+{
+  const classes = new Set();
+  let redraws = 0;
+  const geometryContext = vm.createContext({
+    localStorage:{getItem:()=>null}, console, assert,
+    document:{compatMode:"CSS1Compat", body:{classList:{toggle(){}}},
+      querySelector:()=>({classList:{toggle(name){classes.has(name) ? classes.delete(name) : classes.add(name);}}})},
+  });
+  vm.runInContext(source, geometryContext);
+  geometryContext.redraw = () => redraws++;
+  vm.runInContext('drawVehicleFromForm = redraw; drawGeometryPlotPanel = redraw; toggleGeometryExpanded();', geometryContext);
+  assert.ok(classes.has('geometry-expanded'));
+  vm.runInContext('toggleGeometryExpanded();', geometryContext);
+  assert.ok(!classes.has('geometry-expanded'));
+  assert.equal(redraws, 4, 'both canvases redraw on expand and restore');
+}
