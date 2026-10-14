@@ -126,6 +126,23 @@ def test_qss_profile_respects_gvv_acceleration_boundaries(
             assert ax >= limit - 1e-6
 
 
+def test_qss_lap_respects_negative_upper_acceleration_boundary(
+    circular_corridor: TrackCorridor,
+) -> None:
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    ggv = GGVMap.from_arrays(
+        [2.0, 10.0, 20.0], [0.0, 20.0],
+        [[2.0, 2.0], [0.0, 0.0], [-2.0, -2.0]],
+        [[-4.0, -4.0], [-4.0, -4.0], [-4.0, -4.0]],
+    )
+    lap = solve_qss_lap(line, ggv)
+
+    assert lap.converged
+    assert np.allclose(lap.speed_mps, 10.0, atol=1e-3)
+    for speed, ax, ay in zip(lap.speed_mps, lap.longitudinal_acceleration_mps2, lap.lateral_acceleration_mps2):
+        assert ax <= ggv.longitudinal_limit(float(speed), float(ay), "drive") + 1e-4
+
+
 def test_minimum_time_line_keeps_best_qss_candidate(
     circular_corridor: TrackCorridor,
     synthetic_ggv: GGVMap,

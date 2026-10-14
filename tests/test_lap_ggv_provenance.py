@@ -16,7 +16,8 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lap, 'repo_root', lambda: tmp_path)
     monkeypatch.setattr(lap, '__file__', str(tmp_path / 'lap.py'))
     for name in ('lap.py', 'simulations/envelope/ggv/ggv_generation.py',
-                 'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'simulations/envelope/ggv/ggv_generation.py',
+    'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
                  'engines/dynpy/parameters.py', 'engines/kinpy/geometry.py'):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,6 +80,14 @@ def test_ggv_cache_reused_only_while_inputs_match(provenance_workspace, monkeypa
         raise RuntimeError('regenerating stale envelope')
 
     monkeypatch.setattr(ggv_generation, 'generate_ggv', regenerate)
+    current = metadata.read_text()
+    legacy = json.loads(current)
+    legacy['schema'] = 'bobsim.ggv-provenance.v2'
+    legacy.pop('formulation')
+    metadata.write_text(json.dumps(legacy))
+    with pytest.raises(RuntimeError, match='regenerating stale'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+    metadata.write_text(current)
     arguments['qss_config']['regenerate'] = True
     with pytest.raises(RuntimeError, match='regenerating stale'):
         lap._load_or_generate_ggv(path, model=None, **arguments)
@@ -107,6 +116,12 @@ def test_linked_ggv_is_verified_without_regeneration(provenance_workspace, monke
     assert result == 'saved map'
     assert provenance['status'] == 'linked'
     assert provenance['run_id'] == 'saved-ggv'
+    solver = root / 'simulations/envelope/ggv/ggv_generation.py'
+    original_solver = solver.read_text()
+    solver.write_text('# new path acceleration formulation\n')
+    with pytest.raises(ValueError, match='no longer matches'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+    solver.write_text(original_solver)
     with pytest.raises(ValueError, match='model or power'):
         lap._load_or_generate_ggv(path, model=None, **{**arguments, 'model_dof': 14})
     path.write_text('modified envelope')
@@ -115,3 +130,27 @@ def test_linked_ggv_is_verified_without_regeneration(provenance_workspace, monke
     path.unlink()
     with pytest.raises(FileNotFoundError, match='missing'):
         lap._load_or_generate_ggv(path, model=None, **arguments)
+
+
+def test_supplied_ggv_rejects_known_legacy_formulation(provenance_workspace, monkeypatch):
+    root, arguments = provenance_workspace
+    path = root / 'supplied.csv'
+    path.write_text('saved envelope')
+    metadata = path.with_suffix('.csv.metadata.json')
+    provenance = lap._ggv_provenance(**arguments)
+    assert provenance['schema'] == 'bobsim.ggv-provenance.v3'
+    assert provenance['formulation']['acceleration_frame'] == 'path_tangent_normal'
+    provenance['schema'] = 'bobsim.ggv-provenance.v2'
+    provenance.pop('formulation')
+    metadata.write_text(json.dumps(provenance))
+    arguments['qss_config'] = {'generate_if_missing': False}
+    with pytest.raises(ValueError, match='older acceleration formulation'):
+        lap._load_or_generate_ggv(path, model=None, **arguments)
+    assert path.read_text() == 'saved envelope'
+    assert json.loads(metadata.read_text())['schema'].endswith('.v2')
+
+    metadata.unlink()
+    monkeypatch.setattr(lap.GGVMap, 'from_csv', lambda _: 'external map')
+    result, external = lap._load_or_generate_ggv(path, model=None, **arguments)
+    assert result == 'external map'
+    assert external['status'] == 'supplied_unverified'

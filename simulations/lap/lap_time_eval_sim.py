@@ -195,18 +195,28 @@ def _load_or_generate_ggv(
             if hashlib.sha256(path.read_bytes()).hexdigest() != linked.get("csv_sha256"):
                 raise ValueError("The linked GGV file changed. Reconnect its saved result.")
             return GGVMap.from_csv(path), {**linked, "status": "linked"}
+        raw: dict[str, Any] = {}
+        if metadata_path.exists():
+            try:
+                loaded = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    raw = loaded
+            except (OSError, json.JSONDecodeError):
+                pass
+        known_provenance = str(raw.get("schema", "")).startswith("bobsim.ggv-provenance.")
+        current_formulation = known_provenance and all(
+            raw.get(key) == expected_provenance[key] for key in ("schema", "formulation")
+        )
         if not bool(qss_config.get("generate_if_missing", True)):
+            if known_provenance and not current_formulation:
+                raise ValueError("This GGV uses an older acceleration formulation. Regenerate it for this lap.")
             return GGVMap.from_csv(path), {
                 "status": "supplied_unverified",
                 "fingerprint": None,
             }
-        if metadata_path.exists() and not bool(qss_config.get("regenerate", False)):
-            try:
-                raw = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                raw = None
-            if isinstance(raw, dict) and raw.get("fingerprint") == expected_provenance["fingerprint"]:
-                return GGVMap.from_csv(path), {**raw, "status": "verified_cache"}
+        if current_formulation and not bool(qss_config.get("regenerate", False)) \
+                and raw.get("fingerprint") == expected_provenance["fingerprint"]:
+            return GGVMap.from_csv(path), {**raw, "status": "verified_cache"}
     if not bool(qss_config.get("generate_if_missing", True)):
         raise FileNotFoundError(
             f"GGV CSV does not exist: {path}. Run make envelope-ggv or enable generation."
@@ -307,7 +317,13 @@ def _ggv_provenance(
         )
     }
     payload = {
-        "schema": "bobsim.ggv-provenance.v2",
+        "schema": "bobsim.ggv-provenance.v3",
+        "formulation": {
+            "acceleration_frame": "path_tangent_normal",
+            "beta_dot_radps": 0.0,
+            "yaw_rate_radps": "ay_mps2 / speed_mps",
+            "yaw_acceleration_radps2": 0.0,
+        },
         "model_dof": int(model_dof),
         "effective_drive_power_limit_w": float(effective_power_limit_w),
         "settings": settings,

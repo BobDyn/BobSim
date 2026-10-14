@@ -710,7 +710,7 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
     coordinate_names: ClassVar[tuple[str, ...]] = ("x", "y", "yaw")
     velocity_names: ClassVar[tuple[str, ...]] = ("u", "v", "yaw_rate")
     added_physics: ClassVar[str] = "planar longitudinal, lateral, and yaw motion"
-    _force_path_iterations: ClassVar[int] = 12
+    _force_path_iterations: ClassVar[int] = 30
 
     def _body_state(
         self,
@@ -894,7 +894,7 @@ class VehicleModel6DOF(VehicleModel3DOF):
         "yaw_rate",
     )
     added_physics: ClassVar[str] = "heave, roll, pitch, suspension, and aero pitch"
-    _force_path_iterations: ClassVar[int] = 12
+    _force_path_iterations: ClassVar[int] = 30
 
     def _body_state(
         self,

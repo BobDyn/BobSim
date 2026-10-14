@@ -20,7 +20,7 @@ FloatArray = NDArray[np.float64]
 
 @dataclass(frozen=True)
 class QSSResult:
-    """A steady circular-running trim point.
+    """A quasi-steady operating point.
 
     Success requires equation and wheel-force closure within the tire slip fits.
     Workflows separately enforce load, steering and sideslip limits.
@@ -43,6 +43,39 @@ class QSSResult:
     @property
     def longitudinal_acceleration_mps2(self) -> float:
         return float(_physical_body_acceleration(self.state, self.output)[0])
+
+    @property
+    def path_longitudinal_acceleration_mps2(self) -> float:
+        return float(_physical_path_acceleration(self.state, self.output)[0])
+
+    @property
+    def path_lateral_acceleration_mps2(self) -> float:
+        return float(_physical_path_acceleration(self.state, self.output)[1])
+
+
+def _physical_path_acceleration(state: FloatArray, output: ModelOutput) -> FloatArray:
+    """## Path Acceleration
+
+    Parameters
+    ----------
+    state : FloatArray
+        Vehicle coordinates and body-frame velocities.
+    output : ModelOutput
+        Evaluated accelerations at that state.
+
+    Returns
+    -------
+    FloatArray
+        Horizontal acceleration tangent to velocity and normal to its left.
+    """
+    dof = output.generalized_acceleration.size
+    rotation = _body_to_world_rotation(state[3:6]) if dof >= 6 else np.eye(3)
+    body_acceleration = _physical_body_acceleration(state, output)
+    acceleration = rotation @ np.pad(body_acceleration, (0, 3 - len(body_acceleration)))
+    velocity = rotation[:2, :2] @ state[dof:dof + 2] if dof == 3 else (rotation @ state[dof:dof + 3])[:2]
+    tangent = velocity / np.linalg.norm(velocity)
+    return np.array([np.dot(acceleration[:2], tangent),
+                     -acceleration[0] * tangent[1] + acceleration[1] * tangent[0]])
 
 
 def _physical_body_acceleration(state: FloatArray, output: ModelOutput) -> FloatArray:
@@ -568,6 +601,14 @@ def _generalized_acceleration_target(
             target[0] * np.cos(steering)
             + target[1] * np.sin(steering)
         )
+        if acceleration_frame == "path":
+            corner_velocity = body_velocity + np.cross(omega, output.contact_patch_positions_body_m)
+            longitudinal_speed = (corner_velocity[:, 0] * np.cos(steering)
+                                  + corner_velocity[:, 1] * np.sin(steering))
+            # Hold the fitted slip ratio fixed as rolling speed changes.
+            wheel_longitudinal_acceleration *= 1.0 + output.slip_ratios * np.where(
+                np.abs(longitudinal_speed) > 1.0, np.sign(longitudinal_speed), 0.,
+            )
         wheel_acceleration = wheel_longitudinal_acceleration / np.asarray(
             model.parameters.wheel_radius_m
         )

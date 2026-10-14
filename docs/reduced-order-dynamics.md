@@ -178,12 +178,12 @@ equations and constrains selected generalized accelerations:
 
 - constant-radius trim: all generalized accelerations are zero in the body
   frame; centripetal acceleration remains through `omega x v`;
-- prescribed GGV point: body `ax/ay` are prescribed at zero yaw rate while yaw,
-  vertical, rotational, wheel-speed, and unsprung accelerations are
-  equilibrated. Curvature and steering-radius feasibility belong to the track
-  solver, not the acceleration-capability envelope. The acceleration and brake
-  branches share a separately solved pure-lateral coast endpoint, so the map is
-  closed at the true lateral limit rather than the final feasible grid slice;
+- GGV point: path-tangential and path-normal accelerations are solved with
+  constant sideslip and heading rate `psi_dot = an / V`. Retained body angular
+  accelerations and world-vertical acceleration are zero. Wheel acceleration
+  preserves the local slip ratio. At each normal demand, the solver maximizes and minimizes tangential acceleration under the
+  same tire and actuator limits. The lateral endpoint maximizes normal
+  acceleration with tangential acceleration free.
 - YMD point: sideslip and steer are imposed, longitudinal/vertical/wheel states
   are equilibrated, and lateral acceleration plus yaw moment are outputs.
 
@@ -192,6 +192,20 @@ and massless-wheel slips are algebraic unknowns solved alongside body equilibriu
 MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
 These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
 each boundary with the same equations and retains the trim search as a fallback.
+At ill-conditioned massless-wheel peaks, a bracketed trim search selects an
+endpoint below the numerical optimum that ordinary vehicle evaluation reproduces.
+Drive power is evaluated from wheel torque and angular speed. An upper tangential
+acceleration limit can be negative when drag exceeds available propulsion.
+`QSSResult` keeps its body-axis acceleration properties. GGV uses the explicit
+`path_longitudinal_acceleration_mps2` and `path_lateral_acceleration_mps2` properties.
+
+This is a local QSS approximation. Zero angular acceleration does not imply zero
+yaw rate or, with a full inertia tensor, zero net moment. Along a real racing
+line, `psi_ddot = curvature * at + V² * d(curvature)/ds` when sideslip is constant.
+The envelope omits this yaw-acceleration demand and does not certify dynamic
+stability. Continuation and optional multistart reduce local-solver failures,
+but do not prove global optimality. The generated opposite-turn branch remains
+a reflection, not an independent asymmetric solve.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
 range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected

@@ -5,7 +5,7 @@ import pytest
 
 from engines.dynpy import Vehicle, solve_acceleration_trim
 from engines.dynpy.qss import _algebraic_residual, _algebraic_slip_slopes, _generalized_acceleration_target
-from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit, aero_loads, powertrain_force_limit
+from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit, _solve_racing_trim, solve_ax_limit
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
 
@@ -78,19 +78,32 @@ def test_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay, dof):
         projection, model, speed=10., ay=ay, ax_bounds=(-31.4, 27.5), mode=mode,
         max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
     )
+    if result is None and mode != "lateral":
+        ax = solve_ax_limit(
+            projection, speed=10., ay=ay, ax_grid=np.array([-31.4, 27.5]), mode=mode,
+            reduced_model=model, max_abs_beta_rad=.25, max_abs_steering_rad=.5,
+            enforce_tire_load_range=True, trim_multistart=False,
+        )
+        assert np.isfinite(ax)
+        result = _solve_racing_trim(
+            model, speed_mps=10., longitudinal_acceleration_mps2=ax, lateral_acceleration_mps2=ay,
+            initial_unknowns=None, max_abs_beta_rad=.25, max_abs_steering_rad=.5,
+            enforce_tire_load_range=True, trim_multistart=False,
+        )
     assert result is not None
     np.testing.assert_allclose(_algebraic_residual(model, result.inputs, result.output), 0., atol=1e-3)
     target = _generalized_acceleration_target(
         model, result.state, result.output,
-        longitudinal_mps2=result.longitudinal_acceleration_mps2,
-        lateral_mps2=result.lateral_acceleration_mps2,
+        longitudinal_mps2=result.path_longitudinal_acceleration_mps2,
+        lateral_mps2=result.path_lateral_acceleration_mps2,
+        acceleration_frame="path",
     )
     np.testing.assert_allclose(result.output.generalized_acceleration, target, atol=1e-5)
     if dof >= 10:
         forward = model.evaluate(result.state, result.inputs)
         np.testing.assert_allclose(forward.generalized_acceleration, target, atol=1e-4)
     if mode != "lateral":
-        assert result.lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
+        assert result.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
     for load, alpha, slip, tire in zip(
         result.output.normal_loads_n, result.output.slip_angles_rad, result.output.slip_ratios, model.parameters.tires,
     ):
@@ -99,9 +112,8 @@ def test_boundary_preserves_equilibrium_and_tire_domain(vehicle, mode, ay, dof):
     if dof < 10:
         assert np.all(_algebraic_slip_slopes(model, result.output) >= -1e-4)
     if mode == "drive":
-        drag = aero_loads(projection, 10.)[2]
-        required_force = projection.mass * result.longitudinal_acceleration_mps2 + drag
-        assert required_force <= powertrain_force_limit(projection, 10.) + 1e-4
+        required_force = np.sum(result.inputs.wheel_torques_nm / np.asarray(model.parameters.wheel_radius_m))
+        assert required_force <= projection.max_drive_force + 1e-4
     if dof == 3 and mode == "brake" and ay == 0.:
         # The former binary solver returned -22.62 with its looser torque closure.
         assert result.longitudinal_acceleration_mps2 == pytest.approx(-22.584, abs=.005)
@@ -114,8 +126,8 @@ def test_planar_boundary_honors_finite_brake_cap(vehicle):
         max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
     )
     assert result is not None
-    drag = aero_loads(projection, 10.)[2]
-    assert -(projection.mass * result.longitudinal_acceleration_mps2 + drag) == pytest.approx(1000., abs=1e-4)
+    force = np.sum(result.inputs.wheel_torques_nm / np.asarray(vehicle.model(3).parameters.wheel_radius_m))
+    assert -force == pytest.approx(1000., abs=1e-4)
 
 
 def test_unreachable_steering_bound_does_not_reject_reachable_trim(vehicle, monkeypatch):
@@ -135,7 +147,7 @@ def test_unreachable_steering_bound_does_not_reject_reachable_trim(vehicle, monk
 
 
 @pytest.mark.parametrize("multistart", (False, True))
-def test_negative_drive_maximum_preserves_optional_branch_audit(vehicle, monkeypatch, multistart):
+def test_rejected_direct_boundary_forwards_branch_audit_setting(vehicle, monkeypatch, multistart):
     from simulations.envelope.ggv import ggv_generation as ggv
 
     attempts = []
@@ -145,16 +157,13 @@ def test_negative_drive_maximum_preserves_optional_branch_audit(vehicle, monkeyp
         return .123
 
     monkeypatch.setattr(ggv, "_solve_ax_limit_qss", audit)
+    monkeypatch.setattr(ggv, "_solve_envelope_limit", lambda *args, **kwargs: None)
     value = ggv.solve_ax_limit(
         project_vehicle_yaml(load_vehicle_yaml()).ggv, reduced_model=vehicle.model(3),
         speed=25., ay=20.5, ax_grid=np.array([0., 27.5]), mode="drive", trim_multistart=multistart,
     )
-    if multistart:
-        assert attempts == [True]
-        assert value == .123
-    else:
-        assert not attempts
-        assert np.isnan(value)
+    assert attempts == [multistart]
+    assert value == .123
 
 
 def test_14dof_envelope_uses_direct_boundaries(vehicle, monkeypatch):
@@ -171,3 +180,15 @@ def test_14dof_envelope_uses_direct_boundaries(vehicle, monkeypatch):
     )
     assert len(envelopes) == 1
     assert np.isfinite(envelopes[0].ax_accel).any()
+
+
+def test_lateral_search_cap_is_not_reported_as_a_closed_envelope(vehicle, monkeypatch):
+    from simulations.envelope.ggv import ggv_generation as ggv
+
+    monkeypatch.setattr(ggv, "solve_lateral_limit", lambda *args, **kwargs: (kwargs["ay_upper"], 0.))
+    with pytest.raises(RuntimeError, match="Increase ay_max_g"):
+        ggv.generate_ggv(
+            project_vehicle_yaml(load_vehicle_yaml()).ggv,
+            ggv.GGVConfig(speeds=(10.,), model_dof=3, ay_points=3, verbose=False),
+            reduced_model=vehicle.model(3),
+        )

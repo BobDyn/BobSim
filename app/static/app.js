@@ -5391,7 +5391,7 @@ function simulationMethodGuide(workflowId) {
     "method": [
       "Build the selected DynPy model from the vehicle definition. At each requested speed, solve the algebraic vehicle equations for feasible longitudinal and lateral acceleration states.",
       "Search the boundary of those feasible states rather than enumerate the entire interior. Find the lateral endpoint, then maximize acceleration and braking at each lower lateral demand, subject to vehicle balance, tire limits and drive or brake limits.",
-      "Use the previous solution to initialize neighboring points. If the direct constrained solve fails, use the configured trim-search fallback.",
+      "Use neighboring solutions as initial guesses. Reject points that ordinary vehicle evaluation cannot reproduce. Near ill-conditioned tire peaks, a bracketed trim search can return a conservative endpoint.",
       "Keep points with valid drive and brake boundaries, close both branches at the lateral endpoint, and optionally mirror the positive lateral branch."
     ],
     "inputs": [
@@ -5406,9 +5406,9 @@ function simulationMethodGuide(workflowId) {
       "Optional configured track-profile proxy metrics and velocity profiles. The envelope CSV can supply a QSS lap."
     ],
     "limits": [
-      "These are zero-yaw-rate acceleration capability solves. Higher DOFs are constrained in equilibrium, so the map does not predict transient roll or wheel hop.",
+      "Each point holds sideslip constant and uses yaw rate equal to path-normal acceleration divided by speed. The retained body angular accelerations are constrained to zero. Wheel acceleration preserves local tire slip. This local QSS approximation does not predict corner-entry transients, roll buildup or wheel hop.",
       "The left branch is mirrored from positive lateral demand when both directions are shown. Left and right cornering limits are not solved independently.",
-      "Search bounds, sampling, fitted tire ranges and nonlinear solver convergence limit the recovered envelope. A missing point is not proof that every nearby state is physically impossible.",
+      "This is a local constrained search, not a proof of the global boundary or dynamic stability. Search bounds, sampling, tire fits and convergence limit the recovered envelope. A missing point does not prove every nearby state is impossible.",
       "GGV track-profile scores describe the configured maneuver proxy. Use QSS Lap for a boundary-defined racing line and lap-time estimate."
     ],
     "sources": [
@@ -5468,7 +5468,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "limits": [
       "This is a spatial speed-profile calculation. It does not integrate suspension, wheel or body states around the lap, even when its envelope comes from 14 DOF.",
-      "The planar corridor has no elevation or banking. GGV lookup uses absolute lateral demand and conservative capability when left and right CSV rows differ.",
+      "The planar corridor has no elevation or banking. Generated GGV values use path-tangent and path-normal axes. Lookup uses absolute lateral demand and conservative capability when left and right CSV rows differ.",
       "Speed is capped by the highest GGV speed and any lower configured ceiling. Envelope and line resolution affect the result.",
       "The constrained line optimizer is local and can reach its iteration limit. A minimum-time result is not a guarantee of the global fastest line."
     ],
@@ -5525,24 +5525,24 @@ function simulationMathHtml(id) {
   const speed = {title: "Control speed during the maneuver", equation: tex`\begin{aligned} e_v &= v_{\mathrm{target}}-v \\ F_{\mathrm{request}} &= F_{\mathrm{trim}}+m\left(K_p e_v+K_i\int e_v\,dt\right) \end{aligned}`, text: "PI feedback adds drive or braking demand to the initial trim. Drive force and power limits can prevent the target speed being maintained.", symbols: [[tex`e_v`, "Speed error"], [tex`F_{\mathrm{trim}}`, "Force needed at the initial steady speed"], [tex`K_p,K_i`, "Proportional and integral gains"]]};
   let intro, sections;
   if (id === "ggv") {
-    intro = "At each speed, find how much the vehicle can accelerate or brake while also producing a chosen lateral acceleration.";
+    intro = "At each speed, solve the vehicle equations to find the acceleration boundary. Accelerations follow the direction of travel, so the result can supply a QSS lap.";
     sections = [
-      {title: "1. Choose speed and lateral demand", equation: tex`v=v_i,\qquad a_y=a_{y,j}`, text: "Repeat the calculation over speed slices and lateral-acceleration samples.", symbols: [[tex`v`, "Vehicle speed"], [tex`a_y`, "Lateral acceleration"]]},
-      {title: "2. Solve a balanced vehicle state", equation: tex`\sum F_x=m a_x,\qquad \sum F_y=m a_y,\qquad \sum M_z=0`, text: "Solve sideslip, steering and wheel torque together with the remaining model states. Vertical loads and body attitude must also balance where those DOFs are present. The current GGV calculation prescribes zero yaw rate.", symbols: [[tex`a_x`, "Longitudinal acceleration"], [tex`F_x,F_y`, "External forces in the vehicle frame"], [tex`M_z`, "Yaw moment about the vehicle center of mass"]]},
-      {title: "3. Keep the acceleration and braking limits", equation: tex`a_x^{\mathrm{drive}}=\max_{\text{feasible states}}a_x,\qquad a_x^{\mathrm{brake}}=\min_{\text{feasible states}}a_x`, text: "Feasible states satisfy the balance equations, tire limits and drive/brake bounds. Plot the resulting (ax, ay, v) boundary. Steering and sideslip are solved here, rather than swept as independent inputs. Braking acceleration is negative.", symbols: []}
+      {title: "1. Set the cornering condition", equation: tex`V=V_i,\qquad a_n=a_{n,j},\qquad \dot\beta=0,\qquad \dot\psi=\frac{a_n}{V}`, text: "Sample speed and path-normal acceleration. Hold sideslip constant locally. A turn has nonzero yaw rate, which changes the velocity and slip at each tire.", symbols: [[tex`V`, "Speed along the path"], [tex`a_n`, "Path-normal acceleration, positive to the left"], [tex`\beta,\dot\psi`, "Body sideslip and heading rate"]]},
+      {title: "2. Solve force and moment balance", equation: tex`\begin{aligned} \mathbf{R}\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right) &= a_t\mathbf{t}+a_n\mathbf{n} \\ \mathbf{I}\dot{\boldsymbol\omega} &= \mathbf{M}-\boldsymbol\omega\times(\mathbf{I}\boldsymbol\omega) \end{aligned}`, text: "Solve sideslip, rack travel and wheel torque with the model's suspension and wheel states. Use the shared transient equations, but constrain yaw acceleration in 3 DOF and all body angular accelerations in higher fidelities to zero. This does not set yaw rate to zero. In the full inertia model, the gyroscopic term can require a nonzero net moment.", symbols: [[tex`a_t,\mathbf{t},\mathbf{n}`, "Tangential acceleration and horizontal path unit vectors"], [tex`\mathbf{R},\mathbf{v}^{B}`, "Body-to-world rotation and body-frame velocity"], [tex`\mathbf{I},\boldsymbol\omega,\mathbf{M}`, "Body-frame inertia, angular velocity and net moment"]]},
+      {title: "3. Find the feasible boundary", equation: tex`a_t^{\mathrm{upper}}=\max_{\text{feasible states}}a_t,\qquad a_t^{\mathrm{lower}}=\min_{\text{feasible states}}a_t`, text: "Optimize each boundary under tire-fit, steering, sideslip, torque and power limits. Reuse neighboring solutions to keep the solves fast. The lateral endpoint maximizes normal acceleration with tangential acceleration free. Even the upper boundary can be negative when the vehicle cannot maintain speed.", symbols: []}
     ];
   } else if (id === "lap-qss") {
-    intro = "Use the racing line to determine lateral demand, then use the GGV to find the speed profile the vehicle can achieve.";
+    intro = "Use the racing line and path-frame GGV to estimate a speed profile. Curvature sets normal acceleration. The envelope supplies the remaining tangential acceleration and braking capacity.";
     sections = [
       {title: "1. Turn curvature into lateral demand", equation: tex`a_y=v^2\kappa`, text: "A tighter corner or higher speed needs more lateral acceleration. At each candidate speed, this demand selects a slice of the GGV with the remaining acceleration and braking capacity.", symbols: [[tex`v`, "Speed along the racing line"], [tex`\kappa`, "Racing-line curvature (1/m)"]]},
-      {title: "2. Accelerate forward, brake backward", equation: tex`\begin{aligned} v_{i+1}^{2} &\le v_i^{2}+2a_{\mathrm{drive}}\,\Delta s_i \\ v_i^{2} &\le v_{i+1}^{2}+2b_{\mathrm{brake}}\,\Delta s_i \end{aligned}`, text: "The forward pass limits exit speed. The backward pass lowers entry speed enough to brake for the next corner. Repeat around the lap while keeping the corner-speed limits.", symbols: [[tex`\Delta s_i`, "Distance between neighboring line samples"], [tex`a_{\mathrm{drive}}\ge0`, "Available acceleration from the GGV at the segment entry"], [tex`b_{\mathrm{brake}}\ge0`, "Braking magnitude from the GGV at the segment exit"]]},
+      {title: "2. Accelerate forward, brake backward", equation: tex`\begin{aligned} v_{i+1}^{2} &\le v_i^{2}+2a_{\mathrm{drive}}\,\Delta s_i \\ v_i^{2} &\le v_{i+1}^{2}+2b_{\mathrm{brake}}\,\Delta s_i \end{aligned}`, text: "The forward pass limits exit speed. The backward pass lowers entry speed enough to brake for the next corner. Repeat around the lap while keeping the corner-speed limits.", symbols: [[tex`\Delta s_i`, "Distance between neighboring line samples"], [tex`a_{\mathrm{drive}}`, "Upper GGV acceleration at segment entry, which can be negative"], [tex`b_{\mathrm{brake}}\ge0`, "Braking magnitude from the GGV at the segment exit"]]},
       {title: "3. Add up segment travel times", equation: tex`T=\sum_i\frac{2\Delta s_i}{v_i+v_{i+1}}`, text: "Divide each segment length by its average endpoint speed, then sum over the closed lap.", symbols: [[tex`T`, "Predicted QSS lap time"]]}
     ];
   } else if (id === "ymd") {
     intro = "Sweep steering and body sideslip to see how much lateral acceleration and yaw moment each combination produces.";
     sections = [
       {title: "1. Choose a steering and sideslip pair", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Hold the selected speed and yaw rate. Solve longitudinal, vertical and wheel balance for each pair.", symbols: [[tex`\delta`, "Steering angle"], [tex`\beta`, "Body sideslip angle"]]},
-      {title: "2. Calculate lateral response and yaw moment", equation: tex`a_y=\dot v_{y,\mathrm{body}}+r\,v_{x,\mathrm{body}},\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "Plot lateral acceleration against yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`r`, "Prescribed yaw rate"], [tex`v_{x,\mathrm{body}},v_{y,\mathrm{body}}`, "Body-frame velocity components"], [tex`M_z`, "Net external yaw moment"]]},
+      {title: "2. Calculate lateral response and yaw moment", equation: tex`a_y=\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right)_y,\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "Plot body-frame lateral acceleration against yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`\mathbf{v}^{B},\boldsymbol\omega`, "Body-frame linear and angular velocity"], [tex`M_z`, "Net external yaw moment"]]},
       {title: "3. Find the zero-moment curve", equation: tex`M_z(\beta,\delta)=0`, text: "Interpolate crossings between converged samples. This identifies balanced yaw conditions within the map. It is not a time-domain stability test.", symbols: []}
     ];
   } else if (id === "steady-state") {

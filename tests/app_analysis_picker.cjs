@@ -101,7 +101,7 @@ for (const id of ['four-post','steady-state','transient','ramp-steer','mbd-step-
   assert.match(math,/<p>/);
   assert.doesNotMatch(math,/undefined/);
 }
-assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/steering and wheel torque/);
+assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/rack travel and wheel torque/);
 assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Accelerate forward, brake backward/);
 assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/Position and heading still change/);
 
@@ -114,3 +114,8 @@ assert.match(fourpost, /Rotate about global x, translate along local z/);
 assert.match(fourpost, /Global x and y translation and all contact-frame rotations remain free/);
 assert.match(fourpost, /not a prescribed wheel-travel value/);
 assert.doesNotMatch(fourpost, /Move the fixtures|z_\{\\mathrm\{rig\}/);
+
+const ggvMath = vm.runInContext("simulationMathHtml('ggv')",ctx);
+assert.match(ggvMath, /This does not set yaw rate to zero/);
+assert.match(ggvMath, /tangential acceleration free/);
+assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx), /path-frame GGV/);
