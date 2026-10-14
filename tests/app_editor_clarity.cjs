@@ -636,14 +636,30 @@ vm.runInContext(`
     savedResults=()=>[{id:'result',created_label:'Today',simulation:{id:'ggv-test'},files:[{kind:'csv'}]}];
     state.simulationWorkspace={simulations:[{id:'ggv-test',workflow_id:'ggv'}]};
     api=()=>{throw new Error('An envelope must not request replay captures');};
-    await addSimulationVisualization('ggv-test');
-    assert.doesNotMatch(elements['simulation-visualization-kind'].innerHTML,/report/);
-    assert.match(elements['simulation-visualization-kind'].innerHTML,/Signal explorer/);
-    assert.doesNotMatch(elements['simulation-visualization-kind'].innerHTML,/3D replay/);
-    assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
-    elements['simulation-visualization-kind'].value='signals';
-    elements['simulation-visualization-kind'].onchange();
-    assert.equal(elements['simulation-visualization-name'].value,'Signal explorer');
+    const created=[];
+    simulationRequest=async(action,values)=>{
+      created.push({action,...values});
+      return {visualization:{id:values.kind,kind:values.kind,run_id:'inherited-result'}};
+    };
+    let opened;
+    openSimulationVisualization=child=>{opened=child;};
+    for (const kind of ['signals','replay']) {
+      state.collapsedSimulations.add('ggv-test');
+      state.collapsedSimulations.add('results:ggv-test');
+      await addSimulationVisualization('ggv-test',kind);
+      assert.equal(opened.kind,kind);
+      assert.equal(opened.run_id,'inherited-result');
+      assert.equal(state.selectedSimulationId,'ggv-test');
+      assert.equal(state.collapsedSimulations.has('results:ggv-test'),false);
+    }
+    assert.deepEqual(created,[
+      {action:'add-visualization',id:'ggv-test',kind:'signals',name:'Signal explorer'},
+      {action:'add-visualization',id:'ggv-test',kind:'replay',name:'Animation'}
+    ],'creation inherits the parent result without choosing a source');
+    state.selectedSimulationId='existing';
+    simulationRequest=async()=>{throw new Error('Creation failed');};
+    await assert.rejects(addSimulationVisualization('ggv-test','signals'),/Creation failed/);
+    assert.equal(state.selectedSimulationId,'existing','failed creation preserves selection');
   })()`, simulationContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
@@ -849,13 +865,12 @@ vm.runInContext(`
     assert.equal(renderSimulationOverview(),false);
     assert.equal(panel.hidden,true);
     state.selectedVisualizationId='plot';
-    state.simulationChildEditor=true;
     state.simulationGgvEditor=true;
     await openSimulationHome();
     assert.equal(saves,2,'home saves pending settings before leaving');
     assert.equal(state.view,'standard');
     for(const key of ['selectedSimulationId','selectedVisualizationId','simulationOverview']) assert.equal(state[key],null);
-    for(const key of ['simModalOpen','simulationChildEditor','simulationGgvEditor']) assert.equal(state[key],false);
+    for(const key of ['simModalOpen','simulationGgvEditor']) assert.equal(state[key],false);
     state.selectedSimulationId='ggv';
     saveSimulationEdits=async()=>{throw new Error('Invalid settings');};
     await assert.rejects(openSimulationHome(),/Invalid settings/);

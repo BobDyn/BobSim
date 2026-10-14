@@ -69,7 +69,6 @@ const state = {
   simulationWorkspace: null,
   collapsedSimulations: new Set(),
   selectedVisualizationId: null,
-  simulationChildEditor: false,
   selectedSimulationId: null,
   simulationCatalogOpen: false,
   simulationOverview: null,
@@ -560,7 +559,6 @@ async function refreshSavedResults() {
     state.simulationCatalogOpen = false;
     state.simConfigPayload = null;
     state.selectedVisualizationId = null;
-    state.simulationChildEditor = false;
     state.simulationGgvEditor = false;
     delete document.getElementById("replay-view").dataset.capture;
   }
@@ -4201,7 +4199,6 @@ async function openSimulationHome() {
   state.selectedVisualizationId = null;
   state.simulationOverview = null;
   state.simModalOpen = false;
-  state.simulationChildEditor = false;
   state.simulationGgvEditor = false;
   setView("standard");
 }
@@ -4214,7 +4211,6 @@ async function openSimulationOverview(id) {
   state.selectedVisualizationId = null;
   state.simulationOverview = {id};
   state.simModalOpen = false;
-  state.simulationChildEditor = false;
   state.simulationGgvEditor = false;
   setView("standard");
 }
@@ -4223,7 +4219,7 @@ function renderSimulationOverview() {
   const panel = document.getElementById("simulation-overview");
   const selection = state.simulationOverview;
   const simulation = selectedSimulation();
-  const visible = state.view === "standard" && !state.simModalOpen && !state.simulationChildEditor
+  const visible = state.view === "standard" && !state.simModalOpen
     && !state.simulationGgvEditor && (selection?.id && simulation?.id === selection.id);
   panel.hidden = !visible;
   if (!visible) return false;
@@ -4262,7 +4258,6 @@ async function openSimulation(id) {
     await saveSimulationEdits();
     state.selectedSimulationId = id;
     state.selectedVisualizationId = null;
-    state.simulationChildEditor = false;
     state.simulationGgvEditor = false;
     state.selectedWorkflowId = running.workflow_id;
     state.selectedJobId = running.id;
@@ -4275,7 +4270,6 @@ async function openSimulation(id) {
     return;
   }
   state.selectedVisualizationId = null;
-  state.simulationChildEditor = false;
   state.simulationGgvEditor = false;
   await saveSimulationEdits();
   const payload = await simulationRequest("load", {id});
@@ -4339,7 +4333,6 @@ function openSimulationVisualization(child) {
   }
   state.selectedVisualizationId = child.id;
   state.simModalOpen = false;
-  state.simulationChildEditor = false;
   state.simulationGgvEditor = false;
   if (child.kind === "replay") {
     document.getElementById("replay-view").dataset.capture = child.run_id || `pending:${state.selectedSimulationId}`;
@@ -4571,28 +4564,16 @@ function wireSimulationContextMenu() {
   document.querySelector(".simulation-tree-pane").addEventListener("scroll", () => close());
 }
 
-async function addSimulationVisualization(id, kind = null) {
+async function addSimulationVisualization(id, kind) {
   await saveSimulationEdits();
+  const payload = await simulationRequest("add-visualization", {
+    id, kind, name: kind === "replay" ? "Animation" : "Signal explorer",
+  });
   state.selectedSimulationId = id;
-  state.selectedVisualizationId = null;
-  state.simModalOpen = false;
   state.simulationCatalogOpen = false;
-  state.simulationChildEditor = true;
-  state.simulationGgvEditor = false;
-  state.collapsedSimulations.delete(state.selectedSimulationId);
+  state.collapsedSimulations.delete(id);
   state.collapsedSimulations.delete(`results:${id}`);
-  const envelope = ["ggv", "ymd"].includes(selectedSimulation()?.workflow_id);
-  const kinds = {signals: "Signal explorer"};
-  if (selectedSimulation()?.workflow_id === "lap-qss") kinds.lap = "Lap map";
-  else if (!envelope) kinds.replay = "Animation";
-  const picker = document.getElementById("simulation-visualization-kind");
-  picker.innerHTML = Object.entries(kinds).map(([value, label]) =>
-    `<option value="${value}">${label}</option>`).join("");
-  picker.value = kind && kinds[kind] ? kind : "signals";
-  const name = document.getElementById("simulation-visualization-name");
-  name.value = kinds[picker.value];
-  picker.onchange = () => { name.value = kinds[picker.value]; };
-  setView("standard");
+  openSimulationVisualization(payload.visualization);
 }
 
 function mountSimulationWorkspace() {
@@ -4611,10 +4592,10 @@ function mountSimulationWorkspace() {
   config.removeAttribute("aria-modal");
   for (const id of ["simulation-config-modal", "studies-view", "replay-view"]) detail.appendChild(document.getElementById(id));
   document.getElementById("simulation-saved-runs").addEventListener("click", () => workspaceAction(async () => {
-    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
   }));
   document.getElementById("simulation-captures").addEventListener("click", () => workspaceAction(async () => {
-    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
   }));
   document.getElementById("simulation-tree").addEventListener("dblclick", event => {
     const button = event.target.closest("[data-simulation-overview]");
@@ -4636,19 +4617,6 @@ function mountSimulationWorkspace() {
       if (event.key === "Enter") input.blur();
     };
     input.onblur = () => workspaceAction(() => renameSimulation(id, input.value));
-  });
-  document.getElementById("simulation-child-close").addEventListener("click", () => workspaceAction(() => openSimulation(state.selectedSimulationId)));
-  document.getElementById("simulation-visualization-form").addEventListener("submit", event => {
-    event.preventDefault();
-    workspaceAction(async () => {
-      const kind = document.getElementById("simulation-visualization-kind").value;
-      const payload = await simulationRequest("add-visualization", {
-        id: state.selectedSimulationId,
-        name: document.getElementById("simulation-visualization-name").value,
-        kind,
-      });
-      openSimulationVisualization(payload.visualization);
-    });
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
     clearTimeout(overviewClickTimer);
@@ -4701,7 +4669,6 @@ function mountSimulationWorkspace() {
     if (run) workspaceAction(async () => {
       await saveSimulationEdits();
       state.selectedVisualizationId = null;
-      state.simulationChildEditor = false;
       state.simulationGgvEditor = false;
       state.selectedResultId = run.dataset.simulationRun;
       state.selectedSimulationId = run.dataset.owner;
@@ -4786,11 +4753,10 @@ function renderSimulationWorkspace() {
   }
   renderSimulationGgv();
   const overviewVisible = renderSimulationOverview();
-  document.getElementById("simulation-child-editor").hidden = state.view !== "standard" || !state.simulationChildEditor;
   const empty = document.getElementById("simulation-empty");
   empty.querySelector("h3").textContent = simulations?.length ? "Simulation workspace" : "No simulations";
   empty.querySelector("p").hidden = Boolean(simulations?.length);
-  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationChildEditor || state.simulationGgvEditor;
+  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationGgvEditor;
   renderSimulationCatalog();
   document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
   const config = document.getElementById("simulation-config-modal");
@@ -4946,7 +4912,6 @@ async function removeSimulation(id = state.selectedSimulationId) {
   if (state.selectedSimulationId === id) {
     state.selectedSimulationId = null;
     state.selectedVisualizationId = null;
-    state.simulationChildEditor = false;
     state.simulationGgvEditor = false;
     state.simModalOpen = false;
     state.dirtySimConfig = false;

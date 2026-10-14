@@ -4924,7 +4924,6 @@ summary:focus-visible {
 .simulation-child-editor { padding: 24px; overflow: auto; }
 .simulation-child-editor header { display: flex; align-items: center; justify-content: space-between; }
 .simulation-child-editor h2 { font-size: 18px; }
-.simulation-child-editor form { display: grid; gap: 16px; max-width: 420px; margin: 20px 0 32px; }
 .simulation-child-editor label { display: grid; gap: 6px; }
 
 .replay-camera-tools {

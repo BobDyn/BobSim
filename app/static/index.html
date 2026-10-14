@@ -252,16 +252,6 @@
               <p id="simulation-ggv-status" role="status"></p>
               <button id="simulation-ggv-open" type="button" class="ghost-button">Open GGV analysis</button>
             </section>
-            <section id="simulation-child-editor" class="simulation-child-editor" hidden>
-              <header><h2>Result post-processing</h2><button id="simulation-child-close" type="button" class="ghost-button" aria-label="Close">×</button></header>
-              <form id="simulation-visualization-form">
-                <h3>Visualization</h3>
-                <label>Name<input id="simulation-visualization-name" value="Visualization" maxlength="120" required></label>
-                <label>View<select id="simulation-visualization-kind" required></select></label>
-                <p id="simulation-visualization-empty" class="muted">Results update when this analysis completes a run.</p>
-                <button id="simulation-visualization-add" class="run-button" type="submit">Add visualization</button>
-              </form>
-            </section>
             <section id="simulation-overview" hidden></section>
             <div id="simulation-empty" class="empty-state"><h3>Add a simulation</h3><p>Choose an analysis for this vehicle.</p></div>
             <dialog id="simulation-catalog" class="simulation-picker simulation-catalog" aria-labelledby="simulation-catalog-title">
