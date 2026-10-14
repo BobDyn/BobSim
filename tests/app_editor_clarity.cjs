@@ -576,12 +576,14 @@ vm.runInContext(`
   const panelSource=fs.readFileSync('app/static/visual_panel.js','utf8');
   const restore=panelSource.slice(panelSource.indexOf('  function cursorRunId()'),panelSource.indexOf('  function syncTimeline('));
   const replay={runId:'saved-2026-run-a',runs:[{id:'saved-2026-run-a',data:'app/user_data/results/saved/2026-run-a/files/signals.csv'}, {id:'saved-2026-capture',data:'visualization/results/saved-2026-capture.npz'}],scene:{time:[2,3,4]},viewer:{simTime:2,playing:true}};
-  const play={textContent:'Pause'};
+  const play={setAttribute(name,value){this[name]=value;}};
   const replayContext=vm.createContext({state:replay,window:{readResultCursor:id=>id==='2026-run-a'?{time:3.2}:null},$:()=>play});
-  vm.runInContext(restore+'; restoreResultCursor();',replayContext);
+  const playback=panelSource.slice(panelSource.indexOf('  function renderPlaybackButton('),panelSource.indexOf('  function screenActive('));
+  vm.runInContext(playback+restore+'; restoreResultCursor();',replayContext);
   assert.equal(replay.viewer.simTime,3.2);
   assert.equal(replay.viewer.playing,false);
-  assert.equal(play.textContent,'Play');
+  assert.equal(play['aria-label'],'Play');
+  assert.ok(play.innerHTML.includes('<svg'));
   assert.equal(vm.runInContext('cursorRunId()',replayContext),'2026-run-a');
   replay.runId='saved-2026-capture';
   assert.equal(vm.runInContext('cursorRunId()',replayContext),null,'captured scenes must not collide with archived run IDs');
@@ -653,8 +655,8 @@ vm.runInContext(`
       assert.equal(state.collapsedSimulations.has('results:ggv-test'),false);
     }
     assert.deepEqual(created,[
-      {action:'add-visualization',id:'ggv-test',kind:'signals',name:'Signal explorer'},
-      {action:'add-visualization',id:'ggv-test',kind:'replay',name:'Animation'}
+      {action:'add-visualization',id:'ggv-test',kind:'signals'},
+      {action:'add-visualization',id:'ggv-test',kind:'replay'}
     ],'creation inherits the parent result without choosing a source');
     state.selectedSimulationId='existing';
     simulationRequest=async()=>{throw new Error('Creation failed');};
@@ -771,6 +773,10 @@ vm.runInContext(`
     assert.match(buttons.find(b=>b.dataset.action==='replay').title,/steady-state/);
     resultsClick('maneuver');
     assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,false);
+    state.simulationWorkspace.simulations.find(s=>s.id==='maneuver').visualizations=[{kind:'replay'}];
+    resultsClick('maneuver');
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,true);
+    assert.match(buttons.find(b=>b.dataset.action==='replay').title,/already has an animation/);
     events['tree:contextmenu']({preventDefault(){},target:{closest:selector=>selector==='.simulation-tree-runs' ? {} : null}});
     assert.equal(menu.hidden,true,'simulation children have no context menu');
   `,menuContext);

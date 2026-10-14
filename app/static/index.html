@@ -232,7 +232,7 @@
                 <button type="button" role="menuitem" data-action="add" hidden>Add simulation</button>
                 <button type="button" role="menuitem" data-action="duplicate">Duplicate analysis</button>
                 <button type="button" role="menuitem" data-action="replay">Add animation</button>
-                <button type="button" role="menuitem" data-action="signals">Signal explorer</button>
+                <button type="button" role="menuitem" data-action="signals">Signal Explorer</button>
                 <button type="button" role="menuitem" data-action="delete">Delete simulation</button>
               </div>
               <nav id="simulation-tree" aria-label="Vehicle simulations"></nav>
@@ -282,7 +282,6 @@
             </div>
             <div class="replay-controls">
               <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
-              <button id="replay-play" class="ghost-button" type="button">Pause</button>
               <button id="replay-export" class="ghost-button" type="button">Export video</button>
               <button id="replay-help-btn" class="ghost-button" type="button">Controls</button>
             </div>
@@ -316,6 +315,7 @@
                 </ul>
               </div>
               <div class="replay-timeline">
+                <button id="replay-play" class="ghost-button" type="button" aria-label="Pause" title="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
                 <input id="replay-time" type="range" min="0" max="1000" value="0" aria-label="Time" />
                 <span id="replay-clock" class="replay-clock">0.00 s</span>
               </div>
@@ -355,8 +355,7 @@
         <section id="studies-view" class="screen">
           <div id="signal-explorer" class="result-explorer-shell" hidden>
             <aside class="workflow-list">
-              <h2>Signal explorer</h2>
-              <label>Source<select id="result-source-picker" aria-label="Signal file"></select></label>
+              <h2><input id="signal-explorer-name" aria-label="Signal Explorer name" maxlength="120"></h2>
               <label>X axis<select id="result-x-axis"></select></label>
               <label>Color by<select id="result-color-signal"></select></label>
               <details id="result-comparison" class="result-comparison">

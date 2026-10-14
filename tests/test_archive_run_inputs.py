@@ -558,3 +558,48 @@ def test_existing_analysis_group_mapping(archive_workspace, workflow, group):
     result = app.simulation_workspace()
     assert result['analysis_groups'] == [group]
     assert result['simulations'][0]['id'] == 'legacy'
+
+
+def test_signal_explorer_names_and_single_animation(archive_workspace):
+    parent = app.simulation_workspace('create', {'workflow_id': 'study'})['simulation']
+    views = [app.simulation_workspace('add-visualization', {
+        'id': parent['id'], 'kind': 'signals',
+    })['visualization'] for _ in range(3)]
+    assert [view['name'] for view in views] == [f'Signal Explorer {n}' for n in range(1, 4)]
+    renamed = app.simulation_workspace('rename-visualization', {
+        'id': parent['id'], 'child_id': views[0]['id'], 'name': ' Tire loads ',
+    })['visualization']
+    assert renamed == {**views[0], 'name': 'Tire loads'}
+    app.simulation_workspace('delete-visualization', {'id': parent['id'], 'child_id': views[1]['id']})
+    next_view = app.simulation_workspace('add-visualization', {'id': parent['id'], 'kind': 'signals'})['visualization']
+    assert next_view['name'] == 'Signal Explorer 4'
+    animation = app.simulation_workspace('add-visualization', {'id': parent['id'], 'kind': 'replay'})['visualization']
+    assert animation['name'] == 'Animation'
+    with pytest.raises(ValueError, match='already has an animation'):
+        app.simulation_workspace('add-visualization', {'id': parent['id'], 'kind': 'replay'})
+    with pytest.raises(ValueError, match='signal explorer'):
+        app.simulation_workspace('rename-visualization', {
+            'id': parent['id'], 'child_id': animation['id'], 'name': 'Other',
+        })
+    app.simulation_workspace('delete-visualization', {'id': parent['id'], 'child_id': animation['id']})
+    replacement = app.simulation_workspace('add-visualization', {'id': parent['id'], 'kind': 'replay'})['visualization']
+    assert replacement['id'] != animation['id']
+
+
+def test_existing_result_view_names(archive_workspace):
+    import json
+
+    from app import data_services
+
+    app.simulation_workspace()
+    workspace = data_services._vehicle_workspace_dir('original')
+    (workspace / 'simulations.json').write_text(json.dumps([{
+        'id': 'existing', 'name': 'Existing', 'workflow_id': 'study', 'visualizations': [
+            {'id': 'a', 'kind': 'replay', 'name': 'Visualization', 'run_id': None},
+            {'id': 'b', 'kind': 'signals', 'name': 'Visualization', 'run_id': None},
+            {'id': 'c', 'kind': 'signals', 'name': 'Visualization', 'run_id': None},
+            {'id': 'd', 'kind': 'signals', 'name': 'Tire loads', 'run_id': None},
+        ],
+    }]))
+    views = app.simulation_workspace('list')['simulations'][0]['visualizations']
+    assert [view['name'] for view in views] == ['Animation', 'Signal Explorer 1', 'Signal Explorer 2', 'Tire loads']

@@ -4250,6 +4250,38 @@ async function renameSimulation(id, name) {
   }
 }
 
+async function renameSignalExplorer(id, childId, name) {
+  const child = state.simulationWorkspace?.simulations?.find(item => item.id === id)?.visualizations?.find(item => item.id === childId);
+  try {
+    if (name.trim() && name.trim() !== child?.name) {
+      await simulationRequest("rename-visualization", {id, child_id: childId, name: name.trim()});
+    }
+  } finally {
+    renderSimulationWorkspace();
+    renderSignalExplorerName();
+  }
+}
+
+function renderSignalExplorerName() {
+  const name = document.getElementById("signal-explorer-name");
+  if (!name) return;
+  const child = resultVisualization();
+  if (document.activeElement !== name) name.value = child?.name || "Signal Explorer";
+  name.readOnly = child?.kind !== "signals";
+  name.disabled = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  name.title = name.disabled ? "Names are locked while a job runs." : "";
+  name.onchange = () => {
+    if (child?.kind !== "signals") return;
+    name.value = name.value.trim() || child.name;
+    workspaceAction(() => renameSignalExplorer(state.selectedSimulationId, child.id, name.value));
+  };
+  name.onkeydown = event => {
+    if (child?.kind !== "signals") return;
+    if (event.key === "Escape") { name.value = child.name; name.blur(); }
+    if (event.key === "Enter") name.blur();
+  };
+}
+
 async function openSimulation(id) {
   state.simulationOverview = null;
   const running = (await api("/api/jobs")).jobs.find(job =>
@@ -4504,8 +4536,10 @@ function wireSimulationContextMenu() {
     for (const button of menu.querySelectorAll("button")) {
       const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
       button.hidden = !actions.includes(button.dataset.action);
-      button.disabled = button.dataset.action === "replay" && (envelope || lap);
-      button.title = button.disabled ? "This analysis produces steady-state results, not an animation." : "";
+      const hasAnimation = Boolean(simulation?.visualizations?.some(child => child.kind === "replay"));
+      button.disabled = button.dataset.action === "replay" && (envelope || lap || hasAnimation);
+      button.title = button.disabled ? hasAnimation ? "This simulation already has an animation."
+        : "This analysis produces steady-state results, not an animation." : "";
     }
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
@@ -4567,7 +4601,7 @@ function wireSimulationContextMenu() {
 async function addSimulationVisualization(id, kind) {
   await saveSimulationEdits();
   const payload = await simulationRequest("add-visualization", {
-    id, kind, name: kind === "replay" ? "Animation" : "Signal explorer",
+    id, kind,
   });
   state.selectedSimulationId = id;
   state.simulationCatalogOpen = false;
@@ -4598,25 +4632,30 @@ function mountSimulationWorkspace() {
     await saveSimulationEdits(); state.selectedVisualizationId = null; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
   }));
   document.getElementById("simulation-tree").addEventListener("dblclick", event => {
-    const button = event.target.closest("[data-simulation-overview]");
+    const button = event.target.closest("[data-simulation-overview], [data-simulation-visualization]");
     clearTimeout(overviewClickTimer);
     if (!button || (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status))) return;
-    const id = button.dataset.simulationOverview;
+    const id = button.dataset.simulationOverview || button.dataset.owner;
     const simulation = state.simulationWorkspace.simulations.find(item => item.id === id);
+    const childId = button.dataset.simulationVisualization;
+    const child = simulation.visualizations?.find(item => item.id === childId);
+    if (childId && child?.kind !== "signals") return;
+    const originalName = child ? child.name : simulation.name;
     const input = document.createElement("input");
     input.className = "simulation-tree-name";
-    input.setAttribute("aria-label", "Simulation name");
+    input.setAttribute("aria-label", child ? "Signal Explorer name" : "Simulation name");
     input.maxLength = 120;
-    input.value = simulation.name;
+    input.value = originalName;
     button.replaceWith(input);
     input.focus();
     input.select();
     input.onclick = event => event.stopPropagation();
     input.onkeydown = event => {
-      if (event.key === "Escape") { input.value = simulation.name; input.blur(); }
+      if (event.key === "Escape") { input.value = originalName; input.blur(); }
       if (event.key === "Enter") input.blur();
     };
-    input.onblur = () => workspaceAction(() => renameSimulation(id, input.value));
+    input.onblur = () => workspaceAction(() => childId
+      ? renameSignalExplorer(id, childId, input.value) : renameSimulation(id, input.value));
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
     clearTimeout(overviewClickTimer);
@@ -4645,14 +4684,14 @@ function mountSimulationWorkspace() {
     }
     const child = event.target.closest("[data-simulation-visualization]");
     if (child) {
-      workspaceAction(async () => {
+      overviewClickTimer = setTimeout(() => workspaceAction(async () => {
         await saveSimulationEdits();
         const parent = state.simulationWorkspace.simulations.find(item => item.id === child.dataset.owner);
         const visualization = parent?.visualizations?.find(item => item.id === child.dataset.simulationVisualization);
         if (!visualization) throw new Error("Visualization no longer available.");
         state.selectedSimulationId = parent.id;
         openSimulationVisualization(visualization);
-      });
+      }), 250);
       return;
     }
     const toggle = event.target.closest("[data-simulation-toggle]");
@@ -5917,6 +5956,7 @@ async function refreshResultBaseline() {
 }
 
 function renderStudies() {
+  renderSignalExplorerName();
   state.activeStudyTab = "saved";
   renderResultSaveControls();
   renderSavedResultCatalog();
@@ -5929,7 +5969,6 @@ function renderStudies() {
   document.querySelector("#studies-view .archive-workspace").hidden = signals;
   if (signals) {
     const files = (selectedSavedResult()?.files || []).filter(file => file.kind === "csv");
-    const picker = document.getElementById("result-source-picker");
     if (!files.some(file => file.path === state.selectedResultSourcePath)) {
       state.selectedResultSourcePath = (files.find(file => file.label === resultVisualization()?.settings?.source_label) || files.find(file => file.label === "Signals") || files[0])?.path || null;
       state.resultSourceDetail = null;
@@ -5939,8 +5978,6 @@ function renderStudies() {
       state.resultComparisonMessage = "";
       state.resultPlotStatus = "idle";
     }
-    picker.innerHTML = files.map(file => `<option value="${escapeHtml(file.path)}"${file.path === state.selectedResultSourcePath ? " selected" : ""}>${escapeHtml(file.label)}</option>`).join("");
-    picker.onchange = event => selectResultSource(event.target.value);
     renderResultExplorer();
   }
 }
@@ -6188,7 +6225,6 @@ function renderResultControls(detail) {
     xSelect.parentElement.hidden = lap;
     search.parentElement.hidden = lap;
     list.hidden = lap;
-    document.querySelector("#signal-explorer h2").textContent = lap ? "Lap map" : "Signal explorer";
   }
   if (state.resultXAxis !== "__index__" && !numeric.includes(state.resultXAxis)) {
     state.resultXAxis = defaultResultXAxis(detail);

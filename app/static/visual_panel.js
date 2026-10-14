@@ -26,6 +26,15 @@
 
   const $ = (id) => document.getElementById(id);
 
+  function renderPlaybackButton(playing) {
+    const button = $("replay-play");
+    const label = playing ? "Pause" : "Play";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' +
+      (playing ? "M6 4h4v16H6zM14 4h4v16h-4z" : "M7 4v16l13-8z") + '"/></svg>';
+  }
+
   function screenActive() {
     const screen = $("replay-view");
     return screen && screen.classList.contains("active");
@@ -56,6 +65,7 @@
     const picker = $("replay-run");
     picker.innerHTML = "";
     picker.disabled = Boolean(state.capture);
+    picker.hidden = Boolean(state.capture);
     for (const run of state.runs) {
       const option = document.createElement("option");
       option.value = run.id;
@@ -324,7 +334,7 @@
     if (!state.scene || !Number.isFinite(time)) return;
     state.viewer.playing = false;
     state.viewer.simTime = Math.max(state.scene.time[0], Math.min(state.scene.time[state.scene.time.length - 1], time));
-    $("replay-play").textContent = "Play";
+    renderPlaybackButton(false);
   }
 
   function syncTimeline(simTime) {
@@ -561,7 +571,7 @@
     // The export owns the clock and the canvas until it is done; the live loop
     // would otherwise be advancing time underneath it.
     viewer.playing = false;
-    $("replay-play").textContent = "Play";
+    renderPlaybackButton(false);
     recorder.start();
     setExportLabel("Recording 0%", "Click to stop and save what has been recorded");
     setStatus("");
@@ -652,7 +662,7 @@
       viewer.simTime = rec.wasTime;
       viewer.playing = rec.wasPlaying;
       viewer.render(); // put the frame the export borrowed the view from back
-      $("replay-play").textContent = viewer.playing ? "Pause" : "Play";
+      renderPlaybackButton(viewer.playing);
     }
     resetExportButton();
   }
@@ -708,7 +718,7 @@
     $("replay-run").addEventListener("change", (event) => loadRun(event.target.value));
     $("replay-play").addEventListener("click", () => {
       state.viewer.playing = !state.viewer.playing;
-      $("replay-play").textContent = state.viewer.playing ? "Pause" : "Play";
+      renderPlaybackButton(state.viewer.playing);
     });
     $("replay-reset-view").addEventListener("click", () => {
       $("replay-camera-view").value = "iso";
@@ -736,7 +746,7 @@
       const scene = state.scene;
       if (!scene) return;
       state.viewer.playing = false;
-      $("replay-play").textContent = "Play";
+      renderPlaybackButton(false);
       state.viewer.simTime = scene.time[0] + (Number(event.target.value) / 1000) * scene.duration;
     });
     for (const name of ["tires", "metrics"]) {

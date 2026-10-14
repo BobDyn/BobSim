@@ -1255,6 +1255,20 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         raise ValueError("The active vehicle changed. Reopen the simulation.")
     path = _vehicle_workspace_dir(key) / "simulations.json"
     items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+    for entry in items:
+        children = entry.get("visualizations", [])
+        for child in children:
+            if child["kind"] == "replay":
+                child["name"] = "Animation"
+            elif child["kind"] == "signals":
+                name = child.get("name", "")
+                if name.startswith("Signal explorer "):
+                    child["name"] = name.replace("Signal explorer ", "Signal Explorer ", 1)
+                elif name in {"", "Visualization", "Signal explorer", "Signal Explorer"}:
+                    number = 1
+                    while any(view.get("name") == f"Signal Explorer {number}" for view in children):
+                        number += 1
+                    child["name"] = f"Signal Explorer {number}"
     groups_path = path.with_name("analysis_groups.json")
     group_order = ("kinematic", "steady-state", "transient")
     saved_groups = json.loads(groups_path.read_text(encoding="utf-8")) if groups_path.is_file() else []
@@ -1320,12 +1334,20 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             data = yaml.safe_load(item["config_text"])
             data.setdefault("qss", {})["generate_if_missing"] = True
             item["config_text"] = yaml.safe_dump(data, sort_keys=False)
-    elif action in {"add-visualization", "delete-visualization", "update-visualization"}:
+    elif action in {"add-visualization", "delete-visualization", "update-visualization", "rename-visualization"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
         children = item.setdefault("visualizations", [])
         if action == "add-visualization":
             kind = payload.get("kind", "report")
+            if kind == "replay" and any(child["kind"] == "replay" for child in children):
+                raise ValueError("This simulation already has an animation.")
+            default_name = "Animation" if kind == "replay" else "Visualization"
+            if kind == "signals":
+                number = sum(child["kind"] == "signals" for child in children) + 1
+                while any(child["name"] == f"Signal Explorer {number}" for child in children):
+                    number += 1
+                default_name = f"Signal Explorer {number}"
             source_id = payload.get("source_id", payload.get("run_id"))
             if kind in {"report", "signals", "lap"}:
                 if kind == "lap" and item["workflow_id"] != "lap-qss":
@@ -1342,9 +1364,16 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             if source_id is not None and not valid:
                 raise ValueError("Choose a saved run from this simulation or an available captured scene.")
             child = {"id": uuid4().hex,
-                     "name": str(payload.get("name") or "Visualization").strip()[:120] or "Visualization",
+                     "name": ("Animation" if kind == "replay" else
+                              str(payload.get("name") or default_name).strip()[:120] or default_name),
                      "kind": kind, "run_id": source_id}
             children.append(child)
+            result["visualization"] = child
+        elif action == "rename-visualization":
+            child = next((child for child in children if child["id"] == payload.get("child_id")), None)
+            if child is None or child["kind"] != "signals":
+                raise ValueError("Choose a signal explorer from this simulation.")
+            child["name"] = str(payload.get("name") or child["name"]).strip()[:120] or child["name"]
             result["visualization"] = child
         elif action == "update-visualization":
             child = next((child for child in children if child["id"] == payload.get("child_id")), None)
@@ -1412,7 +1441,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
     if action in {"add-analysis", "remove-analysis", "create", "save", "rename", "delete", "duplicate", "set-baseline",
-                  "set-ggv", "add-visualization", "delete-visualization", "update-visualization"}:
+                  "set-ggv", "add-visualization", "delete-visualization",
+                  "update-visualization", "rename-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
         temporary.replace(path)
