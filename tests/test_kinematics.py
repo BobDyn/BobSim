@@ -565,11 +565,13 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     for item in KINEMATIC_CURVE_META:
         key = item["id"]
         assert len(front_curves[key]) == axis_lengths[item["x_id"]]
-    # Steer sweep is front-axle only.
+    # Front rack motion leaves the rear geometry unchanged.
     rear_curves = payload["axles"]["rear"]["curves"]
+    nominal_index = payload["x_axes"]["jounce_mm"].index(0.0)
     for item in KINEMATIC_CURVE_META:
         if item["id"].startswith("steer_"):
-            assert rear_curves[item["id"]] == []
+            nominal = rear_curves[item["id"].replace("steer_", "bump_")][nominal_index]
+            assert rear_curves[item["id"]] == [nominal] * axis_lengths["rack_mm"]
     assert payload["x_axes"]["rack_mm"] == pytest.approx([1000 * value for value in payload["steer_m"]])
     for axis in payload["x_axes"].values():
         assert 0.0 in axis

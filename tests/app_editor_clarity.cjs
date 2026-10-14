@@ -989,3 +989,28 @@ for (const [value, scale, display, edited, expected] of [
   assert.ok(!classes.has('geometry-expanded'));
   assert.equal(redraws, 4, 'both canvases redraw on expand and restore');
 }
+
+vm.runInContext(`
+{
+  const originalText = drawCanvasText;
+  const originalFit = fitCanvasText;
+  const originalChart = createPlotChart;
+  const messages = [];
+  let plotted;
+  drawCanvasText = (_ctx, text) => messages.push(text);
+  fitCanvasText = (_ctx, text) => text;
+  createPlotChart = options => { plotted = options; return null; };
+  const context = {save(){},restore(){},beginPath(){},roundRect(){},fill(){},stroke(){}};
+  drawKinematicChart(context, 0, 0, 300, 230, {
+    x_axes:{rack_mm:[-1,0,1]},
+    axles:{rear:{curves:{steer_camber_deg:[null,null,null]}}},
+  }, {id:'steer_camber_deg',x_id:'rack_mm'}, {axles:['rear']});
+  assert.equal(plotted.series.length,1);
+  assert.equal(plotted.series[0].points.length,0,'failed samples must not become zero camber');
+  assert.ok(messages.includes('No valid samples for this curve'));
+  assert.ok(!messages.some(text=>text.includes('Waiting')));
+  drawCanvasText = originalText;
+  fitCanvasText = originalFit;
+  createPlotChart = originalChart;
+}
+`,ctx);

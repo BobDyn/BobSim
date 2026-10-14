@@ -681,11 +681,16 @@ def kinematic_curves_payload(
         "axles": {},
         "warnings": [],
     }
-    # No chassis in the registry has rear steer.
-    for axle, axle_steer in (("front", steer), ("rear", ())):
+    # Front rack motion leaves the unsteered rear axle at its nominal pose.
+    for axle, axle_steer in (("front", steer), ("rear", (0.0,))):
         try:
             solver = CornerKinematics.from_vehicle(vehicle, axle)
             axle_payload = solver.solve_sweep(sweep, roll, axle_steer)
+            if axle == "rear":
+                for key in STEER_CURVE_SOURCES:
+                    axle_payload["curves"][key] *= len(steer)
+                axle_payload["steer_x_deg"] *= len(steer)
+                axle_payload["steer_solved_count"] *= len(steer)
             payload["axles"][axle] = axle_payload
             payload["warnings"].extend(axle_payload.get("warnings", []))
         except Exception as exc:

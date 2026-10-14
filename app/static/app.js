@@ -8955,13 +8955,6 @@ function geometryPlotDescriptors() {
     .filter(Boolean);
 }
 
-function kinematicPayloadHasCurve(payload, key) {
-  return ["front", "rear"].some((axle) => {
-    const curve = payload?.axles?.[axle]?.curves?.[key];
-    return Array.isArray(curve) && curve.length > 1;
-  });
-}
-
 function renderGeometryPlotControls() {
   const panel = document.getElementById("geometry-plot-panel");
   if (!panel || panel.hidden) return;
@@ -9079,18 +9072,6 @@ function drawGeometryPlotPanel() {
     drawCanvasText(ctx, state.kinematicsPayload.warnings?.[0] || "Kinematics unavailable", width / 2, height / 2, {
       align: "center",
       color: palette.amber,
-    });
-    clearGeometryPlotScene();
-    return;
-  }
-  const missingCurve = descriptors.find((descriptor) => !kinematicPayloadHasCurve(state.kinematicsPayload, descriptor.y_id));
-  if (missingCurve) {
-    if (state.kinematicsStatus !== "loading" && state.kinematicsStatus !== "refreshing") {
-      queueKinematicsRefresh({ force: true });
-    }
-    drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
-      align: "center",
-      color: palette.muted,
     });
     clearGeometryPlotScene();
     return;
@@ -12175,7 +12156,7 @@ function drawKinematicChart(
         index,
         sampleKey: String(index),
         xValue: xValues[index],
-        yValue: Number(value),
+        yValue: value == null ? NaN : Number(value),
       }))
       .filter((point) => Number.isFinite(point.xValue) && Number.isFinite(point.yValue)),
   }));
@@ -12209,7 +12190,7 @@ function drawKinematicChart(
       : { left: 50, right: 14, top: 36, bottom: 36 },
   });
   if (!chart) {
-    drawCanvasText(ctx, "Waiting for curve data", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
+    drawCanvasText(ctx, "No valid samples for this curve", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
     ctx.restore();
     return null;
   }
