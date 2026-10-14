@@ -4909,13 +4909,14 @@ summary:focus-visible {
 }
 
 #simulation-tree { padding: 10px 6px 4px; }
-.simulation-tree-root { display: flex; align-items: center; gap: 6px; padding: 4px; font-size: 12px; }
-.simulation-tree-root strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simulation-tree-root { display: flex; align-items: center; gap: 6px; padding: 4px 22px 4px 4px; font-size: 12px; }
+.simulation-tree-root strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .simulation-tree-children { margin-left: 11px; border-left: 1px solid var(--line); }
 .simulation-tree-children[hidden] { display: none; }
 .simulation-analysis-label { font-weight: 600; }
 .simulation-analysis-group > .simulation-tree-children { margin-left: 9px; }
 .simulation-tree-row { display: flex; align-items: center; min-width: 0; }
+.simulation-analysis-group > .simulation-tree-row { padding-right: 22px; }
 .simulation-tree-toggle, .simulation-tree-spacer { width: 18px; flex: 0 0 18px; }
 .simulation-tree-toggle {
   display: grid; place-items: center; height: 28px; padding: 0;
@@ -5065,3 +5066,12 @@ summary:focus-visible {
 @media (max-width: 780px) { .simulation-method-guide { grid-template-columns: minmax(0, 1fr); } }
 
 .simulation-method-model p { font-size: 13px; line-height: 1.6; margin: 0 0 10px; }
+
+.simulation-math { margin-top: 32px; border-top: 1px solid var(--line); }
+.simulation-math section { padding: 24px 0; border-bottom: 1px solid var(--line); }
+.simulation-math h3 { margin: 0 0 16px; font-size: 16px; }
+.simulation-equation { font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif; font-size: 21px; line-height: 1.9; padding: 8px 16px; overflow-x: auto; white-space: nowrap; background: var(--surface-2); }
+.simulation-equation sub, .simulation-equation sup { font-size: 70%; }
+.simulation-math p { font-size: 13px; line-height: 1.7; margin: 14px 0 0; max-width: 88ch; }
+.simulation-method-notes { margin-top: 24px; }
+.simulation-method-notes > summary { cursor: pointer; font-size: 13px; }

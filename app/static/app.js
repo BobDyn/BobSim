@@ -5515,17 +5515,84 @@ function simulationMethodGuide(workflowId) {
 }[workflowId];
 }
 
+function simulationMathHtml(id) {
+  const transient = {
+    title: "Integrate the vehicle response",
+    equations: ["dx/dt = f(x, u, t), &nbsp; x(t₀) = x₀"],
+    text: "x contains the positions and velocities released by the selected fidelity. u contains steering, wheel torques and road inputs. The solver advances these states with adaptive internal time steps. Saved samples are evaluations of that solution."
+  };
+  const mbd = {
+    title: "Constrained multibody dynamics",
+    equations: ["M(q) d²q/dt² + h(q, dq/dt) = Q(q, dq/dt, u) + J(q)<sup>T</sup>λ", "Φ(q, t) = 0, &nbsp; J = ∂Φ/∂q"],
+    text: "This is the mechanical form of the Modelica DAE. q describes body and linkage coordinates, M is the mass matrix, h contains inertial terms, Q contains applied forces and moments, and λ supplies constraint reactions. Joint and prescribed-motion constraints are collected in Φ. OpenModelica compiles and reduces the coupled equations before integration."
+  };
+  const balance = {
+    title: "Forces and moments close the vehicle equations",
+    equations: ["m (dv/dt + ω × v) = ∑ F", "I dω/dt + ω × (Iω) = ∑ M"],
+    text: "v and ω are body-frame translational and angular velocity. Forces include the four tires, gravity and aero. Moments include force lever arms and free moments. DynPy releases the components supported by the selected DOFs. A constant body-frame velocity can still have centripetal acceleration through ω × v."
+  };
+  const tires = {
+    title: "Geometry and tire loads",
+    equations: ["geometryᵢ = KinPyᵢ(travelᵢ, rack)", "(Fₓ, Fᵧ, Mₓ, Mᵧ, M<sub>z</sub>)ᵢ = MF5.2(αᵢ, κᵢ, γᵢ, F<sub>z</sub>ᵢ)"],
+    text: "Each corner has its own pose, slip angle α, longitudinal slip ratio κ, camber γ and normal load Fz. KinPy supplies wheel geometry directly or through a sampled lookup. Tire forces are rotated from each wheel frame into the vehicle frame before summation. Here κ is tire slip ratio, not track curvature."
+  };
+  const pi = {
+    title: "Hold the target speed",
+    equations: ["e = v<sub>target</sub> − ‖v‖, &nbsp; dz/dt = e", "F<sub>request</sub> = F<sub>trim</sub> + m (K<sub>p</sub> e + K<sub>i</sub> z)"],
+    text: "DynPy starts from a straight-line trim and adds PI speed feedback to the trimmed drive force. Kp = 5 s⁻¹ and Ki = 10 s⁻². Available drive force, power and maximum drive speed cap the command. The integral stops accumulating a positive error when that cap is active. Drive or brake distribution allocates the resulting wheel torques."
+  };
+  const step = {
+    title: "Apply a finite-rise step",
+    equations: ["δ(t) = δ<sub>step</sub> clamp((t − t₀)/τ, 0, 1)"],
+    text: "The steering command rises from zero to δstep over duration τ, then holds. DynPy commands nominal mean front roadwheel angle. BobLib commands handwheel angle. These are different inputs even if the numerical angle is the same."
+  };
+  const ggv = [
+    {title: "Solve algebraic vehicle balance", equations: ["w = (β, s<sub>rack</sub>, T<sub>wheels</sub>, attitude, loads, slips, …)", "R(w; v, aₓ, aᵧ) = 0, &nbsp; g(w; v, aₓ, aᵧ) ≤ 0"], text: "At fixed speed v and acceleration demand, w collects sideslip, rack displacement, total torque, and the additional attitude, wheel-load and wheel-slip unknowns needed by the model. The GGV calculation prescribes zero yaw rate. R enforces the prescribed acceleration and the remaining vehicle balance equations. g represents steering, sideslip, tire-fit and drive/brake bounds. This is an acceleration trim, not a requirement that every state derivative be zero."},
+    {title: "Find the feasible boundary", equations: ["𝒢 = {(aₓ, aᵧ, v) : ∃w, R = 0, g ≤ 0}", "aₓ<sup>drive</sup>(v, aᵧ) = max<sub>w, aₓ</sub> aₓ", "aₓ<sup>brake</sup>(v, aᵧ) = min<sub>w, aₓ</sub> aₓ"], text: "Both extrema obey the same balance and feasibility constraints. The implementation finds the lateral endpoint and samples the acceleration and braking boundaries below it. Stacking these speed slices gives the GGV surface. Steering and sideslip are solved unknowns here, unlike the prescribed steering/sideslip grid in YMD. It searches the boundary rather than filling every feasible interior point."}
+  ];
+  const lap = [
+    {title: "Convert curvature into lateral demand", equations: ["aᵧ(s) = v(s)² κ<sub>track</sub>(s)", "vᵢ² |κᵢ| ≤ aᵧ<sup>max</sup>(vᵢ)"], text: "The racing line supplies curvature κtrack at each station s. Candidate speed determines lateral demand. The GGV slice at that speed and absolute lateral demand supplies the remaining drive and braking acceleration. The lateral boundary first sets a corner-speed ceiling."},
+    {title: "Accelerate forward and brake backward", equations: ["vᵢ₊₁ ← min(vᵢ₊₁, √(vᵢ² + 2 max(aₓ<sup>drive</sup>(vᵢ, |aᵧᵢ|), 0) Δsᵢ))", "vᵢ ← min(vᵢ, √(vᵢ₊₁² + 2 max(−aₓ<sup>brake</sup>(vᵢ₊₁, |aᵧᵢ₊₁|), 0) Δsᵢ))"], text: "Drive acceleration is positive and braking acceleration is negative. The forward pass limits exit speed by available propulsion. The backward pass lowers entry speed enough to reach the next corner. Both passes retain the speed ceilings and repeat around the closed lap until changes fall below tolerance."},
+    {title: "Integrate travel time", equations: ["Δtᵢ = 2 Δsᵢ / (vᵢ + vᵢ₊₁), &nbsp; T = ∑ᵢ Δtᵢ"], text: "Segment time uses the average endpoint speed. The selected line can be the centerline, a minimum-curvature line or a line optimized against this QSS lap-time calculation, constrained by the track corridor and vehicle clearance."}
+  ];
+  let sections;
+  if (id === "ggv") sections = [...ggv, balance, tires];
+  else if (id === "lap-qss") sections = lap;
+  else if (id === "ymd") sections = [
+    {title: "Sweep steering and sideslip", equations: ["R<sub>longitudinal, vertical, wheel</sub>(w; v, β, δ, r) = 0", "aᵧ = dv<sub>y,body</sub>/dt + r<sub>prescribed</sub> v<sub>x,body</sub>, &nbsp; M<sub>z</sub> = (∑ M)<sub>z</sub>"], text: "Hold speed v, sideslip β, steering δ and prescribed yaw rate r for each grid point. Solve the remaining equilibrium constraints and evaluate lateral acceleration and net yaw moment. Lateral and yaw equilibrium are deliberately not imposed at every point. The plotted Mz is the assembled body moment before subtracting gyroscopic terms."},
+    {title: "Locate the trim curve", equations: ["M<sub>z</sub>(β, δ; v, r) = 0"], text: "Interpolate zero-moment crossings between converged steering samples, then follow a continuous branch through the map. The surrounding positive and negative moments describe yaw authority. They do not by themselves establish time-domain stability."}, balance, tires
+  ];
+  else if (id === "four-post") sections = [mbd,
+    {title: "Prescribe the rig motion", equations: ["z<sub>contact,i</sub>(t) = z<sub>rig,i</sub>(t), &nbsp; F<sub>applied,i</sub>(t) = F<sub>test,i</sub>(t)"], text: "The fixture prescribes contact-patch motion through heave and roll sweeps and applies scheduled test-force components. The linkage constraints determine compatible poses and the equations determine reactions. Spring free lengths are iteratively adjusted against the target static wheel loads."},
+    {title: "Measure geometry and force transfer", equations: ["camberᵢ = γᵢ(q), &nbsp; toeᵢ = δᵢ(q)", "k<sub>wheel</sub> ≈ ΔF<sub>vertical</sub> / Δz<sub>wheel</sub>"], text: "Angles and lever geometry are extracted along the prescribed sweep. Force/displacement slopes and load-transfer responses provide stiffness and force-based metrics. The displayed slope is the physical interpretation of wheel stiffness, not a replacement formula for every report metric."}
+  ];
+  else if (id === "steady-state") sections = [mbd,
+    {title: "Settle a controlled cornering condition", equations: ["e<sub>v</sub> = v<sub>target</sub> − v, &nbsp; e<sub>ay</sub> = aᵧ<sup>target</sup> − aᵧ", "|e<sub>v</sub>| &lt; ε<sub>v</sub>, &nbsp; |e<sub>ay</sub>| &lt; ε<sub>ay</sub>, &nbsp; |dyⱼ/dt| &lt; εⱼ"], text: "The controller regulates speed and lateral acceleration while the MBD model evolves. Acceptance checks configured errors and rates of lateral acceleration, yaw rate, sideslip, roll and steering. yj denotes those monitored signals. Global position and heading still evolve in a settled turn, so this is not dx/dt = 0 for the entire vehicle state."}
+  ];
+  else if (id === "lap-transient") sections = [transient,
+    {title: "Follow the QSS reference", equations: ["δ<sub>cmd</sub> = clip(δ<sub>ff</sub> + k<sub>ψ</sub> e<sub>ψ</sub> − atan2(k<sub>e</sub> e<sub>y</sub>, v))", "a<sub>cmd</sub> = clip(aₓ<sup>QSS</sup> + k<sub>v</sub>(v<sub>ref</sub> − v))"], text: "First construct the QSS line and speed profile. eψ is heading error and ey is cross-track error. Feedforward steering and target speed use the preview station. The clip operation applies the driver command bounds. Steering combines cornering-trim feedforward with heading and cross-track feedback. Longitudinal demand combines reference acceleration with proportional speed feedback. Integrate the vehicle under those commands and measure progress and tracking error. This driver does not optimize the transient inputs for minimum lap time."}, balance, tires
+  ];
+  else if (["reduced-ramp-steer", "reduced-step-steer"].includes(id)) sections = [transient,
+    id === "reduced-step-steer" ? step : {title: "Ramp, then hold", equations: ["δ(t) = (dδ/dt)<sub>command</sub> clamp(t − t₀, 0, t<sub>end</sub> − t₀)"], text: "The nominal mean front roadwheel command increases at the selected rate from ramp start to ramp end, then stays fixed. Simulation end is separate from ramp end."}, pi, balance, tires
+  ];
+  else if (["ramp-steer", "mbd-step-steer", "transient"].includes(id)) sections = [mbd,
+    id === "mbd-step-steer" ? step : id === "ramp-steer" ? {title: "Apply the handwheel ramp", equations: ["δ<sub>handwheel</sub>(t) = (dδ/dt)<sub>command</sub> max(t − t₀, 0)"], text: "The controller increases handwheel angle after the start time while regulating speed. The run ends at its configured stop or termination condition. Handling curves are collected during the ramp, so the ramp rate influences the response."} : {title: "Measure step and sine response", equations: ["δ<sub>sine</sub>(t) = A sin(2πf(t − t₀))", "y(t) ≈ b₀ + bₛ sin(2πft) + b𝒸 cos(2πft)"], text: "Run finite-rise step cases and sustained-sine cases. For each frequency, fit an offset and sine/cosine components to the selected response cycles. Their amplitude and phase relative to the steering input give the frequency response. Large-amplitude results remain amplitude-dependent."}
+  ];
+  else return "";
+  return `<div class="simulation-math">${sections.map(section => `<section><h3>${section.title}</h3>${section.equations.map(equation => `<div class="simulation-equation" role="math">${equation}</div>`).join("")}<p>${escapeHtml(section.text)}</p></section>`).join("")}</div>`;
+}
+
 function simulationMethodHtml(workflow) {
   const guide = simulationMethodGuide(workflow.id);
   if (!guide) return "";
   const dynpy = guide.sources.includes("engines/dynpy/models.py");
   const sections = [["method", "How it works"], ["inputs", "Inputs"], ["outputs", "What the results mean"], ["limits", "Assumptions and limits"]];
-  return `<div class="simulation-method-guide">${dynpy ? `<section class="simulation-method-model"><h3>Vehicle model</h3><p>DynPy evaluates four contact patches separately, including at 3 DOF. KinPy supplies corner geometry from suspension travel and rack position. Front and rear MF5.2 tire fits provide forces and moments with load, camber and combined-slip dependence. Aero uses ride-height maps.</p><p>3 DOF describes planar body motion with algebraic load transfer. 6 adds heave, roll and pitch. 10 adds wheel rotation. 14 adds unsprung vertical motion. A quasi-steady solve balances these equations at a condition. A transient run integrates the released states over time.</p></section>` : ""}${sections.map(([key, title]) => {
+  return `${simulationMathHtml(workflow.id)}<details class="simulation-method-notes"><summary>Method notes, inputs and limitations</summary><div class="simulation-method-guide">${dynpy ? `<section class="simulation-method-model"><h3>Vehicle model</h3><p>DynPy evaluates four contact patches separately, including at 3 DOF. KinPy supplies corner geometry from suspension travel and rack position. Front and rear MF5.2 tire fits provide forces and moments with load, camber and combined-slip dependence. Aero uses ride-height maps.</p><p>3 DOF describes planar body motion with algebraic load transfer. 6 adds heave, roll and pitch. 10 adds wheel rotation. 14 adds unsprung vertical motion. A quasi-steady solve balances these equations at a condition. A transient run integrates the released states over time.</p></section>` : ""}${sections.map(([key, title]) => {
     const tag = key === "method" ? "ol" : "ul";
     return `<section class="simulation-method-${key}"><h3>${title}</h3><${tag}>${guide[key].map(text => `<li>${escapeHtml(text)}</li>`).join("")}</${tag}></section>`;
   }).join("")}<details class="simulation-method-sources"><summary>Implementation sources</summary>
     <p>These files define the current method. A completed run retains its vehicle, configuration and available provenance in the saved archive. The method alone does not establish correlation with a real vehicle.</p>
-    <ul>${guide.sources.map(path => `<li><a href="/files/${path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener">${escapeHtml(path)}</a></li>`).join("")}</ul></details></div>`;
+    <ul>${guide.sources.map(path => `<li><a href="/files/${path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener">${escapeHtml(path)}</a></li>`).join("")}</ul></details></div></details>`;
 }
 
 function simWorkflowMeta(workflow) {

@@ -92,3 +92,13 @@ for (const id of ['four-post', 'steady-state', 'transient', 'ramp-steer', 'mbd-s
 const markup = fs.readFileSync('app/static/index.html', 'utf8');
 assert.doesNotMatch(markup, /simulation-tree-toolbar[^\n]*add-simulation-btn/);
 assert.match(source, /simulation-tree-root[^\n]*add-simulation-btn/);
+
+for (const id of ['four-post','steady-state','transient','ramp-steer','mbd-step-steer','reduced-ramp-steer','reduced-step-steer','ggv','ymd','lap-qss','lap-transient']) {
+  const math = vm.runInContext(`simulationMathHtml(${JSON.stringify(id)})`,ctx);
+  assert.match(math,/role="math"/);
+  assert.match(math,/<p>/);
+  assert.doesNotMatch(math,/undefined/);
+}
+assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/R\(w; v, aₓ, aᵧ\) = 0/);
+assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Accelerate forward and brake backward/);
+assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/not dx\/dt = 0/);
