@@ -84,8 +84,6 @@ const state = {
   simModalOpen: false,
   activeStudyTab: "saved",
   simConfigPayload: null,
-  simConfigLibrary: null,
-  selectedSimConfigSource: "",
   dirtySimConfig: false,
   cleanSimConfigSignature: "",
   loadingSimConfigFor: null,
@@ -764,19 +762,13 @@ async function refreshSelectedSimConfig() {
   const workflow = selectedWorkflow();
   if (!workflow?.config_id) {
     state.simConfigPayload = null;
-    state.simConfigLibrary = null;
     state.cleanSimConfigSignature = "";
     state.dirtySimConfig = false;
     return;
   }
   state.loadingSimConfigFor = workflow.id;
-  const [payload, library] = await Promise.all([
-    api(`/api/configs/${encodeURIComponent(workflow.config_id)}`),
-    api(`/api/sim-configs?workflow_id=${encodeURIComponent(workflow.id)}`),
-  ]);
+  const payload = await api(`/api/configs/${encodeURIComponent(workflow.config_id)}`);
   state.simConfigPayload = payload;
-  state.simConfigLibrary = library;
-  state.selectedSimConfigSource = library.sources?.[0]?.id || "";
   acceptCleanSimConfigPayload();
   state.loadingSimConfigFor = null;
 }
@@ -790,7 +782,6 @@ function ensureSelectedSimConfigLoaded() {
     .catch((error) => {
       state.loadingSimConfigFor = null;
       state.simConfigPayload = null;
-      state.simConfigLibrary = { sources: [], error: error.message };
       renderStandard();
     });
 }
@@ -3625,52 +3616,6 @@ async function applySimConfigEdits() {
   return payload;
 }
 
-async function saveSimConfigAs() {
-  const workflow = selectedWorkflow();
-  if (!workflow) return;
-  const applied = await applySimConfigEdits();
-  if (!applied) return;
-  const name = document.getElementById("save-sim-config-name")?.value || `${workflow.label} setup`;
-  const payload = await api("/api/sim-configs/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workflow_id: workflow.id, name }),
-  });
-  state.simConfigLibrary = payload.library;
-  state.selectedSimConfigSource = payload.saved?.id || state.selectedSimConfigSource;
-  renderSimSetup(workflow);
-}
-
-async function loadSelectedSimConfig() {
-  const sourceId = document.getElementById("sim-config-picker")?.value || state.selectedSimConfigSource;
-  if (!sourceId) return;
-  const payload = await api("/api/sim-configs/load", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_id: sourceId }),
-  });
-  state.simConfigPayload = payload.config;
-  state.simConfigLibrary = payload.library;
-  state.selectedSimConfigSource = payload.source?.id || sourceId;
-  if (state.selectedSimulationId) await simulationRequest("save", {id: state.selectedSimulationId});
-  acceptCleanSimConfigPayload();
-  renderStandard();
-}
-
-async function deleteSelectedSimConfig() {
-  const selected = (state.simConfigLibrary?.sources || []).find((source) => source.id === state.selectedSimConfigSource);
-  if (selected?.type !== "saved") return;
-  const confirmed = window.confirm(`Delete saved run config "${selected.label}"?`);
-  if (!confirmed) return;
-  state.simConfigLibrary = await api("/api/sim-configs/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_id: selected.id }),
-  });
-  state.selectedSimConfigSource = state.simConfigLibrary.sources?.[0]?.id || "";
-  renderSimSetup(selectedWorkflow());
-}
-
 async function applyStudyConfigEdits() {
   if (!state.studyConfigPayload) return null;
   let values;
@@ -4324,7 +4269,6 @@ async function openSimulation(id) {
   state.selectedSimulationId = id;
   state.selectedWorkflowId = payload.simulation.workflow_id;
   state.simConfigPayload = payload.config;
-  state.simConfigLibrary = payload.library;
   acceptCleanSimConfigPayload();
   state.simulationCatalogOpen = false;
   state.simModalOpen = true;
@@ -4982,7 +4926,6 @@ async function selectStandardWorkflow(workflowId) {
   state.selectedWorkflowId = workflowId;
   state.activeSimTab = "setup";
   state.simConfigPayload = null;
-  state.simConfigLibrary = null;
   renderStandard();
   await refreshSelectedSimConfig();
   renderStandard();
@@ -7095,38 +7038,7 @@ function renderStudyJobs() {
 }
 
 function renderSimSetup() {
-  renderSimConfigLibrary();
   renderSimConfigForm();
-}
-
-function renderSimConfigLibrary() {
-  const picker = document.getElementById("sim-config-picker");
-  const sources = state.simConfigLibrary?.sources || [];
-  if (picker) {
-    if (!sources.some((source) => source.id === state.selectedSimConfigSource)) {
-      state.selectedSimConfigSource = sources[0]?.id || "";
-    }
-    picker.innerHTML = sources.length
-      ? sources.map((source) => `
-        <option value="${escapeHtml(source.id)}"${source.id === state.selectedSimConfigSource ? " selected" : ""}>
-          ${escapeHtml(source.type === "default" ? "Default" : `Saved: ${source.label}`)}
-        </option>
-      `).join("")
-      : `<option value="">No run configs</option>`;
-  }
-  const selected = sources.find((source) => source.id === state.selectedSimConfigSource);
-  const deleteButton = document.getElementById("delete-sim-config-btn");
-  if (deleteButton) {
-    const canDelete = selected?.type === "saved";
-    deleteButton.hidden = !canDelete;
-    deleteButton.disabled = !canDelete;
-    deleteButton.title = canDelete ? "" : "Only saved presets can be deleted.";
-  }
-  const saveName = document.getElementById("save-sim-config-name");
-  if (saveName && selectedWorkflow() && saveName.dataset.workflow !== selectedWorkflow().id) {
-    saveName.value = `${simWorkflowMeta(selectedWorkflow()).title || selectedWorkflow().label} setup`;
-    saveName.dataset.workflow = selectedWorkflow().id;
-  }
   updateSimConfigStatus();
 }
 
@@ -14143,17 +14055,10 @@ function wireEvents() {
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
   document.getElementById("sim-prepare-mbd").addEventListener("click", () => generateModelicaFromVehicle());
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
-  document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
-  document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);
-  document.getElementById("delete-sim-config-btn").addEventListener("click", deleteSelectedSimConfig);
   document.getElementById("apply-study-config-btn")?.addEventListener("click", applyStudyConfigEdits);
   document.getElementById("save-study-config-btn")?.addEventListener("click", saveStudyConfigAs);
   document.getElementById("load-study-config-btn")?.addEventListener("click", loadSelectedStudyConfig);
   document.getElementById("delete-study-config-btn")?.addEventListener("click", deleteSelectedStudyConfig);
-  document.getElementById("sim-config-picker").addEventListener("change", (event) => {
-    state.selectedSimConfigSource = event.target.value;
-    renderSimConfigLibrary();
-  });
   document.getElementById("study-config-picker")?.addEventListener("change", (event) => {
     state.selectedStudyConfigSource = event.target.value;
     renderStudyConfigLibrary();

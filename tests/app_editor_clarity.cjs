@@ -601,6 +601,15 @@ vm.runInContext(`
       ['transient','transient'], ['lap-transient','transient']]) {
       assert.equal(simulationAnalysisGroup({id}), group);
     }
+    const configRequests=[];
+    state.status={workflows:[{id:'ggv',group:'envelope',config_id:'ggv'}]};
+    state.dirtySimConfig=true;
+    api=async path=>{configRequests.push(path);return {id:'ggv',data:{generation:{model_dof:3}}};};
+    await refreshSelectedSimConfig();
+    assert.deepEqual(configRequests,['/api/configs/ggv'],'simulation setup loads without a preset library');
+    assert.equal(state.simConfigPayload.id,'ggv');
+    assert.equal(state.dirtySimConfig,false);
+    assert.equal(state.loadingSimConfigFor,null);
     let requests=[];
     api=async (path, options)=>{
       assert.equal(options,undefined,'reopening a running simulation must be read-only');

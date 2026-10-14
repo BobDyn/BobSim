@@ -3561,11 +3561,6 @@ body.resizing-panes * {
   gap: 12px;
 }
 
-.sim-config-tools {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 14px;
-}
-
 .sim-step-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3613,24 +3608,11 @@ body.resizing-panes * {
   color: var(--blue);
 }
 
-.sim-config-tools {
-  display: grid;
-  gap: 8px;
-}
-
 .sim-config-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.sim-config-row .config-picker {
-  flex: 1 1 260px;
-}
-
-.sim-config-row .name-input {
-  flex: 1 1 220px;
 }
 
 .sim-config-status {
@@ -3854,23 +3836,15 @@ body.resizing-panes * {
   font-weight: 600;
 }
 
-.simulation-details summary,
-.sim-config-tools summary {
+.simulation-details summary {
   width: fit-content;
   cursor: pointer;
   color: var(--muted);
   padding: 4px 0;
 }
 
-.simulation-details[open] summary,
-.sim-config-tools[open] summary {
+.simulation-details[open] summary {
   color: var(--ink);
-}
-
-.sim-config-library {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
 }
 
 .screen-head .simulation-notice {
