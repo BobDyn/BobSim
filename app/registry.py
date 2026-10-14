@@ -608,9 +608,10 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         workflow_id="four-post",
         relocatable=True,
         fields=(
-            _field("procedure.steerMagnitude", "Steer magnitude", kind="number", group="Procedure", unit="rad"),
-            _field("procedure.heaveMagnitude", "Heave magnitude", kind="number", group="Procedure", unit="m"),
-            _field("procedure.rollMagnitude", "Roll magnitude", kind="number", group="Procedure", unit="rad"),
+            _field("procedure.steerMagnitude", "Handwheel angle", kind="number", group="Procedure", unit="rad",
+                   help_text="The vehicle’s rack C-factor converts handwheel rotation into rack travel."),
+            _field("procedure.heaveMagnitude", "Heave", kind="number", group="Procedure", unit="m"),
+            _field("procedure.rollMagnitude", "Roll", kind="number", group="Procedure", unit="rad"),
             _field("procedure.forceMagnitude", "Force magnitude", kind="number", group="Procedure", unit="N"),
         ) + tuple(field for field in COMMON_SIM_FIELDS if field.group == "Report"),
     ),

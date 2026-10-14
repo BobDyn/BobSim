@@ -848,3 +848,18 @@ vm.runInContext(`
   assert.equal(button.title,'');
 }
 `, ctx);
+
+vm.runInContext(`
+for (const [value, scale, display, edited, expected] of [
+  [0.03,1000,30,40,0.04],
+  [0.01308996938995747,180/Math.PI,0.75,1,Math.PI/180],
+  [Math.PI/6,180/Math.PI,30,45,Math.PI/4],
+]) {
+  assert.equal(numericDisplayValue(value,scale),display);
+  const input={value:String(display),dataset:{displayScale:String(scale),originalValue:String(value),originalDisplay:String(display)},
+    setCustomValidity(){},checkValidity(){return true;}};
+  assert.equal(collectScalarValue(input,'number',false),value);
+  input.value=String(edited);
+  assert.ok(Math.abs(collectScalarValue(input,'number',false)-expected)<1e-12);
+}
+`, ctx);

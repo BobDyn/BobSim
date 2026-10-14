@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -2062,6 +2063,13 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
     assert "brand" not in config["data"]["report"]
     assert all(field["label"] != "Brand" for field in config["fields"])
     assert config["fields"][0]["group"] == "Procedure"
+    fields = {field["label"]: field for field in config["fields"]}
+    for label, unit, scale in (("Handwheel angle", "deg", 180 / math.pi),
+                               ("Heave", "mm", 1000), ("Roll", "deg", 180 / math.pi)):
+        assert fields[label]["display_unit"] == unit
+        assert fields[label]["display_scale"] == pytest.approx(scale)
+    assert fields["Heave"]["value"] == pytest.approx(0.03)
+    assert fields["Roll"]["value"] * fields["Roll"]["display_scale"] == pytest.approx(0.75)
     assert {field["group"] for field in config["fields"]} == {"Procedure", "Report"}
     path, _, _ = app._load_yaml_config(spec)
     assert yaml.safe_load(path.read_text()) == config["data"] == yaml.safe_load(config["raw"])

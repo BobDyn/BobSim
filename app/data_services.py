@@ -722,7 +722,13 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
         except (KeyError, IndexError, TypeError):
             continue
         fields.append(field)
-    return [_field_payload(field, data) for field in fields]
+    payloads = [_field_payload(field, data) for field in fields]
+    if spec.id == "four-post":
+        for payload in payloads:
+            display = {"m": ("mm", 1000), "rad": ("deg", 180 / math.pi)}.get(payload["unit"])
+            if display:
+                payload.update(display_unit=display[0], display_scale=display[1])
+    return payloads
 
 
 def _vehicle_field_payload(field: FieldSpec, data: Any) -> dict[str, Any]:
