@@ -2043,6 +2043,11 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
     seed = tmp_path / spec.path
     seed.parent.mkdir(parents=True)
     original = yaml.safe_load((app.PACKAGE_ROOT / spec.path).read_text())
+    original.update({
+        "standard": "FourPostEval", "simulation": {"stepSize": 9.0},
+        "execution": {"parallel": True},
+        "model_overrides": {"suspension": {"front": {"spring_rate_n_per_m": 1.0}}},
+    })
     seed.write_text(yaml.safe_dump(original))
     (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Test\n")
     monkeypatch.setattr(app, "ROOT", tmp_path)
@@ -2051,13 +2056,10 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
     simulation = app.simulation_workspace("create", {"workflow_id": "four-post"})["simulation"]
     result = app.simulation_workspace("prepare-run", {"id": simulation["id"]})
     config = result["config"]
-    suspension = config["data"]["model_overrides"]["suspension"]
-    assert "front" not in suspension and "rear" not in suspension
-    assert suspension["static_balance_iterations"] == (
-        original["model_overrides"]["suspension"]["static_balance_iterations"]
-    )
+    assert not {"standard", "simulation", "execution", "model_overrides"}.intersection(config["data"])
     assert config["data"]["procedure"] == original["procedure"]
-    assert all(field["group"] != "Suspension" for field in config["fields"])
+    assert config["fields"][0]["group"] == "Procedure"
+    assert {field["group"] for field in config["fields"]} == {"Procedure", "Report"}
     path, _, _ = app._load_yaml_config(spec)
     assert yaml.safe_load(path.read_text()) == config["data"] == yaml.safe_load(config["raw"])
     assert yaml.safe_load(seed.read_text()) == original

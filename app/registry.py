@@ -608,13 +608,12 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/response/mbd/four_post/four_post_eval_config.yml",
         workflow_id="four-post",
         relocatable=True,
-        fields=COMMON_SIM_FIELDS
-        + (
+        fields=(
             _field("procedure.steerMagnitude", "Steer magnitude", kind="number", group="Procedure", unit="rad"),
             _field("procedure.heaveMagnitude", "Heave magnitude", kind="number", group="Procedure", unit="m"),
             _field("procedure.rollMagnitude", "Roll magnitude", kind="number", group="Procedure", unit="rad"),
             _field("procedure.forceMagnitude", "Force magnitude", kind="number", group="Procedure", unit="N"),
-        ),
+        ) + tuple(field for field in COMMON_SIM_FIELDS if field.group == "Report"),
     ),
     "mbd-step-steer": ConfigSpec(
         id="mbd-step-steer", group="response", label="Step steer",

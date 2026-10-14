@@ -361,10 +361,10 @@ def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
     if not isinstance(data, (dict, list)):
         raise TypeError(f"{spec.path} must contain a YAML mapping or list")
     if spec.id == "four-post" and isinstance(data, dict):
-        suspension = data.get("model_overrides", {}).get("suspension", {})
-        if "front" in suspension or "rear" in suspension:
-            suspension.pop("front", None)
-            suspension.pop("rear", None)
+        internal_sections = {"standard", "simulation", "execution", "model_overrides"}
+        if internal_sections.intersection(data):
+            for section in internal_sections:
+                data.pop(section, None)
             _write_yaml_config(path, data)
             raw = path.read_text(encoding="utf-8")
     if spec.id == "reduced-ramp-steer" and isinstance(data, dict):

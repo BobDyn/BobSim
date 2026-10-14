@@ -1,36 +1,3 @@
-standard: FourPostEval
-
-simulation:
-  build_dir: simulations/mbd/BuildBobLib/FourPostSim
-  exec_name: BobLib.Experiments.Standards.FourPostSim
-  solver: dassl
-  # Output and integration step size.
-  stepSize: 0.5
-  output_format: csv
-  log_level: LOG_STATS,LOG_SOLVER,LOG_INIT,LOG_STDOUT,LOG_ASSERT
-  extra_args:
-    - -jacobian=internalNumerical
-  no_grid: false
-  no_event_emit: true
-
-execution:
-  parallel: false
-  cleanup: false
-  stream_logs: false
-
-model_overrides:
-  suspension:
-    static_balance_tolerance_n: 5.0
-    static_balance_tolerance_pct: 0.5
-    static_balance_iterations: 4
-    static_balance_convergence_n: 0.01
-    front:
-      spring_rate_n_per_m: 26269.02525
-      stabar_rate_n_m_per_rad: 390
-    rear:
-      spring_rate_n_per_m: 43781.70875
-      stabar_rate_n_m_per_rad: 525
-
 procedure:
   steerMagnitude: 0.0
   heaveMagnitude: 0.03
