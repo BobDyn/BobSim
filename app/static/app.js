@@ -4195,6 +4195,17 @@ async function saveSimulationEdits() {
   if (state.dirtySimConfig && !await applySimConfigEdits()) throw new Error("Check the simulation inputs.");
 }
 
+async function openSimulationHome() {
+  await saveSimulationEdits();
+  state.selectedSimulationId = null;
+  state.selectedVisualizationId = null;
+  state.simulationOverview = null;
+  state.simModalOpen = false;
+  state.simulationChildEditor = false;
+  state.simulationGgvEditor = false;
+  setView("standard");
+}
+
 async function openSimulationOverview(id) {
   await saveSimulationEdits();
   const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
@@ -4641,6 +4652,7 @@ function mountSimulationWorkspace() {
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
     clearTimeout(overviewClickTimer);
+    if (event.target.closest("[data-simulation-home]")) { workspaceAction(openSimulationHome); return; }
     const ggv = event.target.closest("[data-simulation-ggv]");
     if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
     const group = event.target.closest("[data-simulation-add-group]");
@@ -4723,7 +4735,7 @@ function renderSimulationWorkspace() {
   if (!tree || document.activeElement?.classList?.contains("simulation-tree-name")) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
-  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
+  tree.innerHTML = `<button type="button" class="simulation-tree-root simulation-tree-item ${state.view === "standard" && !state.selectedSimulationId ? "active" : ""}" data-simulation-home title="Simulation workspace">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></button><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
     const groupId = `group:${group.id}`;
     const expanded = !state.collapsedSimulations.has(groupId);
     return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">

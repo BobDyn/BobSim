@@ -848,6 +848,18 @@ vm.runInContext(`
     state.simModalOpen=true;
     assert.equal(renderSimulationOverview(),false);
     assert.equal(panel.hidden,true);
+    state.selectedVisualizationId='plot';
+    state.simulationChildEditor=true;
+    state.simulationGgvEditor=true;
+    await openSimulationHome();
+    assert.equal(saves,2,'home saves pending settings before leaving');
+    assert.equal(state.view,'standard');
+    for(const key of ['selectedSimulationId','selectedVisualizationId','simulationOverview']) assert.equal(state[key],null);
+    for(const key of ['simModalOpen','simulationChildEditor','simulationGgvEditor']) assert.equal(state[key],false);
+    state.selectedSimulationId='ggv';
+    saveSimulationEdits=async()=>{throw new Error('Invalid settings');};
+    await assert.rejects(openSimulationHome(),/Invalid settings/);
+    assert.equal(state.selectedSimulationId,'ggv','failed edits keep the current simulation selected');
   })()`,overviewContext);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
