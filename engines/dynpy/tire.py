@@ -192,9 +192,11 @@ class MF52Tire:
             Fx, Fy in newtons and Mx, My, Mz in newton meters, in the z-up wheel frame.
         """
         load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
-        fx, fy = self.forces(load, alpha, slip, gamma)
-        mx, my, mz = self.moments(load, alpha, slip, gamma, speed)
-        return fx, fy, mx, my, mz
+        fz = np.maximum(load, self.fz_min_n)
+        scale = np.where(load > 1e-3, load / fz, 0.0)
+        fx, fy = self.forces(fz, alpha, slip, gamma)
+        mx, my, mz = self._moments_from_forces(fz, alpha, slip, gamma, speed, fx, fy)
+        return scale * fx, scale * fy, scale * mx, -scale * my, -scale * mz
 
     def rolling_moment(self, fz_n: ArrayLike, fx_n: ArrayLike, speed_mps: ArrayLike) -> FloatArray:
         """## Rolling Moment
@@ -267,11 +269,14 @@ class MF52Tire:
         tuple[NDArray, NDArray, NDArray]
             Overturning, rolling and aligning moments in the z-up wheel frame.
         """
-        load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
-        fz = np.maximum(load, self.fz_min_n)
-        scale = np.where(load > 1e-3, load / fz, 0.0)
+        return self.evaluate(fz_n, alpha_rad, kappa, camber_rad, speed_mps)[2:]
+
+    def _moments_from_forces(
+        self, fz: FloatArray, alpha: FloatArray, slip: FloatArray, gamma: FloatArray,
+        speed: FloatArray, fx: FloatArray, fy_up: FloatArray,
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        # Forces use the clamped load here. The complete wrench receives the low-load fade once.
         p = self.coefficients
-        fx, fy_up = self.forces(fz, alpha, slip, gamma)
         fy = -fy_up
         radius, nominal = p["UNLOADED_RADIUS"], p["FNOMIN"]
         mx = radius * fz * (p["QSX1"] * p["LVMX"] + (-p["QSX2"] * gamma + p["QSX3"] * fy / nominal) * p["LMX"])
@@ -320,7 +325,7 @@ class MF52Tire:
         vyk *= np.sin(p["RVY5"] * np.arctan(p["RVY6"] * slip)) * p["LVYKA"]
         arm = (p["SSZ1"] + p["SSZ2"] * fy / nominal + (p["SSZ3"] + p["SSZ4"] * dfz) * gamma) * radius * p["LS"]
         mz = -trail * (fy - vyk) + residual + arm * fx
-        return scale * mx, -scale * my, -scale * mz
+        return mx, my, mz
 
     def forces(
         self,

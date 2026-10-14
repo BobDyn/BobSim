@@ -24,6 +24,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
+import tempfile
+
+import yaml
 from typing import Any
 
 import numpy as np
@@ -141,6 +145,7 @@ def scene_payload(config_path: str | Path, data_path: str | Path) -> ScenePayloa
             "center": index_of[str(cfg["center"])],
             "radius": float(cfg.get("radius", 0.2032)),
             "width": float(cfg.get("width", 0.1778)),
+            "spin_slot": scalar_slot(data.get_signal(cfg["spin"])) if cfg.get("spin") else None,
             "axis_x": vector_slot([str(c) for c in cfg["x"]]),
             "axis_y": vector_slot([str(c) for c in cfg["y"]]),
         }
@@ -227,11 +232,13 @@ def scene_payload(config_path: str | Path, data_path: str | Path) -> ScenePayloa
     )
 
     header: dict[str, Any] = {
+        "representation": str(data.cfg.get("representation", "Captured geometry")),
         "frames": data.n_frames,
         "duration": data.duration,
         "speed": float(data.render_cfg.get("speed", 1.0)),
         "points": point_names,
         "joints": {
+            "indices": [index_of[name] for name in geometry.get("joints", point_names) if name in index_of],
             "radius": float((style.get("joints") or {}).get("radius", 0.014)),
             "color": str((style.get("joints") or {}).get("color", "#e0483c")),
         },
@@ -345,8 +352,6 @@ def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
     """
     base = Path(root) if root is not None else Path.cwd()
     results = base / VISUAL_RESULTS_ROOT
-    if not results.is_dir():
-        return []
     runs = []
     for config in sorted(results.glob("*.yml")):
         data = config.with_suffix(".npz")
@@ -361,5 +366,72 @@ def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
                 "modified": str(int(data.stat().st_mtime)),
             }
         )
+    for manifest in (base / "app/user_data/results/saved").glob("*/manifest.json"):
+        try:
+            saved = json.loads(manifest.read_text(encoding="utf-8"))
+            if saved.get("workflow", {}).get("id") not in {"reduced-step-steer", "reduced-ramp-steer", "lap-transient"}:
+                continue
+            dofs = (saved.get("model") or {}).get("model_dofs", [])
+            if len(dofs) != 1 or dofs[0] not in (3, 6, 10, 14):
+                continue
+            data_file = next(item["path"] for item in saved["files"] if item["label"] == "Signals")
+            vehicle_file = saved["vehicle_snapshot"]
+            paths = [(base / path).resolve() for path in (data_file, vehicle_file)]
+            if not all(path.is_relative_to(base.resolve()) and path.is_file() for path in paths):
+                continue
+            runs.append({"id": "saved-" + saved["id"],
+                         "label": f"{saved['label']} · {dofs[0]} DOF · {saved['created_label']}",
+                         "data": data_file, "config": vehicle_file, "dof": str(dofs[0]),
+                         "simulation_id": (saved.get("simulation") or {}).get("id", ""),
+                         "vehicle_key": saved.get("vehicle_key", ""),
+                         "modified": str(int(manifest.stat().st_mtime))})
+        except (OSError, ValueError, KeyError, TypeError, StopIteration):
+            continue
     runs.sort(key=lambda run: run["modified"], reverse=True)
     return runs
+
+
+def reduced_scene_payload(vehicle_path: Path, data_path: Path, dof: int) -> ScenePayload:
+    """## Reduced Replay Payload
+
+    Convert saved model states without rerunning physics or changing the archive.
+
+    Parameters
+    ----------
+    vehicle_path : Path
+        Archived vehicle definition.
+    data_path : Path
+        Archived response signals.
+    dof : int
+        Saved model fidelity.
+
+    Returns
+    -------
+    ScenePayload
+        Geometry and model description for the viewer.
+    """
+    from visualization.dynpy import build_scene
+    from visualization.sim_data import _load_signal_file
+
+    raw = _load_signal_file(data_path)
+    config, signals = build_scene(raw, yaml.safe_load(vehicle_path.read_text()), dof)
+    from visualization.from_results import axle_friction
+
+    corners = {}
+    for corner in ("fl", "fr", "rl", "rr"):
+        names = {axis.lower(): f"tire{axis}{corner.upper()}" for axis in ("Fx", "Fy", "Fz")}
+        names["gamma"] = f"camber{corner.upper()}"
+        if all(name in raw for name in names.values()):
+            signals.update({name: raw[name] for name in names.values()})
+            corners[corner] = {**names, "axle": "front" if corner.startswith("f") else "rear"}
+    if corners:
+        try:
+            config["tire_forces"] = {"corners": corners, "friction": axle_friction(vehicle_path)}
+        except (OSError, ValueError, KeyError):
+            config["representation"] += " · Tire grip unavailable"
+    with tempfile.TemporaryDirectory(prefix="bobsim-replay-") as directory:
+        root = Path(directory)
+        config_file, data_file = root / "scene.yml", root / "scene.npz"
+        config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+        np.savez_compressed(data_file, **signals)  # type: ignore[arg-type]
+        return scene_payload(config_file, data_file)

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>BobSim App</title>
+    <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body class="vehicle-start-open">
@@ -18,8 +19,6 @@
         <nav class="rail-stack" aria-label="Main navigation">
           <button class="rail-item active" data-view="setup" type="button">Setup</button>
           <button class="rail-item" data-view="standard" type="button">Simulation</button>
-          <button class="rail-item" data-view="replay" type="button">Replay</button>
-          <button class="rail-item" data-view="studies" type="button">Results</button>
         </nav>
         <details class="model-menu settings-menu">
           <summary>Settings</summary>
@@ -155,21 +154,26 @@
                     <strong id="rotation-sensitivity-value">1x</strong>
                   </label>
                 </div>
-                <div id="geometry-axle-toggles" class="geometry-axle-toggles" hidden>
-                  <label>
-                    <input id="geometry-show-front" type="checkbox" checked>
-                    <span>Show Front</span>
-                  </label>
-                  <label>
-                    <input id="geometry-show-rear" type="checkbox" checked>
-                    <span>Show Rear</span>
-                  </label>
+                <div class="preview-camera-actions">
+                  <button id="camera-home-btn" class="ghost-button camera-home-button" type="button" aria-label="Reset camera to home view" title="Camera home" hidden>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/>
+                    </svg>
+                  </button>
+                  <button id="geometry-expand-btn" class="ghost-button camera-home-button" type="button" aria-label="Expand geometry" title="Expand geometry" aria-expanded="false" hidden>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></svg>
+                  </button>
                 </div>
-                <button id="camera-home-btn" class="ghost-button camera-home-button" type="button" aria-label="Reset camera to home view" title="Camera home" hidden>
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/>
-                  </svg>
-                </button>
+              </div>
+              <div id="geometry-axle-toggles" class="geometry-axle-toggles" hidden>
+                <label>
+                  <input id="geometry-show-front" type="checkbox" checked>
+                  <span>Front</span>
+                </label>
+                <label>
+                  <input id="geometry-show-rear" type="checkbox" checked>
+                  <span>Rear</span>
+                </label>
               </div>
               <div id="geometry-point-editor" class="geometry-point-editor" hidden>
                 <div class="geometry-editor-head">
@@ -214,10 +218,49 @@
                 <button id="simulation-next-btn" class="ghost-button" type="button" hidden>Go to setup</button>
               </div>
             </div>
+            <details id="run-log-menu" class="model-menu run-log-menu">
+              <summary><span id="run-status" role="status"></span><span>Run log</span></summary>
+              <div class="model-menu-body run-log-body">
+                <div class="panel-heading"><h3>Run log</h3><button id="cancel-run" class="icon-button" type="button" aria-label="Cancel selected run" title="Cancel selected run" hidden>■</button><button id="close-run-log" class="icon-button" type="button" aria-label="Close run log">×</button></div>
+                <div class="run-log-content">
+                  <div id="job-list" class="job-list" aria-label="Jobs"></div>
+                  <pre id="job-log" class="log-view" tabindex="0" aria-label="Selected job log"></pre>
+                </div>
+              </div>
+            </details>
           </div>
 
           <div class="standard-workspace simulation-workspace">
-            <section class="workflow-list simulation-catalog">
+            <aside class="simulation-tree-pane">
+              <header class="simulation-tree-toolbar"><span>Outline</span></header>
+              <div id="simulation-context-menu" class="simulation-context-menu" role="menu" aria-label="Simulation actions" hidden>
+                <button type="button" role="menuitem" data-action="add" hidden>Add simulation</button>
+                <button type="button" role="menuitem" data-action="duplicate">Duplicate analysis</button>
+                <button type="button" role="menuitem" data-action="replay">Add animation</button>
+                <button type="button" role="menuitem" data-action="signals">Signal Explorer</button>
+                <button type="button" role="menuitem" data-action="delete">Delete simulation</button>
+              </div>
+              <nav id="simulation-tree" aria-label="Vehicle simulations"></nav>
+              <div class="simulation-library-links">
+                <button id="simulation-saved-runs" class="simulation-tree-item" type="button">Saved runs</button>
+                <button id="simulation-captures" class="simulation-tree-item" type="button">Captured scenes</button>
+              </div>
+              <p id="simulation-workspace-status" role="status"></p>
+            </aside>
+            <div id="simulation-splitter" class="splitter" role="separator" aria-label="Resize simulation outline"
+              aria-orientation="vertical" aria-valuemin="180" aria-valuemax="560" aria-valuenow="230"
+              tabindex="0" title="Drag to resize"></div>
+            <div id="simulation-detail" class="simulation-detail">
+            <section id="simulation-ggv-editor" class="simulation-child-editor" hidden>
+              <header><h2>GGV input</h2><button id="simulation-ggv-close" type="button" class="ghost-button" aria-label="Close GGV input">×</button></header>
+              <label>Source<select id="simulation-ggv-source"></select></label>
+              <p id="simulation-ggv-status" role="status"></p>
+              <button id="simulation-ggv-open" type="button" class="ghost-button">Open GGV analysis</button>
+            </section>
+            <section id="simulation-overview" hidden></section>
+            <div id="simulation-empty" class="empty-state"><h3>Add a simulation</h3><p>Choose an analysis for this vehicle.</p></div>
+            <dialog id="simulation-catalog" class="simulation-picker simulation-catalog" aria-labelledby="simulation-catalog-title">
+              <header class="simulation-picker-header"><div><span id="simulation-catalog-group" class="context-label"></span><h2 id="simulation-catalog-title">Add simulation</h2></div><button type="button" class="ghost-button" data-close-simulation-catalog aria-label="Close">×</button></header>
               <details class="model-guide">
                 <summary>Model fidelity</summary>
                 <dl>
@@ -230,7 +273,9 @@
                 <p>QSS solves equilibrium points. Transient integrates motion over time.</p>
               </details>
               <div id="workflow-grid" class="workflow-grid"></div>
-            </section>
+              <p id="simulation-catalog-status" role="status"></p>
+            </dialog>
+            </div>
           </div>
         </section>
 
@@ -238,12 +283,10 @@
           <div class="screen-head">
             <div>
               <h2>Replay</h2>
-              <p>Suspension geometry, tire loads and grip from a captured run.</p>
+              <p id="replay-model">Captured geometry</p>
             </div>
             <div class="replay-controls">
               <select id="replay-run" class="replay-select" aria-label="Captured run"></select>
-              <button id="replay-play" class="ghost-button" type="button">Pause</button>
-              <button id="replay-reset-view" class="ghost-button" type="button">Reset view</button>
               <button id="replay-export" class="ghost-button" type="button">Export video</button>
               <button id="replay-help-btn" class="ghost-button" type="button">Controls</button>
             </div>
@@ -251,17 +294,23 @@
 
           <div class="replay-workspace">
             <section class="replay-stage">
+              <div class="replay-camera-tools">
+              <button id="replay-reset-view" class="ghost-button camera-home-button" type="button" aria-label="Camera home" title="Camera home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v11h5v-6h4v6h5V10"/></svg></button>
+              <select id="replay-camera-view" aria-label="Camera view"><option value="iso">Isometric</option><option value="top">Bird’s eye</option><option value="front">Front</option><option value="side">Side</option></select>
+              <select id="replay-camera-follow" aria-label="Camera frame" title="Vehicle frame follows position and heading while keeping roll visible"><option value="position">World frame</option><option value="heading">Vehicle frame</option></select>
+              </div>
+              <details id="replay-display-settings" class="replay-display-settings">
+                <summary aria-label="Display settings" title="Display settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linejoin="round" d="M19.50 12.00L21.90 13.41L21.08 16.19L18.30 16.07L17.30 17.30L18.00 20.00L15.46 21.38L13.58 19.33L12.00 19.50L10.59 21.90L7.81 21.08L7.93 18.30L6.70 17.30L4.00 18.00L2.62 15.46L4.67 13.58L4.50 12.00L2.10 10.59L2.92 7.81L5.70 7.93L6.70 6.70L6.00 4.00L8.54 2.62L10.42 4.67L12.00 4.50L13.41 2.10L16.19 2.92L16.07 5.70L17.30 6.70L20.00 6.00L21.38 8.54L19.33 10.42Z"/><circle cx="12" cy="12" r="3"/></svg></summary>
+                <div class="replay-display-panel"><h4>Display</h4><div id="replay-layers" class="replay-layers"></div></div>
+              </details>
               <canvas id="replay-canvas"></canvas>
               <p id="replay-status" class="replay-status" hidden></p>
               <div id="replay-help" class="replay-help" hidden>
                 <h4>Controls</h4>
                 <ul>
                   <li><b>Drag</b> orbits around the centre</li>
-                  <li><b>Shift + drag</b>, or a middle or right drag, pans</li>
+                  <li><b>Ctrl + drag</b> or <b>middle drag</b> pans</li>
                   <li><b>Scroll</b> zooms toward the cursor</li>
-                  <li><b>Two-finger drag</b> pans as soon as it moves sideways.
-                    Straight up and down zooms</li>
-                  <li><b>Shift + scroll</b> always pans</li>
                   <li><b>Pinch</b> zooms toward the cursor</li>
                   <li><b>Touchscreen:</b> one finger orbits, two pan and pinch</li>
                   <li><b>Double-click</b> re-centres on the ground under the cursor</li>
@@ -271,16 +320,14 @@
                 </ul>
               </div>
               <div class="replay-timeline">
+                <button id="replay-play" class="ghost-button" type="button" aria-label="Pause" title="Pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
                 <input id="replay-time" type="range" min="0" max="1000" value="0" aria-label="Time" />
                 <span id="replay-clock" class="replay-clock">0.00 s</span>
               </div>
             </section>
 
             <aside class="replay-side">
-              <div class="replay-group">
-                <h4>Layers</h4>
-                <div id="replay-layers" class="replay-layers"></div>
-              </div>
+
 
               <div id="replay-tabs" class="replay-tabs" hidden>
                 <button id="replay-tab-tires" class="tab active" type="button">Tires</button>
@@ -311,6 +358,27 @@
           </div>
         </section>
         <section id="studies-view" class="screen">
+          <div id="signal-explorer" class="result-explorer-shell" hidden>
+            <aside class="workflow-list">
+              <h2><input id="signal-explorer-name" aria-label="Signal Explorer name" maxlength="120"></h2>
+              <label>X axis<select id="result-x-axis"></select></label>
+              <label>Color by<select id="result-color-signal"></select></label>
+              <details id="result-comparison" class="result-comparison">
+                <summary>Comparison</summary>
+                <label>Baseline<select id="result-baseline-source"></select></label>
+                <label class="result-compare-toggle"><input type="checkbox" id="result-compare-baseline">Show baseline</label>
+                <p id="result-comparison-status" class="muted" role="status"></p>
+                <details id="result-input-changes"><summary title="Compares archived vehicle and analysis settings. Referenced file contents and solver versions are not compared.">Saved settings</summary><div id="result-input-changes-list"></div></details>
+              </details>
+              <label>Y signals<input id="result-signal-search" type="search" placeholder="Find a signal"></label>
+              <div id="result-signal-list" class="result-signal-list"></div>
+            </aside>
+            <section class="result-plot-shell">
+              <div class="result-plot-head"><h3 id="result-plot-title">Signals</h3><p id="result-plot-subtitle"></p></div>
+              <div id="result-selected-signals" class="signal-row"></div>
+              <canvas id="result-plot-canvas" tabindex="0" aria-label="Selected signals plot. Click to select a sample, or use left and right arrows. Matching replay uses the selected time." title="Click to select a sample. Matching views follow the selection."></canvas>
+            </section>
+          </div>
           <div class="standard-workspace studies-workspace analysis-workspace archive-workspace">
             <aside class="workflow-list archive-sidebar">
               <h2>Results</h2>
@@ -360,7 +428,7 @@
               <span class="tool-label">Current vehicle</span>
               <strong id="start-current-name">Loading vehicle…</strong>
             </div>
-            <button id="start-active-btn" class="run-button" type="button" disabled>Open vehicle</button>
+            <button id="start-active-btn" class="run-button" type="button" disabled title="The vehicle is still loading.">Open vehicle</button>
           </section>
 
           <div class="vehicle-start-options">
@@ -400,37 +468,16 @@
         <div class="simulation-modal-head">
           <div>
             <span class="context-label">Simulation</span>
-            <h2 id="simulation-modal-title">Configure Simulation</h2>
+            <h2 id="simulation-modal-title">Setup</h2>
             <p id="simulation-modal-subtitle"></p>
           </div>
           <div class="simulation-run-actions">
             <button id="run-workflow-btn" class="run-button" type="button">Run Selected</button>
-            <button id="simulation-modal-close" class="ghost-button" type="button">Close</button>
           </div>
-        </div>
-
-        <div class="sim-tabs simulation-modal-tabs">
-          <button class="tab active" data-tab="setup" type="button">Configure</button>
-          <button class="tab" data-tab="jobs" type="button">Run Log</button>
         </div>
 
         <div id="setup-panel" class="panel active">
           <div class="sim-setup-shell">
-            <details class="sim-config-tools">
-              <summary>Presets</summary>
-              <div class="sim-config-library">
-                <div class="sim-config-row">
-                  <select id="sim-config-picker" class="config-picker"></select>
-                  <button id="load-sim-config-btn" class="ghost-button" type="button">Load</button>
-                  <button id="delete-sim-config-btn" class="ghost-button danger-button" type="button">Delete</button>
-                </div>
-                <div class="sim-config-row">
-                  <input id="save-sim-config-name" class="name-input" type="text" placeholder="Save run config as">
-                  <button id="save-sim-config-btn" class="run-button" type="button">Save preset</button>
-                </div>
-              </div>
-            </details>
-
             <div class="sim-config-row">
               <button id="apply-sim-config-btn" class="ghost-button" type="button" hidden>Apply edits</button>
               <button id="sim-prepare-mbd" class="ghost-button" type="button" hidden>Prepare MBD model</button>
@@ -441,14 +488,6 @@
           </div>
         </div>
 
-        <div id="jobs-panel" class="panel">
-          <div class="panel-heading">
-            <h3>Jobs</h3>
-            <button id="clear-log-btn" class="ghost-button" type="button">Clear View</button>
-          </div>
-          <div id="job-list" class="job-list"></div>
-          <pre id="job-log" class="log-view"></pre>
-        </div>
       </div>
     </div>
 
@@ -522,6 +561,8 @@
       </div>
     </div>
 
+    <script src="/static/vendor/katex/katex.min.js"></script>
+    <script src="/static/simulation_diagrams.js"></script>
     <script src="/static/app.js"></script>
     <script src="/static/visual.js"></script>
     <script src="/static/visual_panel.js"></script>

@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 from common import config_io
+from simulations.response.mbd.four_post.four_post_eval_sim import FOUR_POST_SIMULATION, FourPostEvalSim
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +100,8 @@ def simulation_inputs_digest() -> str:
     payload: dict[str, Any] = {}
     for name, relative in sorted(STUDY_CONFIGS.items()):
         config = yaml.safe_load((ROOT / relative).read_text(encoding="utf-8")) or {}
+        if name == "four_post":
+            config = FourPostEvalSim(config).config
         payload[name] = {
             section: config[section]
             for section in RESULT_AFFECTING_SECTIONS
@@ -588,3 +591,9 @@ def test_default_vehicle_standard_metrics_match_baseline(workflow_data: Workflow
         f"{workflow_data.name}: {len(failures)} metric(s) drifted from baseline:\n"
         + "\n".join(failures)
     )
+
+
+def test_provenance_includes_internal_four_post_solver_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = simulation_inputs_digest()
+    monkeypatch.setitem(FOUR_POST_SIMULATION, "stepSize", 0.25)
+    assert simulation_inputs_digest() != original

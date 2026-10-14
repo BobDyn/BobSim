@@ -39,14 +39,11 @@
     return n > 1e-12 ? scale(v, 1 / n) : fallback.slice();
   }
 
-  function perspective(fovYDeg, aspect, near, far) {
-    const f = 1 / Math.tan((fovYDeg * Math.PI) / 360);
-    const d = near - far;
-    // prettier-ignore
-    return [f / aspect, 0, 0, 0,
-            0, f, 0, 0,
-            0, 0, (far + near) / d, -1,
-            0, 0, (2 * far * near) / d, 0];
+  function orthographic(height, aspect, near, far) {
+    return [1/(height*aspect), 0, 0, 0,
+            0, 1/height, 0, 0,
+            0, 0, -2/(far-near), 0,
+            0, 0, -(far+near)/(far-near), 1];
   }
 
   function lookAt(eye, target, up) {
@@ -83,7 +80,6 @@
   const WORLD_UP = [0, 0, 1];
   const ZOOM_PER_NOTCH = 1.15;
   const WHEEL_PX_PER_NOTCH = 40;
-  const ORBIT_DEG_PER_PX = 0.3;
   const MIN_POLAR_DEG = 1;
   const MIN_DISTANCE = 0.05;
   const GROUND_REACH = 20;
@@ -127,6 +123,14 @@
     const forward = unit(sub(pose.focal, position), [0, 1, 0]);
     const right = unit(cross(forward, WORLD_UP), [1, 0, 0]);
     return { ...pose, position, up: cross(right, forward) };
+  }
+
+  function followPose(pose, previous, current, angle) {
+    const rotate = v => [Math.cos(angle)*v[0]-Math.sin(angle)*v[1], Math.sin(angle)*v[0]+Math.cos(angle)*v[1], v[2]];
+    return {...pose,
+      position: add(current, rotate(sub(pose.position, previous))),
+      focal: add(current, rotate(sub(pose.focal, previous))),
+      up: rotate(pose.up)};
   }
 
   function pan(pose, dxPx, dyPx, viewportHeightPx) {
@@ -238,6 +242,7 @@
   uniform mat4 uViewProj;
   uniform vec3 uEye;
   out vec3 vColor;
+  out float vSide;
   void main() {
     vec3 pos = mix(aStart, aEnd, aCorner.x);
     vec3 along = aEnd - aStart;
@@ -251,14 +256,19 @@
     side = sideLen > 1e-9 ? side / sideLen : vec3(0.0, 0.0, 1.0);
     pos += side * (aCorner.y * aRadius);
     vColor = aColor;
+    vSide = aCorner.y;
     gl_Position = uViewProj * vec4(pos, 1.0);
   }`;
 
   const SEGMENT_FS = `#version 300 es
   precision highp float;
   in vec3 vColor;
+  in float vSide;
   out vec4 fragColor;
-  void main() { fragColor = vec4(vColor, 1.0); }`;
+  void main() {
+    float roundness = sqrt(max(0.0, 1.0 - vSide*vSide));
+    fragColor = vec4(vColor * (0.55 + 0.45*roundness) + vec3(0.14)*pow(roundness, 16.0), 1.0);
+  }`;
 
   const DISC_VS = `#version 300 es
   precision highp float;
@@ -269,17 +279,23 @@
   layout(location=4) in vec4 aColor;    // rgb + alpha
   uniform mat4 uViewProj;
   out vec4 vColor;
+  out vec2 vUnit;
   void main() {
     vec3 pos = aCenter + aAxisX * aUnit.x + aAxisY * aUnit.y;
     vColor = aColor;
+    vUnit = aUnit;
     gl_Position = uViewProj * vec4(pos, 1.0);
   }`;
 
   const DISC_FS = `#version 300 es
   precision highp float;
   in vec4 vColor;
+  in vec2 vUnit;
   out vec4 fragColor;
-  void main() { fragColor = vColor; }`;
+  void main() {
+    float shade = vColor.a >= 0.99 ? 0.65 + 0.35*sqrt(max(0.0, 1.0-dot(vUnit,vUnit))) : 1.0;
+    fragColor = vec4(vColor.rgb * shade, vColor.a);
+  }`;
 
   function compile(gl, type, source) {
     const shader = gl.createShader(type);
@@ -489,6 +505,10 @@
         this.point(i, f, p);
         max = Math.max(max, norm(sub(p, c)));
       }
+      for (const tire of this.header.tires) {
+        this.point(tire.center, f, p);
+        max = Math.max(max, norm(sub(p, c)) + tire.radius + tire.width / 2);
+      }
       return max;
     }
   }
@@ -514,11 +534,12 @@
       this.pose = null;
       this.playing = true;
       this.simTime = 0;
-      this.layers = { links: true, joints: true, tires: true, loads: true, tracks: true, arrows: true, grid: true };
+      this.layers = { links: true, joints: true, tires: true, loads: false, tracks: false, arrows: false, grid: true };
       // The car drives away from wherever the view was framed, so by default
       // the camera rides with it. Following moves the whole pose by the car's
       // own delta, which keeps whatever orbit, pan and zoom the user chose.
-      this.follow = true;
+      this.follow = "position";
+      this._heading = null;
       this._anchor = null;
       this.onTick = null;
       this._scratch = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -540,30 +561,34 @@
       return index >= 0 ? scene.point(index, f, [0, 0, 0]) : scene.centroid(f);
     }
 
-    /** Frame the car from three-quarters front, the way the rig shots read. */
-    resetView() {
-      const scene = this.scene;
-      if (!scene) return;
-      this._anchor = null;
-      const focal = scene.centroid(0);
-      const reach = scene.extent(0) * 2.6 + 1;
-      this.pose = {
-        position: add(focal, [reach * 0.75, -reach * 0.85, reach * 0.5]),
-        focal,
-        up: WORLD_UP.slice(),
-        viewAngle: 30,
-      };
+    headingAt(f) {
+      const pair = this.scene.header.camera?.forward_pair || [];
+      const indices = pair.map(name => this.scene.header.points.indexOf(name));
+      if (indices.length !== 2 || indices.some(index => index < 0)) return 0;
+      const direction = sub(this.scene.point(indices[1], f, [0, 0, 0]), this.scene.point(indices[0], f, [0, 0, 0]));
+      return Math.atan2(direction[1], direction[0]);
     }
 
-    // -- input --------------------------------------------------------------
-    //
-    // Every rule below keys off something the browser states outright: which
-    // button is down, how many pointers are down, whether a modifier is held,
-    // whether the wheel event carries sideways scroll or `ctrlKey`. None of it
-    // asks what kind of device sent the event, because Windows does not say.
-    // Guessing is exactly what made the trackpad feel broken the first time
-    // (#48, reverted in #50), and it is not coming back.
+    resetView(view = "iso") {
+      const scene = this.scene;
+      if (!scene) return;
+      const f = scene.frameAt(this.simTime);
+      this._anchor = null;
+      this._heading = null;
+      const focal = scene.centroid(f);
+      const directions = {iso: [1, 1, 1], top: [0, 0, 1], front: [1, 0, 0], side: [0, -1, 0]};
+      const direction = unit(directions[view] || directions.iso, [1, 1, 1]);
+      const reach = Math.max(scene.extent(f), 0.1) * 4.25 / Math.min(this.aspect(), 1);
+      this.pose = {
+        position: add(focal, scale(direction, reach)), focal,
+        up: view === "top" ? [1, 0, 0] : WORLD_UP.slice(), viewAngle: 30,
+      };
+      if (this.follow === "heading") {
+        this.pose = followPose(this.pose, focal, focal, this.headingAt(f));
+      }
+    }
 
+    // Pointer gestures match the geometry editor, with two-finger touch support.
     bindInput() {
       const canvas = this.canvas;
       // The page must never scroll, rubber-band or browser-zoom while a gesture
@@ -616,7 +641,7 @@
         canvas.setPointerCapture(event.pointerId);
         active.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (active.size === 1) {
-          mode = event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "orbit";
+          mode = event.ctrlKey || event.shiftKey || event.button === 1 || event.button === 2 ? "pan" : "orbit";
         } else if (active.size === 2) {
           const [a, b] = pair();
           pinch = { distance: spread(a, b), center: middle(a, b) };
@@ -653,7 +678,7 @@
         if (mode === "pan") {
           this.pose = pan(this.pose, dx, dy, canvas.clientHeight);
         } else {
-          this.pose = orbit(this.pose, -dx * ORBIT_DEG_PER_PX, -dy * ORBIT_DEG_PER_PX);
+          this.pose = orbit(this.pose, -dx * 0.01 * 180 / Math.PI, dy * 0.01 * 180 / Math.PI);
         }
       });
 
@@ -669,64 +694,16 @@
       canvas.addEventListener("lostpointercapture", release);
     }
 
-    /**
-     * Scroll, in the three shapes a browser reports it.
-     *
-     * `ctrlKey` is a trackpad pinch -- the browser sets it itself, and it is
-     * the one thing about a wheel event that is reliable -- so that zooms.
-     * Sideways scroll only comes from a two-finger drag or a tilt wheel, and
-     * both mean pan, so a wheel event carrying `deltaX` pans in both axes.
-     * Everything else zooms toward the cursor, as it always has.
-     *
-     * The choice is latched for the length of a gesture: a two-finger drag
-     * that runs momentarily straight up or down reports no `deltaX` for a few
-     * events, and flipping to zoom in the middle of a pan feels like a fault.
-     */
+    // Match the geometry editor: scroll and pinch zoom toward the cursor.
     bindWheel() {
       const canvas = this.canvas;
-      const PINCH_GAIN = 3; // a pinch reports far less scroll than it feels like
-      const GESTURE_IDLE_MS = 220; // quiet for this long and the next event is a new gesture
-      const GESTURE_OPEN_MS = 120; // early enough in one to still change its mind
-      let kind = null;
-      let startedAt = 0;
-      let lastAt = 0;
-
-      canvas.addEventListener(
-        "wheel",
-        (event) => {
-          if (!this.pose) return;
-          event.preventDefault(); // never scroll the page, never zoom the browser
-          const now = event.timeStamp || performance.now();
-          if (now - lastAt > GESTURE_IDLE_MS) {
-            kind = null;
-            startedAt = now;
-          }
-          lastAt = now;
-
-          const [dxPx, dyPx] = wheelPixels(event);
-          if (event.ctrlKey) {
-            kind = "zoom";
-            const [ndcX, ndcY] = this.ndc(event);
-            const factor = zoomFactorForPixels(dyPx * PINCH_GAIN);
-            this.pose = zoomAt(this.pose, factor, ndcX, ndcY, this.aspect());
-            return;
-          }
-
-          const sideways = dxPx !== 0 || event.shiftKey;
-          if (kind === null) kind = sideways ? "pan" : "zoom";
-          else if (kind === "zoom" && sideways && now - startedAt < GESTURE_OPEN_MS) kind = "pan";
-
-          if (kind === "pan") {
-            // Scrolling down moves the scene up, which is the same as dragging
-            // it up: a wheel delta is the negative of the equivalent drag.
-            this.pose = pan(this.pose, -dxPx, -dyPx, canvas.clientHeight);
-          } else {
-            const [ndcX, ndcY] = this.ndc(event);
-            this.pose = zoomAt(this.pose, wheelZoomFactor(event), ndcX, ndcY, this.aspect());
-          }
-        },
-        { passive: false }
-      );
+      canvas.addEventListener("wheel", event => {
+        if (!this.pose) return;
+        event.preventDefault();
+        const [, dy] = wheelPixels(event);
+        const [x, y] = this.ndc(event);
+        this.pose = zoomAt(this.pose, Math.exp(-dy * 0.0012), x, y, this.aspect());
+      }, {passive: false});
     }
 
     ndc(event) {
@@ -822,15 +799,13 @@
       const header = scene.header;
 
       const anchor = this.anchorAt(f);
-      if (this.follow && this._anchor) {
-        const drift = sub(anchor, this._anchor);
-        this.pose = {
-          ...this.pose,
-          position: add(this.pose.position, drift),
-          focal: add(this.pose.focal, drift),
-        };
+      const heading = this.headingAt(f);
+      if (this.follow !== "fixed" && this._anchor) {
+        const angle = this.follow === "heading" && this._heading !== null ? heading - this._heading : 0;
+        this.pose = followPose(this.pose, this._anchor, anchor, angle);
       }
       this._anchor = anchor;
+      this._heading = heading;
 
       this.segments.begin();
       this.discs.begin();
@@ -842,7 +817,7 @@
           for (const [a, b] of group.segments) {
             scene.point(a, f, pa);
             scene.point(b, f, pb);
-            this.segment(pa, pb, group.rgb, group.radius);
+            this.segment(pa, pb, group.rgb.map(value => Math.max(value, 0.34)), group.radius);
           }
         }
       }
@@ -852,7 +827,7 @@
         const r = header.joints.radius;
         const ax = scale(right, r);
         const ay = scale(up, r);
-        for (let i = 0; i < scene.pointCount; i++) {
+        for (const i of header.joints.indices || Array.from({length: scene.pointCount}, (_, index) => index)) {
           scene.point(i, f, pa);
           this.disc(pa, ax, ay, scene.jointRgb, 1);
         }
@@ -863,10 +838,31 @@
           scene.point(tire.center, f, pa);
           scene.vector(tire.axis_x, f, va);
           scene.vector(tire.axis_y, f, vb);
-          // The wheel disc lies in the plane normal to the spin axis (y).
           const ex = unit(va, [1, 0, 0]);
-          const ez = unit(cross(vb, va), [0, 0, 1]);
-          this.disc(pa, scale(ex, tire.radius), scale(ez, tire.radius), [0.16, 0.17, 0.19], 0.55);
+          const axle = unit(vb, [0, 1, 0]);
+          const ez = unit(cross(ex, axle), [0, 0, 1]);
+          const faces = [-1, 1].map(sign => add(pa, scale(axle, sign * tire.width / 2)));
+          for (const center of faces) {
+            this.disc(center, scale(ex, tire.radius), scale(ez, tire.radius), [0.13, 0.15, 0.18], 1);
+            this.disc(add(center, scale(axle, dot(sub(center, pa), axle) > 0 ? 0.001 : -0.001)),
+              scale(ex, tire.radius*0.48), scale(ez, tire.radius*0.48), [0.42, 0.47, 0.54], 1);
+          }
+          for (let i = 0; i < 32; i++) {
+            const angle = i * Math.PI / 16;
+            const edge = add(scale(ex, tire.radius*Math.cos(angle)), scale(ez, tire.radius*Math.sin(angle)));
+            this.segment(add(faces[0], edge), add(faces[1], edge), [0.19, 0.21, 0.24], tire.radius*0.10);
+          }
+          if (Number.isInteger(tire.spin_slot)) {
+            const angle = scene.scalar(tire.spin_slot, f);
+            for (let spokeIndex = 0; spokeIndex < 3; spokeIndex++) {
+              const phase = angle + spokeIndex * Math.PI * 2 / 3;
+              const spoke = add(scale(ex, tire.radius*0.44*Math.cos(phase)), scale(ez, -tire.radius*0.44*Math.sin(phase)));
+              for (const center of faces) {
+                const outer = add(center, scale(axle, dot(sub(center, pa), axle) > 0 ? 0.003 : -0.003));
+                this.segment(outer, add(outer, spoke), [0.82, 0.86, 0.91], 0.012);
+              }
+            }
+          }
         }
       }
 
@@ -905,7 +901,7 @@
       }
 
       const view = lookAt(this.pose.position, this.pose.focal, this.pose.up);
-      const proj = perspective(this.pose.viewAngle, this.aspect(), 0.02, 5000);
+      const proj = orthographic(halfHeight(this.pose), this.aspect(), 0.02, 5000);
       const viewProj = multiply(proj, view);
       const uniforms = { uViewProj: viewProj, uEye: this.pose.position };
       this.segments.draw(uniforms);
@@ -944,5 +940,5 @@
     }
   }
 
-  window.BobVis = { Viewer, Scene, camera: { orbit, pan, zoomAt, recenter, groundPlanePoint, focalPlanePoint, cameraBasis, wheelZoomFactor } };
+  window.BobVis = { Viewer, Scene, camera: { followPose, orbit, pan, zoomAt, recenter, groundPlanePoint, focalPlanePoint, cameraBasis, wheelZoomFactor } };
 })();

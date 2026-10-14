@@ -122,6 +122,12 @@ def build_dynpy_report(
                 ("QSS lap time (s)", summary["optimized_qss_lap_time_s"]),
                 ("Power cap (W)", summary["effective_drive_power_limit_w"]),
                 ("GGV provenance", summary["ggv_provenance"]["status"])]
+        if "ggv_speed_max_mps" in summary:
+            rows.extend([
+                ("GGV minimum speed (m/s)", summary["ggv_speed_min_mps"]),
+                ("GGV maximum speed (m/s)", summary["ggv_speed_max_mps"]),
+                ("GGV range limited", summary["ggv_range_limited"]),
+            ])
         pages.append((qss, {"title": "QSS racing line", "equal_aspect": True,
                            **_plot("QSS racing line", "x_m", "y_m", "x (m)", "y (m)")}))
         pages.append((qss, {"layout": "quad", "title": "QSS speed and acceleration", "subplots": [

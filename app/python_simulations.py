@@ -16,7 +16,6 @@ from common import config_io
 from common.reporting.dynpy_report import build_dynpy_report
 from common.vehicle_io import load_yaml, repo_root
 from engines.dynpy import DOFModel
-from engines.kinpy import KinematicsMode
 from simulations.lap.lap_time_eval_sim import run_lap_time_evaluation
 from simulations.response.reduced.reduced_order_eval_sim import run_ramp_steer, run_step_steer
 
@@ -63,6 +62,7 @@ def run(workflow_id: str) -> None:
     filename = "ramp_steer_config.yml" if ramp else "reduced_order_eval_config.yml"
     config = config_io.resolve(f"simulations/response/reduced/{filename}", root=root)
     data = load_yaml(config)
+    data["kinematics_mode"] = "lookup"
     dof = int(data["model_dof"])
     if dof not in {3, 6, 10, 14}:
         raise ValueError("Model DOF must be 3, 6, 10, or 14.")
@@ -83,7 +83,7 @@ def run(workflow_id: str) -> None:
     result = simulate(
         dof=cast(DOFModel, dof), vehicle_path=root / "vehicle.yml",
         speed_mps=float(data["speed_mps"]), stop_time_s=duration, sample_period_s=sample_period,
-        kinematics_mode=cast(KinematicsMode, data["kinematics_mode"]), **inputs,
+        kinematics_mode="lookup", **inputs,
     )
     output = root / "app/user_data/results" / workflow_id
     output.mkdir(parents=True, exist_ok=True)

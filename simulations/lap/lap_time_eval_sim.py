@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import hashlib
+import csv
 import time
 import json
 from pathlib import Path
@@ -110,6 +111,13 @@ def run_lap_time_evaluation(
         "effective_drive_power_limit_w": vehicle.parameters.peak_drive_power_w,
         "ggv_csv": _display_path(ggv_path, root),
         "ggv_provenance": ggv_provenance,
+        "ggv_speed_min_mps": ggv.min_speed_mps,
+        "ggv_speed_max_mps": ggv.max_speed_mps,
+        "qss_max_speed_mps": float(np.max(optimized.qss_lap.speed_mps)),
+        "ggv_range_limited": bool(
+            ggv.max_speed_mps < vehicle.parameters.maximum_drive_speed_mps - 1e-6
+            and np.max(optimized.qss_lap.speed_mps) >= ggv.max_speed_mps - 1e-6
+        ),
         "line_mode": line_mode,
         "track_length_m": optimized.line.track_length_m,
         "centerline_qss_lap_time_s": optimized.centerline_lap_time_s,
@@ -132,6 +140,10 @@ def run_lap_time_evaluation(
             ),
         )
         write_transient_lap_csv(output_directory / "transient_lap.csv", transient)
+        with (output_directory / "transient_signals.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["time", *transient.transient.signals])
+            writer.writerows(zip(transient.transient.time_s, *transient.transient.signals.values()))
         if transient.completed_lap:
             finish_index = int(
                 np.flatnonzero(
@@ -176,26 +188,50 @@ def _load_or_generate_ggv(
         effective_power_limit_w=effective_power_limit_w,
     )
     metadata_path = path.with_suffix(path.suffix + ".metadata.json")
+    if qss_config.get("linked_ggv") and not path.is_file():
+        raise FileNotFoundError("The linked GGV result is missing. Reconnect a saved envelope.")
     if path.exists():
+        if qss_config.get("linked_ggv"):
+            linked = qss_config["linked_ggv"]
+            signature = _ggv_provenance(
+                vehicle_path=vehicle_path, model_dof=3, qss_config={}, effective_power_limit_w=0.,
+            )["fingerprint"]
+            if linked.get("signature") != signature or linked.get("model_dof") != model_dof \
+                    or linked.get("power_limit_w") != effective_power_limit_w:
+                raise ValueError("The linked GGV no longer matches the vehicle, model or power limit.")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != linked.get("csv_sha256"):
+                raise ValueError("The linked GGV file changed. Reconnect its saved result.")
+            return GGVMap.from_csv(path), {**linked, "status": "linked"}
+        raw: dict[str, Any] = {}
+        if metadata_path.exists():
+            try:
+                loaded = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    raw = loaded
+            except (OSError, json.JSONDecodeError):
+                pass
+        known_provenance = str(raw.get("schema", "")).startswith("bobsim.ggv-provenance.")
+        current_formulation = known_provenance and all(
+            raw.get(key) == expected_provenance[key] for key in ("schema", "formulation")
+        )
         if not bool(qss_config.get("generate_if_missing", True)):
+            if known_provenance and not current_formulation:
+                raise ValueError("This GGV uses an older acceleration formulation. Regenerate it for this lap.")
             return GGVMap.from_csv(path), {
                 "status": "supplied_unverified",
                 "fingerprint": None,
             }
-        if metadata_path.exists():
-            try:
-                raw = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                raw = None
-            if isinstance(raw, dict) and raw.get("fingerprint") == expected_provenance["fingerprint"]:
-                return GGVMap.from_csv(path), {**raw, "status": "verified_cache"}
+        if current_formulation and not bool(qss_config.get("regenerate", False)) \
+                and raw.get("fingerprint") == expected_provenance["fingerprint"]:
+            return GGVMap.from_csv(path), {**raw, "status": "verified_cache"}
     if not bool(qss_config.get("generate_if_missing", True)):
         raise FileNotFoundError(
             f"GGV CSV does not exist: {path}. Run make envelope-ggv or enable generation."
         )
 
     # This layer may compose EnvelopeSim and dyn_py; neither lower layer imports it.
-    from simulations.envelope.ggv.ggv_generation import GGVConfig, generate_ggv, save_ggv_csv
+    from simulations.envelope.ggv.ggv_generation import config_to_ggv_config, generate_ggv, save_ggv_csv
+    from simulations.envelope.ggv.parallel import automatic_vehicle_speed_grid
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     ggv_vehicle = project_vehicle_yaml(load_vehicle_yaml(vehicle_path)).ggv
@@ -203,22 +239,10 @@ def _load_or_generate_ggv(
         ggv_vehicle,
         max_drive_power=min(ggv_vehicle.max_drive_power, effective_power_limit_w),
     )
-    generation = GGVConfig(
-        speeds=tuple(float(value) for value in qss_config.get("speeds_mps", (5, 10, 15, 20, 25))),
-        model_dof=model_dof,
-        ay_max_g=float(qss_config.get("ay_max_g", 4.0)),
-        ay_points=int(qss_config.get("ay_points", 21)),
-        ax_search_min_g=float(qss_config.get("ax_search_min_g", -3.2)),
-        ax_search_max_g=float(qss_config.get("ax_search_max_g", 2.8)),
-        ax_search_points=21,
-        max_abs_beta_rad=float(qss_config.get("max_abs_beta_rad", 0.25)),
-        max_abs_steering_rad=float(qss_config.get("max_abs_steering_rad", 0.5)),
-        ax_binary_iterations=int(qss_config.get("ax_binary_iterations", 14)),
-        enforce_tire_load_range=bool(qss_config.get("enforce_tire_load_range", True)),
-        trim_multistart=bool(qss_config.get("trim_multistart", True)),
-        verbose=True,
-        progress_every=5,
-        warn_tire_load_range=False,
+    generation = replace(
+        config_to_ggv_config({"generation": {"model_dof": model_dof}}),
+        speeds=automatic_vehicle_speed_grid(ggv_vehicle.max_drive_speed),
+        verbose=True, progress_every=1, warn_tire_load_range=False,
     )
     envelopes = generate_ggv(ggv_vehicle, generation, reduced_model=model)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,6 +266,7 @@ def _ggv_provenance(
     physics_inputs = [
         Path(__file__),
         root / "simulations/envelope/ggv/ggv_generation.py",
+        root / "simulations/envelope/ggv/parallel.py",
         root / "simulations/envelope/vehicle_yaml.py",
         root / "common/vehicle_io.py",
         *sorted((root / "engines/dynpy").rglob("*.py")),
@@ -273,26 +298,17 @@ def _ggv_provenance(
             hashlib.sha256(source.read_bytes()).hexdigest()
             if source in tire_paths or source.is_file() else "missing"
         )
-    settings = {
-        key: qss_config.get(key)
-        for key in (
-            "speeds_mps",
-            "ay_max_g",
-            "ay_points",
-            "ax_search_min_g",
-            "ax_search_max_g",
-            "max_abs_beta_rad",
-            "max_abs_steering_rad",
-            "ax_binary_iterations",
-            "enforce_tire_load_range",
-            "trim_multistart",
-        )
-    }
     payload = {
-        "schema": "bobsim.ggv-provenance.v2",
+        "schema": "bobsim.ggv-provenance.v3",
+        "formulation": {
+            "acceleration_frame": "path_tangent_normal",
+            "beta_dot_radps": 0.0,
+            "yaw_rate_radps": "ay_mps2 / speed_mps",
+            "yaw_acceleration_radps2": 0.0,
+        },
         "model_dof": int(model_dof),
         "effective_drive_power_limit_w": float(effective_power_limit_w),
-        "settings": settings,
+        "settings": {"sampling": "automatic", "acceleration_bounds": "adaptive"},
         "vehicle_sha256": hashlib.sha256(vehicle_path.read_bytes()).hexdigest(),
         "physics_sha256": physics_digest.hexdigest(),
         "input_sha256": input_hashes,
@@ -306,7 +322,10 @@ def _study_scope_summary(
     model_dof: DOFModel,
     qss_config: dict[str, Any],
 ) -> dict[str, Any]:
+    from simulations.envelope.ggv.ggv_generation import config_to_ggv_config
+
     parameters = vehicle.parameters
+    generation = config_to_ggv_config({})
     return {
         "evidence_level": "simulation_only_design_trend",
         "competition_points_supported": False,
@@ -320,20 +339,17 @@ def _study_scope_summary(
             "component-derived mass, CG, and full inertia tensor",
         ],
         "validity_limits": {
-            "tire_normal_load_min_n": [tire.fz_min_n for tire in parameters.tires],
+            "tire_fit_normal_load_min_n": [tire.fz_min_n for tire in parameters.tires],
+            "positive_wheel_contact_required": True,
             "tire_normal_load_max_n": [tire.fz_max_n for tire in parameters.tires],
             "tire_slip_angle_min_rad": [tire.coefficients["ALPMIN"] for tire in parameters.tires],
             "tire_slip_angle_max_rad": [tire.coefficients["ALPMAX"] for tire in parameters.tires],
             "tire_slip_ratio_min": [tire.coefficients["KPUMIN"] for tire in parameters.tires],
             "tire_slip_ratio_max": [tire.coefficients["KPUMAX"] for tire in parameters.tires],
-            "tire_load_range_enforced": bool(
-                qss_config.get("enforce_tire_load_range", True)
-            ),
-            "max_abs_sideslip_rad": float(qss_config.get("max_abs_beta_rad", 0.25)),
-            "max_abs_roadwheel_steer_rad": float(
-                qss_config.get("max_abs_steering_rad", 0.5)
-            ),
-            "trim_multistart": bool(qss_config.get("trim_multistart", True)),
+            "tire_upper_load_limit_enforced": generation.enforce_tire_load_range,
+            "max_abs_sideslip_rad": generation.max_abs_beta_rad,
+            "max_abs_roadwheel_steer_rad": generation.max_abs_steering_rad,
+            "trim_multistart": generation.trim_multistart,
         },
         "known_unmodeled_or_uncorrelated": [
             "aero yaw dependence and in-motion ride-height map lookup",

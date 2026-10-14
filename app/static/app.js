@@ -66,18 +66,22 @@ const state = {
   view: "setup",
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
+  simulationWorkspace: null,
+  collapsedSimulations: new Set(),
+  selectedVisualizationId: null,
+  selectedSimulationId: null,
+  simulationCatalogOpen: false,
+  simulationOverview: null,
+  simulationNavigating: false,
   selectedStudyWorkflowId: null,
   selectedJobId: null,
   toolchainModalOpen: false,
   toolchainSaving: false,
   toolchainInputsDirty: false,
   toolchainStatusMessage: "",
-  activeSimTab: "setup",
   simModalOpen: false,
   activeStudyTab: "saved",
   simConfigPayload: null,
-  simConfigLibrary: null,
-  selectedSimConfigSource: "",
   dirtySimConfig: false,
   cleanSimConfigSignature: "",
   loadingSimConfigFor: null,
@@ -88,8 +92,16 @@ const state = {
   resultSourceDetail: null,
   resultSelectedSignals: [],
   resultXAxis: "__index__",
+  simulationGgvEditor: false,
+  resultColorSignal: "",
+  resultViewKey: "",
+  resultCompareBaseline: false,
+  resultHoverIndex: null,
   resultSignalSearch: "",
   resultPlotPayload: null,
+  resultBaselinePayload: null,
+  resultComparison: null,
+  resultComparisonMessage: "",
   resultPlotStatus: "idle",
   resultPlotMessage: "",
   savingResults: false,
@@ -527,15 +539,44 @@ async function refreshTireTemplates() {
   }
 }
 
+async function savedSimulationWorkspace() {
+  let workspace;
+  let savedSettings;
+  do {
+    savedSettings = resultSettingsSave;
+    await savedSettings;
+    workspace = await api("/api/simulations");
+  } while (savedSettings !== resultSettingsSave);
+  return workspace;
+}
+
 async function refreshSavedResults() {
+  const workspace = await savedSimulationWorkspace();
+  if (state.simulationWorkspace?.vehicle_key !== workspace.vehicle_key) {
+    state.selectedSimulationId = null;
+    state.simulationOverview = null;
+    state.simModalOpen = false;
+    state.simulationCatalogOpen = false;
+    state.simConfigPayload = null;
+    state.selectedVisualizationId = null;
+    state.simulationGgvEditor = false;
+    delete document.getElementById("replay-view").dataset.capture;
+  }
+  state.simulationWorkspace = workspace;
   try {
     state.savedResultsPayload = await api("/api/results");
   } catch (error) {
     state.savedResultsPayload = { results: [], error: error.message };
   }
   const results = savedResults();
-  if (!results.some((result) => result.id === state.selectedResultId)) {
+  if (!state.selectedVisualizationId && !results.some((result) => result.id === state.selectedResultId)) {
     state.selectedResultId = results[0]?.id || null;
+  }
+  const child = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
+  if (child) {
+    const current = child.kind === "replay" ? document.getElementById("replay-view").dataset.capture : state.selectedResultId;
+    const next = child.kind === "replay" ? child.run_id || `pending:${state.selectedSimulationId}` : child.run_id;
+    if (current !== next) openSimulationVisualization(child);
   }
 }
 
@@ -552,6 +593,9 @@ async function refreshResultSources() {
     state.resultSourceDetail = null;
     state.resultSelectedSignals = [];
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
   }
 }
 
@@ -617,12 +661,12 @@ function selectedWorkflow() {
 }
 
 function savedResults() {
-  return state.savedResultsPayload?.results || [];
+  return (state.savedResultsPayload?.results || []).filter(result => result.vehicle_key === activeVehicleKey());
 }
 
 function selectedSavedResult() {
   const results = savedResults();
-  return results.find((result) => result.id === state.selectedResultId) || results[0] || null;
+  return results.find((result) => result.id === state.selectedResultId) || (state.selectedVisualizationId ? null : results[0]) || null;
 }
 
 function resultSources() {
@@ -639,6 +683,10 @@ function selectedProcessingWorkflow() {
 }
 
 function selectedResultSource() {
+  const child = selectedSimulation()?.visualizations?.find(item => item.id === state.selectedVisualizationId);
+  if (["signals", "lap"].includes(child?.kind)) {
+    return (selectedSavedResult()?.files || []).find(file => file.path === state.selectedResultSourcePath) || null;
+  }
   const sources = resultSources();
   return sources.find((source) => source.path === state.selectedResultSourcePath) || sources[0] || null;
 }
@@ -711,19 +759,13 @@ async function refreshSelectedSimConfig() {
   const workflow = selectedWorkflow();
   if (!workflow?.config_id) {
     state.simConfigPayload = null;
-    state.simConfigLibrary = null;
     state.cleanSimConfigSignature = "";
     state.dirtySimConfig = false;
     return;
   }
   state.loadingSimConfigFor = workflow.id;
-  const [payload, library] = await Promise.all([
-    api(`/api/configs/${encodeURIComponent(workflow.config_id)}`),
-    api(`/api/sim-configs?workflow_id=${encodeURIComponent(workflow.id)}`),
-  ]);
+  const payload = await api(`/api/configs/${encodeURIComponent(workflow.config_id)}`);
   state.simConfigPayload = payload;
-  state.simConfigLibrary = library;
-  state.selectedSimConfigSource = library.sources?.[0]?.id || "";
   acceptCleanSimConfigPayload();
   state.loadingSimConfigFor = null;
 }
@@ -737,7 +779,6 @@ function ensureSelectedSimConfigLoaded() {
     .catch((error) => {
       state.loadingSimConfigFor = null;
       state.simConfigPayload = null;
-      state.simConfigLibrary = { sources: [], error: error.message };
       renderStandard();
     });
 }
@@ -850,6 +891,7 @@ function render() {
 }
 
 function renderTopbar() {
+  renderRunLog();
   const toolchainButton = document.getElementById("toolchain-settings-btn");
   if (toolchainButton) {
     const toolchain = openmodelicaToolchain();
@@ -933,7 +975,7 @@ function setActionButton(button, { label, busy = false, busyLabel = label, disab
   button.disabled = Boolean(disabled || busy);
   button.classList.toggle("is-loading", busy);
   button.setAttribute("aria-busy", busy ? "true" : "false");
-  button.title = title || "";
+  button.title = busy ? `${busyLabel} in progress.` : title;
 }
 
 function renderVehicleMenuActions() {
@@ -943,6 +985,7 @@ function renderVehicleMenuActions() {
     busy: state.vehicleSaving && actionBusy("menu-save-vehicle"),
     busyLabel: "Saving",
     disabled: state.vehicleSaving || state.modelicaWriting || !state.vehiclePayload,
+    title: state.vehicleSaving ? "Vehicle save in progress." : state.modelicaWriting ? "MBD preparation in progress." : !state.vehiclePayload ? "No vehicle is loaded." : "",
   });
 }
 
@@ -1002,6 +1045,7 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-load"),
     busyLabel: "Loading",
     disabled: !loadSources.length || startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : !loadSources.length ? "No saved vehicles are available." : "",
   });
 
   const templates = state.vehicleTemplates?.templates || [];
@@ -1016,6 +1060,7 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-create"),
     busyLabel: "Creating",
     disabled: !templates.length || startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : !templates.length ? "No vehicle templates are available." : "",
   });
   const nameInput = document.getElementById("start-vehicle-name");
   if (nameInput && !nameInput.value) nameInput.value = nextVehicleName();
@@ -1025,10 +1070,12 @@ function renderVehicleStartModal() {
     busy: actionBusy("start-import"),
     busyLabel: "Importing",
     disabled: startBusy,
+    title: startBusy ? "A vehicle is being opened or imported." : "",
   });
   setActionButton(activeButton, {
     label: "Open vehicle",
     disabled: startBusy || !state.vehiclePayload,
+    title: startBusy ? "A vehicle is being opened or imported." : !state.vehiclePayload ? "No vehicle is loaded." : "",
   });
 }
 
@@ -1120,15 +1167,17 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
 }
 
 function renderMode() {
+  renderSimulationWorkspace();
   document.querySelectorAll(".rail-item").forEach((button) => {
-    const active = button.dataset.view === state.view;
+    const active = button.dataset.view === state.view || (button.dataset.view === "standard" && ["replay", "studies"].includes(state.view));
     button.classList.toggle("active", active);
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
   document.querySelectorAll(".screen").forEach((screen) => {
-    screen.classList.toggle("active", screen.id === `${state.view}-view`);
+    screen.classList.toggle("active", screen.id === `${state.view}-view` || (screen.id === "standard-view" && ["replay", "studies"].includes(state.view)));
   });
+  document.dispatchEvent(new Event("bobsim-view-change"));
 }
 
 function renderRailActions() {
@@ -1144,7 +1193,10 @@ function renderRailActions() {
       busy: state.vehicleSaving && actionBusy("rail-save-vehicle"),
       busyLabel: "Saving",
       disabled: !canSaveVehicle || state.modelicaWriting || state.vehicleSaving,
-      title: state.dirtyVehicle
+      title: state.vehicleSaving ? "Vehicle save in progress."
+        : state.modelicaWriting ? "MBD preparation in progress."
+        : !state.vehiclePayload ? "No vehicle is loaded."
+        : state.dirtyVehicle
         ? "Save active vehicle edits and update the saved config"
         : needsVehicleConfig
         ? "Save this vehicle config"
@@ -1155,7 +1207,7 @@ function renderRailActions() {
       busy: state.modelicaWriting && actionBusy("rail-write-mbd"),
       busyLabel: "Writing",
       disabled: !canWriteMbd() || state.vehicleSaving,
-      title: mbdWriteDisabledReason(),
+      title: state.vehicleSaving ? "Vehicle save in progress." : mbdWriteDisabledReason(),
     });
     return;
   }
@@ -2891,7 +2943,7 @@ function vectorControl(field) {
       ${variableQueue ? `
         <div class="array-queue-actions" aria-label="List controls">
           <button class="array-icon-button" type="button" data-array-action="add-item" aria-label="Add item" title="Add item">+</button>
-          <button class="array-icon-button" type="button" data-array-action="remove-item" aria-label="Remove last item" title="Remove last item"${displayValues.length <= 1 ? " disabled" : ""}>-</button>
+          <button class="array-icon-button" type="button" data-array-action="remove-item" aria-label="Remove last item" title="${displayValues.length <= 1 ? "At least one item is required." : "Remove last item"}"${displayValues.length <= 1 ? " disabled" : ""}>-</button>
         </div>
       ` : ""}
     </div>
@@ -3122,7 +3174,10 @@ function renumberArrayEditor(container) {
   });
   vectorRows.forEach((row) => {
     const removeButton = row.querySelector('[data-array-action="remove-item"]');
-    if (removeButton) removeButton.disabled = vectorRows.length <= 1;
+    if (removeButton) {
+      removeButton.disabled = vectorRows.length <= 1;
+      removeButton.title = removeButton.disabled ? "At least one item is required." : "Remove last item";
+    }
   });
 
   const matrixRows = Array.from(container.querySelectorAll("[data-matrix-row]"));
@@ -3138,7 +3193,10 @@ function renumberArrayEditor(container) {
   });
   matrixRows.forEach((row) => {
     const removeButton = row.querySelector('[data-array-action="remove-row"]');
-    if (removeButton) removeButton.disabled = matrixRows.length <= 1;
+    if (removeButton) {
+      removeButton.disabled = matrixRows.length <= 1;
+      removeButton.title = removeButton.disabled ? "At least one row is required." : "Remove last row";
+    }
   });
 }
 
@@ -3323,7 +3381,6 @@ async function generateModelicaFromVehicle({ actionKey = "rail-write-mbd" } = {}
     setSaveStatus(`Wrote ${generated.record?.name || "vehicle definition"} to MBD`);
     renderTopbar();
     renderModelicaStack();
-    state.activeSimTab = "setup";
     setView("standard");
   } catch (error) {
     setSaveStatus(error.message);
@@ -3547,57 +3604,13 @@ async function applySimConfigEdits() {
     body: JSON.stringify({ mode: "patch", values }),
   });
   state.simConfigPayload = payload;
+  if (state.selectedSimulationId) await simulationRequest("save", {id: state.selectedSimulationId});
   acceptCleanSimConfigPayload();
   state.status = await api("/api/status");
   renderSimSetup(selectedWorkflow());
   renderWorkflows();
   renderSimulationModal();
   return payload;
-}
-
-async function saveSimConfigAs() {
-  const workflow = selectedWorkflow();
-  if (!workflow) return;
-  const applied = await applySimConfigEdits();
-  if (!applied) return;
-  const name = document.getElementById("save-sim-config-name")?.value || `${workflow.label} setup`;
-  const payload = await api("/api/sim-configs/save", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workflow_id: workflow.id, name }),
-  });
-  state.simConfigLibrary = payload.library;
-  state.selectedSimConfigSource = payload.saved?.id || state.selectedSimConfigSource;
-  renderSimSetup(workflow);
-}
-
-async function loadSelectedSimConfig() {
-  const sourceId = document.getElementById("sim-config-picker")?.value || state.selectedSimConfigSource;
-  if (!sourceId) return;
-  const payload = await api("/api/sim-configs/load", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_id: sourceId }),
-  });
-  state.simConfigPayload = payload.config;
-  state.simConfigLibrary = payload.library;
-  state.selectedSimConfigSource = payload.source?.id || sourceId;
-  acceptCleanSimConfigPayload();
-  renderStandard();
-}
-
-async function deleteSelectedSimConfig() {
-  const selected = (state.simConfigLibrary?.sources || []).find((source) => source.id === state.selectedSimConfigSource);
-  if (selected?.type !== "saved") return;
-  const confirmed = window.confirm(`Delete saved run config "${selected.label}"?`);
-  if (!confirmed) return;
-  state.simConfigLibrary = await api("/api/sim-configs/delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_id: selected.id }),
-  });
-  state.selectedSimConfigSource = state.simConfigLibrary.sources?.[0]?.id || "";
-  renderSimSetup(selectedWorkflow());
 }
 
 async function applyStudyConfigEdits() {
@@ -3772,9 +3785,9 @@ function renderTirActionState() {
       ? "Updating plot..."
       : "Save .tir + Update Plot";
     saveButton.disabled = !state.activeTir || !dirty || busy;
-    saveButton.title = dirty
-      ? "Save the edited .tir file and update the tire plot"
-      : "Edit a tire parameter before saving";
+    saveButton.title = busy ? "Tire save or plot update in progress."
+      : !state.activeTir ? "No tire file is loaded."
+      : !dirty ? "The tire has no unsaved changes." : "";
   }
   if (spinner) spinner.hidden = !busy;
   if (status) {
@@ -4102,8 +4115,11 @@ function renderToolchainModal() {
   }
   if (!state.toolchainInputsDirty) fillToolchainInputsFromStatus();
   renderToolchainCandidates(toolchain);
-  if (saveButton) saveButton.disabled = state.toolchainSaving;
-  if (resetButton) resetButton.disabled = state.toolchainSaving;
+  for (const button of [saveButton, resetButton]) {
+    if (!button) continue;
+    button.disabled = state.toolchainSaving;
+    button.title = state.toolchainSaving ? "Toolchain settings are being saved." : "";
+  }
   if (status) status.textContent = state.toolchainSaving ? "Saving." : state.toolchainStatusMessage;
 }
 
@@ -4153,32 +4169,655 @@ async function resetOpenModelicaToolchain() {
   }
 }
 
+function selectedSimulation() {
+  return state.simulationWorkspace?.simulations?.find(item => item.id === state.selectedSimulationId) || null;
+}
+
+async function simulationRequest(action, values = {}) {
+  const vehicleKey = activeVehicleKey();
+  const savedSettings = resultSettingsSave;
+  await savedSettings;
+  const payload = await api("/api/simulations", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action, vehicle_key: vehicleKey, ...values})});
+  if (savedSettings !== resultSettingsSave) {
+    Object.assign(payload, await savedSimulationWorkspace());
+    if (payload.simulation) payload.simulation = payload.simulations.find(item => item.id === payload.simulation.id) || payload.simulation;
+  }
+  if (activeVehicleKey() !== vehicleKey) throw new Error("The active vehicle changed. Reopen the simulation.");
+  state.simulationWorkspace = payload;
+  return payload;
+}
+
+async function saveSimulationEdits() {
+  if (!state.selectedSimulationId) return;
+  if (state.dirtySimConfig && !await applySimConfigEdits()) throw new Error("Check the simulation inputs.");
+}
+
+async function openSimulationHome() {
+  await saveSimulationEdits();
+  state.selectedSimulationId = null;
+  state.selectedVisualizationId = null;
+  state.simulationOverview = null;
+  state.simModalOpen = false;
+  state.simulationGgvEditor = false;
+  setView("standard");
+}
+
+async function openSimulationOverview(id) {
+  await saveSimulationEdits();
+  const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+  if (!simulation) throw new Error("Simulation no longer available.");
+  state.selectedSimulationId = id;
+  state.selectedVisualizationId = null;
+  state.simulationOverview = {id};
+  state.simModalOpen = false;
+  state.simulationGgvEditor = false;
+  setView("standard");
+}
+
+function renderSimulationOverview() {
+  const panel = document.getElementById("simulation-overview");
+  const selection = state.simulationOverview;
+  const simulation = selectedSimulation();
+  const visible = state.view === "standard" && !state.simModalOpen
+    && !state.simulationGgvEditor && (selection?.id && simulation?.id === selection.id);
+  panel.hidden = !visible;
+  if (!visible) return false;
+  const workflow = state.status?.workflows?.find(item => item.id === simulation.workflow_id) || {id: simulation.workflow_id};
+  const meta = simWorkflowMeta(workflow);
+  if (document.activeElement?.id === "simulation-instance-name" && document.activeElement.dataset.simulationId === simulation.id) return true;
+  const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  panel.innerHTML = `<header><h2><input id="simulation-instance-name" data-simulation-id="${escapeHtml(simulation.id)}" aria-label="Simulation name" maxlength="120" value="${escapeHtml(simulation.name)}"${busy ? ' disabled title="Simulation names are locked while a job runs."' : ''}></h2><p>${escapeHtml(meta.summary)}</p></header>
+    ${simulationMethodHtml(workflow)}`;
+  const name = document.getElementById("simulation-instance-name");
+  name.onchange = () => {
+    name.value = name.value.trim() || simulation.name;
+    workspaceAction(() => renameSimulation(simulation.id, name.value));
+  };
+  name.onkeydown = event => {
+    if (event.key === "Escape") { name.value = simulation.name; name.blur(); }
+    if (event.key === "Enter") name.blur();
+  };
+  return true;
+}
+
+async function renameSimulation(id, name) {
+  const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+  try {
+    if (name.trim() && name.trim() !== simulation?.name) await simulationRequest("rename", {id, name: name.trim()});
+  } finally {
+    renderSimulationWorkspace();
+  }
+}
+
+async function renameSignalExplorer(id, childId, name) {
+  const child = state.simulationWorkspace?.simulations?.find(item => item.id === id)?.visualizations?.find(item => item.id === childId);
+  try {
+    if (name.trim() && name.trim() !== child?.name) {
+      await simulationRequest("rename-visualization", {id, child_id: childId, name: name.trim()});
+    }
+  } finally {
+    renderSimulationWorkspace();
+    renderSignalExplorerName();
+  }
+}
+
+function renderSignalExplorerName() {
+  const name = document.getElementById("signal-explorer-name");
+  if (!name) return;
+  const child = resultVisualization();
+  if (document.activeElement !== name) name.value = child?.name || "Signal Explorer";
+  name.readOnly = child?.kind !== "signals";
+  name.disabled = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  name.title = name.disabled ? "Names are locked while a job runs." : "";
+  name.onchange = () => {
+    if (child?.kind !== "signals") return;
+    name.value = name.value.trim() || child.name;
+    workspaceAction(() => renameSignalExplorer(state.selectedSimulationId, child.id, name.value));
+  };
+  name.onkeydown = event => {
+    if (child?.kind !== "signals") return;
+    if (event.key === "Escape") { name.value = child.name; name.blur(); }
+    if (event.key === "Enter") name.blur();
+  };
+}
+
+async function openSimulation(id) {
+  state.simulationOverview = null;
+  const running = (await api("/api/jobs")).jobs.find(job =>
+    job.simulation?.id === id && ["queued", "running"].includes(job.status));
+  if (running) {
+    await saveSimulationEdits();
+    state.selectedSimulationId = id;
+    state.selectedVisualizationId = null;
+    state.simulationGgvEditor = false;
+    state.selectedWorkflowId = running.workflow_id;
+    state.selectedJobId = running.id;
+    document.getElementById("run-log-menu").open = true;
+    state.simulationCatalogOpen = false;
+    state.simModalOpen = true;
+    await refreshSelectedSimConfig();
+    await refreshStatus();
+    setView("standard");
+    return;
+  }
+  state.selectedVisualizationId = null;
+  state.simulationGgvEditor = false;
+  await saveSimulationEdits();
+  const payload = await simulationRequest("load", {id});
+  state.selectedSimulationId = id;
+  state.selectedWorkflowId = payload.simulation.workflow_id;
+  state.simConfigPayload = payload.config;
+  acceptCleanSimConfigPayload();
+  state.simulationCatalogOpen = false;
+  state.simModalOpen = true;
+  await refreshStatus();
+  setView("standard");
+}
+
+async function showSimulationCatalog(group = activeSimulationGroup) {
+  await saveSimulationEdits();
+  state.simulationCatalogOpen = true;
+  activeSimulationGroup = group;
+  document.getElementById("simulation-catalog-status").textContent = "";
+  renderWorkflows();
+  renderSimulationCatalog();
+}
+
+function renderSimulationCatalog() {
+  const dialog = document.getElementById("simulation-catalog");
+  if (state.simulationCatalogOpen && !dialog.open) dialog.showModal();
+  else if (!state.simulationCatalogOpen && dialog.open) dialog.close();
+}
+
+function closeSimulationCatalog() {
+  state.simulationCatalogOpen = false;
+  renderSimulationCatalog();
+}
+
+function wireSimulationCatalog() {
+  const dialog = document.getElementById("simulation-catalog");
+  document.querySelector("[data-close-simulation-catalog]").onclick = closeSimulationCatalog;
+  dialog.onclose = () => { state.simulationCatalogOpen = false; renderSimulationWorkspace(); };
+}
+
+function workspaceAction(action) {
+  if (state.simulationNavigating) return;
+  state.simulationNavigating = true;
+  document.getElementById("simulation-workspace-status").textContent = "";
+  Promise.resolve().then(action).catch(error => {
+    document.getElementById("simulation-workspace-status").textContent = error.message;
+  }).finally(() => { state.simulationNavigating = false; });
+}
+
+function openSimulationVisualization(child) {
+  const key = JSON.stringify([activeVehicleKey(), state.selectedSimulationId, child.id, child.run_id]);
+  if (state.resultViewKey !== key) {
+    state.resultViewKey = key;
+    state.resultSignalSearch = "";
+    state.resultPlotStatus = "idle";
+    state.selectedResultSourcePath = null;
+    state.resultSourceDetail = null;
+    state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
+  }
+  state.selectedVisualizationId = child.id;
+  state.simModalOpen = false;
+  state.simulationGgvEditor = false;
+  if (child.kind === "replay") {
+    document.getElementById("replay-view").dataset.capture = child.run_id || `pending:${state.selectedSimulationId}`;
+    setView("replay");
+  } else {
+    state.selectedResultId = child.run_id;
+    setView("studies");
+  }
+}
+
+async function openSimulationGgv(id) {
+  await openSimulation(id);
+  state.simModalOpen = false;
+  state.simulationGgvEditor = true;
+  renderSimulationWorkspace();
+}
+
+function renderSimulationGgv() {
+  const simulation = selectedSimulation();
+  const panel = document.getElementById("simulation-ggv-editor");
+  if (!panel) return;
+  panel.hidden = state.view !== "standard" || !state.simulationGgvEditor;
+  if (panel.hidden) return;
+  const source = document.getElementById("simulation-ggv-source");
+  source.innerHTML = '<option value="">Generate for this lap</option>' + (state.simulationWorkspace?.simulations || [])
+    .filter(item => item.workflow_id === "ggv").map(item => `<option value="${escapeHtml(item.id)}"${item.id === simulation.ggv_source_id ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
+  if (simulation.ggv_source_id && ![...source.options].some(option => option.value === simulation.ggv_source_id)) {
+    source.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(simulation.ggv_source_id)}" selected>Unavailable GGV</option>`);
+  }
+  const input = simulation.ggv_input;
+  document.getElementById("simulation-ggv-status").textContent = `${input?.status || "Local"}: ${input?.message || "Generate with this lap's envelope settings."}`
+    + (input?.needs_rerun ? " Rerun the lap to use this result." : "");
+  const open = document.getElementById("simulation-ggv-open");
+  open.textContent = simulation.ggv_source_id ? "Open GGV analysis" : "Edit lap envelope settings";
+  open.disabled = Boolean(simulation.ggv_source_id && !(state.simulationWorkspace?.simulations || []).some(item => item.id === simulation.ggv_source_id));
+  open.title = open.disabled ? "The linked GGV analysis is no longer available." : "";
+  open.onclick = () => workspaceAction(() => openSimulation(simulation.ggv_source_id || simulation.id));
+  source.onchange = () => workspaceAction(async () => {
+    await simulationRequest("set-ggv", {id: simulation.id, source_id: source.value || null});
+    renderSimulationWorkspace();
+  });
+}
+
+function drawSimulationGgvConnections() {
+  const tree = document.getElementById("simulation-tree");
+  const svg = document.getElementById("simulation-ggv-connections");
+  if (!tree || !svg) return;
+  const bounds = tree.getBoundingClientRect();
+  const visible = node => node?.getClientRects().length > 0;
+  const sources = [...tree.querySelectorAll("[data-ggv-source]")];
+  const titles = [...tree.querySelectorAll("[data-simulation-id]")];
+  svg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
+  svg.innerHTML = [...tree.querySelectorAll("[data-ggv-linked]")].map(input => {
+    const sourceId = input.dataset.ggvLinked;
+    const source = sources.find(node => node.dataset.ggvSource === sourceId && visible(node))
+      || titles.find(node => node.dataset.simulationId === sourceId && visible(node));
+    const target = visible(input) ? input : titles.find(node => node.dataset.simulationId === input.dataset.simulationGgv && visible(node));
+    if (!source || !target) return "";
+    const a = source.getBoundingClientRect(), b = target.getBoundingClientRect();
+    const sx = a.right - bounds.left, sy = a.top + a.height / 2 - bounds.top;
+    const tx = b.right - bounds.left, ty = b.top + b.height / 2 - bounds.top;
+    const lane = bounds.width - 8;
+    return `<path d="M${sx} ${sy}H${lane}V${ty}H${tx}"/><circle cx="${sx}" cy="${sy}" r="2.5"/><path d="m${tx + 4} ${ty - 3}-4 3 4 3"/>`;
+  }).join("");
+}
+
+function wireSimulationGgvDrag() {
+  const tree = document.getElementById("simulation-tree");
+  let sourceId = null;
+  const clear = () => tree.querySelectorAll(".ggv-drop-target").forEach(node => node.classList.remove("ggv-drop-target"));
+  const targetFor = event => {
+    const branch = event.target.closest("[data-simulation-branch]");
+    return sourceId && state.simulationWorkspace?.simulations?.some(item =>
+      item.id === branch?.dataset.simulationBranch && item.workflow_id === "lap-qss") ? branch : null;
+  };
+  tree.addEventListener("dragstart", event => {
+    sourceId = event.target.closest("[data-ggv-source]")?.dataset.ggvSource || null;
+    if (!sourceId) return;
+    event.dataTransfer.setData("text/plain", sourceId);
+    event.dataTransfer.effectAllowed = "link";
+  });
+  tree.addEventListener("dragover", event => {
+    clear();
+    const target = targetFor(event);
+    if (!target) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "link";
+    target.classList.add("ggv-drop-target");
+  });
+  tree.addEventListener("dragleave", event => {
+    if (!tree.contains(event.relatedTarget)) clear();
+  });
+  tree.addEventListener("dragend", () => { sourceId = null; clear(); });
+  tree.addEventListener("drop", event => {
+    const target = targetFor(event);
+    const source = sourceId;
+    sourceId = null;
+    clear();
+    if (!target) return;
+    event.preventDefault();
+    const id = target.dataset.simulationBranch;
+    workspaceAction(async () => {
+      await saveSimulationEdits();
+      await simulationRequest("set-ggv", {id, source_id: source});
+      await openSimulationGgv(id);
+    });
+  });
+}
+
+function wireSimulationSplitter() {
+  const splitter = document.getElementById("simulation-splitter");
+  const workspace = document.querySelector(".simulation-workspace");
+  let width = Number(localStorage.getItem("bobsim-simulation-pane-width")) || 230;
+  let pointer = null;
+  const apply = value => {
+    if (!workspace.clientWidth) return;
+    const maximum = Math.max(180, Math.min(560, workspace.clientWidth - 360));
+    width = clamp(value, 180, maximum);
+    workspace.style.setProperty("--simulation-pane-width", `${width}px`);
+    splitter.setAttribute("aria-valuenow", String(Math.round(width)));
+    splitter.setAttribute("aria-valuemax", String(Math.round(maximum)));
+  };
+  const finish = event => {
+    if (event.pointerId !== pointer) return;
+    pointer = null;
+    splitter.classList.remove("active");
+    document.body.classList.remove("resizing-panes");
+    localStorage.setItem("bobsim-simulation-pane-width", String(width));
+  };
+  splitter.addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
+    pointer = event.pointerId;
+    splitter.setPointerCapture(pointer);
+    splitter.classList.add("active");
+    document.body.classList.add("resizing-panes");
+    event.preventDefault();
+  });
+  splitter.addEventListener("pointermove", event => {
+    if (event.pointerId === pointer) apply(event.clientX - workspace.getBoundingClientRect().left);
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) splitter.addEventListener(name, finish);
+  splitter.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 48 : 16;
+    apply(event.key === "Home" ? 180 : event.key === "End" ? 560 : width + (event.key === "ArrowLeft" ? -step : step));
+    localStorage.setItem("bobsim-simulation-pane-width", String(width));
+  });
+  new ResizeObserver(() => apply(width)).observe(workspace);
+}
+
+function wireSimulationContextMenu() {
+  const tree = document.getElementById("simulation-tree");
+  const menu = document.getElementById("simulation-context-menu");
+  let target = null;
+  let trigger = null;
+  const close = (restoreFocus = false) => {
+    menu.hidden = true;
+    trigger?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger?.focus();
+  };
+  const open = (id, x, y, element, scope = "simulation") => {
+    target = id;
+    trigger?.setAttribute("aria-expanded", "false");
+    trigger = element;
+    const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+    const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
+    const lap = simulation?.workflow_id === "lap-qss";
+    for (const button of menu.querySelectorAll("button")) {
+      const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
+      button.hidden = !actions.includes(button.dataset.action);
+      const hasAnimation = Boolean(simulation?.visualizations?.some(child => child.kind === "replay"));
+      button.disabled = button.dataset.action === "replay" && (envelope || lap || hasAnimation);
+      button.title = button.disabled ? hasAnimation ? "This simulation already has an animation."
+        : "This analysis produces steady-state results, not an animation." : "";
+    }
+    menu.hidden = false;
+    menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
+    menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
+    trigger?.setAttribute("aria-expanded", "true");
+    menu.querySelector("button:not([hidden]):not([disabled])").focus();
+  };
+  tree.addEventListener("contextmenu", event => {
+    const results = event.target.closest("[data-simulation-results]");
+    if (results) {
+      event.preventDefault();
+      open(results.dataset.simulationResults, event.clientX, event.clientY, results.querySelector("[data-simulation-run]"), "results");
+      return;
+    }
+    if (event.target.closest(".simulation-tree-runs")) {
+      event.preventDefault();
+      close();
+      return;
+    }
+    const branch = event.target.closest("[data-simulation-branch]");
+    const group = event.target.closest("[data-analysis-group]");
+    if (!branch && !group) return;
+    event.preventDefault();
+    if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
+    else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
+  });
+  tree.addEventListener("click", event => {
+    const button = event.target.closest("[data-simulation-menu]");
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    open(button.dataset.simulationMenu, rect.left, rect.bottom, button);
+  });
+  menu.addEventListener("click", event => {
+    const button = event.target.closest("[data-action]");
+    const action = button?.dataset.action;
+    if (!action || button.disabled) return;
+    const id = target;
+    close();
+    workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
+      : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
+  });
+  menu.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); close(true); }
+    if (event.key === "Tab") close();
+    if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      const buttons = [...menu.querySelectorAll("button")].filter(button => !button.hidden && !button.disabled);
+      const index = buttons.indexOf(document.activeElement);
+      buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+    }
+  });
+  document.addEventListener("pointerdown", event => {
+    if (!menu.contains(event.target) && !event.target.closest("[data-simulation-menu]")) close();
+  });
+  window.addEventListener("resize", () => close());
+  document.querySelector(".simulation-tree-pane").addEventListener("scroll", () => close());
+}
+
+async function addSimulationVisualization(id, kind) {
+  await saveSimulationEdits();
+  const payload = await simulationRequest("add-visualization", {
+    id, kind,
+  });
+  state.selectedSimulationId = id;
+  state.simulationCatalogOpen = false;
+  state.collapsedSimulations.delete(id);
+  state.collapsedSimulations.delete(`results:${id}`);
+  openSimulationVisualization(payload.visualization);
+}
+
+function mountSimulationWorkspace() {
+  let overviewClickTimer;
+  wireSimulationCatalog();
+  wireSimulationSplitter();
+  wireSimulationGgvDrag();
+  new ResizeObserver(drawSimulationGgvConnections).observe(document.getElementById("simulation-tree"));
+  document.getElementById("simulation-ggv-close").onclick = () => workspaceAction(() => openSimulation(state.selectedSimulationId));
+  wireSimulationContextMenu();
+  new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
+  const detail = document.getElementById("simulation-detail");
+  const config = document.getElementById("simulation-config-modal");
+  config.classList.add("simulation-inline-config");
+  config.removeAttribute("role");
+  config.removeAttribute("aria-modal");
+  for (const id of ["simulation-config-modal", "studies-view", "replay-view"]) detail.appendChild(document.getElementById(id));
+  document.getElementById("simulation-saved-runs").addEventListener("click", () => workspaceAction(async () => {
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
+  }));
+  document.getElementById("simulation-captures").addEventListener("click", () => workspaceAction(async () => {
+    await saveSimulationEdits(); state.selectedVisualizationId = null; state.simModalOpen = false; delete document.getElementById("replay-view").dataset.capture; setView("replay");
+  }));
+  document.getElementById("simulation-tree").addEventListener("dblclick", event => {
+    const button = event.target.closest("[data-simulation-overview], [data-simulation-visualization]");
+    clearTimeout(overviewClickTimer);
+    if (!button || (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status))) return;
+    const id = button.dataset.simulationOverview || button.dataset.owner;
+    const simulation = state.simulationWorkspace.simulations.find(item => item.id === id);
+    const childId = button.dataset.simulationVisualization;
+    const child = simulation.visualizations?.find(item => item.id === childId);
+    if (childId && child?.kind !== "signals") return;
+    const originalName = child ? child.name : simulation.name;
+    const input = document.createElement("input");
+    input.className = "simulation-tree-name";
+    input.setAttribute("aria-label", child ? "Signal Explorer name" : "Simulation name");
+    input.maxLength = 120;
+    input.value = originalName;
+    button.replaceWith(input);
+    input.focus();
+    input.select();
+    input.onclick = event => event.stopPropagation();
+    input.onkeydown = event => {
+      if (event.key === "Escape") { input.value = originalName; input.blur(); }
+      if (event.key === "Enter") input.blur();
+    };
+    input.onblur = () => workspaceAction(() => childId
+      ? renameSignalExplorer(id, childId, input.value) : renameSimulation(id, input.value));
+  });
+  document.getElementById("simulation-tree").addEventListener("click", event => {
+    clearTimeout(overviewClickTimer);
+    if (event.target.closest("[data-simulation-home]")) { workspaceAction(openSimulationHome); return; }
+    const ggv = event.target.closest("[data-simulation-ggv]");
+    if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
+    const group = event.target.closest("[data-simulation-add-group]");
+    if (group) {
+      workspaceAction(() => showSimulationCatalog(group.dataset.simulationAddGroup));
+      return;
+    }
+    const remove = event.target.closest("[data-remove-visualization]");
+    if (remove) {
+      workspaceAction(async () => {
+        await simulationRequest("delete-visualization", {id: remove.dataset.owner, child_id: remove.dataset.removeVisualization});
+        if (state.selectedVisualizationId === remove.dataset.removeVisualization) {
+          state.selectedVisualizationId = null;
+          if (state.view === "replay") {
+            delete document.getElementById("replay-view").dataset.capture;
+            setView("replay");
+          }
+        }
+        renderSimulationWorkspace();
+      });
+      return;
+    }
+    const child = event.target.closest("[data-simulation-visualization]");
+    if (child) {
+      overviewClickTimer = setTimeout(() => workspaceAction(async () => {
+        await saveSimulationEdits();
+        const parent = state.simulationWorkspace.simulations.find(item => item.id === child.dataset.owner);
+        const visualization = parent?.visualizations?.find(item => item.id === child.dataset.simulationVisualization);
+        if (!visualization) throw new Error("Visualization no longer available.");
+        state.selectedSimulationId = parent.id;
+        openSimulationVisualization(visualization);
+      }), 250);
+      return;
+    }
+    const toggle = event.target.closest("[data-simulation-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.simulationToggle;
+      if (state.collapsedSimulations.has(id)) state.collapsedSimulations.delete(id);
+      else state.collapsedSimulations.add(id);
+      renderSimulationWorkspace();
+      document.querySelector(`[data-simulation-toggle="${id}"]`)?.focus();
+      return;
+    }
+    const simulation = event.target.closest("[data-simulation-id]");
+    const run = event.target.closest("[data-simulation-run]");
+    if (run) workspaceAction(async () => {
+      await saveSimulationEdits();
+      state.selectedVisualizationId = null;
+      state.simulationGgvEditor = false;
+      state.selectedResultId = run.dataset.simulationRun;
+      state.selectedSimulationId = run.dataset.owner;
+      state.simModalOpen = false;
+      setView("studies");
+    });
+    else if (simulation?.dataset.simulationOverview) {
+      clearTimeout(overviewClickTimer);
+      overviewClickTimer = setTimeout(() => workspaceAction(() => openSimulationOverview(simulation.dataset.simulationId)), 250);
+    } else if (simulation) workspaceAction(() => openSimulation(simulation.dataset.simulationId));
+  });
+}
+
+function simulationTreeIcon(kind) {
+  const paths = {
+    vehicle: '<path d="m3 6 5-3 5 3v5l-5 3-5-3Z M3 6l5 3 5-3 M8 9v5"/>',
+    response: '<path d="M2 13V3 M2 13h12 M4 10h3V5h6"/>',
+    envelope: '<path d="M8 2v12 M2 8h12"/><ellipse cx="8" cy="8" rx="5" ry="4"/>',
+    lap: '<path d="M5 3C1 3 1 12 5 13c4 2 5-4 7-4s3-6 0-6Z"/>',
+    report: '<path d="M4 2h6l3 3v9H4Z M10 2v4h3 M6 9h5 M6 11h4"/>',
+    scene: '<path d="m6 4 6 4-6 4Z"/>',
+    grip: '<path d="M6 4h0 M10 4h0 M6 8h0 M10 8h0 M6 12h0 M10 12h0" stroke-width="2.4"/>',
+    link: '<path d="m6 10 4-4 M5 9l-1 1a2.1 2.1 0 0 0 3 3l2-2 M7 5l2-2a2.1 2.1 0 0 1 3 3l-1 1"/>',
+    chevron: '<path d="m6 4 4 4-4 4"/>',
+  };
+  return `<svg class="simulation-tree-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[kind]}</svg>`;
+}
+
+function renderSimulationWorkspace() {
+  const tree = document.getElementById("simulation-tree");
+  if (!tree || document.activeElement?.classList?.contains("simulation-tree-name")) return;
+  const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
+    ? state.simulationWorkspace.simulations : [];
+  tree.innerHTML = `<button type="button" class="simulation-tree-root simulation-tree-item ${state.view === "standard" && !state.selectedSimulationId ? "active" : ""}" data-simulation-home title="Simulation workspace">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></button><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
+    const groupId = `group:${group.id}`;
+    const expanded = !state.collapsedSimulations.has(groupId);
+    return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
+      <div class="simulation-tree-row">
+        <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${groupId}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${group.label}">${simulationTreeIcon("chevron")}</button>
+        <span class="simulation-tree-item simulation-analysis-label">${group.label}</span>
+        <button type="button" class="simulation-tree-add" data-simulation-add-group="${group.id}" aria-label="Add ${group.label.toLowerCase()} simulation" title="Add simulation">+</button>
+      </div>
+      <div class="simulation-tree-children"${expanded ? "" : " hidden"}>${(simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id).map(item => {
+    const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id).slice(0, 1);
+    const expanded = !state.collapsedSimulations.has(item.id);
+    const children = (item.visualizations || []).filter(child => child.kind !== "report");
+    const selected = state.view === "standard" && state.simModalOpen && item.id === state.selectedSimulationId;
+    const workflow = state.status?.workflows?.find(w => w.id === item.workflow_id);
+    const model = item.model ? `${item.model.engine} · ${item.model.fidelity}` : workflow?.label || item.workflow_id;
+    const icon = workflow?.group === "lap" ? "lap" : workflow?.group === "envelope" ? "envelope" : "response";
+    return `<div class="simulation-tree-branch" data-simulation-branch="${escapeHtml(item.id)}">
+      <div class="simulation-tree-row">
+        <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${escapeHtml(item.id)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>
+        <button type="button" data-simulation-id="${escapeHtml(item.id)}" data-simulation-overview="${escapeHtml(item.id)}" class="simulation-tree-item ${state.view === "standard" && state.simulationOverview?.id === item.id ? "active" : ""}" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
+          ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.model_dofs?.length ? item.model.model_dofs.join("/") + " DOF" : item.model?.fidelity || "")}</span>
+        </button>
+        <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>
+      </div>
+      <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
+        <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
+        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
+        <div class="simulation-tree-row simulation-results-row" data-simulation-results="${escapeHtml(item.id)}">
+          ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : ""}
+          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (item.workflow_id === "ggv" ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
+        </div>
+        <div class="simulation-tree-children simulation-result-children"${state.collapsedSimulations.has(`results:${item.id}`) ? " hidden" : ""}>
+          ${children.map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}"${runs.length ? "" : " disabled"} title="${runs.length ? escapeHtml(child.name) : "Results are available after a successful run."}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
+        </div>
+      </div>
+    </div>`;
+      }).join("")}</div></section>`;
+  }).join("") + '</div><svg id="simulation-ggv-connections" aria-hidden="true"></svg>';
+  drawSimulationGgvConnections();
+  for (const [id, label, icon, selected] of [
+    ["simulation-saved-runs", "Saved runs", "report", state.view === "studies" && !state.selectedSimulationId],
+    ["simulation-captures", "Captured scenes", "scene", state.view === "replay" && !state.selectedVisualizationId],
+  ]) {
+    const button = document.getElementById(id);
+    button.innerHTML = simulationTreeIcon(icon) + `<span>${label}</span>`;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  renderSimulationGgv();
+  const overviewVisible = renderSimulationOverview();
+  const empty = document.getElementById("simulation-empty");
+  empty.querySelector("h3").textContent = simulations?.length ? "Simulation workspace" : "No simulations";
+  empty.querySelector("p").hidden = Boolean(simulations?.length);
+  document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationGgvEditor;
+  renderSimulationCatalog();
+  document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
+  const config = document.getElementById("simulation-config-modal");
+  config.hidden = state.view !== "standard" || !state.simModalOpen;
+}
+
 function renderStandard() {
-  if (canRunStandardWorkflow()) ensureSelectedSimConfigLoaded();
+  if (state.simModalOpen && state.selectedSimulationId && canRunStandardWorkflow()) ensureSelectedSimConfigLoaded();
   const workflow = selectedWorkflow();
   document.getElementById("standard-context").textContent =
     activeVehicleName();
   const notice = document.getElementById("simulation-notice");
   notice.hidden = activeVehicleConfigReady() && !state.dirtyVehicle;
-  notice.textContent = notice.hidden ? "" : "Save your vehicle before running a simulation.";
+  notice.textContent = notice.hidden ? "" : "Vehicle changes must be saved before simulation.";
   const nextStep = document.getElementById("simulation-next-btn");
   nextStep.hidden = notice.hidden;
   nextStep.textContent = "Go to setup";
-  syncSimTabs();
   renderWorkflows();
   renderSimSetup(workflow);
   renderJobs();
   renderSimulationModal(workflow);
-}
-
-function syncSimTabs() {
-  if (!["setup", "jobs"].includes(state.activeSimTab)) state.activeSimTab = "setup";
-  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((item) => {
-    item.classList.toggle("active", item.dataset.tab === state.activeSimTab);
-  });
-  document.querySelectorAll(".panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `${state.activeSimTab}-panel`);
-  });
+  renderSimulationWorkspace();
 }
 
 const RESPONSE_MODEL_VARIANTS = {
@@ -4186,6 +4825,7 @@ const RESPONSE_MODEL_VARIANTS = {
   "step-steer": ["reduced-step-steer", "mbd-step-steer"],
 };
 const responseModelSelections = {};
+const responseModelDofs = {};
 const responseModelErrors = {};
 
 function responseFamily(workflow) {
@@ -4209,7 +4849,7 @@ function responseModelPicker(workflow) {
   const family = responseFamily(workflow);
   if (!family) return `<span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>`;
   const [reduced, mbd] = RESPONSE_MODEL_VARIANTS[family];
-  const current = workflow.id === mbd ? mbd : `${reduced}:${workflow.model.model_dofs[0]}`;
+  const current = workflow.id === mbd ? mbd : `${reduced}:${responseModelDofs[family] || workflow.model.model_dofs[0]}`;
   const options = [3, 6, 10, 14].map((dof) => [`${reduced}:${dof}`, `DynPy · ${dof} DOF`]);
   options.push([mbd, "BobLib · MBD"]);
   return `<label class="simulation-model-picker">Model
@@ -4220,12 +4860,18 @@ function responseModelPicker(workflow) {
   </label>`;
 }
 
-let activeSimulationGroup = "response";
+let activeSimulationGroup = "transient";
 const SIMULATION_GROUPS = [
-  {id: "response", label: "Vehicle Response", groups: ["standard", "response"], description: "Steering inputs, operating states and suspension motion."},
-  {id: "envelope", label: "Performance Envelopes", groups: ["envelope"], description: "Acceleration limits and yaw moment maps."},
-  {id: "lap", label: "Laptime", groups: ["lap"], description: "Racing lines, speed profiles and driver-controlled laps."},
+  {id: "kinematic", label: "Kinematic", description: "Suspension motion and loads."},
+  {id: "steady-state", label: "Steady state", description: "Choose equilibrium, an envelope or a quasi-steady lap."},
+  {id: "transient", label: "Transient", description: "Choose a maneuver or a driver-controlled lap."},
 ];
+
+function simulationAnalysisGroup(workflow) {
+  if (workflow.id === "four-post") return "kinematic";
+  if (["steady-state", "ggv", "ymd", "lap-qss"].includes(workflow.id)) return "steady-state";
+  return "transient";
+}
 
 function renderWorkflows() {
   const order = ["four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
@@ -4237,66 +4883,34 @@ function renderWorkflows() {
   const grid = document.getElementById("workflow-grid");
   const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
     (details) => details.closest("[data-workflow]").dataset.workflow));
-  grid.innerHTML = `
-    <nav class="simulation-categories" aria-label="Simulation categories">
-      ${SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="ghost-button simulation-category" data-simulation-group="${id}" aria-pressed="${id === activeSimulationGroup}" aria-controls="simulation-group-${id}">${label}</button>`).join("")}
-    </nav>
-    ${SIMULATION_GROUPS.map(({id, label, groups, description}) => `
-      <section id="simulation-group-${id}" class="simulation-group" aria-labelledby="simulation-title-${id}"${id === activeSimulationGroup ? "" : " hidden"}>
-        <header class="simulation-group-head">
-          <h3 id="simulation-title-${id}" class="simulation-group-title">${label}</h3>
-          <p>${description}</p>
-        </header>
-        ${workflows.filter((workflow) => groups.includes(workflow.group)).map(workflowCard).join("")}
-      </section>
-    `).join("")}
-  `;
-  grid.querySelectorAll("[data-simulation-group]").forEach((button) => {
-    button.addEventListener("click", () => {
-      activeSimulationGroup = button.dataset.simulationGroup;
-      grid.querySelectorAll("[data-simulation-group]").forEach((item) => {
-        item.setAttribute("aria-pressed", String(item.dataset.simulationGroup === activeSimulationGroup));
-      });
-      grid.querySelectorAll(".simulation-group").forEach((group) => {
-        group.hidden = group.id !== `simulation-group-${activeSimulationGroup}`;
-      });
-    });
-  });
+  document.getElementById("simulation-catalog-group").textContent = SIMULATION_GROUPS.find(group => group.id === activeSimulationGroup)?.label || "";
+  grid.innerHTML = workflows.filter(workflow => simulationAnalysisGroup(workflow) === activeSimulationGroup).map(workflowCard).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
     card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
   });
-  grid.querySelectorAll("[data-response-model]").forEach((select) => {
-    select.addEventListener("change", async () => {
+  grid.querySelectorAll("[data-response-model]").forEach(select => {
+    select.addEventListener("change", () => {
       const [workflowId, dof] = select.value.split(":");
-      select.disabled = true;
-      try {
-        if (dof) {
-          await api(`/api/configs/${workflowId}`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({
-            values: {[JSON.stringify(["model_dof"])]: Number(dof)},
-          })});
+      responseModelSelections[select.dataset.responseModel] = workflowId;
+      if (dof) responseModelDofs[select.dataset.responseModel] = Number(dof);
+      renderWorkflows();
+      grid.querySelector(`[data-response-model="${select.dataset.responseModel}"]`)?.focus();
+    });
+  });
+  grid.querySelectorAll("[data-configure-workflow]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      workspaceAction(async () => {
+        button.disabled = true;
+        button.title = "Simulation creation in progress.";
+        try {
+          await configureSimulationWorkflow(button.dataset.configureWorkflow);
+        } catch (error) {
+          document.getElementById("simulation-catalog-status").textContent = error.message;
+          button.disabled = false;
+          button.title = "";
         }
-        responseModelSelections[select.dataset.responseModel] = workflowId;
-        state.selectedWorkflowId = workflowId;
-        await refreshSelectedSimConfig();
-        delete responseModelErrors[select.dataset.responseModel];
-        await refreshStatus();
-        renderStandard();
-      } catch (error) {
-        responseModelErrors[select.dataset.responseModel] = error.message;
-        renderWorkflows();
-      }
-    });
-  });
-  grid.querySelectorAll("[data-configure-workflow]").forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      await configureSimulationWorkflow(button.dataset.configureWorkflow);
-    });
-  });
-  grid.querySelectorAll("[data-review-workflow]").forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      await reviewSimulationWorkflow(button.dataset.reviewWorkflow);
+      });
     });
   });
 }
@@ -4304,29 +4918,46 @@ function renderWorkflows() {
 async function selectStandardWorkflow(workflowId) {
   if (!workflowId || workflowId === state.selectedWorkflowId) return;
   state.selectedWorkflowId = workflowId;
-  state.activeSimTab = "setup";
   state.simConfigPayload = null;
-  state.simConfigLibrary = null;
   renderStandard();
   await refreshSelectedSimConfig();
   renderStandard();
 }
 
 async function configureSimulationWorkflow(workflowId) {
-  const workflow = standardWorkflows().find((item) => item.id === workflowId);
+  if (!workflowId) return;
+  await saveSimulationEdits();
+  const workflow = standardWorkflows().find(item => item.id === workflowId);
   if (!workflow) return;
-  if (workflowId !== state.selectedWorkflowId) {
-    await selectStandardWorkflow(workflowId);
+  const family = responseFamily(workflow);
+  const dof = responseModelDofs[family];
+  if (family && dof && workflow.id === RESPONSE_MODEL_VARIANTS[family][0]) {
+    await api(`/api/configs/${workflowId}`, {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({values: {[JSON.stringify(["model_dof"])]: dof}})});
   }
-  state.activeSimTab = "setup";
-  state.simModalOpen = true;
-  renderStandard();
+  const count = (state.simulationWorkspace?.simulations || []).filter(item => item.workflow_id === workflowId).length;
+  const payload = await simulationRequest("create", {workflow_id: workflowId,
+    name: `${simWorkflowMeta(workflow).title || workflow.label}${count ? ` ${count + 1}` : ""}`});
+  state.collapsedSimulations.delete(`group:${simulationAnalysisGroup(workflow)}`);
+  closeSimulationCatalog();
+  await openSimulationOverview(payload.simulation.id);
 }
 
-function closeSimulationModal() {
-  state.simModalOpen = false;
-  renderSimulationModal(selectedWorkflow());
+async function removeSimulation(id = state.selectedSimulationId) {
+  const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
+  if (!simulation || !window.confirm(`Delete "${simulation.name}"? Saved runs will be kept.`)) return;
+  await simulationRequest("delete", {id: simulation.id});
+  state.collapsedSimulations.delete(id);
+  if (state.selectedSimulationId === id) {
+    state.selectedSimulationId = null;
+    state.selectedVisualizationId = null;
+    state.simulationGgvEditor = false;
+    state.simModalOpen = false;
+    state.dirtySimConfig = false;
+    setView("standard");
+  } else renderSimulationWorkspace();
 }
+
 
 function firstExistingWorkflowOutput(workflow) {
   return workflow?.outputs?.find((output) => output.exists) || null;
@@ -4350,6 +4981,8 @@ async function reviewSimulationWorkflow(workflowId) {
   const review = savedReviewForWorkflow(workflow.id);
   if (review) {
     state.selectedResultId = review.id;
+    state.selectedSimulationId = review.simulation?.id || null;
+    state.simModalOpen = false;
     state.view = "studies";
     render();
     return;
@@ -4359,14 +4992,12 @@ async function reviewSimulationWorkflow(workflowId) {
 function renderSimulationModal(workflow = selectedWorkflow()) {
   const modal = document.getElementById("simulation-config-modal");
   if (!modal) return;
-  modal.hidden = !state.simModalOpen;
+  modal.hidden = !state.simModalOpen || state.view !== "standard";
   const title = document.getElementById("simulation-modal-title");
   const subtitle = document.getElementById("simulation-modal-subtitle");
   const meta = simWorkflowMeta(workflow);
-  if (title) title.textContent = meta.title || workflow?.label || "Configure Simulation";
-  if (subtitle) subtitle.textContent = state.activeSimTab === "jobs"
-    ? "Run log"
-    : [workflowModelLabel(workflow), meta.summary].filter(Boolean).join(" · ");
+  if (title) title.textContent = `${selectedSimulation()?.name || meta.title || workflow?.label || "Simulation"} · Setup`;
+  if (subtitle) subtitle.textContent = workflowModelLabel(workflow);
   if (state.simModalOpen && workflow?.config_id && state.simConfigPayload?.id !== workflow.config_id) {
     ensureSelectedSimConfigLoaded();
   }
@@ -4374,7 +5005,6 @@ function renderSimulationModal(workflow = selectedWorkflow()) {
 
 function workflowCard(workflow) {
   const meta = simWorkflowMeta(workflow);
-  const canReview = workflowReviewAvailable(workflow);
   const canConfigure = Boolean(workflow.config_id);
   return `
     <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
@@ -4395,8 +5025,7 @@ function workflowCard(workflow) {
         </details>
       </div>
       <div class="card-actions">
-        ${canReview ? `<button class="ghost-button" type="button" data-review-workflow="${escapeHtml(workflow.id)}">Results</button>` : ""}
-        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="Configure simulation">Configure</button>
+        <button class="run-button" type="button" data-configure-workflow="${escapeHtml(workflow.id)}"${canConfigure ? "" : " disabled"} title="${canConfigure ? "Add simulation" : "This workflow has no configurable simulation setup."}">Add simulation</button>
       </div>
     </article>
   `;
@@ -4411,15 +5040,16 @@ function simulationVisualHtml(workflow) {
   let caption;
   if (id.includes('ramp-steer') || id.includes('step-steer')) {
     const ramp = id.includes('ramp-steer');
-    drawing = `${axes}<path d="${ramp ? 'M27 94H65L165 24H224' : 'M27 94H91V26H224'}" ${stroke} stroke-width="2.5"/>`;
-    caption = ramp ? 'Steering ramps to a target and holds.' : 'Steering changes to a new value and holds.';
+    const continuous = id === 'ramp-steer';
+    drawing = `${axes}<path d="${ramp ? (continuous ? 'M27 94H65L224 24' : 'M27 94H65L165 24H224') : 'M27 94H91L105 26H224'}" ${stroke} stroke-width="2.5"/>`;
+    caption = ramp ? (continuous ? 'Steering ramps until the run ends.' : 'Steering ramps to a target and holds.') : 'Steering rises to a new value and holds.';
   } else if (id === 'steady-state' || id === 'transient') {
     const steady = id === 'steady-state';
     drawing = '<text x="48" y="43" text-anchor="middle" fill="currentColor" font-size="23">x</text>'
       + '<circle cx="48" cy="22" r="1.6" fill="currentColor"/>'
-      + text(58, 43, steady ? ' = f(x, u) = 0' : ' = f(x, u, t)', 23)
-      + `<g opacity=".6"><text x="130" y="83" text-anchor="middle" fill="currentColor" font-size="20">${steady ? 'g(x, u) = 0' : 'g(x, u, t) = 0'}</text>`
-      + '<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">Constraints, if present</text></g>';
+      + text(58, 43, steady ? ' = f(x, u)' : ' = f(x, u, t)', 23)
+      + `<g opacity=".6"><text x="130" y="83" text-anchor="middle" fill="currentColor" font-size="${steady ? 16 : 20}">${steady ? 'Settled handling response' : 'g(x, u, t) = 0'}</text>`
+      + `<text x="130" y="105" text-anchor="middle" fill="currentColor" font-size="11">${steady ? 'Position and heading continue to evolve' : 'Constraints, if present'}</text></g>`;
     caption = steady ? 'Solve a steady operating point.' : 'Evolve the state while satisfying the model constraints.';
   } else if (id === 'four-post') {
     drawing = `<path d="M49 104L91 72L211 83L169 115Z" ${stroke} opacity=".2"/>`
@@ -4430,7 +5060,7 @@ function simulationVisualHtml(workflow) {
         + `<path d="M${x-19} ${top}v5a19 6 0 0 0 38 0v-5" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
         + `<ellipse cx="${x}" cy="${top}" rx="19" ry="6" fill="var(--surface)" stroke="currentColor" stroke-width="1.7"/>`
       ).join('');
-    caption = 'Four hydraulic posts move the wheels independently.';
+    caption = 'Chassis heave and roll with fixed contact heights.';
   } else if (id === 'ggv') {
     drawing = `<path d="M127 112V7M127 105L34 119M127 105L225 119" ${stroke} opacity=".35"/>`
       + [[92, 30, 9], [70, 42, 12], [45, 58, 16], [20, 76, 20]].map(([y,rx,ry]) => `<ellipse cx="127" cy="${y}" rx="${rx}" ry="${ry}" ${stroke}/>`).join('')
@@ -4484,22 +5114,440 @@ function simDetailBlock(title, items = []) {
   `;
 }
 
+function simulationMethodGuide(workflowId) {
+  return {
+  "four-post": {
+    "method": [
+      "OpenModelica evaluates the BobLib multibody suspension with chassis heave/roll actuators and fixed-height contact-patch fixtures.",
+      "The built-in schedule sweeps heave, then roll, with contact-patch force pulses and the selected steering offset.",
+      "Static contact loads are compared with the vehicle weight distribution. Spring free lengths are adjusted within the configured iteration limit.",
+      "The recorded sweep supplies suspension geometry, force-transfer curves and setup metrics."
+    ],
+    "inputs": [
+      "Heave and roll amplitudes, pinion steering angle and applied contact-patch force.",
+      "Vehicle hardpoints, masses, springs, anti-roll bars and tire vertical properties.",
+      "Spring and anti-roll-bar overrides, static-balance tolerances and contact-load validation."
+    ],
+    "outputs": [
+      "Camber, toe, caster, kingpin inclination, trail and scrub through heave and roll.",
+      "Motion ratios, wheel and roll stiffness, static loads and suspension frequency estimates.",
+      "Anti-dive, anti-squat, geometric anti-roll, load-transfer distribution and force-based roll-center height.",
+      "PDF report and metrics CSV."
+    ],
+    "limits": [
+      "Heave and roll are chassis actuator coordinates. Wheel travel is solved from the suspension and contact constraints. The imposed roll axis is global x through the world origin, distinct from the reported force-based roll center.",
+      "The sweep schedule is built into the Modelica rig. Front and rear share heave and roll commands, so there is no independent pitch input.",
+      "Contact loss can invalidate roll-force metrics and is rejected when contact validation is enabled.",
+      "This rig sets world gravity to zero and uses configured spring preload and applied test forces. It is not a free-running vehicle simulation. Vehicle changes must be present in the compiled model."
+    ],
+    "sources": [
+      "simulations/response/mbd/four_post/four_post_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo",
+      "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ChassisActuator.mo",
+      "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ContactPatchFixture.mo"
+    ]
+  },
+  "steady-state": {
+    "method": [
+      "Each requested speed and lateral-acceleration target defines a case.",
+      "The BobLib multibody model advances through time while the controller regulates speed and lateral acceleration.",
+      "Settling checks cover speed and acceleration errors, plus rates of lateral acceleration, yaw rate, sideslip, roll and handwheel angle.",
+      "Accepted cases form steering, roll and sideslip curves against achieved lateral acceleration."
+    ],
+    "inputs": [
+      "Test speeds and lateral-acceleration targets, including optional limits by speed.",
+      "Steering-controller settings, settling tolerances and simulation timeout.",
+      "Compiled BobLib vehicle, tires and powertrain."
+    ],
+    "outputs": [
+      "Steering angle, steering excess, roll, sideslip and handwheel torque against lateral acceleration.",
+      "Yaw rate, speed, individual tire loads and settling diagnostics.",
+      "Handling gradients, report and metrics CSV."
+    ],
+    "limits": [
+      "This workflow settles a time-domain Modelica simulation. It does not directly solve a zero-derivative algebraic system.",
+      "Targets outside available grip or controller authority may fail to settle.",
+      "Failed or unsettled cases are excluded from the accepted steady-state curves.",
+      "Fitted gradients depend on the sampled acceleration range and fit settings."
+    ],
+    "sources": [
+      "simulations/response/mbd/steady_state/steady_state_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "ramp-steer": {
+    "method": [
+      "Each requested speed defines a BobLib multibody case with closed-loop speed control.",
+      "Handwheel angle increases at a constant rate after the steering start time.",
+      "The recorded response follows achieved lateral acceleration as the ramp progresses.",
+      "Local fits give steering, sideslip and roll gradients."
+    ],
+    "inputs": [
+      "Test speeds, handwheel ramp rate and steering start time.",
+      "Lateral-acceleration target, maximum duration and configured termination thresholds.",
+      "Vehicle model, tires, speed-controller settings and report fit range."
+    ],
+    "outputs": [
+      "Roadwheel and handwheel angle, steering excess, roll, sideslip and handwheel torque against lateral acceleration.",
+      "Understeer, steering, roll and sideslip gradients, including values near the reached limit.",
+      "PDF report and metrics CSV."
+    ],
+    "limits": [
+      "These curves describe a changing steering maneuver rather than fully settled equilibrium at every sample.",
+      "The current case generator runs one positive steering direction per speed. It does not measure left-right asymmetry.",
+      "Gain-loss or tire-load termination can stop a run before its requested duration or acceleration target.",
+      "The MBD input is handwheel rate. The DynPy ramp input is nominal mean roadwheel rate."
+    ],
+    "sources": [
+      "simulations/response/mbd/ramp_steer/ramp_steer_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "mbd-step-steer": {
+    "method": [
+      "BobLib cases cover the selected speeds, steering amplitudes and turn directions.",
+      "A finite-rise steering step excites the vehicle while its controller regulates speed.",
+      "The integrated response includes steering, lateral acceleration, yaw, roll and sideslip histories.",
+      "Each history supplies final response, gain, peak, overshoot and timing metrics."
+    ],
+    "inputs": [
+      "Test speeds, handwheel step amplitudes and turn directions.",
+      "Steering start time and step rise duration.",
+      "Compiled BobLib vehicle and tire models."
+    ],
+    "outputs": [
+      "Steering, lateral acceleration, yaw rate, roll and sideslip time histories.",
+      "Step-response gains, peaks, overshoot and timing metrics.",
+      "PDF response report and summary metrics."
+    ],
+    "limits": [
+      "The input has a finite rise duration rather than an instantaneous discontinuity.",
+      "Reported rise time runs from 50% of the input to 90% of the final response.",
+      "Final response is estimated from the last 20 samples, so a case that has not settled can distort its metrics.",
+      "The steering command is at the handwheel. DynPy uses nominal mean front roadwheel angle."
+    ],
+    "sources": [
+      "simulations/response/mbd/transient/transient_eval_sim.py",
+      "simulations/response/mbd/transient/step_steer_config.yml",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "transient": {
+    "method": [
+      "BobLib steering cases span the selected speeds, amplitudes, directions and sine frequencies.",
+      "Finite-rise step and sustained-sine cases use closed-loop speed control.",
+      "Step histories supply response gain, peak, overshoot and timing.",
+      "Sine, cosine and offset fits over selected cycles give lateral-acceleration and yaw-rate gain and phase."
+    ],
+    "inputs": [
+      "Test speeds, steering amplitudes, directions and steering start time.",
+      "Step rise duration, sine frequencies, cycle count and cycles to skip before analysis.",
+      "Compiled vehicle, tire and powertrain models."
+    ],
+    "outputs": [
+      "Step and sustained-sine response histories.",
+      "Lateral-acceleration and yaw-rate frequency-response gain, phase and fit error.",
+      "Step-response metrics and PDF report."
+    ],
+    "limits": [
+      "This workflow runs predefined steering maneuvers rather than an arbitrary driver input trace. The current case generator requires step cases to remain enabled to include sine cases.",
+      "Frequency-response fits use at most two analysis cycles after the configured skipped cycles.",
+      "At large inputs, fitted gain and phase describe that maneuver amplitude rather than a universal linear response.",
+      "A short or unsettled step history can distort final-response and overshoot metrics."
+    ],
+    "sources": [
+      "simulations/response/mbd/transient/transient_eval_sim.py",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "reduced-ramp-steer": {
+    "method": [
+      "The vehicle and independent front/rear tire definitions supply the selected DynPy model.",
+      "Straight-line trim initializes vehicle attitude, wheel loading and drive demand.",
+      "Nominal mean front roadwheel steer increases at the selected rate, then remains fixed after ramp end.",
+      "The vehicle and PI speed controller advance through time, with corner steering and suspension geometry supplied by KinPy.",
+      "The saved run contains sampled signals, a summary and a response report."
+    ],
+    "inputs": [
+      "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
+      "Target speed, simulation duration and output sample interval.",
+      "Roadwheel steering rate, ramp start and ramp end.",
+      "KinPy lookup or nonlinear kinematics."
+    ],
+    "outputs": [
+      "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
+      "Per-corner tire forces, moments, loads, slip and suspension signals supported by the selected model.",
+      "Signals CSV, summary JSON, PDF report and saved-state 3D replay."
+    ],
+    "limits": [
+      "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
+      "Speed control can deviate from its target when drive force or power limits are reached.",
+      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "The output sample interval controls saved points. The integrator takes its own adaptive steps."
+    ],
+    "sources": [
+      "simulations/response/reduced/reduced_order_eval_sim.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/python_simulations.py"
+    ]
+  },
+  "reduced-step-steer": {
+    "method": [
+      "The vehicle and independent front/rear tire definitions supply the selected DynPy model.",
+      "Straight-line trim initializes vehicle attitude, wheel loading and drive demand.",
+      "Nominal mean front roadwheel steer reaches the selected angle over the rise duration, then remains fixed.",
+      "The vehicle and PI speed controller advance through time, with corner steering and suspension geometry supplied by KinPy.",
+      "The saved run contains sampled signals, a summary and a response report."
+    ],
+    "inputs": [
+      "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
+      "Target speed, simulation duration and output sample interval.",
+      "Roadwheel step angle, step time and rise duration.",
+      "KinPy lookup or nonlinear kinematics."
+    ],
+    "outputs": [
+      "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
+      "Per-corner tire forces, moments, loads, slip and suspension signals supported by the selected model.",
+      "Signals CSV, summary JSON, PDF report and saved-state 3D replay."
+    ],
+    "limits": [
+      "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
+      "Speed control can deviate from its target when drive force or power limits are reached.",
+      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "The output sample interval controls saved points. The integrator takes its own adaptive steps."
+    ],
+    "sources": [
+      "simulations/response/reduced/reduced_order_eval_sim.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/python_simulations.py"
+    ]
+  },
+  "ggv": {
+    "method": [
+      "The selected DynPy model supplies algebraic vehicle equations across the vehicle speed range. Feasible solutions define longitudinal and lateral acceleration states.",
+      "A constrained search identifies the lateral endpoint and the acceleration and braking boundaries at lower lateral demands. Constraints cover vehicle balance, tires, steering, torque and power.",
+      "Neighboring solutions provide initial guesses. Independent tire inversion verifies force and torque closure at the solved wheel loads. Near tire peaks, a bracketed trim search can return a conservative endpoint.",
+      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint. The negative lateral branch mirrors the positive branch."
+    ],
+    "inputs": [
+      "Vehicle geometry, mass, front and rear tire curves, suspension, aero and powertrain limits.",
+      "DynPy 3, 6, 10 or 14 DOF. This workflow runs in Python and uses quasi-steady constraints, not time integration.",
+      "The vehicle speed limit determines nine speed slices. Sampling and boundary searches are automatic.",
+      "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
+    ],
+    "outputs": [
+      "The feasible boundary in longitudinal acceleration, lateral acceleration and speed (ax, ay, v), saved as CSV. Each speed slice is an acceleration and braking envelope.",
+      "Envelope plots, capability metrics and a PDF report.",
+      "Optional configured track-profile proxy metrics and velocity profiles. The envelope CSV can supply a QSS lap."
+    ],
+    "limits": [
+      "Each point holds sideslip constant and uses heading rate equal to path-normal acceleration divided by speed. The retained body angular accelerations are constrained to zero. Wheel acceleration preserves local tire slip. This local QSS approximation does not predict corner-entry transients, roll buildup or wheel hop.",
+      "The left branch is mirrored from positive lateral demand when both directions are shown. Left and right cornering limits are not solved independently.",
+      "This is a local constrained search, not a proof of the global boundary or dynamic stability. Search bounds, sampling, tire fits and convergence limit the recovered envelope. A missing point does not prove every nearby state is impossible.",
+      "GGV track-profile scores describe the configured maneuver proxy. QSS Lap provides a boundary-defined racing line and lap-time estimate."
+    ],
+    "sources": [
+      "simulations/envelope/ggv/ggv_generation.py",
+      "engines/dynpy/qss.py",
+      "engines/dynpy/models.py",
+      "engines/dynpy/tire.py"
+    ]
+  },
+  "ymd": {
+    "method": [
+      "A sideslip and steering grid defines operating points at the selected speed and prescribed yaw rate.",
+      "Longitudinal and vertical equilibrium are solved at each point. Lateral acceleration and yaw moment remain outputs.",
+      "Successful neighboring solutions provide initial guesses. Each point retains its convergence status.",
+      "Interpolated zero-yaw-moment crossings form a continuous trim branch. An enabled speed sweep adds maps at the other requested speeds."
+    ],
+    "inputs": [
+      "Vehicle definition and selected DynPy 3, 6, 10 or 14 DOF model, evaluated in Python.",
+      "Speed, sideslip and steering ranges, grid resolution and prescribed yaw rate.",
+      "Solver iteration and tolerance settings, tire-load-range enforcement, and optional speed sweep.",
+      "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
+    ],
+    "outputs": [
+      "Lateral acceleration and yaw moment for each sideslip and steering pair, with convergence flags.",
+      "Zero-yaw-moment trim curve, lateral and yaw-authority metrics, plots and a PDF report.",
+      "Speed-dependent maps and summary metrics when the speed sweep is enabled."
+    ],
+    "limits": [
+      "Most map points intentionally have nonzero yaw moment. They are not all steady cornering equilibria.",
+      "Yaw rate is prescribed rather than solved as a free response. This map does not show time-domain stability or the path a driver would follow.",
+      "The trim curve is interpolated from the sampled grid. Its coverage and accuracy depend on converged neighboring points and the chosen ranges.",
+      "The selected DOFs are equilibrated for this calculation. Choosing more DOFs does not turn the diagram into a transient simulation."
+    ],
+    "sources": [
+      "simulations/envelope/ymd/ymd_generation.py",
+      "engines/dynpy/qss.py",
+      "engines/dynpy/models.py"
+    ]
+  },
+  "lap-qss": {
+    "method": [
+      "The envelope comes from a linked or supplied GGV, a matching cached result, or generation with the selected DynPy model.",
+      "Boundary coordinates define a closed track corridor with allowance for vehicle width and the safety margin.",
+      "The line can follow the centerline, minimize curvature, or minimize QSS lap time from the minimum-curvature starting point.",
+      "At each candidate speed, curvature sets lateral demand. GGV interpolation at that speed and demand supplies the remaining acceleration and braking capacity.",
+      "The lateral boundary limits corner speed. Alternating forward acceleration and backward braking passes produce a converged closed-lap speed profile. Segment travel times give the lap time."
+    ],
+    "inputs": [
+      "Track boundary CSV, vehicle width, safety margin and line sampling distance.",
+      "Line mode and optimizer iteration limits, speed ceiling and optional event drive-power limit.",
+      "A GGV result or envelope-generation settings. A linked GGV supplies the model fidelity and must match the vehicle and power limit."
+    ],
+    "outputs": [
+      "Track position, station, curvature, speed, longitudinal and lateral acceleration, and segment travel time.",
+      "Lap time, line-optimizer and speed-profile convergence status, and envelope provenance.",
+      "A static lap map that can be colored by a saved signal, plus plots and the lap report."
+    ],
+    "limits": [
+      "This is a spatial speed-profile calculation. It does not integrate suspension, wheel or body states around the lap, even when its envelope comes from 14 DOF.",
+      "The planar corridor has no elevation or banking. Generated GGV values use path-tangent and path-normal axes. Lookup uses absolute lateral demand and conservative capability when left and right CSV rows differ.",
+      "Speed is capped by the highest GGV speed and any lower configured ceiling. Envelope and line resolution affect the result.",
+      "The constrained line optimizer is local and can reach its iteration limit. A minimum-time result is not a guarantee of the global fastest line."
+    ],
+    "sources": [
+      "simulations/lap/lap_time_eval_sim.py",
+      "simulations/lap/core/track.py",
+      "simulations/lap/core/racing_line.py",
+      "simulations/lap/core/qss.py",
+      "simulations/lap/core/io.py",
+      "app/data_services.py"
+    ]
+  },
+  "lap-transient": {
+    "method": [
+      "The QSS racing line and speed profile use the selected model’s envelope.",
+      "A steady trim initializes the vehicle. Progressively lower initial speeds are tried if the first target cannot be trimmed.",
+      "Sparse steady cornering trims supply steering feedforward along the line. Preview, heading error and cross-track error provide feedback.",
+      "QSS acceleration feedforward and proportional speed feedback determine acceleration demand. Wheel torque allocation respects drive and brake distributions and drive limits.",
+      "DynPy integrates with RK45 for 3 DOF or Radau for 6, 10 and 14 DOF. Track progress identifies the first completed-lap crossing, with interpolation for lap time."
+    ],
+    "inputs": [
+      "The track, line-optimization and envelope inputs used by QSS Lap.",
+      "DynPy 3, 6, 10 or 14 DOF, running in Python. Added DOFs release body heave, roll and pitch, then wheel rotation, then unsprung vertical motion.",
+      "Output sample period, driver preview distance and spacing between steering feedforward trims."
+    ],
+    "outputs": [
+      "Time histories of position, speed, steering, yaw rate, acceleration and target speed.",
+      "Track progress, lateral error, heading error, lap completion and lap-time difference from the QSS reference.",
+      "Full model signal CSV for plots and the existing 3D vehicle replay, with motion appropriate to the selected DOFs."
+    ],
+    "limits": [
+      "This follows a precomputed QSS reference with a fixed feedback driver. It does not optimize the driver's time-domain inputs for the fastest transient lap.",
+      "A failed steering feedforward trim falls back to wheelbase and curvature geometry. Tracking quality depends on the driver settings and available tire force.",
+      "The driver uses fixed steering and acceleration command bounds. Track departure is measured as error, not prevented by a corridor constraint during integration.",
+      "The simulation uses a finite time horizon and may not complete the lap. Reported lap time is unavailable if completion is not reached."
+    ],
+    "sources": [
+      "simulations/lap/lap_time_eval_sim.py",
+      "simulations/lap/core/transient.py",
+      "simulations/lap/core/io.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/visual.py"
+    ]
+  }
+}[workflowId];
+}
+
+function simulationMathHtml(id) {
+  const tex = String.raw;
+  const ode = {title: "Time integration", equation: tex`\dot{\mathbf{x}} = \mathbf{f}(\mathbf{x},\mathbf{u},t), \qquad \mathbf{x}(0)=\mathbf{x}_0`, text: "The integrator advances from the initial state using the forces evaluated at each solver step.", symbols: [[tex`\mathbf{x}`, "Vehicle positions and velocities"], [tex`\mathbf{u}`, "Steering, wheel torque and road inputs"]]};
+  const dae = {title: "Multibody equations and joint constraints", equation: tex`\begin{aligned} \mathbf{M}\ddot{\mathbf{q}}+\mathbf{h} &= \mathbf{Q}+\mathbf{J}^{T}\boldsymbol{\lambda} \\ \boldsymbol{\Phi}(\mathbf{q},t)&=\mathbf{0} \end{aligned}`, text: "OpenModelica integrates the multibody vehicle while keeping connected links and joints compatible.", symbols: [[tex`\mathbf{q}`, "Body and linkage coordinates"], [tex`\mathbf{M},\mathbf{h}`, "Mass matrix and inertial terms"], [tex`\mathbf{Q}`, "Applied forces and moments"], [tex`\boldsymbol{\Phi},\mathbf{J},\boldsymbol{\lambda}`, "Joint constraints, their Jacobian and reaction forces"]]};
+  const step = {title: "Steering step", equation: tex`\delta(t)=\delta_{\mathrm{step}}\,\operatorname{clip}\!\left(\frac{t-t_0}{\tau},0,1\right)`, text: "Steering increases over the rise time, then remains fixed.", symbols: [[tex`\delta_{\mathrm{step}}`, "Final steering angle"], [tex`t_0,\tau`, "Start time and rise time"]]};
+  const speed = {title: "Speed control", equation: tex`\begin{aligned} e_v &= v_{\mathrm{target}}-v \\ F_{\mathrm{request}} &= F_{\mathrm{trim}}+m\left(K_p e_v+K_i\int e_v\,dt\right) \end{aligned}`, text: "PI feedback adds drive or braking demand to the initial trim. Drive force and power limits can prevent the target speed being maintained.", symbols: [[tex`e_v`, "Speed error"], [tex`F_{\mathrm{trim}}`, "Force needed at the initial steady speed"], [tex`K_p,K_i`, "Proportional and integral gains"]]};
+  let intro, sections;
+  if (id === "ggv") {
+    intro = "The vehicle equations define an acceleration boundary at each speed. Path-frame accelerations allow the result to supply a QSS lap.";
+    sections = [
+      {title: "1. Cornering condition", equation: tex`V=V_i,\qquad a_n=a_{n,j},\qquad \dot\beta=0,\qquad \dot\psi=\frac{a_n}{V}`, text: "Speed and path-normal acceleration define each operating condition. Sideslip is locally constant. Nonzero heading rate changes velocity and slip at each tire.", symbols: [[tex`V`, "Speed along the path"], [tex`a_n`, "Path-normal acceleration, positive to the left"], [tex`\beta,\dot\psi`, "Body sideslip and heading rate"]]},
+      {title: "2. Force and moment balance", equation: tex`\begin{aligned} \mathbf{R}\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right) &= a_t\mathbf{t}+a_n\mathbf{n} \\ \mathbf{I}\dot{\boldsymbol\omega} &= \mathbf{M}-\boldsymbol\omega\times(\mathbf{I}\boldsymbol\omega) \end{aligned}`, text: "The unknowns include sideslip, rack travel, wheel torque and the model's suspension and wheel states. The shared transient equations have zero yaw acceleration in 3 DOF and zero body angular acceleration in higher fidelities. This does not set yaw rate to zero. In the full inertia model, the gyroscopic term can require a nonzero net moment.", symbols: [[tex`F_{x,i},F_{y,i}`, "Tire force components resolved in body axes, at corner i"], [tex`a_t,\mathbf{t},\mathbf{n}`, "Tangential acceleration and horizontal path unit vectors"], [tex`\mathbf{R},\mathbf{v}^{B}`, "Body-to-world rotation and body-frame velocity"], [tex`\mathbf{I},\boldsymbol\omega,\mathbf{M}`, "Body-frame inertia, angular velocity and net moment"]]},
+      {title: "3. Feasible acceleration boundary", equation: tex`a_t^{\mathrm{upper}}=\max_{\text{feasible states}}a_t,\qquad a_t^{\mathrm{lower}}=\min_{\text{feasible states}}a_t`, text: "Boundary optimization respects tire-fit, steering, sideslip, torque and power limits. Neighboring solutions provide initial guesses. The lateral endpoint maximizes normal acceleration with tangential acceleration free. Even the upper boundary can be negative when the vehicle cannot maintain speed.", symbols: []}
+    ];
+  } else if (id === "lap-qss") {
+    intro = "The racing line and path-frame GGV determine a speed profile. Curvature sets normal acceleration. The envelope supplies the remaining tangential acceleration and braking capacity.";
+    sections = [
+      {title: "1. Curvature and lateral demand", equation: tex`a_y=v^2\kappa`, text: "A tighter corner or higher speed needs more lateral acceleration. At each candidate speed, this demand selects a slice of the GGV with the remaining acceleration and braking capacity.", symbols: [[tex`v`, "Speed along the racing line"], [tex`\kappa`, "Racing-line curvature (1/m)"]]},
+      {title: "2. Forward and backward speed passes", equation: tex`\begin{aligned} v_{i+1}^{2} &\le v_i^{2}+2a_{\mathrm{drive}}\,\Delta s_i \\ v_i^{2} &\le v_{i+1}^{2}+2b_{\mathrm{brake}}\,\Delta s_i \end{aligned}`, text: "The forward pass limits exit speed. The backward pass lowers entry speed enough to brake for the next corner. Repeated passes preserve the corner-speed limits around the lap.", symbols: [[tex`\Delta s_i`, "Distance between neighboring line samples"], [tex`a_{\mathrm{drive}}`, "Upper GGV acceleration at segment entry, which can be negative"], [tex`b_{\mathrm{brake}}\ge0`, "Braking magnitude from the GGV at the segment exit"]]},
+      {title: "3. Segment travel times", equation: tex`T=\sum_i\frac{2\Delta s_i}{v_i+v_{i+1}}`, text: "Each segment’s travel time is its length divided by its average endpoint speed. The sum gives the closed-lap time.", symbols: [[tex`T`, "Predicted QSS lap time"]]}
+    ];
+  } else if (id === "ymd") {
+    intro = "A steering and body-sideslip grid maps each combination to lateral acceleration and yaw moment.";
+    sections = [
+      {title: "1. Steering and sideslip grid", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Each pair has the selected speed and yaw rate, with longitudinal, vertical and wheel balance enforced.", symbols: [[tex`\delta`, "Steering angle"], [tex`\beta`, "Body sideslip angle"]]},
+      {title: "2. Lateral response and yaw moment", equation: tex`a_y=\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right)_y,\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "The map pairs body-frame lateral acceleration with yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`F_{y,i}`, "Lateral tire force resolved in body axes, at corner i"], [tex`\mathbf{v}^{B},\boldsymbol\omega`, "Body-frame linear and angular velocity"], [tex`M_z`, "Net external yaw moment"]]},
+      {title: "3. Zero-moment curve", equation: tex`M_z(\beta,\delta)=0`, text: "Crossings are interpolated between converged samples. This identifies balanced yaw conditions within the map. It is not a time-domain stability test.", symbols: []}
+    ];
+  } else if (id === "steady-state") {
+    intro = "The multibody vehicle settles at a target speed and lateral acceleration. Its settled response supplies steering, roll and sideslip.";
+    sections = [dae,
+      {title: "Target condition", equation: tex`e_v=v_{\mathrm{target}}-v,\qquad e_a=a_{y,\mathrm{target}}-a_y`, text: "The vehicle controller adjusts torque and steering to reduce these errors.", symbols: [[tex`e_v,e_a`, "Speed and lateral-acceleration errors"], [tex`\mathbf u`, "Steering and torque commands"]]},
+      {title: "Settling criteria", equation: tex`|e_v|<\varepsilon_v,\qquad |e_a|<\varepsilon_a,\qquad |\dot y_j|<\varepsilon_j`, text: "Acceptance depends on errors and the rates of the monitored handling signals. Position and heading still change as the vehicle travels around a corner.", symbols: [[tex`y_j`, "Monitored acceleration, yaw rate, sideslip, roll or steering"], [tex`\varepsilon`, "Configured settling tolerance"]]}
+    ];
+  } else if (id === "four-post") {
+    intro = "The chassis moves in heave and roll while the contact patches remain at their reference heights. The suspension determines the resulting wheel travel.";
+    sections = [
+      {title: "1. Global-x roll and local-z heave", equation: tex`\begin{aligned}\mathbf R &= \mathbf R_x(\phi) \\ \mathbf r_A^{\mathrm{world}} &= \mathbf R_x(\phi)\left(\mathbf r_{A,0}+h\,\mathbf e_z\right)\end{aligned}`, text: "The actuator starts at the world origin. Its revolute joint rolls about global x. The axle reference offset follows that rotation, then the prismatic joint translates the chassis along the rotated local z axis. Positive heave therefore follows local z, not global vertical when roll is nonzero. Front and rear receive the same commands.", symbols: [[tex`\phi`, "Commanded roll about global x (forward)"], [tex`h`, "Commanded heave along the actuator's local z axis"], [tex`\mathbf r_{A,0}`, "Nominal axle reference: wheel-center x and z, with y = 0"], [tex`\mathbf R_x,\mathbf e_z`, "Local-to-world roll rotation and local z unit vector"]]},
+      {title: "2. Contact-patch constraints", equation: tex`z_{\mathrm{CP},i}=z_{\mathrm{ground},i}=z_{\mathrm{CP},i}^{\mathrm{initial}}`, text: "Each contact patch stays on the ground at its initial global z. Global x and y translation and all contact-frame rotations remain free. These constraints allow the contact patch to migrate and the wheel to change orientation as the suspension moves. The rig also applies scheduled longitudinal and lateral test forces.", symbols: [[tex`i`, "One of the four contact patches"], [tex`z_{\mathrm{ground},i}`, "Ground height taken from the initial global contact-patch z"]]},
+      {title: "3. Suspension closure and reactions", equation: tex`\boldsymbol\Phi(\mathbf q;h,\phi)=\mathbf0`, text: "The multibody equations include the imposed chassis pose and contact constraints. Wheel travel, camber, toe, spring motion and reaction loads follow from the linkage geometry. Heave is an actuator displacement, not a prescribed wheel-travel value. The built-in schedule sweeps heave first, then roll.", symbols: [[tex`\mathbf q`, "Suspension coordinates solved by the model"], [tex`\boldsymbol\Phi`, "Joint, chassis-pose and contact-fixture constraints"]]}
+    ];
+  } else if (id === "lap-transient") {
+    intro = "A feedback driver follows a QSS reference line and speed profile while the vehicle states evolve through time.";
+    sections = [
+      {title: "Reference lap", equation: tex`a_y^{\mathrm{ref}}(s)=v_{\mathrm{ref}}(s)^2\kappa(s)`, text: "The QSS calculation supplies the reference line and speed. The driver uses this as a target, not a prescribed vehicle trajectory.", symbols: [[tex`s`, "Distance along the reference line"]]},
+      {title: "Driver feedback", equation: tex`\begin{aligned}\delta_{\mathrm{cmd}}&=\operatorname{clip}\!\left(\delta_{\mathrm{ff}}+k_\psi e_\psi-\operatorname{atan2}(k_e e_y,v)\right)\\ a_{\mathrm{cmd}}&=\operatorname{clip}\!\left(a_x^{\mathrm{ref}}+k_v(v_{\mathrm{ref}}-v)\right)\end{aligned}`, text: "Feedback corrects the reference steering and acceleration within command limits. Preview selects the reference steering and target speed.", symbols: [[tex`\delta_{\mathrm{ff}}`, "Feedforward steering from cornering trims"], [tex`e_\psi,e_y`, "Heading and cross-track errors"], [tex`k_\psi,k_e,k_v`, "Driver feedback gains"]]}, ode
+    ];
+  } else {
+    const reduced = ["reduced-ramp-steer", "reduced-step-steer"].includes(id);
+    const isStep = ["reduced-step-steer", "mbd-step-steer"].includes(id);
+    const isRamp = ["reduced-ramp-steer", "ramp-steer"].includes(id);
+    if (!reduced && !isStep && !isRamp && id !== "transient") return "";
+    intro = reduced ? "The selected DynPy model starts from straight-line trim and responds to steering with closed-loop speed control." : "The multibody vehicle responds to steering with closed-loop speed control.";
+    const ramp = {title: "Steering ramp", equation: reduced ? tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\,\operatorname{clip}(t-t_0,0,t_{\mathrm{end}}-t_0)` : tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\max(t-t_0,0)`, text: reduced ? "Steering increases at a constant rate, then remains fixed after ramp end. Simulation end is separate." : "Handwheel angle increases at a constant rate until the run stops or a termination condition is reached.", symbols: [[tex`\dot\delta_{\mathrm{cmd}}`, "Commanded steering rate"], [tex`t_0`, "Steering start time"], ...(reduced ? [[tex`t_{\mathrm{end}}`, "Ramp end time"]] : [])]};
+    const sine = {title: "Step and sine inputs", equation: tex`\delta_{\mathrm{sine}}(t)=A\sin(2\pi f(t-t_0))`, text: "The cases cover finite-rise steps and sustained sine inputs. Step metrics describe timing and overshoot. Sine fits give response gain and phase at each test frequency.", symbols: [[tex`A,f`, "Steering amplitude and frequency"], [tex`t_0`, "Steering start time"]]};
+    sections = [isStep ? step : isRamp ? ramp : sine, reduced ? ode : dae];
+    if (reduced) sections.push(speed);
+    intro += reduced ? " Steering is nominal mean front roadwheel angle." : " Steering is handwheel angle.";
+  }
+  const math = (value, displayMode = false) => katex.renderToString(value, {displayMode, throwOnError: true, trust: false});
+  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
+}
+
+function simulationMethodHtml(workflow) {
+  const guide = simulationMethodGuide(workflow.id);
+  if (!guide) return "";
+  const dynpy = guide.sources.includes("engines/dynpy/models.py");
+  const sections = [["method", "How it works"], ["inputs", "Inputs"], ["outputs", "What the results mean"], ["limits", "Assumptions and limits"]];
+  return `${simulationMathHtml(workflow.id)}<details class="simulation-method-notes"><summary>Method notes, inputs and limitations</summary><div class="simulation-method-guide">${dynpy ? `<section class="simulation-method-model"><h3>Vehicle model</h3><p>DynPy evaluates four contact patches separately, including at 3 DOF. KinPy supplies corner geometry from suspension travel and rack position. Front and rear MF5.2 tire fits provide forces and moments with load, camber and combined-slip dependence. Aero uses ride-height maps.</p><p>3 DOF describes planar body motion with algebraic load transfer. 6 adds heave, roll and pitch. 10 adds wheel rotation. 14 adds unsprung vertical motion. A quasi-steady solve balances these equations at a condition. A transient run integrates the released states over time.</p></section>` : ""}${sections.map(([key, title]) => {
+    const tag = key === "method" ? "ol" : "ul";
+    return `<section class="simulation-method-${key}"><h3>${title}</h3><${tag}>${guide[key].map(text => `<li>${escapeHtml(text)}</li>`).join("")}</${tag}></section>`;
+  }).join("")}<details class="simulation-method-sources"><summary>Implementation sources</summary>
+    <p>These files define the current method. A completed run retains its vehicle, configuration and available provenance in the saved archive. The method alone does not establish correlation with a real vehicle.</p>
+    <ul>${guide.sources.map(path => `<li><a href="/files/${path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener">${escapeHtml(path)}</a></li>`).join("")}</ul></details></div></details>`;
+}
+
 function simWorkflowMeta(workflow) {
   if (workflow?.id === "mbd-step-steer") return {
     title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
-    sequence: ["Initialize the MBD vehicle", "Apply a finite-rise steering step", "Integrate the vehicle response"],
+    sequence: ["MBD initialization", "Finite-rise steering step", "Vehicle response"],
     parameters: ["Speed, steering step and rise time"], outputs: ["Response PDF and metrics CSV"],
   };
   if (workflow?.id === "reduced-ramp-steer") return {
     title: "Ramp steer", summary: "Constant-rate roadwheel steering from straight-line trim.",
-    sequence: ["Trim at the initial speed", "Hold target speed with PI control", "Ramp steering to the end time, then hold"],
+    sequence: ["Initial straight-line trim", "PI speed control", "Steering ramp and hold"],
     parameters: ["Model DOF, target speed and steering rate", "Ramp start, ramp end and simulation end"],
     outputs: ["Response PDF, signal CSV and run summary"],
   };
   const fallback = {
     title: workflow?.label || "Simulation",
-    summary: "Configure the run, execute it against the active vehicle definition, then inspect generated logs and outputs.",
-    sequence: ["Load active vehicle definition", "Apply run configuration", "Execute workflow actions"],
+    summary: "The active vehicle and run settings define the simulation. Results include logs and registered outputs.",
+    sequence: ["Vehicle definition", "Run configuration", "Workflow execution"],
     parameters: ["Solver and stop time", "Case-specific sweep values", "Report output paths"],
     outputs: ["Job log", "Registered reports and CSV files"],
   };
@@ -4507,64 +5555,64 @@ function simWorkflowMeta(workflow) {
     "ggv": {
       title: "GGV",
       summary: "Longitudinal and lateral acceleration limits across speed.",
-      sequence: ["Solve quasi-steady trim points"],
+      sequence: ["Quasi-steady trim points"],
       parameters: ["Speed grid and acceleration bounds"],
       outputs: ["Envelope CSV and PDF report"],
     },
     "ymd": {
       title: "Yaw moment diagram",
       summary: "Yaw moment and lateral acceleration across sideslip and steering.",
-      sequence: ["Sweep quasi-steady sideslip and steering states"],
+      sequence: ["Sideslip and steering grid"],
       parameters: ["Speed, sideslip and steering grids"],
       outputs: ["Yaw moment CSV and PDF report"],
     },
     "reduced-step-steer": {
       title: "Step steer",
       summary: "Time response to a roadwheel steering step.",
-      sequence: ["Trim at target speed", "Hold speed with PI control during the steering step"],
+      sequence: ["Initial trim", "Steering step with PI speed control"],
       parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
       outputs: ["PDF report, signals CSV and summary"],
     },
     "lap-qss": {
       title: "QSS lap",
       summary: "Racing line and speed profile from a vehicle acceleration envelope.",
-      sequence: ["Generate or verify the GGV, then solve the line and speed profile"],
+      sequence: ["GGV validation, racing line and speed profile"],
       parameters: ["DOF, track, racing line and power cap"],
       outputs: ["PDF report, lap CSV and summary"],
     },
     "lap-transient": {
       title: "Transient lap",
       summary: "Driver-controlled lap following a QSS reference line and speed profile.",
-      sequence: ["Solve the QSS reference, then integrate the vehicle and driver"],
+      sequence: ["QSS reference and driver-controlled response"],
       parameters: ["DOF, track, racing line, power cap and driver lookahead"],
       outputs: ["PDF report, QSS and transient lap CSVs and summary"],
     },
     "ramp-steer": {
       title: "Ramp Steer",
       summary: "Steering ramp across a range of speeds.",
-      sequence: ["Build VehicleSim if needed", "Initialize the active vehicle record", "Sweep speed cases", "Apply steering ramp", "Collect report metrics"],
+      sequence: ["VehicleSim build", "Vehicle initialization", "Speed cases", "Steering ramp", "Report metrics"],
       parameters: ["Velocity isolines", "Handwheel ramp timing and amplitude", "Nonlinearity cutoff", "Solver tolerance and stop time"],
       outputs: ["Ramp steer PDF report", "Metrics CSV", "Job log with build and run output"],
     },
     "steady-state": {
       title: "Steady State",
       summary: "Settled cornering across lateral-acceleration targets.",
-      sequence: ["Build VehicleSim if needed", "Initialize each target condition", "Close the control loop", "Converge settled states", "Export metrics"],
+      sequence: ["VehicleSim build", "Target initialization", "Closed-loop control", "Settling checks", "Metrics export"],
       parameters: ["Target lateral-acceleration grid", "Velocity-specific Ay caps", "Convergence criteria", "Report and solver controls"],
       outputs: ["Steady-state PDF report", "Metrics CSV", "Settled-point job log"],
     },
     transient: {
       title: "Transient",
       summary: "Response to step and sine steering inputs.",
-      sequence: ["Build VehicleSim if needed", "Apply input schedule", "Integrate the time response", "Capture response channels", "Generate summary files"],
+      sequence: ["VehicleSim build", "Input schedule", "Time integration", "Response channels", "Run summary"],
       parameters: ["Input type and amplitude", "Input timing/frequency", "Initial speed", "Stop time, step size, and solver"],
       outputs: ["Transient PDF report", "Metrics CSV", "Time-response job log"],
     },
     "four-post": {
       title: "Four Post",
       summary: "Suspension response to heave, roll, and corner loads.",
-      sequence: ["Build FourPostSim if needed", "Initialize corner positions", "Apply vertical actuator procedures", "Sweep heave/roll/force cases", "Collect suspension metrics"],
-      parameters: ["Corner input magnitudes", "Heave and roll sweeps", "Override rates and initial conditions", "Solver and output controls"],
+      sequence: ["FourPostSim build", "Fixed contact heights", "Chassis heave and roll", "Contact-patch test forces", "Suspension metrics"],
+      parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Override rates and initial conditions", "Solver and output controls"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
     },
   }[workflow?.id] || fallback;
@@ -4588,33 +5636,33 @@ function studyWorkflowGuide(workflow) {
   return {
     ggv: {
       title: "GGV Envelope",
-      copy: "Set the speed grid and acceleration search bounds, then generate the tire-limited acceleration envelope.",
-      steps: ["Vehicle selected", "Set grid", "Run envelope"],
+      copy: "The speed grid and search bounds define the acceleration envelope calculation.",
+      steps: ["Vehicle selected", "Grid settings", "Envelope calculation"],
     },
     ymd: {
       title: "Yaw Moment Diagram",
-      copy: "Set beta, handwheel, and speed grids to inspect lateral force and yaw moment authority.",
-      steps: ["Vehicle selected", "Set map", "Run YMD"],
+      copy: "Sideslip, steering and speed grids define the lateral-acceleration and yaw-moment map.",
+      steps: ["Vehicle selected", "Map settings", "Map calculation"],
     },
     "vehicle-review": {
       title: "Vehicle Review",
-      copy: "Choose report labels and whether envelope artifacts should be regenerated before assembly.",
-      steps: ["Vehicle selected", "Set report", "Run review"],
+      copy: "Report settings cover labels and envelope regeneration before assembly.",
+      steps: ["Vehicle selected", "Report settings", "Report generation"],
     },
     "standard-sens": {
       title: "Standard Sensitivity",
-      copy: "Configure the DOE sampler for the Modelica-backed standard simulation sensitivity study.",
-      steps: ["Vehicle selected", "Set sampler", "Run DOE"],
+      copy: "The DOE sampler defines a sensitivity study using the Modelica vehicle.",
+      steps: ["Vehicle selected", "Sampler settings", "DOE evaluation"],
     },
     "envelope-sens": {
       title: "Envelope Sensitivity",
-      copy: "Configure a quick reduced-order sensitivity sweep around envelope-level controls.",
-      steps: ["Vehicle selected", "Set sampler", "Run study"],
+      copy: "The sampler defines a reduced-order sensitivity study of envelope settings.",
+      steps: ["Vehicle selected", "Sampler settings", "Study evaluation"],
     },
   }[workflow?.id] || {
     title: workflow?.label || "Study",
-    copy: "Select a study, configure the run, then execute it.",
-    steps: ["Vehicle selected", "Configure", "Run"],
+    copy: "Study settings define the analysis of the selected vehicle.",
+    steps: ["Vehicle selected", "Settings", "Results"],
   };
 }
 
@@ -4666,9 +5714,8 @@ function studyMetric(label, value) {
 function studyMetrics(workflow, data) {
   if (workflow?.id === "ggv") {
     return [
-      studyMetric("Speeds", arrayRangeLabel(configValue(data, "generation.speeds_mps"), "m/s")),
-      studyMetric("Lat grid", scalarLabel(configValue(data, "generation.ay_points"), "pts")),
-      studyMetric("Long grid", scalarLabel(configValue(data, "generation.ax_search_points"), "pts")),
+      studyMetric("Model", scalarLabel(configValue(data, "generation.model_dof"), "DOF")),
+      studyMetric("Speed range", "Vehicle limit"),
     ];
   }
   if (workflow?.id === "ymd") {
@@ -4737,25 +5784,22 @@ function studyDiagnosticHtml(workflow, data) {
 }
 
 function studyFigureHtml(workflow, data) {
-  if (workflow?.id === "ggv") return ggvFigureHtml(data);
+  if (workflow?.id === "ggv") return ggvFigureHtml();
   if (workflow?.id === "ymd") return ymdFigureHtml(data);
   if (workflow?.id === "vehicle-review") return reviewFigureHtml(data);
   if (workflow?.group === "opt") return optFigureHtml(data);
   return `<div class="study-figure-empty">Study diagnostic</div>`;
 }
 
-function ggvFigureHtml(data) {
-  const ay = Number(configValue(data, "generation.ay_max_g", 0));
-  const axMin = Number(configValue(data, "generation.ax_search_min_g", 0));
-  const axMax = Number(configValue(data, "generation.ax_search_max_g", 0));
+function ggvFigureHtml() {
   return `
     <div class="study-figure ggv-figure">
       <div class="ggv-axis ggv-axis-x"></div>
       <div class="ggv-axis ggv-axis-y"></div>
       <div class="ggv-envelope"></div>
-      <span class="ggv-label top">Ay ${escapeHtml(scalarLabel(ay, "g"))}</span>
-      <span class="ggv-label left">${escapeHtml(scalarLabel(axMin, "g"))}</span>
-      <span class="ggv-label right">${escapeHtml(scalarLabel(axMax, "g"))}</span>
+      <span class="ggv-label top">Lateral</span>
+      <span class="ggv-label left">Braking</span>
+      <span class="ggv-label right">Acceleration</span>
     </div>
   `;
 }
@@ -4815,12 +5859,123 @@ function optFigureHtml(data) {
   `;
 }
 
+async function duplicateSimulation(id) {
+  await saveSimulationEdits();
+  const payload = await simulationRequest("duplicate", {id});
+  await openSimulation(payload.simulation.id);
+}
+
+async function setSimulationBaseline(id, runId) {
+  await saveSimulationEdits();
+  await simulationRequest("set-baseline", {id, run_id: runId || null});
+  state.resultComparison = null;
+  state.resultBaselinePayload = null;
+  renderSimulationWorkspace();
+  if (state.view === "studies") await refreshResultPlot();
+}
+
+function renderResultComparisonControls() {
+  const panel = document.getElementById("result-comparison");
+  if (!panel) return;
+  const simulation = selectedSimulation();
+  panel.hidden = !simulation;
+  if (!simulation) return;
+  const select = document.getElementById("result-baseline-source");
+  const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.workflow?.id === simulation.workflow_id);
+  select.innerHTML = '<option value="">None</option>' + runs.map(run => `<option value="${escapeHtml(run.id)}"${run.id === simulation.baseline_run_id ? " selected" : ""}>${escapeHtml(run.simulation?.name || run.name || "Run")} · ${escapeHtml(run.created_label)}</option>`).join("");
+  if (simulation.baseline_run_id && !runs.some(run => run.id === simulation.baseline_run_id)) {
+    select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(simulation.baseline_run_id)}" selected>Unavailable baseline</option>`);
+  }
+  select.onchange = event => workspaceAction(() => setSimulationBaseline(simulation.id, event.target.value));
+  const toggle = document.getElementById("result-compare-baseline");
+  toggle.checked = state.resultCompareBaseline;
+  toggle.disabled = !simulation.baseline_run_id;
+  toggle.title = toggle.disabled ? "No baseline run is selected." : "";
+  toggle.onchange = async () => {
+    state.resultCompareBaseline = toggle.checked;
+    saveResultSettings();
+    await refreshResultPlot();
+  };
+  const comparison = state.resultComparison;
+  document.getElementById("result-comparison-status").textContent = state.resultComparisonMessage;
+  const changes = document.getElementById("result-input-changes");
+  changes.hidden = !comparison?.available;
+  const list = document.getElementById("result-input-changes-list");
+  const value = input => input === null ? "None" : typeof input === "object" ? JSON.stringify(input) : String(input);
+  list.innerHTML = comparison?.changes?.length ? comparison.changes.map(change => `<div class="result-input-change"><strong>${escapeHtml(change.path.replaceAll("_", " ").replaceAll(".", " › "))}</strong><span>${escapeHtml(value(change.before))}</span><span aria-hidden="true">→</span><span>${escapeHtml(value(change.after))}</span></div>`).join("") : '<p class="muted">No vehicle or analysis setting changes.</p>';
+}
+
+async function refreshResultBaseline() {
+  state.resultBaselinePayload = null;
+  state.resultComparison = null;
+  state.resultComparisonMessage = "";
+  const simulation = selectedSimulation();
+  if (!simulation?.baseline_run_id || !state.resultPlotPayload) {
+    renderResultComparisonControls();
+    return;
+  }
+  const context = () => JSON.stringify([resultRequestContext(), selectedSimulation()?.baseline_run_id,
+    state.selectedResultSourcePath, state.resultXAxis, state.resultSelectedSignals, state.resultColorSignal, state.resultCompareBaseline]);
+  const requestContext = context();
+  const runId = selectedSavedResult()?.id;
+  try {
+    const query = new URLSearchParams({vehicle_key: activeVehicleKey(), id: simulation.id});
+    if (runId) query.set("run_id", runId);
+    const response = await api(`/api/simulations/comparison?${query}`);
+    if (context() !== requestContext) return;
+    const comparison = response.comparison;
+    state.resultComparison = comparison;
+    state.resultComparisonMessage = comparison.message || (comparison.baseline?.id === runId ? "This run is the baseline." : `${comparison.changes.length} setting changes`);
+    if (comparison.available && state.resultCompareBaseline && comparison.baseline.id !== runId) {
+      const label = selectedResultSource()?.label;
+      const file = comparison.baseline.files.find(file => file.kind === "csv" && file.label === label);
+      if (!file) throw new Error("The baseline has no matching signal file.");
+      const detail = await api(`/api/results/source?path=${encodeURIComponent(file.path)}`);
+      if (context() !== requestContext) return;
+      if (state.resultXAxis !== "__index__" && !detail.numeric_columns.includes(state.resultXAxis)) throw new Error("The baseline does not contain this X signal.");
+      const signals = state.resultSelectedSignals.filter(signal => detail.numeric_columns.includes(signal));
+      if (!signals.length) throw new Error("The baseline has none of the selected signals.");
+      const color = state.resultColorSignal;
+      if (color && !detail.numeric_columns.includes(color)) throw new Error("The baseline does not contain this color signal.");
+      const payload = await api("/api/results/series", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({path: file.path, x_axis: state.resultXAxis, signals, color_signal: color, max_points: 2200})});
+      if (context() !== requestContext) return;
+      state.resultBaselinePayload = payload;
+      if (signals.length !== state.resultSelectedSignals.length) state.resultComparisonMessage += ". Some signals are absent from the baseline.";
+    }
+  } catch (error) {
+    if (context() !== requestContext) return;
+    state.resultComparisonMessage = error.message;
+  }
+  renderResultComparisonControls();
+  renderResultPlotCanvas();
+}
+
 function renderStudies() {
+  renderSignalExplorerName();
   state.activeStudyTab = "saved";
   renderResultSaveControls();
   renderSavedResultCatalog();
   renderSavedResultSummary();
   renderSavedResultOutputs();
+  const signals = ["signals", "lap"].includes(selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind);
+  const explorer = document.getElementById("signal-explorer");
+  if (!explorer) return;
+  explorer.hidden = !signals;
+  document.querySelector("#studies-view .archive-workspace").hidden = signals;
+  if (signals) {
+    const files = (selectedSavedResult()?.files || []).filter(file => file.kind === "csv");
+    if (!files.some(file => file.path === state.selectedResultSourcePath)) {
+      state.selectedResultSourcePath = (files.find(file => file.label === resultVisualization()?.settings?.source_label) || files.find(file => file.label === "Signals") || files[0])?.path || null;
+      state.resultSourceDetail = null;
+      state.resultPlotPayload = null;
+      state.resultBaselinePayload = null;
+      state.resultComparison = null;
+      state.resultComparisonMessage = "";
+      state.resultPlotStatus = "idle";
+    }
+    renderResultExplorer();
+  }
 }
 
 function renderResultSaveControls() {
@@ -4881,32 +6036,85 @@ function resultSourceCard(source) {
   `;
 }
 
+function resultVisualization() {
+  return selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId);
+}
+
+function resultRequestContext() {
+  return JSON.stringify([activeVehicleKey(), state.selectedSimulationId, state.selectedVisualizationId, state.selectedResultId]);
+}
+
+let resultSettingsSave = Promise.resolve();
+function saveResultSettings() {
+  const child = resultVisualization();
+  if (!child || !["signals", "lap"].includes(child.kind) || !state.resultSourceDetail) return;
+  const settings = {
+    x_axis: state.resultXAxis, signals: [...state.resultSelectedSignals],
+    color_signal: state.resultColorSignal, source_label: selectedResultSource()?.label || "",
+    compare_baseline: state.resultCompareBaseline,
+  };
+  child.settings = settings;
+  const context = resultRequestContext();
+  const body = JSON.stringify({action: "update-visualization", vehicle_key: activeVehicleKey(),
+    id: state.selectedSimulationId, child_id: child.id, settings});
+  // Keep rapid selections ordered without letting an old response replace the current workspace.
+  resultSettingsSave = resultSettingsSave.then(() => api("/api/simulations/visualization-settings", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body,
+  })).catch(error => {
+    if (resultRequestContext() !== context) return;
+    state.resultPlotMessage = `Could not save plot settings: ${error.message}`;
+    renderResultPlotCanvas();
+  });
+  return resultSettingsSave;
+}
+
+function restoreResultSettings(detail, settings = resultVisualization()?.settings || {}) {
+  const numeric = detail.numeric_columns || [];
+  const lap = isLapMap();
+  state.resultXAxis = lap ? "x_m" : settings.x_axis === "__index__" || numeric.includes(settings.x_axis)
+    ? settings.x_axis : defaultResultXAxis(detail);
+  state.resultSelectedSignals = lap ? ["y_m"] : (settings.signals || [])
+    .filter(signal => numeric.includes(signal) && signal !== state.resultXAxis);
+  if (!state.resultSelectedSignals.length && (!Array.isArray(settings.signals) || settings.signals.length)) {
+    state.resultSelectedSignals = defaultResultSignals(detail);
+  }
+  const color = settings.color_signal ?? (lap ? "speed_mps" : "");
+  state.resultColorSignal = numeric.includes(color) ? color : "";
+  state.resultCompareBaseline = settings.compare_baseline === true;
+}
+
 async function selectResultSource(path) {
   if (!path) return;
   state.selectedResultSourcePath = path;
   state.resultSourceDetail = null;
   state.resultPlotPayload = null;
+  state.resultBaselinePayload = null;
+  state.resultComparison = null;
+  state.resultComparisonMessage = "";
   state.resultPlotStatus = "loading";
   state.resultPlotMessage = "";
   state.resultSelectedSignals = [];
   renderStudies();
-  await loadResultSource(path);
+  await loadResultSource(path, true);
 }
 
-async function loadResultSource(path = state.selectedResultSourcePath) {
+async function loadResultSource(path = state.selectedResultSourcePath, saveSettings = false) {
   if (!path) return;
+  const context = resultRequestContext();
   state.resultPlotStatus = "loading";
   renderResultExplorer();
   try {
     const detail = await api(`/api/results/source?path=${encodeURIComponent(path)}`);
-    if (state.selectedResultSourcePath !== path) return;
+    if (state.selectedResultSourcePath !== path || resultRequestContext() !== context) return;
     state.resultSourceDetail = detail;
-    state.resultXAxis = defaultResultXAxis(detail);
-    state.resultSelectedSignals = defaultResultSignals(detail);
+    restoreResultSettings(detail);
+    if (saveSettings) saveResultSettings();
+    state.resultHoverIndex = null;
     state.resultPlotStatus = "idle";
     renderStudies();
     await refreshResultPlot();
   } catch (error) {
+    if (state.selectedResultSourcePath !== path || resultRequestContext() !== context) return;
     state.resultPlotStatus = "error";
     state.resultPlotMessage = error.message;
     renderResultExplorer();
@@ -4979,6 +6187,15 @@ function renderResultSourceDiagnostic(source) {
   `;
 }
 
+function isLapMap() {
+  return selectedSimulation()?.visualizations?.find(child => child.id === state.selectedVisualizationId)?.kind === "lap";
+}
+
+function resultSignalColor(value, domain) {
+  const fraction = domain[1] === domain[0] ? .5 : clamp((value - domain[0]) / (domain[1] - domain[0]), 0, 1);
+  return `hsl(${240 - 220 * fraction}, 80%, 58%)`;
+}
+
 function renderResultControls(detail) {
   const xSelect = document.getElementById("result-x-axis");
   const search = document.getElementById("result-signal-search");
@@ -4992,12 +6209,23 @@ function renderResultControls(detail) {
     selected.innerHTML = "";
     return;
   }
+  renderResultComparisonControls();
   const numeric = detail.numeric_columns || [];
+  const colorSelect = document.getElementById("result-color-signal");
+  if (colorSelect) {
+    if (!numeric.includes(state.resultColorSignal)) state.resultColorSignal = "";
+    colorSelect.innerHTML = '<option value="">None</option>' + numeric.map(column =>
+      `<option value="${escapeHtml(column)}"${column === state.resultColorSignal ? " selected" : ""}>${escapeHtml(column)}</option>`).join("");
+    colorSelect.onchange = async event => { state.resultColorSignal = event.target.value; saveResultSettings(); await refreshResultPlot(); };
+    const lap = isLapMap();
+    xSelect.parentElement.hidden = lap;
+    search.parentElement.hidden = lap;
+    list.hidden = lap;
+  }
   if (state.resultXAxis !== "__index__" && !numeric.includes(state.resultXAxis)) {
     state.resultXAxis = defaultResultXAxis(detail);
   }
   state.resultSelectedSignals = state.resultSelectedSignals.filter((signal) => numeric.includes(signal) && signal !== state.resultXAxis);
-  if (!state.resultSelectedSignals.length) state.resultSelectedSignals = defaultResultSignals(detail);
   xSelect.innerHTML = [
     `<option value="__index__"${state.resultXAxis === "__index__" ? " selected" : ""}>Row index</option>`,
     ...numeric.map((column) => `<option value="${escapeHtml(column)}"${column === state.resultXAxis ? " selected" : ""}>${escapeHtml(column)}</option>`),
@@ -5008,6 +6236,7 @@ function renderResultControls(detail) {
     if (!state.resultSelectedSignals.length) state.resultSelectedSignals = defaultResultSignals(detail);
     renderResultControls(detail);
     renderResultSourceDiagnostic(detail);
+    saveResultSettings();
     await refreshResultPlot();
   };
   search.value = state.resultSignalSearch || "";
@@ -5030,10 +6259,11 @@ function renderResultControls(detail) {
   list.querySelectorAll("input[type='checkbox']").forEach((input) => {
     input.addEventListener("change", async () => {
       const signal = input.value;
-      if (input.checked) state.resultSelectedSignals = [...new Set([...state.resultSelectedSignals, signal])].slice(0, 8);
+      if (input.checked) state.resultSelectedSignals = [...new Set([...state.resultSelectedSignals, signal])];
       else state.resultSelectedSignals = state.resultSelectedSignals.filter((item) => item !== signal);
       renderResultControls(detail);
       renderResultSourceDiagnostic(detail);
+      saveResultSettings();
       await refreshResultPlot();
     });
   });
@@ -5044,8 +6274,13 @@ function renderResultControls(detail) {
 
 async function refreshResultPlot() {
   const detail = state.resultSourceDetail;
+  const context = resultRequestContext();
+  const selection = JSON.stringify([state.resultXAxis, state.resultColorSignal, state.resultSelectedSignals]);
   if (!detail?.path || !state.resultSelectedSignals.length) {
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
     renderResultPlotCanvas();
     return;
   }
@@ -5053,23 +6288,72 @@ async function refreshResultPlot() {
   state.resultPlotMessage = "";
   renderResultPlotCanvas();
   try {
-    state.resultPlotPayload = await api("/api/results/series", {
+    const path = detail.path;
+    const xAxis = state.resultXAxis;
+    const colorSignal = state.resultColorSignal;
+    const selected = state.resultSelectedSignals.join("\n");
+    const payload = await api("/api/results/series", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         path: detail.path,
         x_axis: state.resultXAxis,
+        color_signal: colorSignal,
         signals: state.resultSelectedSignals,
         max_points: 2200,
       }),
     });
+    if (resultRequestContext() !== context || state.selectedResultSourcePath !== path || state.resultXAxis !== xAxis || state.resultColorSignal !== colorSignal || state.resultSelectedSignals.join("\n") !== selected) return;
+    state.resultPlotPayload = payload;
     state.resultPlotStatus = "ready";
+    await refreshResultBaseline();
   } catch (error) {
+    if (resultRequestContext() !== context || state.resultSourceDetail !== detail
+        || JSON.stringify([state.resultXAxis, state.resultColorSignal, state.resultSelectedSignals]) !== selection) return;
     state.resultPlotStatus = "error";
     state.resultPlotMessage = error.message;
     state.resultPlotPayload = null;
+    state.resultBaselinePayload = null;
+    state.resultComparison = null;
+    state.resultComparisonMessage = "";
   }
   renderResultPlotCanvas();
+}
+
+const resultCursors = new Map();
+
+function readResultCursor(runId) {
+  return runId ? resultCursors.get(runId) || null : null;
+}
+
+function setResultCursor(runId, cursor) {
+  if (!runId) return;
+  resultCursors.set(runId, cursor);
+}
+
+function resultCursorIndex(payload, runId, path) {
+  const cursor = readResultCursor(runId);
+  if (!cursor) return null;
+  for (const key of ["time", "station_m", "row"]) {
+    const values = key === "row" ? (cursor.path === path ? payload.row_indices : null) : payload.coordinates?.[key];
+    if (!values || !Number.isFinite(cursor[key])) continue;
+    let nearest = null;
+    values.forEach((value, index) => {
+      if (value !== null && Number.isFinite(value) && (nearest === null || Math.abs(value - cursor[key]) < Math.abs(values[nearest] - cursor[key]))) nearest = index;
+    });
+    if (nearest !== null) return nearest;
+  }
+  return null;
+}
+
+function selectResultSample(payload, index) {
+  if (!Number.isInteger(index)) return;
+  setResultCursor(state.selectedResultId, {
+    time: payload.coordinates?.time?.[index],
+    station_m: payload.coordinates?.station_m?.[index],
+    row: payload.row_indices?.[index],
+    path: state.selectedResultSourcePath,
+  });
 }
 
 function renderResultPlotCanvas() {
@@ -5079,6 +6363,7 @@ function renderResultPlotCanvas() {
 function drawResultPlotCanvas() {
   const canvas = document.getElementById("result-plot-canvas");
   if (!canvas) return;
+  canvas.onclick = canvas.onpointermove = canvas.onpointerleave = canvas.onkeydown = null;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(360, Math.floor(rect.width || 760));
   const height = Math.max(260, Math.floor(rect.height || 420));
@@ -5094,10 +6379,12 @@ function drawResultPlotCanvas() {
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
   const payload = state.resultPlotPayload;
-  if (title) title.textContent = selectedResultSource()?.label || "Signal Plot";
+  const legend = document.getElementById("result-selected-signals");
+  if (legend) legend.innerHTML = "";
+  if (title) title.textContent = isLapMap() ? "Lap map" : "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
-    subtitle.textContent = detail ? `${detail.path} | x: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
+    subtitle.textContent = detail ? `X: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
   }
   if (state.resultPlotStatus === "loading") {
     drawCanvasText(ctx, "Loading result data", width / 2, height / 2, { align: "center", color: palette.muted, weight: 760 });
@@ -5120,50 +6407,112 @@ function drawResultPlotCanvas() {
     return;
   }
   const plot = { x: 58, y: 28, width: width - 78, height: height - 76 };
-  const xDomain = plotDomain(payload.x, { padFraction: 0.02 });
-  const yValues = payload.series.flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
-  const yDomain = plotDomain(yValues, { padFraction: 0.1 });
+  const baseline = state.resultBaselinePayload;
+  let xDomain = plotDomain([...payload.x, ...(baseline?.x || [])], { padFraction: 0.02 });
+  const yValues = [...payload.series, ...(baseline?.series || [])].flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
+  let yDomain = plotDomain(yValues, { padFraction: 0.1 });
+  if (isLapMap()) {
+    const scale = Math.max((xDomain[1] - xDomain[0]) / plot.width, (yDomain[1] - yDomain[0]) / plot.height);
+    const xc = (xDomain[0] + xDomain[1]) / 2, yc = (yDomain[0] + yDomain[1]) / 2;
+    xDomain = [xc - scale * plot.width / 2, xc + scale * plot.width / 2];
+    yDomain = [yc - scale * plot.height / 2, yc + scale * plot.height / 2];
+  }
+  const colorValues = payload.color?.values;
+  const finiteColors = [...(colorValues || []), ...(baseline?.color?.values || [])].filter(value => value !== null && Number.isFinite(value));
+  const colorDomain = finiteColors.length ? [Math.min(...finiteColors), Math.max(...finiteColors)] : null;
   drawPlotGrid(ctx, { plot, xDomain, yDomain });
   const toX = (value) => plot.x + ((value - xDomain[0]) / Math.max(1e-9, xDomain[1] - xDomain[0])) * plot.width;
   const toY = (value) => plot.y + plot.height - ((value - yDomain[0]) / Math.max(1e-9, yDomain[1] - yDomain[0])) * plot.height;
   const colors = [palette.blue, palette.green, palette.amber, palette.red, palette.tireFront, palette.tireRear, "#7c3aed", "#0f766e"];
-  payload.series.forEach((series, seriesIndex) => {
-    ctx.save();
-    ctx.strokeStyle = colors[seriesIndex % colors.length];
-    ctx.lineWidth = seriesIndex === 0 ? 2.1 : 1.7;
-    ctx.beginPath();
-    let drawing = false;
-    series.values.forEach((value, index) => {
-      const x = Number(payload.x[index]);
-      const y = Number(value);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        drawing = false;
-        return;
-      }
-      if (!drawing) {
-        ctx.moveTo(toX(x), toY(y));
-        drawing = true;
-      } else {
-        ctx.lineTo(toX(x), toY(y));
-      }
+  const seriesColor = signal => colors[Math.max(0, payload.series.findIndex(series => series.signal === signal)) % colors.length];
+  for (const [data, isBaseline] of [[payload, false], [baseline, true]]) {
+    if (!data) continue;
+    const lineColors = data.color?.values;
+    data.series.forEach((series, seriesIndex) => {
+      ctx.save();
+      if (isBaseline) ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = seriesColor(series.signal);
+      ctx.lineWidth = isLapMap() ? 3 : seriesIndex === 0 ? 2.1 : 1.7;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      let drawing = false;
+      let distance = 0;
+      series.values.forEach((value, index) => {
+        const x = Number(data.x[index]);
+        const y = Number(value);
+        if (data.x[index] === null || value === null || value === undefined || !Number.isFinite(x) || !Number.isFinite(y)
+            || (lineColors && (lineColors[index] === null || !Number.isFinite(lineColors[index])))) {
+          drawing = false;
+          distance = 0;
+          return;
+        }
+        if (!drawing) {
+          ctx.moveTo(toX(x), toY(y));
+          drawing = true;
+        } else {
+          if (colorDomain && lineColors) {
+            if (isBaseline) ctx.lineDashOffset = -distance;
+            distance += Math.hypot(toX(x) - toX(data.x[index - 1]), toY(y) - toY(series.values[index - 1]));
+            ctx.strokeStyle = resultSignalColor((lineColors[index - 1] + lineColors[index]) / 2, colorDomain);
+            ctx.beginPath();
+            ctx.moveTo(toX(data.x[index - 1]), toY(series.values[index - 1]));
+            ctx.lineTo(toX(x), toY(y));
+            ctx.stroke();
+          } else ctx.lineTo(toX(x), toY(y));
+        }
+      });
+      if (!colorDomain || !lineColors) ctx.stroke();
+      ctx.restore();
     });
-    ctx.stroke();
-    ctx.restore();
-  });
-  ctx.save();
-  ctx.fillStyle = palette.surface;
-  ctx.fillRect(plot.x + 8, plot.y + 8, Math.min(plot.width - 16, 310), Math.min(26 + payload.series.length * 18, plot.height - 16));
-  payload.series.slice(0, 8).forEach((series, index) => {
-    const y = plot.y + 24 + index * 18;
-    ctx.strokeStyle = colors[index % colors.length];
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(plot.x + 18, y);
-    ctx.lineTo(plot.x + 40, y);
-    ctx.stroke();
-    drawCanvasText(ctx, series.signal, plot.x + 48, y + 1, { size: 11, weight: 760, color: palette.ink });
-  });
-  ctx.restore();
+  }
+  legend.innerHTML = payload.series.map((series, index) =>
+    `<span class="result-series-key">${colorDomain ? "" : `<i style="background:${colors[index % colors.length]}"></i>`}${escapeHtml(series.signal)}</span>`
+  ).join("");
+  if (baseline) legend.innerHTML += baseline.series.map(series =>
+    `<span class="result-series-key"><i style="background:${seriesColor(series.signal)}"></i>Baseline: ${escapeHtml(series.signal)}</span>`
+  ).join("");
+  if (isLapMap()) legend.innerHTML = baseline ? "Baseline: dashed" : "";
+  if (colorDomain) legend.innerHTML += `<span class="result-color-key">${escapeHtml(payload.color?.signal || baseline?.color?.signal)}
+    <span>${formatNumber(colorDomain[0])}</span><i style="background:linear-gradient(to right,${[0,.25,.5,.75,1].map(t => resultSignalColor(t,[0,1])).join(',')})"></i><span>${formatNumber(colorDomain[1])}</span></span>`;
+  const points = payload.x.map((x, index) => ({index, x: toX(x), y: toY(payload.series[0].values[index])}))
+    .filter(point => payload.x[point.index] !== null && payload.series[0].values[point.index] !== null && Number.isFinite(point.x + point.y));
+  const nearestPoint = event => {
+    const bounds = canvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) * width / bounds.width, y = (event.clientY - bounds.top) * height / bounds.height;
+    return points.reduce((best, point) => !best || Math.hypot(point.x-x,point.y-y) < Math.hypot(best.x-x,best.y-y) ? point : best, null)?.index;
+  };
+  canvas.onpointermove = event => {
+    state.resultHoverIndex = nearestPoint(event);
+    renderResultPlotCanvas();
+  };
+  canvas.onclick = event => {
+    selectResultSample(payload, nearestPoint(event));
+    canvas.focus();
+    renderResultPlotCanvas();
+  };
+  canvas.onpointerleave = () => { state.resultHoverIndex = null; renderResultPlotCanvas(); };
+  canvas.onkeydown = event => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const index = clamp((resultCursorIndex(payload, state.selectedResultId, state.selectedResultSourcePath) ?? state.resultHoverIndex ?? 0) + (event.key === "ArrowRight" ? 1 : -1), 0, payload.x.length - 1);
+    selectResultSample(payload, index);
+    state.resultHoverIndex = null;
+    renderResultPlotCanvas();
+  };
+  if (isLapMap() && points.length) {
+    const start = points[0];
+    ctx.beginPath(); ctx.arc(start.x, start.y, 4, 0, Math.PI*2); ctx.fillStyle = palette.surface; ctx.fill();
+    ctx.strokeStyle = palette.amber; ctx.lineWidth = 2; ctx.stroke();
+    drawCanvasText(ctx, "Start", start.x + 9, start.y - 9, {color: palette.muted, size: 11});
+  }
+  const selectedIndex = resultCursorIndex(payload, state.selectedResultId, state.selectedResultSourcePath);
+  const hovered = points.find(point => point.index === (state.resultHoverIndex ?? selectedIndex));
+  if (hovered) {
+    ctx.beginPath(); ctx.arc(hovered.x, hovered.y, 5, 0, Math.PI*2); ctx.fillStyle = palette.amber; ctx.fill();
+    if (subtitle) subtitle.textContent = `${state.resultXAxis}: ${formatNumber(payload.x[hovered.index])} | `
+      + payload.series.map(series => `${series.signal}: ${series.values[hovered.index] === null ? "—" : formatNumber(series.values[hovered.index])}`).join(" | ")
+      + (colorValues ? ` | ${payload.color.signal}: ${colorValues[hovered.index] === null ? "missing" : formatNumber(colorValues[hovered.index])}` : "");
+  }
   drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : state.resultXAxis, plot.x + plot.width / 2, height - 18, {
     align: "center",
     size: 11,
@@ -5248,7 +6597,7 @@ function renderSavedResultSummary() {
       ${result.config_snapshot ? resultSummaryLink("Run Config", result.config_snapshot) : ""}
     </div>
     <div class="result-summary-actions">
-      <button class="ghost-button danger-button" type="button" data-delete-selected-result="${escapeHtml(result.id)}"${deleting ? " disabled" : ""}>${deleting ? "Deleting Archived Run" : "Delete Archived Run"}</button>
+      <button class="ghost-button danger-button" type="button" data-delete-selected-result="${escapeHtml(result.id)}"${deleting ? ' disabled title="Archived run deletion in progress."' : ""}>${deleting ? "Deleting Archived Run" : "Delete Archived Run"}</button>
     </div>
   `;
   panel.querySelector("[data-delete-selected-result]")?.addEventListener("click", () => {
@@ -5373,6 +6722,7 @@ function renderProcessingForm() {
     ? "Save result CSVs before adding processing"
     : "";
   removeButton.disabled = !selectedProcessingWorkflow();
+  removeButton.title = removeButton.disabled ? "No processing workflow is selected." : "";
   status.textContent = state.processingStatusMessage || `${processingWorkflows().length} workflow${processingWorkflows().length === 1 ? "" : "s"} for ${activeVehicleKey() || "this vehicle"}.`;
 }
 
@@ -5562,6 +6912,7 @@ function renderStudyConfigLibrary() {
     const canDelete = selected?.type === "saved";
     deleteButton.hidden = !canDelete;
     deleteButton.disabled = !canDelete;
+    deleteButton.title = canDelete ? "" : "Only saved presets can be deleted.";
   }
   const workflow = selectedStudyWorkflow();
   const saveName = document.getElementById("save-study-config-name");
@@ -5654,7 +7005,7 @@ function renderStudyJobs() {
     if (log) log.textContent = "";
     return;
   }
-  if (!state.selectedJobId) state.selectedJobId = jobs[0].id;
+  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = jobs[0].id;
   list.innerHTML = jobs.map(jobItem).join("");
   list.querySelectorAll("[data-job]").forEach((item) => {
     item.addEventListener("click", async () => {
@@ -5667,48 +7018,26 @@ function renderStudyJobs() {
 }
 
 function renderSimSetup() {
-  renderSimConfigLibrary();
   renderSimConfigForm();
-}
-
-function renderSimConfigLibrary() {
-  const picker = document.getElementById("sim-config-picker");
-  const sources = state.simConfigLibrary?.sources || [];
-  if (picker) {
-    if (!sources.some((source) => source.id === state.selectedSimConfigSource)) {
-      state.selectedSimConfigSource = sources[0]?.id || "";
-    }
-    picker.innerHTML = sources.length
-      ? sources.map((source) => `
-        <option value="${escapeHtml(source.id)}"${source.id === state.selectedSimConfigSource ? " selected" : ""}>
-          ${escapeHtml(source.type === "default" ? "Default" : `Saved: ${source.label}`)}
-        </option>
-      `).join("")
-      : `<option value="">No run configs</option>`;
-  }
-  const selected = sources.find((source) => source.id === state.selectedSimConfigSource);
-  const deleteButton = document.getElementById("delete-sim-config-btn");
-  if (deleteButton) {
-    const canDelete = selected?.type === "saved";
-    deleteButton.hidden = !canDelete;
-    deleteButton.disabled = !canDelete;
-  }
-  const saveName = document.getElementById("save-sim-config-name");
-  if (saveName && selectedWorkflow() && saveName.dataset.workflow !== selectedWorkflow().id) {
-    saveName.value = `${simWorkflowMeta(selectedWorkflow()).title || selectedWorkflow().label} setup`;
-    saveName.dataset.workflow = selectedWorkflow().id;
-  }
   updateSimConfigStatus();
 }
 
 function renderSimConfigForm() {
   const form = document.getElementById("sim-config-form");
   if (!form) return;
+  const instance = `${state.selectedSimulationId || ""}:${state.simConfigPayload?.id || ""}`;
+  if (state.dirtySimConfig && form.dataset.instance === instance) return;
+  form.dataset.instance = instance;
   if (!state.simConfigPayload) {
     form.innerHTML = `<div class="empty-state">Select a workflow to configure its simulation inputs.</div>`;
     return;
   }
-  form.innerHTML = fieldGroupSections(state.simConfigPayload.fields || [], "sim-config");
+  const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof")));
+  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(fields, "sim-config")}</fieldset>`;
+  if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
+    control.title = "Simulation settings are locked while a run is active.";
+  });
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
   form.onclick = handleArrayEditorClick;
@@ -5819,10 +7148,10 @@ function outputItem(output) {
   const meta = output.exists ? `${escapeHtml(output.modified_label)} | ${fmtBytes(output.size)}` : "missing";
   const previewButton = output.exists && isPreviewableFile(output.kind)
     ? `<button class="file-button" type="button" data-file-path="${escapeHtml(output.path)}" data-file-kind="${escapeHtml(output.kind)}">Preview</button>`
-    : `<button class="file-button" type="button" disabled>Preview</button>`;
+    : `<button class="file-button" type="button" disabled title="No preview file is available.">Preview</button>`;
   const downloadButton = output.exists
     ? `<a class="file-button" href="${fileDownloadUrl(output.path)}" download>Download</a>`
-    : `<button class="file-button" type="button" disabled>Download</button>`;
+    : `<button class="file-button" type="button" disabled title="No output file is available.">Download</button>`;
   return `
     <div class="output-item">
       <div>
@@ -5879,36 +7208,67 @@ function csvTable(data) {
 }
 
 function renderJobs() {
-  const jobs = state.status?.jobs || [];
-  const list = document.getElementById("job-list");
   const runButton = document.getElementById("run-workflow-btn");
   const workflow = selectedWorkflow();
-  const canRun = canRunStandardWorkflow(workflow);
+  const busy = (state.status?.jobs || []).find(job => ["queued", "running"].includes(job.status));
+  const canRun = !busy && Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
   const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
-  runButton.textContent = !canRun
+  runButton.textContent = busy ? "Running" : !canRun
     ? "Simulation locked"
     : workflow
     ? runVerb
     : "No Workflow";
-  runButton.title = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  runButton.title = busy ? "A simulation is running." : !state.selectedSimulationId ? "No simulation is selected." : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
-  readiness.textContent = canRun ? "" : standardWorkflowLockedMessage(workflow);
+  readiness.textContent = busy ? `${busy.label}. Settings are locked while it runs.` : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const prepare = document.getElementById("sim-prepare-mbd");
   prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
   prepare.disabled = !canWriteMbd();
+  prepare.title = prepare.disabled ? mbdWriteDisabledReason() : "";
+  renderRunLog();
+}
+
+function renderRunLog() {
+  const jobs = state.status?.jobs || [];
+  const menu = document.getElementById("run-log-menu");
+  const status = document.getElementById("run-status");
+  const busy = jobs.find(job => ["queued", "running"].includes(job.status));
+  status.textContent = busy ? `${busy.label} · ${busy.status}` : "";
+  status.classList.toggle("running", Boolean(busy));
+  if (!menu.open || state.view === "setup") return;
+  const list = document.getElementById("job-list");
+  const cancel = document.getElementById("cancel-run");
+  const selected = jobs.find(job => job.id === state.selectedJobId) || busy || jobs[0];
+  cancel.hidden = !selected || !["queued", "running"].includes(selected.status);
+  cancel.disabled = Boolean(selected?.cancel_requested) || selected?.cancellable === false;
+  cancel.title = selected?.cancel_requested ? "Cancellation requested" : selected?.cancellable === false
+    ? "This run is saving its results" : `Cancel ${selected?.label || "selected run"}`;
+  cancel.setAttribute("aria-label", cancel.title);
+  cancel.onclick = async () => {
+    cancel.disabled = true;
+    try {
+      await api(`/api/jobs/${selected.id}/cancel`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+      state.status = await api("/api/status");
+      renderRunLog();
+    } catch (error) {
+      cancel.disabled = false;
+      document.getElementById("job-log").textContent = error.message;
+    }
+  };
   if (!jobs.length) {
     list.innerHTML = `<div class="empty-state">No jobs yet.</div>`;
     document.getElementById("job-log").textContent = "";
     return;
   }
-  if (!state.selectedJobId) state.selectedJobId = jobs[0].id;
+  if (!jobs.some(job => job.id === state.selectedJobId)) state.selectedJobId = busy?.id || jobs[0].id;
   list.innerHTML = jobs.map(jobItem).join("");
   list.querySelectorAll("[data-job]").forEach((item) => {
-    item.addEventListener("click", async () => {
+    item.addEventListener("click", event => {
+      event.stopPropagation();
       state.selectedJobId = item.dataset.job;
-      await loadJobLog();
-      renderJobs();
+      document.getElementById("job-log").textContent = "";
+      renderRunLog();
     });
   });
   loadJobLog();
@@ -5916,28 +7276,35 @@ function renderJobs() {
 
 function jobItem(job) {
   return `
-    <div class="job-item ${job.id === state.selectedJobId ? "active" : ""}" data-job="${job.id}">
+    <button type="button" class="job-item ${job.id === state.selectedJobId ? "active" : ""}" data-job="${escapeHtml(job.id)}" aria-pressed="${job.id === state.selectedJobId}">
       <div class="job-line">
         <strong>${escapeHtml(job.label)}</strong>
-        <span class="job-status ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span>
+        <span class="job-status ${escapeHtml(job.status)}">${job.cancel_requested && job.status === "running" ? "cancelling" : escapeHtml(job.status)}</span>
       </div>
-      <div class="output-meta">${escapeHtml(job.argv.join(" -> "))}</div>
-    </div>
+      <div class="output-meta">${escapeHtml(job.simulation?.name || job.argv.join(" → "))}</div>
+    </button>
   `;
 }
 
 async function loadJobLog(targetId = "job-log") {
-  if (!state.selectedJobId) return;
-  const job = await api(`/api/jobs/${state.selectedJobId}`);
+  const id = state.selectedJobId;
+  if (!id) return;
   const log = document.getElementById(targetId);
   if (!log) return;
-  log.textContent = job.log || "";
-  log.scrollTop = log.scrollHeight;
+  try {
+    const job = await api(`/api/jobs/${id}`);
+    if (id !== state.selectedJobId) return;
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+    log.textContent = job.log || "";
+    if (atEnd) log.scrollTop = log.scrollHeight;
+  } catch (error) {
+    if (id === state.selectedJobId) log.textContent = error.message;
+  }
 }
 
 async function startSelectedWorkflow() {
   const workflow = selectedWorkflow();
-  if (!workflow) return;
+  if (!workflow || !state.selectedSimulationId) return;
   if (!canRunStandardWorkflow(workflow)) {
     state.view = "setup";
     render();
@@ -5948,17 +7315,19 @@ async function startSelectedWorkflow() {
     if (!applied) return;
   }
   try {
+    await saveSimulationEdits();
     const job = await api(`/api/workflows/${workflow.id}/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({simulation_id: state.selectedSimulationId, vehicle_key: activeVehicleKey()}),
     });
     state.selectedJobId = job.id;
-    state.activeSimTab = "jobs";
+    document.getElementById("run-log-menu").open = true;
     state.simModalOpen = true;
     state.status = await api("/api/status");
     renderStandard();
   } catch (error) {
-    state.activeSimTab = "jobs";
+    document.getElementById("run-log-menu").open = true;
     state.simModalOpen = true;
     state.status = await api("/api/status").catch(() => state.status);
     renderStandard();
@@ -7580,13 +8949,6 @@ function geometryPlotDescriptors() {
     .filter(Boolean);
 }
 
-function kinematicPayloadHasCurve(payload, key) {
-  return ["front", "rear"].some((axle) => {
-    const curve = payload?.axles?.[axle]?.curves?.[key];
-    return Array.isArray(curve) && curve.length > 1;
-  });
-}
-
 function renderGeometryPlotControls() {
   const panel = document.getElementById("geometry-plot-panel");
   if (!panel || panel.hidden) return;
@@ -7665,7 +9027,7 @@ function drawGeometryPlotPanel() {
     return;
   }
   const descriptors = geometryPlotDescriptors();
-  const columns = Math.min(Math.max(1, descriptors.length), canvas.clientWidth > 760 ? 3 : canvas.clientWidth > 520 ? 2 : 1);
+  const columns = 1;
   const rows = Math.max(1, Math.ceil(descriptors.length / columns));
   canvas.style.height = `${rows * 230}px`;
   const closeButtons = document.getElementById("geometry-plot-close-buttons");
@@ -7684,6 +9046,14 @@ function drawGeometryPlotPanel() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
   const palette = canvasPalette();
+  if (!descriptors.length) {
+    drawCanvasText(ctx, "Plots can be added above", width / 2, height / 2, {
+      align: "center",
+      color: palette.muted,
+    });
+    clearGeometryPlotScene();
+    return;
+  }
   if (!state.kinematicsPayload) {
     drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
       align: "center",
@@ -7696,26 +9066,6 @@ function drawGeometryPlotPanel() {
     drawCanvasText(ctx, state.kinematicsPayload.warnings?.[0] || "Kinematics unavailable", width / 2, height / 2, {
       align: "center",
       color: palette.amber,
-    });
-    clearGeometryPlotScene();
-    return;
-  }
-  if (!descriptors.length) {
-    drawCanvasText(ctx, "Add a signal above", width / 2, height / 2, {
-      align: "center",
-      color: palette.muted,
-    });
-    clearGeometryPlotScene();
-    return;
-  }
-  const missingCurve = descriptors.find((descriptor) => !kinematicPayloadHasCurve(state.kinematicsPayload, descriptor.y_id));
-  if (missingCurve) {
-    if (state.kinematicsStatus !== "loading" && state.kinematicsStatus !== "refreshing") {
-      queueKinematicsRefresh({ force: true });
-    }
-    drawCanvasText(ctx, "Solving current hardpoints...", width / 2, height / 2, {
-      align: "center",
-      color: palette.muted,
     });
     clearGeometryPlotScene();
     return;
@@ -7773,6 +9123,13 @@ function handleGeometryPlotClick(event) {
   drawGeometryPlotPanel();
 }
 
+function toggleGeometryExpanded() {
+  const workspace = document.querySelector(".setup-workspace");
+  workspace.classList.toggle("geometry-expanded");
+  drawVehicleFromForm();
+  drawGeometryPlotPanel();
+}
+
 function syncPreviewModeControls(area = activeParameterArea()) {
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
@@ -7780,7 +9137,18 @@ function syncPreviewModeControls(area = activeParameterArea()) {
   const geometryTabs = document.getElementById("geometry-tabs");
   const canvas = document.getElementById("vehicle-canvas");
   const usesSpatialView = isSpatialPreviewArea(area);
-  const usesGeometryPlots = area.id === "hardpoints" && state.activeGeometryTab === "kinematics";
+  const workspace = document.querySelector(".setup-workspace");
+  if (area.id !== "hardpoints") workspace.classList.remove("geometry-expanded");
+  const expanded = workspace.classList.contains("geometry-expanded");
+  const expandButton = document.getElementById("geometry-expand-btn");
+  expandButton.hidden = area.id !== "hardpoints";
+  expandButton.setAttribute("aria-expanded", String(expanded));
+  expandButton.setAttribute("aria-label", expanded ? "Restore geometry layout" : "Expand geometry");
+  expandButton.title = expanded ? "Restore geometry layout" : "Expand geometry";
+  expandButton.querySelector("path").setAttribute("d", expanded
+    ? "M3 9h6V3m6 0v6h6M9 21v-6H3m18 0h-6v6"
+    : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6");
+  const usesGeometryPlots = area.id === "hardpoints" && (expanded || state.activeGeometryTab === "kinematics");
   geometryTabs.hidden = area.id !== "hardpoints";
   document.getElementById("config-form").hidden = usesGeometryPlots;
   geometryTabs.querySelectorAll("[data-geometry-tab]").forEach((button) => {
@@ -7845,6 +9213,8 @@ function syncGeometryAxleToggles() {
   rear.checked = state.geometryShowRear;
   front.disabled = state.geometryShowFront && !state.geometryShowRear;
   rear.disabled = state.geometryShowRear && !state.geometryShowFront;
+  front.title = front.disabled ? "At least one axle must remain visible." : "";
+  rear.title = rear.disabled ? "At least one axle must remain visible." : "";
 }
 
 function updateGeometryAxleVisibility(axle, visible) {
@@ -10780,7 +12150,7 @@ function drawKinematicChart(
         index,
         sampleKey: String(index),
         xValue: xValues[index],
-        yValue: Number(value),
+        yValue: value == null ? NaN : Number(value),
       }))
       .filter((point) => Number.isFinite(point.xValue) && Number.isFinite(point.yValue)),
   }));
@@ -10814,7 +12184,7 @@ function drawKinematicChart(
       : { left: 50, right: 14, top: 36, bottom: 36 },
   });
   if (!chart) {
-    drawCanvasText(ctx, "Waiting for curve data", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
+    drawCanvasText(ctx, "No valid samples for this curve", x + width / 2, y + height / 2, { align: "center", color: palette.muted });
     ctx.restore();
     return null;
   }
@@ -12529,6 +13899,7 @@ function resetPreviewCamera() {
 }
 
 function wireEvents() {
+  mountSimulationWorkspace();
   document.addEventListener("click", handleInfoPopupClick);
   document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));
   document.getElementById("vehicle-name-input").addEventListener("change", (event) => {
@@ -12555,10 +13926,6 @@ function wireEvents() {
   document.getElementById("start-import-input").addEventListener("change", (event) => {
     importVehicleFile(event.target.files?.[0]);
     event.target.value = "";
-  });
-  document.getElementById("simulation-modal-close").addEventListener("click", closeSimulationModal);
-  document.getElementById("simulation-config-modal").addEventListener("pointerdown", (event) => {
-    if (event.target.id === "simulation-config-modal") closeSimulationModal();
   });
   document.getElementById("toolchain-settings-btn").addEventListener("click", openModelicaToolchain);
   document.getElementById("toolchain-close-btn").addEventListener("click", closeModelicaToolchain);
@@ -12659,11 +14026,7 @@ function wireEvents() {
       event.preventDefault();
       return;
     }
-    if (event.key === "Escape" && state.simModalOpen) {
-      closeSimulationModal();
-      event.preventDefault();
-      return;
-    }
+
     if (event.key === "Escape" && state.suspensionPlotModalKey) {
       closeSuspensionPlotModal();
       event.preventDefault();
@@ -12704,24 +14067,19 @@ function wireEvents() {
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
   document.getElementById("sim-prepare-mbd").addEventListener("click", () => generateModelicaFromVehicle());
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
-  document.getElementById("save-sim-config-btn").addEventListener("click", saveSimConfigAs);
-  document.getElementById("load-sim-config-btn").addEventListener("click", loadSelectedSimConfig);
-  document.getElementById("delete-sim-config-btn").addEventListener("click", deleteSelectedSimConfig);
   document.getElementById("apply-study-config-btn")?.addEventListener("click", applyStudyConfigEdits);
   document.getElementById("save-study-config-btn")?.addEventListener("click", saveStudyConfigAs);
   document.getElementById("load-study-config-btn")?.addEventListener("click", loadSelectedStudyConfig);
   document.getElementById("delete-study-config-btn")?.addEventListener("click", deleteSelectedStudyConfig);
-  document.getElementById("sim-config-picker").addEventListener("change", (event) => {
-    state.selectedSimConfigSource = event.target.value;
-    renderSimConfigLibrary();
-  });
   document.getElementById("study-config-picker")?.addEventListener("change", (event) => {
     state.selectedStudyConfigSource = event.target.value;
     renderStudyConfigLibrary();
   });
-  document.getElementById("clear-log-btn").addEventListener("click", () => {
-    document.getElementById("job-log").textContent = "";
-  });
+  document.getElementById("run-log-menu").addEventListener("toggle", renderRunLog);
+  document.getElementById("close-run-log").onclick = () => {
+    document.getElementById("run-log-menu").open = false;
+    document.querySelector("#run-log-menu summary").focus();
+  };
   document.getElementById("clear-study-log-btn")?.addEventListener("click", () => {
     document.getElementById("study-job-log").textContent = "";
   });
@@ -12737,6 +14095,7 @@ function wireEvents() {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
   document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
+  document.getElementById("geometry-expand-btn").addEventListener("click", toggleGeometryExpanded);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
@@ -12746,20 +14105,18 @@ function wireEvents() {
       state.resultsStatusMessage = "";
       renderStudies();
     }
-    else await configureSimulationWorkflow(selectedWorkflow()?.id);
+    else if (state.selectedSimulationId) workspaceAction(() => openSimulation(state.selectedSimulationId));
+    else showSimulationCatalog();
   });
   document.getElementById("rail-secondary-btn").addEventListener("click", async () => {
     if (state.view === "setup") await generateModelicaFromVehicle({ actionKey: "rail-write-mbd" });
     else setView("setup");
   });
   document.querySelectorAll(".rail-item").forEach((button) => {
-    button.addEventListener("click", () => setView(button.dataset.view));
-  });
-  document.querySelectorAll(".simulation-modal-tabs .tab").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.activeSimTab = button.dataset.tab;
-      syncSimTabs();
-    });
+    button.addEventListener("click", () => workspaceAction(async () => {
+      await saveSimulationEdits();
+      setView(button.dataset.view);
+    }));
   });
   document.querySelectorAll(".study-tab").forEach((button) => {
     button.addEventListener("click", () => {

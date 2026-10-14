@@ -81,7 +81,7 @@ def test_step_steer_uses_active_config_and_exports_signals(tmp_path, monkeypatch
     python_simulations.run("reduced-step-steer")
     assert seen["dof"] == 14
     assert seen["vehicle_path"] == tmp_path / "vehicle.yml"
-    assert seen["kinematics_mode"] == "nonlinear"
+    assert seen["kinematics_mode"] == "lookup"
     assert seen["roadwheel_step_deg"] == 2
     output = tmp_path / "app/user_data/results/reduced-step-steer"
     assert "yawVel" in (output / "signals.csv").read_text()
@@ -175,7 +175,7 @@ def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch)
     assert seen["roadwheel_rate_deg_s"] == -2
     assert seen["start_time_s"] == 0.1
     assert seen["ramp_end_time_s"] == 0.2
-    assert seen["kinematics_mode"] == "nonlinear"
+    assert seen["kinematics_mode"] == "lookup"
     output = tmp_path / "app/user_data/results/reduced-ramp-steer"
     assert (output / "report.pdf").read_bytes().startswith(b"%PDF")
     assert json.loads((output / "summary.json").read_text())["model_dof"] == 10
@@ -220,3 +220,14 @@ def test_legacy_ramp_keeps_its_end_when_simulation_duration_changes(tmp_path, mo
     updated = app.patch_config("reduced-ramp-steer", {json.dumps(["stop_time_s"]): 20})
     assert updated["data"]["ramp_end_time_s"] == 5
     assert updated["data"]["stop_time_s"] == 20
+
+
+@pytest.mark.parametrize('workflow_id', ('reduced-step-steer', 'reduced-ramp-steer'))
+def test_app_kinematics_selection_is_automatic(tmp_path, monkeypatch, workflow_id):
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    seed = tmp_path / app.BASE_CONFIG_SPECS[workflow_id].path
+    seed.parent.mkdir(parents=True)
+    seed.write_text('model_dof: 6\nstop_time_s: 1\nkinematics_mode: nonlinear\n')
+    payload = app.config_payload(workflow_id)
+    assert payload['data']['kinematics_mode'] == 'lookup'
+    assert all(field['path'] != ['kinematics_mode'] for field in payload['fields'])
