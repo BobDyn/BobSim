@@ -79,3 +79,16 @@ vm.runInContext(`
   console.log('Analysis picker checks passed');
 })()
 `, ctx).catch(error => {console.error(error);process.exitCode=1;});
+
+for (const id of ['four-post', 'steady-state', 'transient', 'ramp-steer', 'mbd-step-steer', 'reduced-ramp-steer', 'reduced-step-steer', 'ggv', 'ymd', 'lap-qss', 'lap-transient']) {
+  const guide = vm.runInContext(`simulationMethodGuide(${JSON.stringify(id)})`, ctx);
+  for (const key of ['method', 'inputs', 'outputs', 'limits']) assert.ok(guide[key].length >= 3, `${id}: ${key}`);
+  for (const path of guide.sources) assert.ok(fs.existsSync(path), `${id}: missing source ${path}`);
+  const html = vm.runInContext(`simulationMethodHtml({id:${JSON.stringify(id)}})`, ctx);
+  assert.match(html, /How it works/);
+  assert.match(html, /Assumptions and limits/);
+  assert.match(html, /Implementation sources/);
+}
+const markup = fs.readFileSync('app/static/index.html', 'utf8');
+assert.doesNotMatch(markup, /simulation-tree-toolbar[^\n]*add-simulation-btn/);
+assert.match(source, /simulation-tree-root[^\n]*add-simulation-btn/);

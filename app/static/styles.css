@@ -3963,7 +3963,7 @@ body.resizing-panes * {
 .analysis-picker-option span { font-size: 11px; color: var(--muted); }
 .analysis-picker-option:disabled { opacity: .45; }
 
-#simulation-overview { padding: 32px; max-width: 1120px; margin: 0 auto; }
+#simulation-overview { padding: 32px; width: 100%; box-sizing: border-box; max-width: 1120px; margin: 0 auto; min-height: 0; overflow-y: auto; }
 #simulation-overview header { margin-bottom: 28px; }
 #simulation-overview h2 { margin: 0 0 8px; font-size: 24px; }
 #simulation-overview header p { margin: 0; color: var(--muted); }
@@ -4907,10 +4907,7 @@ summary:focus-visible {
   padding: 6px 10px; border-bottom: 1px solid var(--line);
   font-size: 11px; font-weight: 600; color: var(--muted);
 }
-.simulation-tree-toolbar button {
-  width: 26px; height: 26px; padding: 0; border: 1px solid var(--line);
-  border-radius: 3px; background: transparent; color: var(--ink); font-size: 20px; cursor: pointer;
-}
+
 #simulation-tree { padding: 10px 6px 4px; }
 .simulation-tree-root { display: flex; align-items: center; gap: 6px; padding: 4px; font-size: 12px; }
 .simulation-tree-root strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5056,3 +5053,15 @@ summary:focus-visible {
 .result-compare-toggle input { width: auto; }
 .result-input-change { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 5px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; overflow-wrap: anywhere; }
 .result-input-change strong { grid-column: 1 / -1; font-weight: 500; }
+
+.simulation-method-guide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 24px; }
+.simulation-method-guide h3 { margin: 0 0 12px; font-size: 15px; }
+.simulation-method-guide ul, .simulation-method-guide ol { margin: 0; padding-left: 20px; }
+.simulation-method-guide li { margin-bottom: 10px; line-height: 1.6; font-size: 13px; }
+.simulation-method-model, .simulation-method-method, .simulation-method-limits, .simulation-method-sources { grid-column: 1 / -1; }
+.simulation-method-sources { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.simulation-method-sources summary { cursor: pointer; color: var(--ink); }
+.simulation-method-sources p { line-height: 1.6; }
+@media (max-width: 780px) { .simulation-method-guide { grid-template-columns: minmax(0, 1fr); } }
+
+.simulation-method-model p { font-size: 13px; line-height: 1.6; margin: 0 0 10px; }

@@ -4285,7 +4285,7 @@ function renderSimulationOverview() {
       <dt>Results</dt><dd>${escapeHtml(latest?.created_label || "Not run yet")}</dd>
       ${simulation.ggv_source_id ? `<dt>GGV input</dt><dd>${escapeHtml(simulation.ggv_input?.name || "Unavailable")} (${escapeHtml(simulation.ggv_input?.status || "Unknown")})</dd>` : ""}</dl>
       <div class="simulation-overview-actions"><button type="button" class="primary" data-overview-setup>Setup</button><button type="button" data-overview-view>Add view</button></div></div>
-      ${simulationVisualHtml(workflow)}</div>`;
+      ${simulationVisualHtml(workflow)}</div>${simulationMethodHtml(workflow)}`;
     panel.querySelector("[data-overview-setup]").onclick = () => workspaceAction(() => openSimulation(simulation.id));
     panel.querySelector("[data-overview-view]").onclick = () => workspaceAction(() => addSimulationVisualization(simulation.id));
   }
@@ -4672,7 +4672,6 @@ function mountSimulationWorkspace() {
   config.removeAttribute("role");
   config.removeAttribute("aria-modal");
   for (const id of ["simulation-config-modal", "studies-view", "replay-view"]) detail.appendChild(document.getElementById(id));
-  document.getElementById("add-simulation-btn").addEventListener("click", () => workspaceAction(showAnalysisPicker));
   document.getElementById("simulation-saved-runs").addEventListener("click", () => workspaceAction(async () => {
     await saveSimulationEdits(); state.selectedVisualizationId = null; state.simulationChildEditor = false; state.selectedSimulationId = null; state.simModalOpen = false; setView("studies");
   }));
@@ -4697,6 +4696,7 @@ function mountSimulationWorkspace() {
     });
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
+    if (event.target.closest("#add-simulation-btn")) { workspaceAction(showAnalysisPicker); return; }
     const ggv = event.target.closest("[data-simulation-ggv]");
     if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
     const group = event.target.closest("[data-simulation-add-group]");
@@ -4789,7 +4789,7 @@ function renderSimulationWorkspace() {
     ? state.simulationWorkspace.simulations : [];
   const enabled = new Set(state.simulationWorkspace?.vehicle_key === activeVehicleKey() ? state.simulationWorkspace.analysis_groups || [] : []);
   for (const simulation of simulations || []) enabled.add(simulationAnalysisGroup({id: simulation.workflow_id}));
-  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.filter(group => enabled.has(group.id)).map(group => {
+  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong><button id="add-simulation-btn" class="simulation-tree-add" type="button" title="Add analysis" aria-label="Add analysis">+</button></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.filter(group => enabled.has(group.id)).map(group => {
     const groupId = `group:${group.id}`;
     const expanded = !state.collapsedSimulations.has(groupId);
     return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
@@ -5173,6 +5173,359 @@ function simDetailBlock(title, items = []) {
       </ul>
     </div>
   `;
+}
+
+function simulationMethodGuide(workflowId) {
+  return {
+  "four-post": {
+    "method": [
+      "Run the BobLib multibody suspension on prescribed contact-patch fixtures in OpenModelica.",
+      "Apply the built-in heave sweep, then the roll sweep, with contact-patch force pulses and the selected steering offset.",
+      "Compare static contact loads with the vehicle weight distribution and adjust spring free lengths within the configured iteration limit.",
+      "Extract suspension geometry, force-transfer curves and setup metrics from the recorded sweep."
+    ],
+    "inputs": [
+      "Heave and roll amplitudes, pinion steering angle and applied contact-patch force.",
+      "Vehicle hardpoints, masses, springs, anti-roll bars and tire vertical properties.",
+      "Spring and anti-roll-bar overrides, static-balance tolerances and contact-load validation."
+    ],
+    "outputs": [
+      "Camber, toe, caster, kingpin inclination, trail and scrub through heave and roll.",
+      "Motion ratios, wheel and roll stiffness, static loads and suspension frequency estimates.",
+      "Anti-dive, anti-squat, geometric anti-roll, load-transfer distribution and force-based roll-center height.",
+      "PDF report and metrics CSV."
+    ],
+    "limits": [
+      "The rig prescribes suspension motion and applied forces. It does not predict a driven lap.",
+      "The sweep schedule is built into the Modelica rig. The setup changes its amplitudes.",
+      "Contact loss can invalidate roll-force metrics and is rejected when contact validation is enabled.",
+      "Vehicle geometry and mass changes must be present in the compiled BobLib model."
+    ],
+    "sources": [
+      "simulations/response/mbd/four_post/four_post_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
+    ]
+  },
+  "steady-state": {
+    "method": [
+      "Create a case for each requested speed and lateral-acceleration target.",
+      "Integrate the BobLib multibody model while the controller adjusts steering to reach lateral acceleration and regulates speed.",
+      "Check acceleration and speed errors, plus rates of lateral acceleration, yaw rate, sideslip, roll and handwheel angle.",
+      "Keep settled cases and build steering, roll and sideslip curves against achieved lateral acceleration."
+    ],
+    "inputs": [
+      "Test speeds and lateral-acceleration targets, including optional limits by speed.",
+      "Steering-controller settings, settling tolerances and simulation timeout.",
+      "Compiled BobLib vehicle, tires and powertrain."
+    ],
+    "outputs": [
+      "Steering angle, steering excess, roll, sideslip and handwheel torque against lateral acceleration.",
+      "Yaw rate, speed, individual tire loads and settling diagnostics.",
+      "Handling gradients, report and metrics CSV."
+    ],
+    "limits": [
+      "This workflow settles a time-domain Modelica simulation. It does not directly solve a zero-derivative algebraic system.",
+      "Targets outside available grip or controller authority may fail to settle.",
+      "Failed or unsettled cases are excluded from the accepted steady-state curves.",
+      "Fitted gradients depend on the sampled acceleration range and fit settings."
+    ],
+    "sources": [
+      "simulations/response/mbd/steady_state/steady_state_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "ramp-steer": {
+    "method": [
+      "Run a BobLib multibody case at each requested speed with closed-loop speed control.",
+      "Increase handwheel angle at a constant rate after the steering start time.",
+      "Record the response against achieved lateral acceleration as the ramp progresses.",
+      "Build handling curves and fit local gradients for steering, sideslip and roll."
+    ],
+    "inputs": [
+      "Test speeds, handwheel ramp rate and steering start time.",
+      "Lateral-acceleration target, maximum duration and configured termination thresholds.",
+      "Vehicle model, tires, speed-controller settings and report fit range."
+    ],
+    "outputs": [
+      "Roadwheel and handwheel angle, steering excess, roll, sideslip and handwheel torque against lateral acceleration.",
+      "Understeer, steering, roll and sideslip gradients, including values near the reached limit.",
+      "PDF report and metrics CSV."
+    ],
+    "limits": [
+      "These curves describe a changing steering maneuver rather than fully settled equilibrium at every sample.",
+      "The current case generator runs one positive steering direction per speed. It does not measure left-right asymmetry.",
+      "Gain-loss or tire-load termination can stop a run before its requested duration or acceleration target.",
+      "The MBD input is handwheel rate. The DynPy ramp input is nominal mean roadwheel rate."
+    ],
+    "sources": [
+      "simulations/response/mbd/ramp_steer/ramp_steer_eval_sim.py",
+      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "mbd-step-steer": {
+    "method": [
+      "Create BobLib cases for the selected speeds, steering amplitudes and turn directions.",
+      "Apply a steering step with a finite rise time while the vehicle controller regulates speed.",
+      "Integrate the multibody response and record the steering, lateral acceleration, yaw, roll and sideslip histories.",
+      "Calculate final response, gain, peak, overshoot and response timing from each history."
+    ],
+    "inputs": [
+      "Test speeds, handwheel step amplitudes and turn directions.",
+      "Steering start time and step rise duration.",
+      "Compiled BobLib vehicle and tire models."
+    ],
+    "outputs": [
+      "Steering, lateral acceleration, yaw rate, roll and sideslip time histories.",
+      "Step-response gains, peaks, overshoot and timing metrics.",
+      "PDF response report and summary metrics."
+    ],
+    "limits": [
+      "The input has a finite rise duration rather than an instantaneous discontinuity.",
+      "Reported rise time runs from 50% of the input to 90% of the final response.",
+      "Final response is estimated from the last 20 samples, so a case that has not settled can distort its metrics.",
+      "The steering command is at the handwheel. DynPy uses nominal mean front roadwheel angle."
+    ],
+    "sources": [
+      "simulations/response/mbd/transient/transient_eval_sim.py",
+      "simulations/response/mbd/transient/step_steer_config.yml",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "transient": {
+    "method": [
+      "Generate BobLib steering cases over the selected speeds, amplitudes, directions and sine frequencies.",
+      "Run finite-rise step and sustained-sine inputs with closed-loop speed control.",
+      "Measure step-response gain, peak, overshoot and timing.",
+      "Fit sine, cosine and offset terms to selected response cycles to calculate lateral-acceleration and yaw-rate gain and phase."
+    ],
+    "inputs": [
+      "Test speeds, steering amplitudes, directions and steering start time.",
+      "Step rise duration, sine frequencies, cycle count and cycles to skip before analysis.",
+      "Compiled vehicle, tire and powertrain models."
+    ],
+    "outputs": [
+      "Step and sustained-sine response histories.",
+      "Lateral-acceleration and yaw-rate frequency-response gain, phase and fit error.",
+      "Step-response metrics and PDF report."
+    ],
+    "limits": [
+      "This workflow runs predefined steering maneuvers rather than an arbitrary driver input trace.",
+      "Frequency-response fits use at most two analysis cycles after the configured skipped cycles.",
+      "At large inputs, fitted gain and phase describe that maneuver amplitude rather than a universal linear response.",
+      "A short or unsettled step history can distort final-response and overshoot metrics."
+    ],
+    "sources": [
+      "simulations/response/mbd/transient/transient_eval_sim.py",
+      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+    ]
+  },
+  "reduced-ramp-steer": {
+    "method": [
+      "Read the vehicle and front/rear tire definitions and build the selected DynPy model.",
+      "Solve straight-line trim to initialize vehicle attitude, wheel loading and drive demand.",
+      "Increase nominal mean front roadwheel steer at the selected rate, then hold after the ramp end.",
+      "Integrate the vehicle and PI speed controller while KinPy supplies each corner’s steering and suspension geometry.",
+      "Save the sampled signals, run summary and response report."
+    ],
+    "inputs": [
+      "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
+      "Target speed, simulation duration and output sample interval.",
+      "Roadwheel steering rate, ramp start and ramp end.",
+      "KinPy lookup or nonlinear kinematics."
+    ],
+    "outputs": [
+      "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
+      "Per-corner tire forces, moments, loads, slip and suspension signals supported by the selected model.",
+      "Signals CSV, summary JSON, PDF report and saved-state 3D replay."
+    ],
+    "limits": [
+      "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
+      "Speed control can deviate from its target when drive force or power limits are reached.",
+      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "The output sample interval controls saved points. The integrator takes its own adaptive steps."
+    ],
+    "sources": [
+      "simulations/response/reduced/reduced_order_eval_sim.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/python_simulations.py"
+    ]
+  },
+  "reduced-step-steer": {
+    "method": [
+      "Read the vehicle and front/rear tire definitions and build the selected DynPy model.",
+      "Solve straight-line trim to initialize vehicle attitude, wheel loading and drive demand.",
+      "Move nominal mean front roadwheel steer to the selected angle over the rise duration, then hold.",
+      "Integrate the vehicle and PI speed controller while KinPy supplies each corner’s steering and suspension geometry.",
+      "Save the sampled signals, run summary and response report."
+    ],
+    "inputs": [
+      "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
+      "Target speed, simulation duration and output sample interval.",
+      "Roadwheel step angle, step time and rise duration.",
+      "KinPy lookup or nonlinear kinematics."
+    ],
+    "outputs": [
+      "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
+      "Per-corner tire forces, moments, loads, slip and suspension signals supported by the selected model.",
+      "Signals CSV, summary JSON, PDF report and saved-state 3D replay."
+    ],
+    "limits": [
+      "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
+      "Speed control can deviate from its target when drive force or power limits are reached.",
+      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "The output sample interval controls saved points. The integrator takes its own adaptive steps."
+    ],
+    "sources": [
+      "simulations/response/reduced/reduced_order_eval_sim.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/python_simulations.py"
+    ]
+  },
+  "ggv": {
+    "method": [
+      "Build the selected DynPy model from the vehicle definition. At each requested speed, solve the algebraic vehicle equations for feasible longitudinal and lateral acceleration states.",
+      "Search the boundary of those feasible states rather than enumerate the entire interior. Find the lateral endpoint, then maximize acceleration and braking at each lower lateral demand, subject to vehicle balance, tire limits and drive or brake limits.",
+      "Use the previous solution to initialize neighboring points. If the direct constrained solve fails, use the configured trim-search fallback.",
+      "Keep points with valid drive and brake boundaries, close both branches at the lateral endpoint, and optionally mirror the positive lateral branch."
+    ],
+    "inputs": [
+      "Vehicle geometry, mass, front and rear tire curves, suspension, aero and powertrain limits.",
+      "DynPy 3, 6, 10 or 14 DOF. This workflow runs in Python and uses quasi-steady constraints, not time integration.",
+      "Speed slices, lateral sampling, acceleration search bounds, steering and sideslip limits, and tire-load-range enforcement.",
+      "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
+    ],
+    "outputs": [
+      "The feasible boundary in longitudinal acceleration, lateral acceleration and speed (ax, ay, v), saved as CSV. Each speed slice is an acceleration and braking envelope.",
+      "Envelope plots, capability metrics and a PDF report.",
+      "Optional configured track-profile proxy metrics and velocity profiles. The envelope CSV can supply a QSS lap."
+    ],
+    "limits": [
+      "These are zero-yaw-rate acceleration capability solves. Higher DOFs are constrained in equilibrium, so the map does not predict transient roll or wheel hop.",
+      "The left branch is mirrored from positive lateral demand when both directions are shown. Left and right cornering limits are not solved independently.",
+      "Search bounds, sampling, fitted tire ranges and nonlinear solver convergence limit the recovered envelope. A missing point is not proof that every nearby state is physically impossible.",
+      "GGV track-profile scores describe the configured maneuver proxy. Use QSS Lap for a boundary-defined racing line and lap-time estimate."
+    ],
+    "sources": [
+      "simulations/envelope/ggv/ggv_generation.py",
+      "engines/dynpy/qss.py",
+      "engines/dynpy/models.py",
+      "engines/dynpy/tire.py"
+    ]
+  },
+  "ymd": {
+    "method": [
+      "Sweep vehicle sideslip and steering at the selected speed and prescribed yaw rate.",
+      "At each point, solve longitudinal and vertical equilibrium using the selected DynPy model. Leave lateral acceleration and yaw moment free as outputs.",
+      "Use successful neighboring solutions as initial guesses and mark each point with its convergence status.",
+      "Interpolate zero-yaw-moment crossings between converged steering samples and select a continuous trim branch. Repeat at additional speeds when the speed sweep is enabled."
+    ],
+    "inputs": [
+      "Vehicle definition and selected DynPy 3, 6, 10 or 14 DOF model, evaluated in Python.",
+      "Speed, sideslip and steering ranges, grid resolution and prescribed yaw rate.",
+      "Solver iteration and tolerance settings, tire-load-range enforcement, and optional speed sweep.",
+      "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
+    ],
+    "outputs": [
+      "Lateral acceleration and yaw moment for each sideslip and steering pair, with convergence flags.",
+      "Zero-yaw-moment trim curve, lateral and yaw-authority metrics, plots and a PDF report.",
+      "Speed-dependent maps and summary metrics when the speed sweep is enabled."
+    ],
+    "limits": [
+      "Most map points intentionally have nonzero yaw moment. They are not all steady cornering equilibria.",
+      "Yaw rate is prescribed rather than solved as a free response. This map does not show time-domain stability or the path a driver would follow.",
+      "The trim curve is interpolated from the sampled grid. Its coverage and accuracy depend on converged neighboring points and the chosen ranges.",
+      "The selected DOFs are equilibrated for this calculation. Choosing more DOFs does not turn the diagram into a transient simulation."
+    ],
+    "sources": [
+      "simulations/envelope/ymd/ymd_generation.py",
+      "engines/dynpy/qss.py",
+      "engines/dynpy/models.py"
+    ]
+  },
+  "lap-qss": {
+    "method": [
+      "Load a linked or supplied GGV, reuse a matching generated envelope, or generate one with the selected DynPy model.",
+      "Build a closed track corridor from boundary coordinates and reserve space for vehicle width and the safety margin.",
+      "Use the centerline, optimize a minimum-curvature line, or optimize QSS lap time starting from the minimum-curvature result.",
+      "At each candidate speed, track curvature sets lateral demand: ay = v²κ. Interpolate the GGV at that speed and lateral demand to obtain the remaining acceleration and braking capacity.",
+      "Use the lateral boundary to cap corner speed. Alternate forward acceleration and backward braking passes until the closed-lap speed profile converges, then integrate segment travel times. Braking anticipates upcoming corners and acceleration uses the available capacity on exit."
+    ],
+    "inputs": [
+      "Track boundary CSV, vehicle width, safety margin and line sampling distance.",
+      "Line mode and optimizer iteration limits, speed ceiling and optional event drive-power limit.",
+      "A GGV result or envelope-generation settings. A linked GGV supplies the model fidelity and must match the vehicle and power limit."
+    ],
+    "outputs": [
+      "Track position, station, curvature, speed, longitudinal and lateral acceleration, and segment travel time.",
+      "Lap time, line-optimizer and speed-profile convergence status, and envelope provenance.",
+      "A static lap map that can be colored by a saved signal, plus plots and the lap report."
+    ],
+    "limits": [
+      "This is a spatial speed-profile calculation. It does not integrate suspension, wheel or body states around the lap, even when its envelope comes from 14 DOF.",
+      "The planar corridor has no elevation or banking. GGV lookup uses absolute lateral demand and conservative capability when left and right CSV rows differ.",
+      "Speed is capped by the highest GGV speed and any lower configured ceiling. Envelope and line resolution affect the result.",
+      "The constrained line optimizer is local and can reach its iteration limit. A minimum-time result is not a guarantee of the global fastest line."
+    ],
+    "sources": [
+      "simulations/lap/lap_time_eval_sim.py",
+      "simulations/lap/core/track.py",
+      "simulations/lap/core/racing_line.py",
+      "simulations/lap/core/qss.py",
+      "simulations/lap/core/io.py",
+      "app/data_services.py"
+    ]
+  },
+  "lap-transient": {
+    "method": [
+      "First solve the QSS racing line and speed profile using the selected model's envelope.",
+      "Initialize the vehicle from a steady trim. If the first target speed cannot be trimmed, try progressively lower speeds.",
+      "Build steering feedforward from sparse steady cornering trims along the line. Add heading and cross-track feedback, with a preview distance.",
+      "Combine QSS acceleration feedforward with proportional speed feedback and allocate wheel torque using the drive and brake distributions and drive limits.",
+      "Integrate the DynPy states with RK45 for 3 DOF or Radau for 6, 10 and 14 DOF. Measure track progress and interpolate the first completed-lap crossing."
+    ],
+    "inputs": [
+      "The track, line-optimization and envelope inputs used by QSS Lap.",
+      "DynPy 3, 6, 10 or 14 DOF, running in Python. Added DOFs release body heave, roll and pitch, then wheel rotation, then unsprung vertical motion.",
+      "Output sample period, driver preview distance and spacing between steering feedforward trims."
+    ],
+    "outputs": [
+      "Time histories of position, speed, steering, yaw rate, acceleration and target speed.",
+      "Track progress, lateral error, heading error, lap completion and lap-time difference from the QSS reference.",
+      "Full model signal CSV for plots and the existing 3D vehicle replay, with motion appropriate to the selected DOFs."
+    ],
+    "limits": [
+      "This follows a precomputed QSS reference with a fixed feedback driver. It does not optimize the driver's time-domain inputs for the fastest transient lap.",
+      "A failed steering feedforward trim falls back to wheelbase and curvature geometry. Tracking quality depends on the driver settings and available tire force.",
+      "The driver uses fixed steering and acceleration command bounds. Track departure is measured as error, not prevented by a corridor constraint during integration.",
+      "The simulation uses a finite time horizon and may not complete the lap. Reported lap time is unavailable if completion is not reached."
+    ],
+    "sources": [
+      "simulations/lap/lap_time_eval_sim.py",
+      "simulations/lap/core/transient.py",
+      "simulations/lap/core/io.py",
+      "engines/dynpy/transient.py",
+      "engines/dynpy/models.py",
+      "app/visual.py"
+    ]
+  }
+}[workflowId];
+}
+
+function simulationMethodHtml(workflow) {
+  const guide = simulationMethodGuide(workflow.id);
+  if (!guide) return "";
+  const dynpy = guide.sources.includes("engines/dynpy/models.py");
+  const sections = [["method", "How it works"], ["inputs", "Inputs"], ["outputs", "What the results mean"], ["limits", "Assumptions and limits"]];
+  return `<div class="simulation-method-guide">${dynpy ? `<section class="simulation-method-model"><h3>Vehicle model</h3><p>DynPy evaluates four contact patches separately, including at 3 DOF. KinPy supplies corner geometry from suspension travel and rack position. Front and rear MF5.2 tire fits provide forces and moments with load, camber and combined-slip dependence. Aero uses ride-height maps.</p><p>3 DOF describes planar body motion with algebraic load transfer. 6 adds heave, roll and pitch. 10 adds wheel rotation. 14 adds unsprung vertical motion. A quasi-steady solve balances these equations at a condition. A transient run integrates the released states over time.</p></section>` : ""}${sections.map(([key, title]) => {
+    const tag = key === "method" ? "ol" : "ul";
+    return `<section class="simulation-method-${key}"><h3>${title}</h3><${tag}>${guide[key].map(text => `<li>${escapeHtml(text)}</li>`).join("")}</${tag}></section>`;
+  }).join("")}<details class="simulation-method-sources"><summary>Implementation sources</summary>
+    <p>These files define the current method. A completed run retains its vehicle, configuration and available provenance in the saved archive. The method alone does not establish correlation with a real vehicle.</p>
+    <ul>${guide.sources.map(path => `<li><a href="/files/${path.split("/").map(encodeURIComponent).join("/")}" target="_blank" rel="noopener">${escapeHtml(path)}</a></li>`).join("")}</ul></details></div>`;
 }
 
 function simWorkflowMeta(workflow) {
