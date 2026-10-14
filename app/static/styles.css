@@ -4874,7 +4874,7 @@ summary:focus-visible {
 .simulation-tree-icon { width: 16px; height: 16px; flex: 0 0 16px; color: var(--muted); }
 .simulation-tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .simulation-tree-model { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
-.simulation-tree-item:not(.simulation-analysis-label):hover, .simulation-tree-run:hover, .simulation-tree-toggle:hover { background: var(--surface-2); }
+.simulation-tree-item:hover, .simulation-tree-run:hover, .simulation-tree-toggle:hover { background: var(--surface-2); }
 .simulation-tree-item.active, .simulation-tree-run.active {
   background: var(--surface-2); border-color: var(--line); box-shadow: inset 2px 0 var(--blue);
 }
