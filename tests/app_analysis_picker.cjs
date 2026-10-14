@@ -105,8 +105,8 @@ for (const id of ['four-post','steady-state','transient','ramp-steer','mbd-step-
   assert.match(math,/<p>/);
   assert.doesNotMatch(math,/undefined/);
 }
-assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/rack travel and wheel torque/);
-assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Accelerate forward, brake backward/);
+assert.match(vm.runInContext("simulationMathHtml('ggv')",ctx),/rack travel, wheel torque/);
+assert.match(vm.runInContext("simulationMathHtml('lap-qss')",ctx),/Forward and backward speed passes/);
 assert.match(vm.runInContext("simulationMathHtml('steady-state')",ctx),/Position and heading still change/);
 
 const katexCSS = fs.readFileSync('app/static/vendor/katex/katex.min.css','utf8');
@@ -114,7 +114,7 @@ for (const [,font] of katexCSS.matchAll(/url\(([^)]+)\)/g)) assert.ok(fs.existsS
 assert.ok(markup.indexOf('/static/vendor/katex/katex.min.js') < markup.indexOf('/static/app.js'));
 
 const fourpost = vm.runInContext("simulationMathHtml('four-post')",ctx);
-assert.match(fourpost, /Rotate about global x, translate along local z/);
+assert.match(fourpost, /Global-x roll and local-z heave/);
 assert.match(fourpost, /Global x and y translation and all contact-frame rotations remain free/);
 assert.match(fourpost, /not a prescribed wheel-travel value/);
 assert.doesNotMatch(fourpost, /Move the fixtures|z_\{\\mathrm\{rig\}/);

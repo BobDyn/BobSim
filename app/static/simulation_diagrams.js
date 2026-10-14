@@ -209,7 +209,7 @@ function simulationLapDrawing(id, draw) {
   }
   if (id !== 'lap-transient') return null;
   const body = [
-    text(34, 29, 'Follow the reference'),
+    text(34, 29, 'Reference tracking'),
     `<g stroke-dasharray="6 5">${path('M35 201C108 207 135 185 165 140S231 74 320 80', 'muted')}</g>`,
     path('M35 222C108 220 137 180 179 157S244 111 320 115', 'accent'),
     text(35, 265, 'Reference line'),

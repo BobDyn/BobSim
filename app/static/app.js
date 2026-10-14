@@ -5180,10 +5180,10 @@ function simulationMethodGuide(workflowId) {
   return {
   "four-post": {
     "method": [
-      "Run the BobLib multibody suspension with chassis heave/roll actuators and fixed-height contact-patch fixtures in OpenModelica.",
-      "Apply the built-in heave sweep, then the roll sweep, with contact-patch force pulses and the selected steering offset.",
-      "Compare static contact loads with the vehicle weight distribution and adjust spring free lengths within the configured iteration limit.",
-      "Extract suspension geometry, force-transfer curves and setup metrics from the recorded sweep."
+      "OpenModelica evaluates the BobLib multibody suspension with chassis heave/roll actuators and fixed-height contact-patch fixtures.",
+      "The built-in schedule sweeps heave, then roll, with contact-patch force pulses and the selected steering offset.",
+      "Static contact loads are compared with the vehicle weight distribution. Spring free lengths are adjusted within the configured iteration limit.",
+      "The recorded sweep supplies suspension geometry, force-transfer curves and setup metrics."
     ],
     "inputs": [
       "Heave and roll amplitudes, pinion steering angle and applied contact-patch force.",
@@ -5211,10 +5211,10 @@ function simulationMethodGuide(workflowId) {
   },
   "steady-state": {
     "method": [
-      "Create a case for each requested speed and lateral-acceleration target.",
-      "Integrate the BobLib multibody model while the controller adjusts steering to reach lateral acceleration and regulates speed.",
-      "Check acceleration and speed errors, plus rates of lateral acceleration, yaw rate, sideslip, roll and handwheel angle.",
-      "Keep settled cases and build steering, roll and sideslip curves against achieved lateral acceleration."
+      "Each requested speed and lateral-acceleration target defines a case.",
+      "The BobLib multibody model advances through time while the controller regulates speed and lateral acceleration.",
+      "Settling checks cover speed and acceleration errors, plus rates of lateral acceleration, yaw rate, sideslip, roll and handwheel angle.",
+      "Accepted cases form steering, roll and sideslip curves against achieved lateral acceleration."
     ],
     "inputs": [
       "Test speeds and lateral-acceleration targets, including optional limits by speed.",
@@ -5240,10 +5240,10 @@ function simulationMethodGuide(workflowId) {
   },
   "ramp-steer": {
     "method": [
-      "Run a BobLib multibody case at each requested speed with closed-loop speed control.",
-      "Increase handwheel angle at a constant rate after the steering start time.",
-      "Record the response against achieved lateral acceleration as the ramp progresses.",
-      "Build handling curves and fit local gradients for steering, sideslip and roll."
+      "Each requested speed defines a BobLib multibody case with closed-loop speed control.",
+      "Handwheel angle increases at a constant rate after the steering start time.",
+      "The recorded response follows achieved lateral acceleration as the ramp progresses.",
+      "Local fits give steering, sideslip and roll gradients."
     ],
     "inputs": [
       "Test speeds, handwheel ramp rate and steering start time.",
@@ -5269,10 +5269,10 @@ function simulationMethodGuide(workflowId) {
   },
   "mbd-step-steer": {
     "method": [
-      "Create BobLib cases for the selected speeds, steering amplitudes and turn directions.",
-      "Apply a steering step with a finite rise time while the vehicle controller regulates speed.",
-      "Integrate the multibody response and record the steering, lateral acceleration, yaw, roll and sideslip histories.",
-      "Calculate final response, gain, peak, overshoot and response timing from each history."
+      "BobLib cases cover the selected speeds, steering amplitudes and turn directions.",
+      "A finite-rise steering step excites the vehicle while its controller regulates speed.",
+      "The integrated response includes steering, lateral acceleration, yaw, roll and sideslip histories.",
+      "Each history supplies final response, gain, peak, overshoot and timing metrics."
     ],
     "inputs": [
       "Test speeds, handwheel step amplitudes and turn directions.",
@@ -5298,10 +5298,10 @@ function simulationMethodGuide(workflowId) {
   },
   "transient": {
     "method": [
-      "Generate BobLib steering cases over the selected speeds, amplitudes, directions and sine frequencies.",
-      "Run finite-rise step and sustained-sine inputs with closed-loop speed control.",
-      "Measure step-response gain, peak, overshoot and timing.",
-      "Fit sine, cosine and offset terms to selected response cycles to calculate lateral-acceleration and yaw-rate gain and phase."
+      "BobLib steering cases span the selected speeds, amplitudes, directions and sine frequencies.",
+      "Finite-rise step and sustained-sine cases use closed-loop speed control.",
+      "Step histories supply response gain, peak, overshoot and timing.",
+      "Sine, cosine and offset fits over selected cycles give lateral-acceleration and yaw-rate gain and phase."
     ],
     "inputs": [
       "Test speeds, steering amplitudes, directions and steering start time.",
@@ -5326,11 +5326,11 @@ function simulationMethodGuide(workflowId) {
   },
   "reduced-ramp-steer": {
     "method": [
-      "Read the vehicle and front/rear tire definitions and build the selected DynPy model.",
-      "Solve straight-line trim to initialize vehicle attitude, wheel loading and drive demand.",
-      "Increase nominal mean front roadwheel steer at the selected rate, then hold after the ramp end.",
-      "Integrate the vehicle and PI speed controller while KinPy supplies each corner’s steering and suspension geometry.",
-      "Save the sampled signals, run summary and response report."
+      "The vehicle and independent front/rear tire definitions supply the selected DynPy model.",
+      "Straight-line trim initializes vehicle attitude, wheel loading and drive demand.",
+      "Nominal mean front roadwheel steer increases at the selected rate, then remains fixed after ramp end.",
+      "The vehicle and PI speed controller advance through time, with corner steering and suspension geometry supplied by KinPy.",
+      "The saved run contains sampled signals, a summary and a response report."
     ],
     "inputs": [
       "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
@@ -5358,11 +5358,11 @@ function simulationMethodGuide(workflowId) {
   },
   "reduced-step-steer": {
     "method": [
-      "Read the vehicle and front/rear tire definitions and build the selected DynPy model.",
-      "Solve straight-line trim to initialize vehicle attitude, wheel loading and drive demand.",
-      "Move nominal mean front roadwheel steer to the selected angle over the rise duration, then hold.",
-      "Integrate the vehicle and PI speed controller while KinPy supplies each corner’s steering and suspension geometry.",
-      "Save the sampled signals, run summary and response report."
+      "The vehicle and independent front/rear tire definitions supply the selected DynPy model.",
+      "Straight-line trim initializes vehicle attitude, wheel loading and drive demand.",
+      "Nominal mean front roadwheel steer reaches the selected angle over the rise duration, then remains fixed.",
+      "The vehicle and PI speed controller advance through time, with corner steering and suspension geometry supplied by KinPy.",
+      "The saved run contains sampled signals, a summary and a response report."
     ],
     "inputs": [
       "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
@@ -5390,10 +5390,10 @@ function simulationMethodGuide(workflowId) {
   },
   "ggv": {
     "method": [
-      "Build the selected DynPy model from the vehicle definition. At each requested speed, solve the algebraic vehicle equations for feasible longitudinal and lateral acceleration states.",
-      "Search the boundary of those feasible states rather than enumerate the entire interior. Find the lateral endpoint, then maximize acceleration and braking at each lower lateral demand, subject to vehicle balance, tire limits and drive or brake limits.",
-      "Use neighboring solutions as initial guesses. Reject points that ordinary vehicle evaluation cannot reproduce. Near ill-conditioned tire peaks, a bracketed trim search can return a conservative endpoint.",
-      "Keep points with valid drive and brake boundaries, close both branches at the lateral endpoint, and optionally mirror the positive lateral branch."
+      "The selected DynPy model supplies algebraic vehicle equations at each requested speed. Feasible solutions define longitudinal and lateral acceleration states.",
+      "A constrained search identifies the lateral endpoint and the acceleration and braking boundaries at lower lateral demands. Constraints cover vehicle balance, tires, steering, torque and power.",
+      "Neighboring solutions provide initial guesses. Ordinary vehicle evaluation verifies each point. Near ill-conditioned tire peaks, a bracketed trim search can return a conservative endpoint.",
+      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint, with optional mirroring of the positive lateral branch."
     ],
     "inputs": [
       "Vehicle geometry, mass, front and rear tire curves, suspension, aero and powertrain limits.",
@@ -5407,10 +5407,10 @@ function simulationMethodGuide(workflowId) {
       "Optional configured track-profile proxy metrics and velocity profiles. The envelope CSV can supply a QSS lap."
     ],
     "limits": [
-      "Each point holds sideslip constant and uses yaw rate equal to path-normal acceleration divided by speed. The retained body angular accelerations are constrained to zero. Wheel acceleration preserves local tire slip. This local QSS approximation does not predict corner-entry transients, roll buildup or wheel hop.",
+      "Each point holds sideslip constant and uses heading rate equal to path-normal acceleration divided by speed. The retained body angular accelerations are constrained to zero. Wheel acceleration preserves local tire slip. This local QSS approximation does not predict corner-entry transients, roll buildup or wheel hop.",
       "The left branch is mirrored from positive lateral demand when both directions are shown. Left and right cornering limits are not solved independently.",
       "This is a local constrained search, not a proof of the global boundary or dynamic stability. Search bounds, sampling, tire fits and convergence limit the recovered envelope. A missing point does not prove every nearby state is impossible.",
-      "GGV track-profile scores describe the configured maneuver proxy. Use QSS Lap for a boundary-defined racing line and lap-time estimate."
+      "GGV track-profile scores describe the configured maneuver proxy. QSS Lap provides a boundary-defined racing line and lap-time estimate."
     ],
     "sources": [
       "simulations/envelope/ggv/ggv_generation.py",
@@ -5421,10 +5421,10 @@ function simulationMethodGuide(workflowId) {
   },
   "ymd": {
     "method": [
-      "Sweep vehicle sideslip and steering at the selected speed and prescribed yaw rate.",
-      "At each point, solve longitudinal and vertical equilibrium using the selected DynPy model. Leave lateral acceleration and yaw moment free as outputs.",
-      "Use successful neighboring solutions as initial guesses and mark each point with its convergence status.",
-      "Interpolate zero-yaw-moment crossings between converged steering samples and select a continuous trim branch. Repeat at additional speeds when the speed sweep is enabled."
+      "A sideslip and steering grid defines operating points at the selected speed and prescribed yaw rate.",
+      "Longitudinal and vertical equilibrium are solved at each point. Lateral acceleration and yaw moment remain outputs.",
+      "Successful neighboring solutions provide initial guesses. Each point retains its convergence status.",
+      "Interpolated zero-yaw-moment crossings form a continuous trim branch. An enabled speed sweep adds maps at the other requested speeds."
     ],
     "inputs": [
       "Vehicle definition and selected DynPy 3, 6, 10 or 14 DOF model, evaluated in Python.",
@@ -5451,11 +5451,11 @@ function simulationMethodGuide(workflowId) {
   },
   "lap-qss": {
     "method": [
-      "Load a linked or supplied GGV, reuse a matching generated envelope, or generate one with the selected DynPy model.",
-      "Build a closed track corridor from boundary coordinates and reserve space for vehicle width and the safety margin.",
-      "Use the centerline, optimize a minimum-curvature line, or optimize QSS lap time starting from the minimum-curvature result.",
-      "At each candidate speed, track curvature sets lateral demand: ay = v²κ. Interpolate the GGV at that speed and lateral demand to obtain the remaining acceleration and braking capacity.",
-      "Use the lateral boundary to cap corner speed. Alternate forward acceleration and backward braking passes until the closed-lap speed profile converges, then integrate segment travel times. Braking anticipates upcoming corners and acceleration uses the available capacity on exit."
+      "The envelope comes from a linked or supplied GGV, a matching cached result, or generation with the selected DynPy model.",
+      "Boundary coordinates define a closed track corridor with allowance for vehicle width and the safety margin.",
+      "The line can follow the centerline, minimize curvature, or minimize QSS lap time from the minimum-curvature starting point.",
+      "At each candidate speed, curvature sets lateral demand. GGV interpolation at that speed and demand supplies the remaining acceleration and braking capacity.",
+      "The lateral boundary limits corner speed. Alternating forward acceleration and backward braking passes produce a converged closed-lap speed profile. Segment travel times give the lap time."
     ],
     "inputs": [
       "Track boundary CSV, vehicle width, safety margin and line sampling distance.",
@@ -5484,11 +5484,11 @@ function simulationMethodGuide(workflowId) {
   },
   "lap-transient": {
     "method": [
-      "First solve the QSS racing line and speed profile using the selected model's envelope.",
-      "Initialize the vehicle from a steady trim. If the first target speed cannot be trimmed, try progressively lower speeds.",
-      "Build steering feedforward from sparse steady cornering trims along the line. Add heading and cross-track feedback, with a preview distance.",
-      "Combine QSS acceleration feedforward with proportional speed feedback and allocate wheel torque using the drive and brake distributions and drive limits.",
-      "Integrate the DynPy states with RK45 for 3 DOF or Radau for 6, 10 and 14 DOF. Measure track progress and interpolate the first completed-lap crossing."
+      "The QSS racing line and speed profile use the selected model’s envelope.",
+      "A steady trim initializes the vehicle. Progressively lower initial speeds are tried if the first target cannot be trimmed.",
+      "Sparse steady cornering trims supply steering feedforward along the line. Preview, heading error and cross-track error provide feedback.",
+      "QSS acceleration feedforward and proportional speed feedback determine acceleration demand. Wheel torque allocation respects drive and brake distributions and drive limits.",
+      "DynPy integrates with RK45 for 3 DOF or Radau for 6, 10 and 14 DOF. Track progress identifies the first completed-lap crossing, with interpolation for lap time."
     ],
     "inputs": [
       "The track, line-optimization and envelope inputs used by QSS Lap.",
@@ -5520,59 +5520,59 @@ function simulationMethodGuide(workflowId) {
 
 function simulationMathHtml(id) {
   const tex = String.raw;
-  const ode = {title: "Advance the vehicle through time", equation: tex`\dot{\mathbf{x}} = \mathbf{f}(\mathbf{x},\mathbf{u},t), \qquad \mathbf{x}(0)=\mathbf{x}_0`, text: "Start from the initial state, evaluate forces, and integrate forward. Repeat at each solver step.", symbols: [[tex`\mathbf{x}`, "Vehicle positions and velocities"], [tex`\mathbf{u}`, "Steering, wheel torque and road inputs"]]};
-  const dae = {title: "Solve motion and joint constraints together", equation: tex`\begin{aligned} \mathbf{M}\ddot{\mathbf{q}}+\mathbf{h} &= \mathbf{Q}+\mathbf{J}^{T}\boldsymbol{\lambda} \\ \boldsymbol{\Phi}(\mathbf{q},t)&=\mathbf{0} \end{aligned}`, text: "OpenModelica integrates the multibody vehicle while keeping connected links and joints compatible.", symbols: [[tex`\mathbf{q}`, "Body and linkage coordinates"], [tex`\mathbf{M},\mathbf{h}`, "Mass matrix and inertial terms"], [tex`\mathbf{Q}`, "Applied forces and moments"], [tex`\boldsymbol{\Phi},\mathbf{J},\boldsymbol{\lambda}`, "Joint constraints, their Jacobian and reaction forces"]]};
-  const step = {title: "Apply the steering step", equation: tex`\delta(t)=\delta_{\mathrm{step}}\,\operatorname{clip}\!\left(\frac{t-t_0}{\tau},0,1\right)`, text: "Increase steering over the rise time, then hold it fixed.", symbols: [[tex`\delta_{\mathrm{step}}`, "Final steering angle"], [tex`t_0,\tau`, "Start time and rise time"]]};
-  const speed = {title: "Control speed during the maneuver", equation: tex`\begin{aligned} e_v &= v_{\mathrm{target}}-v \\ F_{\mathrm{request}} &= F_{\mathrm{trim}}+m\left(K_p e_v+K_i\int e_v\,dt\right) \end{aligned}`, text: "PI feedback adds drive or braking demand to the initial trim. Drive force and power limits can prevent the target speed being maintained.", symbols: [[tex`e_v`, "Speed error"], [tex`F_{\mathrm{trim}}`, "Force needed at the initial steady speed"], [tex`K_p,K_i`, "Proportional and integral gains"]]};
+  const ode = {title: "Time integration", equation: tex`\dot{\mathbf{x}} = \mathbf{f}(\mathbf{x},\mathbf{u},t), \qquad \mathbf{x}(0)=\mathbf{x}_0`, text: "The integrator advances from the initial state using the forces evaluated at each solver step.", symbols: [[tex`\mathbf{x}`, "Vehicle positions and velocities"], [tex`\mathbf{u}`, "Steering, wheel torque and road inputs"]]};
+  const dae = {title: "Multibody equations and joint constraints", equation: tex`\begin{aligned} \mathbf{M}\ddot{\mathbf{q}}+\mathbf{h} &= \mathbf{Q}+\mathbf{J}^{T}\boldsymbol{\lambda} \\ \boldsymbol{\Phi}(\mathbf{q},t)&=\mathbf{0} \end{aligned}`, text: "OpenModelica integrates the multibody vehicle while keeping connected links and joints compatible.", symbols: [[tex`\mathbf{q}`, "Body and linkage coordinates"], [tex`\mathbf{M},\mathbf{h}`, "Mass matrix and inertial terms"], [tex`\mathbf{Q}`, "Applied forces and moments"], [tex`\boldsymbol{\Phi},\mathbf{J},\boldsymbol{\lambda}`, "Joint constraints, their Jacobian and reaction forces"]]};
+  const step = {title: "Steering step", equation: tex`\delta(t)=\delta_{\mathrm{step}}\,\operatorname{clip}\!\left(\frac{t-t_0}{\tau},0,1\right)`, text: "Steering increases over the rise time, then remains fixed.", symbols: [[tex`\delta_{\mathrm{step}}`, "Final steering angle"], [tex`t_0,\tau`, "Start time and rise time"]]};
+  const speed = {title: "Speed control", equation: tex`\begin{aligned} e_v &= v_{\mathrm{target}}-v \\ F_{\mathrm{request}} &= F_{\mathrm{trim}}+m\left(K_p e_v+K_i\int e_v\,dt\right) \end{aligned}`, text: "PI feedback adds drive or braking demand to the initial trim. Drive force and power limits can prevent the target speed being maintained.", symbols: [[tex`e_v`, "Speed error"], [tex`F_{\mathrm{trim}}`, "Force needed at the initial steady speed"], [tex`K_p,K_i`, "Proportional and integral gains"]]};
   let intro, sections;
   if (id === "ggv") {
-    intro = "At each speed, solve the vehicle equations to find the acceleration boundary. Accelerations follow the direction of travel, so the result can supply a QSS lap.";
+    intro = "The vehicle equations define an acceleration boundary at each speed. Path-frame accelerations allow the result to supply a QSS lap.";
     sections = [
-      {title: "1. Set the cornering condition", equation: tex`V=V_i,\qquad a_n=a_{n,j},\qquad \dot\beta=0,\qquad \dot\psi=\frac{a_n}{V}`, text: "Sample speed and path-normal acceleration. Hold sideslip constant locally. A turn has nonzero yaw rate, which changes the velocity and slip at each tire.", symbols: [[tex`V`, "Speed along the path"], [tex`a_n`, "Path-normal acceleration, positive to the left"], [tex`\beta,\dot\psi`, "Body sideslip and heading rate"]]},
-      {title: "2. Solve force and moment balance", equation: tex`\begin{aligned} \mathbf{R}\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right) &= a_t\mathbf{t}+a_n\mathbf{n} \\ \mathbf{I}\dot{\boldsymbol\omega} &= \mathbf{M}-\boldsymbol\omega\times(\mathbf{I}\boldsymbol\omega) \end{aligned}`, text: "Solve sideslip, rack travel and wheel torque with the model's suspension and wheel states. Use the shared transient equations, but constrain yaw acceleration in 3 DOF and all body angular accelerations in higher fidelities to zero. This does not set yaw rate to zero. In the full inertia model, the gyroscopic term can require a nonzero net moment.", symbols: [[tex`F_{x,i},F_{y,i}`, "Tire force components resolved in body axes, at corner i"], [tex`a_t,\mathbf{t},\mathbf{n}`, "Tangential acceleration and horizontal path unit vectors"], [tex`\mathbf{R},\mathbf{v}^{B}`, "Body-to-world rotation and body-frame velocity"], [tex`\mathbf{I},\boldsymbol\omega,\mathbf{M}`, "Body-frame inertia, angular velocity and net moment"]]},
-      {title: "3. Find the feasible boundary", equation: tex`a_t^{\mathrm{upper}}=\max_{\text{feasible states}}a_t,\qquad a_t^{\mathrm{lower}}=\min_{\text{feasible states}}a_t`, text: "Optimize each boundary under tire-fit, steering, sideslip, torque and power limits. Reuse neighboring solutions to keep the solves fast. The lateral endpoint maximizes normal acceleration with tangential acceleration free. Even the upper boundary can be negative when the vehicle cannot maintain speed.", symbols: []}
+      {title: "1. Cornering condition", equation: tex`V=V_i,\qquad a_n=a_{n,j},\qquad \dot\beta=0,\qquad \dot\psi=\frac{a_n}{V}`, text: "Speed and path-normal acceleration define each operating condition. Sideslip is locally constant. Nonzero heading rate changes velocity and slip at each tire.", symbols: [[tex`V`, "Speed along the path"], [tex`a_n`, "Path-normal acceleration, positive to the left"], [tex`\beta,\dot\psi`, "Body sideslip and heading rate"]]},
+      {title: "2. Force and moment balance", equation: tex`\begin{aligned} \mathbf{R}\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right) &= a_t\mathbf{t}+a_n\mathbf{n} \\ \mathbf{I}\dot{\boldsymbol\omega} &= \mathbf{M}-\boldsymbol\omega\times(\mathbf{I}\boldsymbol\omega) \end{aligned}`, text: "The unknowns include sideslip, rack travel, wheel torque and the model's suspension and wheel states. The shared transient equations have zero yaw acceleration in 3 DOF and zero body angular acceleration in higher fidelities. This does not set yaw rate to zero. In the full inertia model, the gyroscopic term can require a nonzero net moment.", symbols: [[tex`F_{x,i},F_{y,i}`, "Tire force components resolved in body axes, at corner i"], [tex`a_t,\mathbf{t},\mathbf{n}`, "Tangential acceleration and horizontal path unit vectors"], [tex`\mathbf{R},\mathbf{v}^{B}`, "Body-to-world rotation and body-frame velocity"], [tex`\mathbf{I},\boldsymbol\omega,\mathbf{M}`, "Body-frame inertia, angular velocity and net moment"]]},
+      {title: "3. Feasible acceleration boundary", equation: tex`a_t^{\mathrm{upper}}=\max_{\text{feasible states}}a_t,\qquad a_t^{\mathrm{lower}}=\min_{\text{feasible states}}a_t`, text: "Boundary optimization respects tire-fit, steering, sideslip, torque and power limits. Neighboring solutions provide initial guesses. The lateral endpoint maximizes normal acceleration with tangential acceleration free. Even the upper boundary can be negative when the vehicle cannot maintain speed.", symbols: []}
     ];
   } else if (id === "lap-qss") {
-    intro = "Use the racing line and path-frame GGV to estimate a speed profile. Curvature sets normal acceleration. The envelope supplies the remaining tangential acceleration and braking capacity.";
+    intro = "The racing line and path-frame GGV determine a speed profile. Curvature sets normal acceleration. The envelope supplies the remaining tangential acceleration and braking capacity.";
     sections = [
-      {title: "1. Turn curvature into lateral demand", equation: tex`a_y=v^2\kappa`, text: "A tighter corner or higher speed needs more lateral acceleration. At each candidate speed, this demand selects a slice of the GGV with the remaining acceleration and braking capacity.", symbols: [[tex`v`, "Speed along the racing line"], [tex`\kappa`, "Racing-line curvature (1/m)"]]},
-      {title: "2. Accelerate forward, brake backward", equation: tex`\begin{aligned} v_{i+1}^{2} &\le v_i^{2}+2a_{\mathrm{drive}}\,\Delta s_i \\ v_i^{2} &\le v_{i+1}^{2}+2b_{\mathrm{brake}}\,\Delta s_i \end{aligned}`, text: "The forward pass limits exit speed. The backward pass lowers entry speed enough to brake for the next corner. Repeat around the lap while keeping the corner-speed limits.", symbols: [[tex`\Delta s_i`, "Distance between neighboring line samples"], [tex`a_{\mathrm{drive}}`, "Upper GGV acceleration at segment entry, which can be negative"], [tex`b_{\mathrm{brake}}\ge0`, "Braking magnitude from the GGV at the segment exit"]]},
-      {title: "3. Add up segment travel times", equation: tex`T=\sum_i\frac{2\Delta s_i}{v_i+v_{i+1}}`, text: "Divide each segment length by its average endpoint speed, then sum over the closed lap.", symbols: [[tex`T`, "Predicted QSS lap time"]]}
+      {title: "1. Curvature and lateral demand", equation: tex`a_y=v^2\kappa`, text: "A tighter corner or higher speed needs more lateral acceleration. At each candidate speed, this demand selects a slice of the GGV with the remaining acceleration and braking capacity.", symbols: [[tex`v`, "Speed along the racing line"], [tex`\kappa`, "Racing-line curvature (1/m)"]]},
+      {title: "2. Forward and backward speed passes", equation: tex`\begin{aligned} v_{i+1}^{2} &\le v_i^{2}+2a_{\mathrm{drive}}\,\Delta s_i \\ v_i^{2} &\le v_{i+1}^{2}+2b_{\mathrm{brake}}\,\Delta s_i \end{aligned}`, text: "The forward pass limits exit speed. The backward pass lowers entry speed enough to brake for the next corner. Repeated passes preserve the corner-speed limits around the lap.", symbols: [[tex`\Delta s_i`, "Distance between neighboring line samples"], [tex`a_{\mathrm{drive}}`, "Upper GGV acceleration at segment entry, which can be negative"], [tex`b_{\mathrm{brake}}\ge0`, "Braking magnitude from the GGV at the segment exit"]]},
+      {title: "3. Segment travel times", equation: tex`T=\sum_i\frac{2\Delta s_i}{v_i+v_{i+1}}`, text: "Each segment’s travel time is its length divided by its average endpoint speed. The sum gives the closed-lap time.", symbols: [[tex`T`, "Predicted QSS lap time"]]}
     ];
   } else if (id === "ymd") {
-    intro = "Sweep steering and body sideslip to see how much lateral acceleration and yaw moment each combination produces.";
+    intro = "A steering and body-sideslip grid maps each combination to lateral acceleration and yaw moment.";
     sections = [
-      {title: "1. Choose a steering and sideslip pair", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Hold the selected speed and yaw rate. Solve longitudinal, vertical and wheel balance for each pair.", symbols: [[tex`\delta`, "Steering angle"], [tex`\beta`, "Body sideslip angle"]]},
-      {title: "2. Calculate lateral response and yaw moment", equation: tex`a_y=\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right)_y,\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "Plot body-frame lateral acceleration against yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`F_{y,i}`, "Lateral tire force resolved in body axes, at corner i"], [tex`\mathbf{v}^{B},\boldsymbol\omega`, "Body-frame linear and angular velocity"], [tex`M_z`, "Net external yaw moment"]]},
-      {title: "3. Find the zero-moment curve", equation: tex`M_z(\beta,\delta)=0`, text: "Interpolate crossings between converged samples. This identifies balanced yaw conditions within the map. It is not a time-domain stability test.", symbols: []}
+      {title: "1. Steering and sideslip grid", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Each pair has the selected speed and yaw rate, with longitudinal, vertical and wheel balance enforced.", symbols: [[tex`\delta`, "Steering angle"], [tex`\beta`, "Body sideslip angle"]]},
+      {title: "2. Lateral response and yaw moment", equation: tex`a_y=\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right)_y,\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "The map pairs body-frame lateral acceleration with yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`F_{y,i}`, "Lateral tire force resolved in body axes, at corner i"], [tex`\mathbf{v}^{B},\boldsymbol\omega`, "Body-frame linear and angular velocity"], [tex`M_z`, "Net external yaw moment"]]},
+      {title: "3. Zero-moment curve", equation: tex`M_z(\beta,\delta)=0`, text: "Crossings are interpolated between converged samples. This identifies balanced yaw conditions within the map. It is not a time-domain stability test.", symbols: []}
     ];
   } else if (id === "steady-state") {
-    intro = "Let the multibody vehicle settle at a target speed and lateral acceleration, then record its steering, roll and sideslip.";
+    intro = "The multibody vehicle settles at a target speed and lateral acceleration. Its settled response supplies steering, roll and sideslip.";
     sections = [dae,
-      {title: "Drive toward the target condition", equation: tex`e_v=v_{\mathrm{target}}-v,\qquad e_a=a_{y,\mathrm{target}}-a_y`, text: "The vehicle controller adjusts torque and steering to reduce these errors.", symbols: [[tex`e_v,e_a`, "Speed and lateral-acceleration errors"], [tex`\mathbf u`, "Steering and torque commands"]]},
-      {title: "Accept only settled cases", equation: tex`|e_v|<\varepsilon_v,\qquad |e_a|<\varepsilon_a,\qquad |\dot y_j|<\varepsilon_j`, text: "Check errors and the rates of the monitored handling signals. Position and heading still change as the vehicle travels around a corner.", symbols: [[tex`y_j`, "Monitored acceleration, yaw rate, sideslip, roll or steering"], [tex`\varepsilon`, "Configured settling tolerance"]]}
+      {title: "Target condition", equation: tex`e_v=v_{\mathrm{target}}-v,\qquad e_a=a_{y,\mathrm{target}}-a_y`, text: "The vehicle controller adjusts torque and steering to reduce these errors.", symbols: [[tex`e_v,e_a`, "Speed and lateral-acceleration errors"], [tex`\mathbf u`, "Steering and torque commands"]]},
+      {title: "Settling criteria", equation: tex`|e_v|<\varepsilon_v,\qquad |e_a|<\varepsilon_a,\qquad |\dot y_j|<\varepsilon_j`, text: "Acceptance depends on errors and the rates of the monitored handling signals. Position and heading still change as the vehicle travels around a corner.", symbols: [[tex`y_j`, "Monitored acceleration, yaw rate, sideslip, roll or steering"], [tex`\varepsilon`, "Configured settling tolerance"]]}
     ];
   } else if (id === "four-post") {
-    intro = "Move the chassis in heave and roll while the contact patches remain at their reference heights. The suspension determines the resulting wheel travel.";
+    intro = "The chassis moves in heave and roll while the contact patches remain at their reference heights. The suspension determines the resulting wheel travel.";
     sections = [
-      {title: "1. Rotate about global x, translate along local z", equation: tex`\begin{aligned}\mathbf R &= \mathbf R_x(\phi) \\ \mathbf r_A^{\mathrm{world}} &= \mathbf R_x(\phi)\left(\mathbf r_{A,0}+h\,\mathbf e_z\right)\end{aligned}`, text: "The actuator starts at the world origin. Its revolute joint rolls about global x. The axle reference offset follows that rotation, then the prismatic joint translates the chassis along the rotated local z axis. Positive heave therefore follows local z, not global vertical when roll is nonzero. Front and rear receive the same commands.", symbols: [[tex`\phi`, "Commanded roll about global x (forward)"], [tex`h`, "Commanded heave along the actuator's local z axis"], [tex`\mathbf r_{A,0}`, "Nominal axle reference: wheel-center x and z, with y = 0"], [tex`\mathbf R_x,\mathbf e_z`, "Local-to-world roll rotation and local z unit vector"]]},
-      {title: "2. Constrain the contact patches", equation: tex`z_{\mathrm{CP},i}=z_{\mathrm{ground},i}=z_{\mathrm{CP},i}^{\mathrm{initial}}`, text: "Each contact patch stays on the ground at its initial global z. Global x and y translation and all contact-frame rotations remain free. These constraints allow the contact patch to migrate and the wheel to change orientation as the suspension moves. The rig also applies scheduled longitudinal and lateral test forces.", symbols: [[tex`i`, "One of the four contact patches"], [tex`z_{\mathrm{ground},i}`, "Ground height taken from the initial global contact-patch z"]]},
-      {title: "3. Solve suspension closure and reactions", equation: tex`\boldsymbol\Phi(\mathbf q;h,\phi)=\mathbf0`, text: "Solve the multibody equations with the imposed chassis pose and contact constraints. Wheel travel, camber, toe, spring motion and reaction loads follow from the linkage geometry. Heave is an actuator displacement, not a prescribed wheel-travel value. The built-in schedule sweeps heave first, then roll.", symbols: [[tex`\mathbf q`, "Suspension coordinates solved by the model"], [tex`\boldsymbol\Phi`, "Joint, chassis-pose and contact-fixture constraints"]]}
+      {title: "1. Global-x roll and local-z heave", equation: tex`\begin{aligned}\mathbf R &= \mathbf R_x(\phi) \\ \mathbf r_A^{\mathrm{world}} &= \mathbf R_x(\phi)\left(\mathbf r_{A,0}+h\,\mathbf e_z\right)\end{aligned}`, text: "The actuator starts at the world origin. Its revolute joint rolls about global x. The axle reference offset follows that rotation, then the prismatic joint translates the chassis along the rotated local z axis. Positive heave therefore follows local z, not global vertical when roll is nonzero. Front and rear receive the same commands.", symbols: [[tex`\phi`, "Commanded roll about global x (forward)"], [tex`h`, "Commanded heave along the actuator's local z axis"], [tex`\mathbf r_{A,0}`, "Nominal axle reference: wheel-center x and z, with y = 0"], [tex`\mathbf R_x,\mathbf e_z`, "Local-to-world roll rotation and local z unit vector"]]},
+      {title: "2. Contact-patch constraints", equation: tex`z_{\mathrm{CP},i}=z_{\mathrm{ground},i}=z_{\mathrm{CP},i}^{\mathrm{initial}}`, text: "Each contact patch stays on the ground at its initial global z. Global x and y translation and all contact-frame rotations remain free. These constraints allow the contact patch to migrate and the wheel to change orientation as the suspension moves. The rig also applies scheduled longitudinal and lateral test forces.", symbols: [[tex`i`, "One of the four contact patches"], [tex`z_{\mathrm{ground},i}`, "Ground height taken from the initial global contact-patch z"]]},
+      {title: "3. Suspension closure and reactions", equation: tex`\boldsymbol\Phi(\mathbf q;h,\phi)=\mathbf0`, text: "The multibody equations include the imposed chassis pose and contact constraints. Wheel travel, camber, toe, spring motion and reaction loads follow from the linkage geometry. Heave is an actuator displacement, not a prescribed wheel-travel value. The built-in schedule sweeps heave first, then roll.", symbols: [[tex`\mathbf q`, "Suspension coordinates solved by the model"], [tex`\boldsymbol\Phi`, "Joint, chassis-pose and contact-fixture constraints"]]}
     ];
   } else if (id === "lap-transient") {
     intro = "A feedback driver follows a QSS reference line and speed profile while the vehicle states evolve through time.";
     sections = [
-      {title: "Build the reference lap", equation: tex`a_y^{\mathrm{ref}}(s)=v_{\mathrm{ref}}(s)^2\kappa(s)`, text: "First run the QSS line and speed calculation. The driver uses this as a target, not a prescribed vehicle trajectory.", symbols: [[tex`s`, "Distance along the reference line"]]},
-      {title: "Correct tracking errors", equation: tex`\begin{aligned}\delta_{\mathrm{cmd}}&=\operatorname{clip}\!\left(\delta_{\mathrm{ff}}+k_\psi e_\psi-\operatorname{atan2}(k_e e_y,v)\right)\\ a_{\mathrm{cmd}}&=\operatorname{clip}\!\left(a_x^{\mathrm{ref}}+k_v(v_{\mathrm{ref}}-v)\right)\end{aligned}`, text: "Add feedback to the reference steering and acceleration, then enforce command limits. Preview selects the reference steering and target speed.", symbols: [[tex`\delta_{\mathrm{ff}}`, "Feedforward steering from cornering trims"], [tex`e_\psi,e_y`, "Heading and cross-track errors"], [tex`k_\psi,k_e,k_v`, "Driver feedback gains"]]}, ode
+      {title: "Reference lap", equation: tex`a_y^{\mathrm{ref}}(s)=v_{\mathrm{ref}}(s)^2\kappa(s)`, text: "The QSS calculation supplies the reference line and speed. The driver uses this as a target, not a prescribed vehicle trajectory.", symbols: [[tex`s`, "Distance along the reference line"]]},
+      {title: "Driver feedback", equation: tex`\begin{aligned}\delta_{\mathrm{cmd}}&=\operatorname{clip}\!\left(\delta_{\mathrm{ff}}+k_\psi e_\psi-\operatorname{atan2}(k_e e_y,v)\right)\\ a_{\mathrm{cmd}}&=\operatorname{clip}\!\left(a_x^{\mathrm{ref}}+k_v(v_{\mathrm{ref}}-v)\right)\end{aligned}`, text: "Feedback corrects the reference steering and acceleration within command limits. Preview selects the reference steering and target speed.", symbols: [[tex`\delta_{\mathrm{ff}}`, "Feedforward steering from cornering trims"], [tex`e_\psi,e_y`, "Heading and cross-track errors"], [tex`k_\psi,k_e,k_v`, "Driver feedback gains"]]}, ode
     ];
   } else {
     const reduced = ["reduced-ramp-steer", "reduced-step-steer"].includes(id);
     const isStep = ["reduced-step-steer", "mbd-step-steer"].includes(id);
     const isRamp = ["reduced-ramp-steer", "ramp-steer"].includes(id);
     if (!reduced && !isStep && !isRamp && id !== "transient") return "";
-    intro = reduced ? "Start from straight-line trim, apply steering, and integrate the selected DynPy model while controlling speed." : "Apply steering to the multibody vehicle while regulating speed, then measure its time response.";
-    const ramp = {title: "Apply the steering ramp", equation: reduced ? tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\,\operatorname{clip}(t-t_0,0,t_{\mathrm{end}}-t_0)` : tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\max(t-t_0,0)`, text: reduced ? "Ramp at a constant rate, then hold after ramp end. Simulation end is separate." : "Increase handwheel angle at a constant rate until the run stops or a termination condition is reached.", symbols: [[tex`\dot\delta_{\mathrm{cmd}}`, "Commanded steering rate"], [tex`t_0`, "Steering start time"], ...(reduced ? [[tex`t_{\mathrm{end}}`, "Ramp end time"]] : [])]};
-    const sine = {title: "Apply step and sine inputs", equation: tex`\delta_{\mathrm{sine}}(t)=A\sin(2\pi f(t-t_0))`, text: "Run finite-rise step cases and sustained-sine cases. Step metrics describe timing and overshoot. Sine fits give response gain and phase at each test frequency.", symbols: [[tex`A,f`, "Steering amplitude and frequency"], [tex`t_0`, "Steering start time"]]};
+    intro = reduced ? "The selected DynPy model starts from straight-line trim and responds to steering with closed-loop speed control." : "The multibody vehicle responds to steering with closed-loop speed control.";
+    const ramp = {title: "Steering ramp", equation: reduced ? tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\,\operatorname{clip}(t-t_0,0,t_{\mathrm{end}}-t_0)` : tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\max(t-t_0,0)`, text: reduced ? "Steering increases at a constant rate, then remains fixed after ramp end. Simulation end is separate." : "Handwheel angle increases at a constant rate until the run stops or a termination condition is reached.", symbols: [[tex`\dot\delta_{\mathrm{cmd}}`, "Commanded steering rate"], [tex`t_0`, "Steering start time"], ...(reduced ? [[tex`t_{\mathrm{end}}`, "Ramp end time"]] : [])]};
+    const sine = {title: "Step and sine inputs", equation: tex`\delta_{\mathrm{sine}}(t)=A\sin(2\pi f(t-t_0))`, text: "The cases cover finite-rise steps and sustained sine inputs. Step metrics describe timing and overshoot. Sine fits give response gain and phase at each test frequency.", symbols: [[tex`A,f`, "Steering amplitude and frequency"], [tex`t_0`, "Steering start time"]]};
     sections = [isStep ? step : isRamp ? ramp : sine, reduced ? ode : dae];
     if (reduced) sections.push(speed);
     intro += reduced ? " Steering is nominal mean front roadwheel angle." : " Steering is handwheel angle.";
@@ -5597,19 +5597,19 @@ function simulationMethodHtml(workflow) {
 function simWorkflowMeta(workflow) {
   if (workflow?.id === "mbd-step-steer") return {
     title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
-    sequence: ["Initialize the MBD vehicle", "Apply a finite-rise steering step", "Integrate the vehicle response"],
+    sequence: ["MBD initialization", "Finite-rise steering step", "Vehicle response"],
     parameters: ["Speed, steering step and rise time"], outputs: ["Response PDF and metrics CSV"],
   };
   if (workflow?.id === "reduced-ramp-steer") return {
     title: "Ramp steer", summary: "Constant-rate roadwheel steering from straight-line trim.",
-    sequence: ["Trim at the initial speed", "Hold target speed with PI control", "Ramp steering to the end time, then hold"],
+    sequence: ["Initial straight-line trim", "PI speed control", "Steering ramp and hold"],
     parameters: ["Model DOF, target speed and steering rate", "Ramp start, ramp end and simulation end"],
     outputs: ["Response PDF, signal CSV and run summary"],
   };
   const fallback = {
     title: workflow?.label || "Simulation",
-    summary: "Configure the run, execute it against the active vehicle definition, then inspect generated logs and outputs.",
-    sequence: ["Load active vehicle definition", "Apply run configuration", "Execute workflow actions"],
+    summary: "The active vehicle and run settings define the simulation. Results include logs and registered outputs.",
+    sequence: ["Vehicle definition", "Run configuration", "Workflow execution"],
     parameters: ["Solver and stop time", "Case-specific sweep values", "Report output paths"],
     outputs: ["Job log", "Registered reports and CSV files"],
   };
@@ -5617,63 +5617,63 @@ function simWorkflowMeta(workflow) {
     "ggv": {
       title: "GGV",
       summary: "Longitudinal and lateral acceleration limits across speed.",
-      sequence: ["Solve quasi-steady trim points"],
+      sequence: ["Quasi-steady trim points"],
       parameters: ["Speed grid and acceleration bounds"],
       outputs: ["Envelope CSV and PDF report"],
     },
     "ymd": {
       title: "Yaw moment diagram",
       summary: "Yaw moment and lateral acceleration across sideslip and steering.",
-      sequence: ["Sweep quasi-steady sideslip and steering states"],
+      sequence: ["Sideslip and steering grid"],
       parameters: ["Speed, sideslip and steering grids"],
       outputs: ["Yaw moment CSV and PDF report"],
     },
     "reduced-step-steer": {
       title: "Step steer",
       summary: "Time response to a roadwheel steering step.",
-      sequence: ["Trim at target speed", "Hold speed with PI control during the steering step"],
+      sequence: ["Initial trim", "Steering step with PI speed control"],
       parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
       outputs: ["PDF report, signals CSV and summary"],
     },
     "lap-qss": {
       title: "QSS lap",
       summary: "Racing line and speed profile from a vehicle acceleration envelope.",
-      sequence: ["Generate or verify the GGV, then solve the line and speed profile"],
+      sequence: ["GGV validation, racing line and speed profile"],
       parameters: ["DOF, track, racing line and power cap"],
       outputs: ["PDF report, lap CSV and summary"],
     },
     "lap-transient": {
       title: "Transient lap",
       summary: "Driver-controlled lap following a QSS reference line and speed profile.",
-      sequence: ["Solve the QSS reference, then integrate the vehicle and driver"],
+      sequence: ["QSS reference and driver-controlled response"],
       parameters: ["DOF, track, racing line, power cap and driver lookahead"],
       outputs: ["PDF report, QSS and transient lap CSVs and summary"],
     },
     "ramp-steer": {
       title: "Ramp Steer",
       summary: "Steering ramp across a range of speeds.",
-      sequence: ["Build VehicleSim if needed", "Initialize the active vehicle record", "Sweep speed cases", "Apply steering ramp", "Collect report metrics"],
+      sequence: ["VehicleSim build", "Vehicle initialization", "Speed cases", "Steering ramp", "Report metrics"],
       parameters: ["Velocity isolines", "Handwheel ramp timing and amplitude", "Nonlinearity cutoff", "Solver tolerance and stop time"],
       outputs: ["Ramp steer PDF report", "Metrics CSV", "Job log with build and run output"],
     },
     "steady-state": {
       title: "Steady State",
       summary: "Settled cornering across lateral-acceleration targets.",
-      sequence: ["Build VehicleSim if needed", "Initialize each target condition", "Close the control loop", "Converge settled states", "Export metrics"],
+      sequence: ["VehicleSim build", "Target initialization", "Closed-loop control", "Settling checks", "Metrics export"],
       parameters: ["Target lateral-acceleration grid", "Velocity-specific Ay caps", "Convergence criteria", "Report and solver controls"],
       outputs: ["Steady-state PDF report", "Metrics CSV", "Settled-point job log"],
     },
     transient: {
       title: "Transient",
       summary: "Response to step and sine steering inputs.",
-      sequence: ["Build VehicleSim if needed", "Apply input schedule", "Integrate the time response", "Capture response channels", "Generate summary files"],
+      sequence: ["VehicleSim build", "Input schedule", "Time integration", "Response channels", "Run summary"],
       parameters: ["Input type and amplitude", "Input timing/frequency", "Initial speed", "Stop time, step size, and solver"],
       outputs: ["Transient PDF report", "Metrics CSV", "Time-response job log"],
     },
     "four-post": {
       title: "Four Post",
       summary: "Suspension response to heave, roll, and corner loads.",
-      sequence: ["Build FourPostSim if needed", "Fix contact-patch reference heights", "Command chassis heave and roll", "Apply contact-patch test forces", "Collect suspension metrics"],
+      sequence: ["FourPostSim build", "Fixed contact heights", "Chassis heave and roll", "Contact-patch test forces", "Suspension metrics"],
       parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Override rates and initial conditions", "Solver and output controls"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
     },
@@ -5698,33 +5698,33 @@ function studyWorkflowGuide(workflow) {
   return {
     ggv: {
       title: "GGV Envelope",
-      copy: "Set the speed grid and acceleration search bounds, then generate the tire-limited acceleration envelope.",
-      steps: ["Vehicle selected", "Set grid", "Run envelope"],
+      copy: "The speed grid and search bounds define the acceleration envelope calculation.",
+      steps: ["Vehicle selected", "Grid settings", "Envelope calculation"],
     },
     ymd: {
       title: "Yaw Moment Diagram",
-      copy: "Set beta, handwheel, and speed grids to inspect lateral force and yaw moment authority.",
-      steps: ["Vehicle selected", "Set map", "Run YMD"],
+      copy: "Sideslip, steering and speed grids define the lateral-acceleration and yaw-moment map.",
+      steps: ["Vehicle selected", "Map settings", "Map calculation"],
     },
     "vehicle-review": {
       title: "Vehicle Review",
-      copy: "Choose report labels and whether envelope artifacts should be regenerated before assembly.",
-      steps: ["Vehicle selected", "Set report", "Run review"],
+      copy: "Report settings cover labels and envelope regeneration before assembly.",
+      steps: ["Vehicle selected", "Report settings", "Report generation"],
     },
     "standard-sens": {
       title: "Standard Sensitivity",
-      copy: "Configure the DOE sampler for the Modelica-backed standard simulation sensitivity study.",
-      steps: ["Vehicle selected", "Set sampler", "Run DOE"],
+      copy: "The DOE sampler defines a sensitivity study using the Modelica vehicle.",
+      steps: ["Vehicle selected", "Sampler settings", "DOE evaluation"],
     },
     "envelope-sens": {
       title: "Envelope Sensitivity",
-      copy: "Configure a quick reduced-order sensitivity sweep around envelope-level controls.",
-      steps: ["Vehicle selected", "Set sampler", "Run study"],
+      copy: "The sampler defines a reduced-order sensitivity study of envelope settings.",
+      steps: ["Vehicle selected", "Sampler settings", "Study evaluation"],
     },
   }[workflow?.id] || {
     title: workflow?.label || "Study",
-    copy: "Select a study, configure the run, then execute it.",
-    steps: ["Vehicle selected", "Configure", "Run"],
+    copy: "Study settings define the analysis of the selected vehicle.",
+    steps: ["Vehicle selected", "Settings", "Results"],
   };
 }
 
