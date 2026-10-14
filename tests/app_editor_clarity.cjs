@@ -701,8 +701,8 @@ vm.runInContext(`
     state.simulationWorkspace={vehicle_key:'car',simulations:[],analysis_groups:['steady-state']};
     renderSimulationWorkspace();
     assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="steady-state"/);
-    assert.doesNotMatch(elements['simulation-tree'].innerHTML,/data-analysis-group="kinematic"/);
-    assert.doesNotMatch(elements['simulation-tree'].innerHTML,/data-analysis-group="transient"/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="kinematic"/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="transient"/);
   `,treeContext);
 }
 
@@ -721,11 +721,11 @@ vm.runInContext(`
       addEventListener:(name,fn)=>events['menu:'+name]=fn
     };
     const trigger={setAttribute(){},focus(){}};
-    document={getElementById:id=>id==='simulation-context-menu' ? menu : id==='add-simulation-btn' ? trigger : {
+    document={getElementById:id=>id==='simulation-context-menu' ? menu : {
       addEventListener:(name,fn)=>events['tree:'+name]=fn
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
-    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;}; showAnalysisPicker=()=>{added='analysis';};
+    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
@@ -739,12 +739,6 @@ vm.runInContext(`
       events['menu:click']({target:{closest:()=>buttons[0]}});
       assert.equal(added,group); assert.equal(menu.hidden,true);
     }
-    events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
-      closest:selector=>selector==='.simulation-tree-root' ? {} : null
-    }});
-    assert.equal(buttons[0].textContent,'Add analysis');
-    events['menu:click']({target:{closest:()=>buttons[0]}});
-    assert.equal(added,'analysis');
     rightClick('steady-state','envelope');
     assert.equal(focused,'duplicate');
     assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['duplicate','delete']);

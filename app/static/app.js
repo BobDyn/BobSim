@@ -4295,37 +4295,7 @@ async function openSimulation(id) {
   setView("standard");
 }
 
-async function showAnalysisPicker() {
-  await saveSimulationEdits();
-  renderAnalysisPicker();
-  document.getElementById("analysis-picker-status").textContent = "";
-  document.getElementById("analysis-picker").showModal();
-}
-
-function renderAnalysisPicker() {
-  const enabled = state.simulationWorkspace?.analysis_groups || [];
-  const target = document.getElementById("analysis-picker-options");
-  target.innerHTML = SIMULATION_GROUPS.map(({id, label}) => `<button type="button" class="analysis-picker-option" data-add-analysis="${id}"${enabled.includes(id) ? ' disabled title="This analysis is already in the tree."' : ""}>
-    ${simulationTreeIcon({kinematic: "vehicle", "steady-state": "envelope", transient: "response"}[id])}<strong>${label}</strong>${enabled.includes(id) ? '<span>Added</span>' : ''}</button>`).join("");
-  target.querySelectorAll("[data-add-analysis]").forEach(button => {
-    button.onclick = () => workspaceAction(async () => {
-      button.disabled = true;
-      button.title = "Analysis creation in progress.";
-      try {
-        const group = button.dataset.addAnalysis;
-        await simulationRequest("add-analysis", {group});
-        document.getElementById("analysis-picker").close();
-        await openAnalysisOverview(group);
-      } catch (error) {
-        document.getElementById("analysis-picker-status").textContent = error.message;
-        renderAnalysisPicker();
-      }
-    });
-  });
-}
-
 async function showSimulationCatalog(group = activeSimulationGroup) {
-  if (!(state.simulationWorkspace?.analysis_groups || []).includes(group)) return showAnalysisPicker();
   await saveSimulationEdits();
   state.simulationCatalogOpen = true;
   activeSimulationGroup = group;
@@ -4349,7 +4319,6 @@ function wireSimulationCatalog() {
   const dialog = document.getElementById("simulation-catalog");
   document.querySelector("[data-close-simulation-catalog]").onclick = closeSimulationCatalog;
   dialog.onclose = () => { state.simulationCatalogOpen = false; renderSimulationWorkspace(); };
-  document.querySelector("[data-close-analysis-picker]").onclick = () => document.getElementById("analysis-picker").close();
 }
 
 function workspaceAction(action) {
@@ -4572,12 +4541,10 @@ function wireSimulationContextMenu() {
     }
     const branch = event.target.closest("[data-simulation-branch]");
     const group = event.target.closest("[data-analysis-group]");
-    const root = event.target.closest(".simulation-tree-root");
-    if (!branch && !group && !root) return;
+    if (!branch && !group) return;
     event.preventDefault();
     if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
     else if (group) open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
-    else open(null, event.clientX, event.clientY, document.getElementById("add-simulation-btn"), "group");
   });
   tree.addEventListener("click", event => {
     const button = event.target.closest("[data-simulation-menu]");
@@ -4592,7 +4559,7 @@ function wireSimulationContextMenu() {
     const id = target;
     close();
     workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
-      : action === "add" ? (id ? showSimulationCatalog(id) : showAnalysisPicker()) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
+      : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
@@ -4692,7 +4659,6 @@ function mountSimulationWorkspace() {
   });
   document.getElementById("simulation-tree").addEventListener("click", event => {
     clearTimeout(overviewClickTimer);
-    if (event.target.closest("#add-simulation-btn")) { workspaceAction(showAnalysisPicker); return; }
     const ggv = event.target.closest("[data-simulation-ggv]");
     if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
     const group = event.target.closest("[data-simulation-add-group]");
@@ -4780,9 +4746,7 @@ function renderSimulationWorkspace() {
   if (!tree || document.activeElement?.classList?.contains("simulation-tree-name")) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
-  const enabled = new Set(state.simulationWorkspace?.vehicle_key === activeVehicleKey() ? state.simulationWorkspace.analysis_groups || [] : []);
-  for (const simulation of simulations || []) enabled.add(simulationAnalysisGroup({id: simulation.workflow_id}));
-  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong><button id="add-simulation-btn" class="simulation-tree-add" type="button" title="Add analysis" aria-label="Add analysis">+</button></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.filter(group => enabled.has(group.id)).map(group => {
+  tree.innerHTML = `<div class="simulation-tree-root">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></div><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
     const groupId = `group:${group.id}`;
     const expanded = !state.collapsedSimulations.has(groupId);
     return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
@@ -4810,8 +4774,8 @@ function renderSimulationWorkspace() {
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
         ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
-        <div class="simulation-tree-row" data-simulation-results="${escapeHtml(item.id)}">
-          ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : '<span class="simulation-tree-spacer"></span>'}
+        <div class="simulation-tree-row simulation-results-row" data-simulation-results="${escapeHtml(item.id)}">
+          ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : ""}
           <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (item.workflow_id === "ggv" ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
         </div>
         <div class="simulation-tree-children simulation-result-children"${state.collapsedSimulations.has(`results:${item.id}`) ? " hidden" : ""}>
@@ -4835,7 +4799,7 @@ function renderSimulationWorkspace() {
   const overviewVisible = renderSimulationOverview();
   document.getElementById("simulation-child-editor").hidden = state.view !== "standard" || !state.simulationChildEditor;
   const empty = document.getElementById("simulation-empty");
-  empty.querySelector("h3").textContent = simulations?.length ? "Select a simulation" : "Add an analysis";
+  empty.querySelector("h3").textContent = simulations?.length ? "Simulation workspace" : "No simulations";
   empty.querySelector("p").hidden = Boolean(simulations?.length);
   document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationChildEditor || state.simulationGgvEditor;
   renderSimulationCatalog();

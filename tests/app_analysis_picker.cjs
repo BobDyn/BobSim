@@ -45,13 +45,13 @@ vm.runInContext(`
   element('simulation-catalog').close(); // The browser's Escape handling closes native dialogs.
   assert.equal(state.simulationCatalogOpen, false);
 
-  await showAnalysisPicker();
-  assert.equal(element('analysis-picker').open, true);
-  assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="transient" disabled title="This analysis is already in the tree\."/);
-  assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="kinematic">/);
-  assert.match(element('analysis-picker-options').innerHTML, /data-add-analysis="steady-state">/);
-  element('[data-close-analysis-picker]').onclick();
-  assert.equal(element('analysis-picker').open, false);
+  state.simulationWorkspace.analysis_groups=[];
+  await showSimulationCatalog('kinematic');
+  assert.equal(element('simulation-catalog').open,true);
+  assert.match(element('workflow-grid').innerHTML,/four-post/);
+  assert.doesNotMatch(element('workflow-grid').innerHTML,/lap-qss|step-steer/);
+  closeSimulationCatalog();
+  activeSimulationGroup='transient';
 
   const calls = [];
   api = async (url, options) => { calls.push([url,JSON.parse(options.body)]); return {}; };
@@ -95,7 +95,7 @@ for (const id of ['four-post', 'steady-state', 'transient', 'ramp-steer', 'mbd-s
 }
 const markup = fs.readFileSync('app/static/index.html', 'utf8');
 assert.doesNotMatch(markup, /simulation-tree-toolbar[^\n]*add-simulation-btn/);
-assert.match(source, /simulation-tree-root[^\n]*add-simulation-btn/);
+assert.doesNotMatch(source, /add-simulation-btn|showAnalysisPicker/);
 
 for (const id of ['four-post','steady-state','transient','ramp-steer','mbd-step-steer','reduced-ramp-steer','reduced-step-steer','ggv','ymd','lap-qss','lap-transient']) {
   const math = vm.runInContext(`simulationMathHtml(${JSON.stringify(id)})`,ctx);

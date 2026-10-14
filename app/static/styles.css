@@ -3917,24 +3917,6 @@ body.resizing-panes * {
 .simulation-picker [role="status"]:empty { display: none; }
 .simulation-picker .model-guide { margin: 14px 24px 0; }
 .simulation-picker .simulation-card:last-child { border-bottom: 0; }
-.analysis-picker { width: min(600px, calc(100vw - 48px)); }
-.analysis-picker-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 24px; }
-.analysis-picker-option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 24px 10px;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-.analysis-picker-option:not(:disabled):hover { border-color: var(--blue); background: var(--blue-soft); }
-.analysis-picker-option .simulation-tree-icon { width: 28px; height: 28px; color: var(--blue); }
-.analysis-picker-option span { font-size: 11px; color: var(--muted); }
-.analysis-picker-option:disabled { opacity: .45; }
-
 #simulation-overview { padding: 32px; width: 100%; box-sizing: border-box; max-width: 1120px; margin: 0 auto; min-height: 0; overflow-y: auto; }
 #simulation-overview header { margin-bottom: 28px; }
 #simulation-overview h2 { margin: 0 0 8px; font-size: 24px; }
@@ -4879,7 +4861,6 @@ summary:focus-visible {
 .simulation-analysis-label { font-weight: 600; }
 .simulation-analysis-group > .simulation-tree-children { margin-left: 9px; }
 .simulation-tree-row { display: flex; align-items: center; min-width: 0; }
-.simulation-analysis-group > .simulation-tree-row { padding-right: 22px; }
 .simulation-tree-toggle, .simulation-tree-spacer { width: 18px; flex: 0 0 18px; }
 .simulation-tree-toggle {
   display: grid; place-items: center; height: 28px; padding: 0;
@@ -4900,7 +4881,10 @@ summary:focus-visible {
 }
 .simulation-tree-runs { margin-left: 25px; padding-left: 8px; border-left: 1px solid var(--line); }
 .simulation-tree-runs[hidden] { display: none; }
-.simulation-result-children { margin-left: 27px; padding-left: 8px; }
+.simulation-results-row { position: relative; }
+.simulation-results-row > .simulation-tree-toggle { position: absolute; left: -20px; }
+.simulation-results-row > .simulation-tree-run::before { display: none; }
+.simulation-result-children { margin-left: 9px; padding-left: 8px; }
 .simulation-tree-run { position: relative; color: var(--muted); font-size: 11px; }
 .simulation-tree-run::before { content: ""; position: absolute; left: -9px; width: 8px; border-top: 1px solid var(--line); }
 .simulation-library-links { display: grid; padding: 6px 10px; margin-top: 8px; border-top: 1px solid var(--line); }
