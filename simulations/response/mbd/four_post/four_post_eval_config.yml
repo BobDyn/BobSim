@@ -11,7 +11,6 @@ validation:
 
 report:
   enabled: true
-  brand: BobSim
   title: FourPostEval Suspension Kinematics and Compliance
   subtitle: Heave and roll sweeps
   output_path: simulations/mbd/generated_results/four_post_eval_report.pdf

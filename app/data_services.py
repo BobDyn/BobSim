@@ -362,7 +362,9 @@ def _load_yaml_config(spec: ConfigSpec) -> tuple[Path, str, Any]:
         raise TypeError(f"{spec.path} must contain a YAML mapping or list")
     if spec.id == "four-post" and isinstance(data, dict):
         internal_sections = {"standard", "simulation", "execution", "model_overrides"}
-        if internal_sections.intersection(data):
+        report = data.get("report", {})
+        if internal_sections.intersection(data) or "brand" in report:
+            report.pop("brand", None)
             for section in internal_sections:
                 data.pop(section, None)
             _write_yaml_config(path, data)

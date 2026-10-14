@@ -126,7 +126,6 @@ COMMON_SIM_FIELDS = (
     _field("execution.stream_logs", "Stream logs", kind="boolean", group="Execution"),
     _field("execution.fail_fast", "Fail fast", kind="boolean", group="Execution"),
     _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
-    _field("report.brand", "Brand", kind="string", group="Report"),
     _field("report.title", "Title", kind="string", group="Report"),
     _field("report.subtitle", "Subtitle", kind="string", group="Report"),
     _field("report.output_path", "Report path", kind="string", group="Report"),
@@ -758,7 +757,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/envelope/vehicle_review/vehicle_review_config.yml",
         workflow_id="vehicle-review",
         fields=(
-            _field("report.brand", "Brand", kind="string", group="Report"),
             _field("report.title", "Title", kind="string", group="Report"),
             _field("report.subtitle", "Subtitle", kind="string", group="Report"),
             _field("output.results_dir", "Results directory", kind="string", group="Output"),

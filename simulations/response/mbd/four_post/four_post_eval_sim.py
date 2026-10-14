@@ -876,6 +876,7 @@ class FourPostEvalSim:
         self.config = {
             **config,
             "standard": "FourPostEval",
+            "report": {**_as_mapping(config.get("report"), name="report"), "brand": "BobSim"},
             "simulation": copy.deepcopy(FOUR_POST_SIMULATION),
             "execution": {"parallel": False, "cleanup": False, "stream_logs": False},
         }

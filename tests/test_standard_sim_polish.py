@@ -495,10 +495,12 @@ def test_steady_state_eval_uses_closed_loop_steady_mode() -> None:
 def test_four_post_runtime_settings_are_internal() -> None:
     config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
     assert next(iter(config)) == "procedure"
+    assert "brand" not in config["report"]
     assert not {"standard", "simulation", "execution", "model_overrides"}.intersection(config)
     legacy = {**config, "simulation": {"solver": "euler", "stepSize": 10}, "execution": {"parallel": True}}
     effective = FourPostEvalSim(legacy).config
     assert effective["standard"] == "FourPostEval"
+    assert effective["report"]["brand"] == "BobSim"
     assert effective["simulation"]["solver"] == "dassl"
     assert effective["simulation"]["stepSize"] == 0.5
     assert effective["execution"]["parallel"] is False
