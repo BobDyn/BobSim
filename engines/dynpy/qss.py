@@ -298,7 +298,7 @@ def _solve_trim(
     upper_array = np.asarray(upper, dtype=float)
     bounded_guess = np.clip(np.asarray(guess, dtype=float), lower_array, upper_array)
     solution = least_squares(  # type: ignore[operator]
-        residual, bounded_guess, jac="3-point",
+        residual, bounded_guess, jac="2-point",
         bounds=(lower_array, upper_array),
         xtol=tolerance, ftol=tolerance, gtol=tolerance,
         max_nfev=max_nfev, x_scale="jac",

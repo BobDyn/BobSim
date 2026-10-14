@@ -98,6 +98,7 @@ class VerticalForceState:
     unsprung_acceleration_mps2: FloatArray
     jounce_m: FloatArray
     jounce_speed_mps: FloatArray
+    aero_wrench: tuple[FloatArray, FloatArray] | None = None
 
 
 @dataclass
@@ -234,7 +235,7 @@ class VehicleDynamicsSystem(ABC):
         # 6/10DOF uprights are massless, so tire load depends on tire force
         # through the instant links. Iterate to close that loop.
         for _iteration in range(self._force_path_iterations if normal_loads_n is None else 0):
-            fx_tire, fy_tire, slip_ratios = self._tire_forces(
+            fx_tire, fy_tire, slip_ratios, tire_moments = self._tire_wrench(
                 normal_loads,
                 slip_angles,
                 slip_ratios,
@@ -242,9 +243,6 @@ class VehicleDynamicsSystem(ABC):
                 inputs,
                 wheel_longitudinal_speed,
                 prescribed_slip=algebraic_slips is not None,
-            )
-            tire_moments = self._tire_moments(
-                normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
             )
             wheel_moments_body = np.column_stack((
                 tire_moments[:, 0]*cos_delta-tire_moments[:, 1]*sin_delta,
@@ -278,7 +276,7 @@ class VehicleDynamicsSystem(ABC):
             normal_loads = closed_loads
 
         # Recompute at the final load so forces stay consistent if the loop hits its cap.
-        fx_tire, fy_tire, slip_ratios = self._tire_forces(
+        fx_tire, fy_tire, slip_ratios, tire_moments = self._tire_wrench(
             normal_loads,
             slip_angles,
             slip_ratios,
@@ -286,9 +284,6 @@ class VehicleDynamicsSystem(ABC):
             inputs,
             wheel_longitudinal_speed,
             prescribed_slip=algebraic_slips is not None,
-        )
-        tire_moments = self._tire_moments(
-            normal_loads, slip_angles, slip_ratios, kinematics.camber_rad, wheel_longitudinal_speed,
         )
         wheel_moments_body = np.column_stack((
             tire_moments[:, 0]*cos_delta-tire_moments[:, 1]*sin_delta,
@@ -320,7 +315,10 @@ class VehicleDynamicsSystem(ABC):
 
         body_mass, body_inertia = self._body_mass_properties()
         gravity_body = self._gravity_force_body(rotation, body_mass)
-        aero_force, aero_moment = self._aero_load(body_velocities, body_coordinates)
+        aero_force, aero_moment = (
+            vertical.aero_wrench if vertical.aero_wrench is not None
+            else self._aero_load(body_velocities, body_coordinates)
+        )
         body_force = np.sum(body_wheel_forces, axis=0) + gravity_body + aero_force
         body_moment = (
             np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
@@ -410,7 +408,7 @@ class VehicleDynamicsSystem(ABC):
         del velocities
         return wheel_longitudinal_speed / np.asarray(self.parameters.wheel_radius_m)
 
-    def _tire_forces(
+    def _tire_wrench(
         self,
         normal_loads: FloatArray,
         slip_angles: FloatArray,
@@ -419,8 +417,8 @@ class VehicleDynamicsSystem(ABC):
         inputs: ModelInputs,
         wheel_speed_mps: FloatArray | None = None,
         *, prescribed_slip: bool = False,
-    ) -> tuple[FloatArray, FloatArray, FloatArray]:
-        """## Tire Forces
+    ) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
+        """## Tire Wrench
 
         Evaluate the same MF5.2 curves for every model fidelity.
 
@@ -444,10 +442,11 @@ class VehicleDynamicsSystem(ABC):
 
         Returns
         -------
-        tuple[NDArray, NDArray, NDArray]
-            Longitudinal forces, lateral forces and evaluated slip ratios.
+        tuple[NDArray, NDArray, NDArray, NDArray]
+            Longitudinal forces, lateral forces, evaluated slips and wheel-frame moments.
         """
         fx, fy = np.empty(4), np.empty(4)
+        moments = np.empty((4, 3))
         slip_ratios = slip_ratios.copy()
         speed = np.zeros(4) if wheel_speed_mps is None else wheel_speed_mps
         torques = np.asarray(inputs.wheel_torques_nm)
@@ -465,23 +464,11 @@ class VehicleDynamicsSystem(ABC):
                     slip_ratios[corners] = tire.slip_for_force(
                         normal_loads[corners], slip_angles[corners], camber_rad[corners], requested_fx,
                     )
-            fx[corners], fy[corners] = tire.forces(
-                normal_loads[corners], slip_angles[corners], slip_ratios[corners], camber_rad[corners],
+            fx[corners], fy[corners], mx, my, mz = tire.evaluate(
+                normal_loads[corners], slip_angles[corners], slip_ratios[corners], camber_rad[corners], speed[corners],
             )
-        return fx, fy, slip_ratios
-
-    def _tire_moments(
-        self, normal_loads: FloatArray, slip_angles: FloatArray, slip_ratios: FloatArray,
-        camber_rad: FloatArray, wheel_speed_mps: FloatArray,
-    ) -> FloatArray:
-        moments = np.empty((4, 3))
-        for axle, tire in enumerate((self.parameters.front_tire, self.parameters.rear_tire)):
-            corners = slice(2 * axle, 2 * axle + 2)
-            moments[corners] = np.column_stack(tire.moments(
-                normal_loads[corners], slip_angles[corners], slip_ratios[corners],
-                camber_rad[corners], wheel_speed_mps[corners],
-            ))
-        return moments
+            moments[corners] = np.column_stack((mx, my, mz))
+        return fx, fy, slip_ratios, moments
 
     def _geometric_vertical_forces(
         self,
@@ -764,6 +751,7 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
             np.zeros(4),
             np.zeros(4),
             np.zeros(4),
+            (aero_force, aero_moment),
         )
 
     def _algebraic_load_transfer(

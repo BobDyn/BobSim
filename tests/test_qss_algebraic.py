@@ -192,3 +192,26 @@ def test_lateral_search_cap_is_not_reported_as_a_closed_envelope(vehicle, monkey
             ggv.GGVConfig(speeds=(10.,), model_dof=3, ay_points=3, verbose=False),
             reduced_model=vehicle.model(3),
         )
+
+
+@pytest.mark.parametrize("dof", (3, 6, 14))
+@pytest.mark.parametrize("ax,ay", ((2., 4.), (-4., 6.)))
+def test_trim_forward_jacobian_matches_centered_reference(vehicle, monkeypatch, dof, ax, ay):
+    from engines.dynpy import qss
+
+    model = vehicle.model(dof)
+    kwargs = dict(speed_mps=12., longitudinal_acceleration_mps2=ax,
+                  lateral_acceleration_mps2=ay, yaw_rate_radps=ay / 12., acceleration_frame="path")
+    actual = solve_acceleration_trim(model, **kwargs)
+    original = qss.least_squares
+
+    def centered(*args, **options):
+        options["jac"] = "3-point"
+        return original(*args, **options)
+
+    monkeypatch.setattr(qss, "least_squares", centered)
+    reference = solve_acceleration_trim(model, **kwargs)
+    assert actual.success and reference.success
+    assert actual.residual_norm < 1e-6
+    np.testing.assert_allclose(actual.state, reference.state, atol=1e-6, rtol=0)
+    np.testing.assert_allclose(actual.output.normal_loads_n, reference.output.normal_loads_n, atol=1e-4, rtol=0)
