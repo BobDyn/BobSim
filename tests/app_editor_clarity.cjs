@@ -684,7 +684,8 @@ vm.runInContext(`
     assert.match(group('transient'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
     assert.match(group('kinematic'),/data-simulation-branch="rig"/);
-    assert.match(html,/data-analysis-overview="steady-state"/);
+    assert.doesNotMatch(html,/data-analysis-overview/);
+    assert.ok(html.includes('<span class="simulation-tree-item simulation-analysis-label">Steady state</span>'));
     assert.doesNotMatch(html,/data-simulation-add-child/);
     assert.match(html,/data-simulation-results="ggv"/);
     assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
@@ -710,8 +711,8 @@ vm.runInContext(`
   const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,menuContext);
   vm.runInContext(`
-    const events={}; let focused;
-    const buttons=['duplicate','replay','signals','delete'].map(action=>({
+    const events={}; let focused, added;
+    const buttons=['add','duplicate','replay','signals','delete'].map(action=>({
       dataset:{action},hidden:false,focus(){focused=action;}
     }));
     const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
@@ -725,7 +726,7 @@ vm.runInContext(`
       addEventListener:(name,fn)=>events['tree:'+name]=fn
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
-    workspaceAction=fn=>fn();
+    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
     state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
@@ -736,7 +737,11 @@ vm.runInContext(`
       rightClick('transient','maneuver');
       assert.equal(menu.hidden,false);
       rightClick(group);
-      assert.equal(menu.hidden,true,'analysis groups close menus without opening an action');
+      assert.equal(menu.hidden,false);
+      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add']);
+      events['menu:click']({target:{closest:()=>buttons[0]}});
+      assert.equal(added,group);
+      assert.equal(menu.hidden,true);
     }
     rightClick('steady-state','envelope');
     assert.equal(focused,'duplicate');
@@ -840,13 +845,6 @@ vm.runInContext(`
     assert.doesNotMatch(panel.innerHTML,/2026-10-15|<dt>Results<|<dt>Model</);
     assert.match(panel.innerHTML,/simulation-diagram/);
     assert.doesNotMatch(panel.innerHTML, /<button|data-overview-setup|data-overview-view/);
-    await openAnalysisOverview('steady-state');
-    assert.equal(saves,2);
-    assert.equal(state.selectedSimulationId,null);
-    assert.equal(renderSimulationOverview(),true);
-    assert.ok(panel.innerHTML.includes('<li>Envelope &lt;A&gt;</li>'));
-    assert.ok(!panel.innerHTML.includes('<li>Step steer</li>'));
-    assert.doesNotMatch(panel.innerHTML, /<button/);
     state.simModalOpen=true;
     assert.equal(renderSimulationOverview(),false);
     assert.equal(panel.hidden,true);

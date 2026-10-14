@@ -3921,7 +3921,6 @@ body.resizing-panes * {
 #simulation-overview header { margin-bottom: 28px; }
 #simulation-overview h2 { margin: 0 0 8px; font-size: 24px; }
 #simulation-overview header p { margin: 0; color: var(--muted); }
-.simulation-overview-list { display: grid; gap: 12px; padding: 0; list-style: none; color: var(--muted); }
 
 @media (max-width: 780px) {
   #simulation-overview { padding: 24px; }
@@ -4858,7 +4857,7 @@ summary:focus-visible {
 .simulation-tree-root strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .simulation-tree-children { margin-left: 11px; border-left: 1px solid var(--line); }
 .simulation-tree-children[hidden] { display: none; }
-.simulation-analysis-label { font-weight: 600; }
+.simulation-analysis-label { font-weight: 600; cursor: default; }
 .simulation-analysis-group > .simulation-tree-children { margin-left: 9px; }
 .simulation-tree-row { display: flex; align-items: center; min-width: 0; }
 .simulation-tree-toggle, .simulation-tree-spacer { width: 18px; flex: 0 0 18px; }
@@ -4875,7 +4874,7 @@ summary:focus-visible {
 .simulation-tree-icon { width: 16px; height: 16px; flex: 0 0 16px; color: var(--muted); }
 .simulation-tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .simulation-tree-model { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
-.simulation-tree-item:hover, .simulation-tree-run:hover, .simulation-tree-toggle:hover { background: var(--surface-2); }
+.simulation-tree-item:not(.simulation-analysis-label):hover, .simulation-tree-run:hover, .simulation-tree-toggle:hover { background: var(--surface-2); }
 .simulation-tree-item.active, .simulation-tree-run.active {
   background: var(--surface-2); border-color: var(--line); box-shadow: inset 2px 0 var(--blue);
 }

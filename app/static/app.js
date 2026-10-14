@@ -4195,16 +4195,6 @@ async function saveSimulationEdits() {
   if (state.dirtySimConfig && !await applySimConfigEdits()) throw new Error("Check the simulation inputs.");
 }
 
-async function openAnalysisOverview(group) {
-  await saveSimulationEdits();
-  state.selectedSimulationId = null;
-  state.simulationOverview = {group};
-  state.simModalOpen = false;
-  state.simulationChildEditor = false;
-  state.simulationGgvEditor = false;
-  setView("standard");
-}
-
 async function openSimulationOverview(id) {
   await saveSimulationEdits();
   const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
@@ -4222,32 +4212,25 @@ function renderSimulationOverview() {
   const panel = document.getElementById("simulation-overview");
   const selection = state.simulationOverview;
   const simulation = selectedSimulation();
-  const group = SIMULATION_GROUPS.find(item => item.id === selection?.group);
   const visible = state.view === "standard" && !state.simModalOpen && !state.simulationChildEditor
-    && !state.simulationGgvEditor && (group || (selection?.id && simulation?.id === selection.id));
+    && !state.simulationGgvEditor && (selection?.id && simulation?.id === selection.id);
   panel.hidden = !visible;
   if (!visible) return false;
-  if (group) {
-    const simulations = (state.simulationWorkspace?.simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id);
-    panel.innerHTML = `<header><h2>${escapeHtml(group.label)}</h2><p>${escapeHtml(group.description)}</p></header>
-      ${simulations.length ? `<ul class="simulation-overview-list">${simulations.map(item => `<li>${escapeHtml(item.name)}</li>`).join("")}</ul>` : '<p class="muted">No simulations in this analysis.</p>'}`;
-  } else {
-    const workflow = state.status?.workflows?.find(item => item.id === simulation.workflow_id) || {id: simulation.workflow_id};
-    const meta = simWorkflowMeta(workflow);
-    if (document.activeElement?.id === "simulation-instance-name" && document.activeElement.dataset.simulationId === simulation.id) return true;
-    const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
-    panel.innerHTML = `<header><h2><input id="simulation-instance-name" data-simulation-id="${escapeHtml(simulation.id)}" aria-label="Simulation name" maxlength="120" value="${escapeHtml(simulation.name)}"${busy ? ' disabled title="Simulation names are locked while a job runs."' : ''}></h2><p>${escapeHtml(meta.summary)}</p></header>
-      ${simulationMethodHtml(workflow)}`;
-    const name = document.getElementById("simulation-instance-name");
-    name.onchange = () => {
-      name.value = name.value.trim() || simulation.name;
-      workspaceAction(() => renameSimulation(simulation.id, name.value));
-    };
-    name.onkeydown = event => {
-      if (event.key === "Escape") { name.value = simulation.name; name.blur(); }
-      if (event.key === "Enter") name.blur();
-    };
-  }
+  const workflow = state.status?.workflows?.find(item => item.id === simulation.workflow_id) || {id: simulation.workflow_id};
+  const meta = simWorkflowMeta(workflow);
+  if (document.activeElement?.id === "simulation-instance-name" && document.activeElement.dataset.simulationId === simulation.id) return true;
+  const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  panel.innerHTML = `<header><h2><input id="simulation-instance-name" data-simulation-id="${escapeHtml(simulation.id)}" aria-label="Simulation name" maxlength="120" value="${escapeHtml(simulation.name)}"${busy ? ' disabled title="Simulation names are locked while a job runs."' : ''}></h2><p>${escapeHtml(meta.summary)}</p></header>
+    ${simulationMethodHtml(workflow)}`;
+  const name = document.getElementById("simulation-instance-name");
+  name.onchange = () => {
+    name.value = name.value.trim() || simulation.name;
+    workspaceAction(() => renameSimulation(simulation.id, name.value));
+  };
+  name.onkeydown = event => {
+    if (event.key === "Escape") { name.value = simulation.name; name.blur(); }
+    if (event.key === "Enter") name.blur();
+  };
   return true;
 }
 
@@ -4515,7 +4498,7 @@ function wireSimulationContextMenu() {
     const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
-      const actions = scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
+      const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
       button.hidden = !actions.includes(button.dataset.action);
       button.disabled = button.dataset.action === "replay" && (envelope || lap);
       button.title = button.disabled ? "This analysis produces steady-state results, not an animation." : "";
@@ -4543,7 +4526,7 @@ function wireSimulationContextMenu() {
     if (!branch && !group) return;
     event.preventDefault();
     if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
-    else close();
+    else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
   });
   tree.addEventListener("click", event => {
     const button = event.target.closest("[data-simulation-menu]");
@@ -4558,7 +4541,7 @@ function wireSimulationContextMenu() {
     const id = target;
     close();
     workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
-      : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
+      : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
   });
   menu.addEventListener("keydown", event => {
     if (event.key === "Escape") { event.preventDefault(); close(true); }
@@ -4665,11 +4648,6 @@ function mountSimulationWorkspace() {
       workspaceAction(() => showSimulationCatalog(group.dataset.simulationAddGroup));
       return;
     }
-    const analysis = event.target.closest("[data-analysis-overview]");
-    if (analysis) {
-      workspaceAction(() => openAnalysisOverview(analysis.dataset.analysisOverview));
-      return;
-    }
     const remove = event.target.closest("[data-remove-visualization]");
     if (remove) {
       workspaceAction(async () => {
@@ -4751,7 +4729,7 @@ function renderSimulationWorkspace() {
     return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
       <div class="simulation-tree-row">
         <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${groupId}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${group.label}">${simulationTreeIcon("chevron")}</button>
-        <button type="button" class="simulation-tree-item simulation-analysis-label ${state.view === "standard" && state.simulationOverview?.group === group.id ? "active" : ""}" data-analysis-overview="${group.id}">${group.label}</button>
+        <span class="simulation-tree-item simulation-analysis-label">${group.label}</span>
         <button type="button" class="simulation-tree-add" data-simulation-add-group="${group.id}" aria-label="Add ${group.label.toLowerCase()} simulation" title="Add simulation">+</button>
       </div>
       <div class="simulation-tree-children"${expanded ? "" : " hidden"}>${(simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id).map(item => {
