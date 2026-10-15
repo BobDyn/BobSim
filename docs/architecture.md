@@ -45,6 +45,12 @@ BobLib studies read generated records under `engines/boblib/BobLib/Records/Vehic
 Those records can drift from the YAML. `make sync-vehicle` checks them and
 `make sync-vehicle-write` regenerates them deliberately.
 
+The generated VehicleSim template binds `brakes.frontBrakeBias` to
+`brake.front_bias`. This value is the front share of mechanical brake torque,
+from 0 to 1. The Python tiers use the same value. The generator stops when the
+key is missing or out of range. Without the binding, BobLib `BasicVCUBrakes`
+uses its own 0.55 default.
+
 The vehicle writer keeps vectors and table rows on one line. The schema and
 physical values are unchanged by the directory migration.
 

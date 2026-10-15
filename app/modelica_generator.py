@@ -316,6 +316,7 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
     architecture = _mapping(data.get("architecture"), "architecture")
     front_arch = _architecture(str(architecture.get("front", "direct")), "architecture.front")
     rear_arch = _architecture(str(architecture.get("rear", "direct")), "architecture.rear")
+    front_brake_bias = _front_brake_bias(data)
     boblib_root = _boblib_root(data, repo_root)
     _require_boblib_package_root(boblib_root, repo_root)
     tire_root = _tire_root(data, repo_root)
@@ -390,7 +391,10 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         record_text = record_text.replace("  annotation(", initialization + "\n\n  annotation(", 1)
     contents = (
         (record_path, record_text),
-        (vehicle_template_path, _vehicle_template_text(vehicle_template_name, record_name, front_arch, rear_arch)),
+        (
+            vehicle_template_path,
+            _vehicle_template_text(vehicle_template_name, record_name, front_arch, rear_arch, front_brake_bias),
+        ),
         (
             four_post_template_path,
             _four_post_template_text(four_post_template_name, record_name, front_arch, rear_arch),
@@ -902,6 +906,20 @@ def _aero_section(data: Mapping[str, Any]) -> str:
     return _format_parameter("Aero.CFDAeroMapRecord", "pAero", assignments)
 
 
+def _front_brake_bias(data: Mapping[str, Any]) -> float:
+    brake = data.get("brake")
+    raw = brake.get("front_bias") if isinstance(brake, Mapping) else None
+    if raw is None:
+        raise KeyError(
+            "Missing required key brake.front_bias. Set it to the front share of mechanical brake torque, "
+            "from 0 to 1. The generator binds it to brakes.frontBrakeBias in VehicleSim."
+        )
+    value = _number(raw, "brake.front_bias")
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"brake.front_bias must be between 0 and 1. The vehicle file has {raw!r}.")
+    return value
+
+
 def _mass_record(parent: Mapping[str, Any], key: str, path: str) -> ModelicaCall:
     mass = _mapping(parent.get(key), f"{path}.{key}")
     return ModelicaCall("MassRecord", _mass_record_assignments(mass, f"{path}.{key}"))
@@ -920,6 +938,7 @@ def _vehicle_template_text(
     record_name: str,
     front_arch: ArchitectureSpec,
     rear_arch: ArchitectureSpec,
+    front_brake_bias: float,
 ) -> str:
     chassis_assignments: list[tuple[str, Any]] = [
         ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
@@ -946,6 +965,8 @@ def _vehicle_template_text(
         (
             ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
             ("redeclare BobLib.Chassis.Chassis_DW chassis", ModelicaCall("", tuple(chassis_assignments))),
+            # BaseVehicleSim binds only maxTorque, so BasicVCUBrakes would otherwise use its own default bias.
+            ("brakes", ModelicaCall("", (("frontBrakeBias", front_brake_bias),))),
         ),
     )
     lines = [

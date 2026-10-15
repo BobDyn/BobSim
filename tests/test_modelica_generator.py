@@ -30,6 +30,7 @@ def _write_temp_vehicle(repo_root: Path, tmp_path: Path, *, boblib: str = BUILD_
     active_data = load_yaml(repo_root / "vehicle.yml")
     if isinstance(active_data.get("powertrain"), dict):
         data["powertrain"] = active_data["powertrain"]
+    data["brake"] = active_data["brake"]
     data["paths"] = {"boblib": boblib, "tire_templates": "tires"}
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
@@ -336,3 +337,107 @@ def test_generator_refuses_to_write_outside_the_boblib_root(tmp_path: Path) -> N
         generate_modelica_stack(vehicle_path, root=tmp_path)
     assert list(outside.iterdir()) == []
     assert not (tmp_path / BUILD_BOBLIB / "Experiments").exists()
+
+
+def _vehicle_template_text(plan) -> str:
+    return dict(plan.contents)[plan.result.files[1].path]
+
+
+def _bound_front_brake_bias(template_text: str) -> float:
+    import re
+
+    # The binding must sit at the top level of the BaseVehicleSim extends clause, beside the chassis.
+    match = re.search(
+        r"^(?P<indent> +)redeclare BobLib\.Chassis\.Chassis_DW chassis\(\n.*?^(?P=indent)\),\n"
+        r"(?P=indent)brakes\(\n +frontBrakeBias = (?P<value>[^\s)]+)\n(?P=indent)\)\n  \);\n",
+        template_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, template_text
+    return float(match["value"])
+
+
+def test_vehicle_template_binds_front_brake_bias_from_the_vehicle_file(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    expected = load_yaml(vehicle_path)["brake"]["front_bias"]
+
+    result = generate_modelica_stack(vehicle_path, root=tmp_path)
+
+    template_text = result.files[1].path.read_text(encoding="utf-8")
+    assert _bound_front_brake_bias(template_text) == expected
+    four_post_text = result.files[2].path.read_text(encoding="utf-8")
+    assert "frontBrakeBias" not in four_post_text
+
+
+def test_vehicle_template_follows_a_changed_front_brake_bias(tmp_path: Path) -> None:
+    from app.modelica_generator import plan_modelica_stack
+
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    before = modelica_stack_status_payload(vehicle_path, tmp_path)["signatures"]
+    data = load_yaml(vehicle_path)
+    data["brake"]["front_bias"] = 0.62
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    plan = plan_modelica_stack(vehicle_path, root=tmp_path)
+    after = modelica_stack_status_payload(vehicle_path, tmp_path)["signatures"]
+
+    assert _bound_front_brake_bias(_vehicle_template_text(plan)) == 0.62
+    assert after["vehicle"]["generated"] != before["vehicle"]["generated"]
+    assert after["four_post"]["generated"] == before["four_post"]["generated"]
+
+
+def test_shipped_vehicle_template_binds_the_yaml_front_brake_bias() -> None:
+    from app.modelica_generator import plan_modelica_stack
+
+    root = Path(__file__).resolve().parents[1]
+    plan = plan_modelica_stack(root / "vehicle.yml", root=root)
+
+    expected = load_yaml(root / "vehicle.yml")["brake"]["front_bias"]
+    assert _bound_front_brake_bias(_vehicle_template_text(plan)) == expected
+
+
+@pytest.mark.parametrize("brake", [None, {}, {"front_bias": None}])
+def test_missing_front_brake_bias_fails_before_writing(tmp_path: Path, brake) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    data = load_yaml(vehicle_path)
+    if brake is None:
+        del data["brake"]
+    else:
+        data["brake"] = brake
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    before = _tree(tmp_path)
+
+    with pytest.raises(KeyError, match="Missing required key brake.front_bias"):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert _tree(tmp_path) == before
+
+
+@pytest.mark.parametrize("value", [-0.01, 1.01, float("nan"), float("inf")])
+def test_out_of_range_front_brake_bias_fails_before_writing(tmp_path: Path, value: float) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    data = load_yaml(vehicle_path)
+    data["brake"]["front_bias"] = value
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    before = _tree(tmp_path)
+
+    with pytest.raises(ValueError, match="brake.front_bias must be between 0 and 1"):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert _tree(tmp_path) == before
+
+
+@pytest.mark.parametrize("value", ["0.84 front", True])
+def test_non_numeric_front_brake_bias_fails_before_writing(tmp_path: Path, value) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    data = load_yaml(vehicle_path)
+    data["brake"]["front_bias"] = value
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    before = _tree(tmp_path)
+
+    with pytest.raises(TypeError, match="brake.front_bias"):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert _tree(tmp_path) == before
