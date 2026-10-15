@@ -4796,7 +4796,7 @@ summary:focus-visible {
 }
 .aero-map-table th { white-space: normal; }
 
-.matrix-input { min-width: max-content; }
+.matrix-input { min-width: 0; width: 100%; }
 .matrix-heading,
 .matrix-array-row {
   display: grid;
@@ -4809,7 +4809,7 @@ summary:focus-visible {
 .matrix-heading { margin-bottom: 6px; color: var(--muted); font-size: 11px; }
 .matrix-input .matrix-array-cells {
   display: grid;
-  grid-template-columns: repeat(var(--matrix-cols), minmax(14ch, 1fr));
+  grid-template-columns: repeat(var(--matrix-cols), minmax(0, 1fr));
   gap: 6px;
 }
 .matrix-array-row .array-bracket { display: none; }
@@ -4821,7 +4821,8 @@ summary:focus-visible {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.matrix-array-cell input { width: 100%; box-sizing: border-box; }
+.matrix-array-cell { min-width: 0; }
+.matrix-array-cell input { width: 100%; min-width: 0; box-sizing: border-box; }
 .curve-table .matrix-heading,
 .curve-table .matrix-array-row { grid-template-columns: minmax(0, 1fr) 30px; }
 .curve-table .matrix-row-label { display: none; }
@@ -5091,3 +5092,9 @@ summary:focus-visible {
 .geometry-expanded #config-form { display: none; }
 .geometry-expanded .editor-pane { grid-template-rows: minmax(0, 1fr); }
 .geometry-expanded .geometry-plot-panel { grid-row: 1; }
+
+[data-aero-reference-editor] .field-grid { grid-template-columns: minmax(0, 1fr); }
+[data-aero-reference-editor] .coordinate-input { grid-template-columns: minmax(0, 1fr); }
+[data-aero-reference-editor] .array-bracket { display: none; }
+[data-aero-reference-editor] .coordinate-cell { display: grid; min-width: 0; gap: 4px; }
+[data-aero-reference-editor] input { width: 100%; min-width: 0; box-sizing: border-box; }
