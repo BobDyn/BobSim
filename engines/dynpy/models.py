@@ -24,6 +24,7 @@ from typing import ClassVar, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from scipy.optimize import least_squares
 
 from engines.dynpy.parameters import G, ReducedVehicleParameters
 from engines.kinpy import VehicleKinematicState
@@ -162,6 +163,11 @@ class VehicleDynamicsSystem(ABC):
         ModelOutput
             Forces and accelerations. Supplied trial loads and slips require
             external load and wheel torque balance constraints.
+
+        Raises
+        ------
+        RuntimeError
+            Internal tire and load constraints cannot be closed.
         """
         x = np.asarray(state, dtype=float)
         if x.shape != (self.state_size,):
@@ -232,8 +238,7 @@ class VehicleDynamicsSystem(ABC):
             if self.dof >= 10 or slip_ratios.shape != (4,) or not np.all(np.isfinite(slip_ratios)):
                 raise ValueError("Trial slips require four finite values in 3/6 DOF.")
 
-        # 6/10DOF uprights are massless, so tire load depends on tire force
-        # through the instant links. Iterate to close that loop.
+        # Tire force and algebraic corner load depend on each other in 3/6/10 DOF.
         for _iteration in range(self._force_path_iterations if normal_loads_n is None else 0):
             fx_tire, fy_tire, slip_ratios, tire_moments = self._tire_wrench(
                 normal_loads,
@@ -275,7 +280,7 @@ class VehicleDynamicsSystem(ABC):
                 break
             normal_loads = closed_loads
 
-        # Recompute at the final load so forces stay consistent if the loop hits its cap.
+        # Recompute the wrench before checking both load and wheel torque closure.
         fx_tire, fy_tire, slip_ratios, tire_moments = self._tire_wrench(
             normal_loads,
             slip_angles,
@@ -387,7 +392,107 @@ class VehicleDynamicsSystem(ABC):
             scrub_radius_m=kinematics.scrub_radius_m,
             instant_link_coefficients=kinematics.instant_links.coefficient_matrix,
         )
+        if normal_loads_n is None and self.dof < 14:
+            residual = self.algebraic_residual(inputs, output)
+            if algebraic_slips is not None:
+                residual = residual[:4]
+            force_scale = self.parameters.mass_kg * G / 4.0
+            if not np.all(np.isfinite(residual)) or np.linalg.norm(residual) / force_scale > 1e-8:
+                output = self._solve_algebraic_forces(x, inputs, output, algebraic_slips)
         self._last_output = output
+        return output
+
+    def algebraic_residual(self, inputs: ModelInputs, output: ModelOutput) -> FloatArray:
+        """## Algebraic Force Balance
+
+        Parameters
+        ----------
+        inputs : ModelInputs
+            Applied wheel torques.
+        output : ModelOutput
+            Evaluated corner loads and tire wrench.
+
+        Returns
+        -------
+        FloatArray
+            Upright load and massless-wheel torque residuals, in newtons.
+        """
+        residuals: list[float] = []
+        if self.dof < 14:
+            loads = self._closed_normal_loads(
+                output.normal_loads_n, output.suspension_forces_n,
+                output.geometric_vertical_forces_n, output.algebraic_load_transfer_n,
+            )
+            residuals.extend(output.normal_loads_n - np.maximum(loads, 0.0))
+        if self.dof < 10:
+            headings = output.toe_rad
+            forces = output.wheel_forces_body_n
+            fx = forces[:, 0] * np.cos(headings) + forces[:, 1] * np.sin(headings)
+            demand = (np.asarray(inputs.wheel_torques_nm) + output.wheel_moments_tire_nm[:, 1]) / np.asarray(
+                self.parameters.wheel_radius_m
+            )
+            residuals.extend(fx - demand)
+        return np.asarray(residuals, dtype=float)
+
+    def _solve_algebraic_forces(
+        self, state: FloatArray, inputs: ModelInputs, initial: ModelOutput,
+        prescribed_slips: ArrayLike | None,
+    ) -> ModelOutput:
+        """## Coupled Tire and Load Closure
+
+        Parameters
+        ----------
+        state : FloatArray
+            Fixed vehicle state.
+        inputs : ModelInputs
+            Applied controls and road inputs.
+        initial : ModelOutput
+            Candidate from the fast load iteration.
+        prescribed_slips : ArrayLike or None
+            External slip constraints, if supplied.
+
+        Returns
+        -------
+        ModelOutput
+            Wrench satisfying the algebraic constraints.
+
+        Raises
+        ------
+        RuntimeError
+            No consistent load and tire-force solution was found.
+        """
+        scale = self.parameters.mass_kg * G / 4.0
+        solve_slips = self.dof < 10 and prescribed_slips is None
+        guess = initial.normal_loads_n / scale
+        lower, upper = np.zeros(4), np.full(4, np.inf)
+        if solve_slips:
+            # Start at rolling slip to avoid retaining the saturated iteration's branch.
+            guess = np.r_[guess, np.zeros(4)]
+            lower = np.r_[lower, [tire.coefficients["KPUMIN"] for tire in self.parameters.tires]]
+            upper = np.r_[upper, [tire.coefficients["KPUMAX"] for tire in self.parameters.tires]]
+
+        def evaluate(values: FloatArray, *, invert_slips: bool = False) -> ModelOutput:
+            return self.evaluate(
+                state, inputs, normal_loads_n=values[:4] * scale,
+                algebraic_slips=values[4:] if solve_slips and not invert_slips else prescribed_slips,
+            )
+
+        def residual(values: FloatArray) -> FloatArray:
+            balance = self.algebraic_residual(inputs, evaluate(values))
+            return (balance if solve_slips else balance[:4]) / scale
+
+        solution = least_squares(
+            residual, guess, bounds=(lower, upper), max_nfev=100,
+            ftol=1e-11, xtol=1e-11, gtol=1e-11,
+        )
+        output = evaluate(solution.x, invert_slips=True)
+        balance = self.algebraic_residual(inputs, output)
+        if not solve_slips:
+            balance = balance[:4]
+        if not solution.success or not np.all(np.isfinite(balance)) or np.linalg.norm(balance) / scale > 1e-8:
+            detail = (" The requested wheel torques may exceed the massless-wheel model's capacity."
+                      if solve_slips else "")
+            raise RuntimeError(f"{self.dof} DOF algebraic tire/load balance did not converge.{detail}")
         return output
 
     @abstractmethod

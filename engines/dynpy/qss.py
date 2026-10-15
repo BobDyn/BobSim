@@ -343,22 +343,7 @@ def _algebraic_residual(model: ReducedVehicleModel, inputs: ModelInputs, output:
     NDArray
         Corner load and massless wheel force residuals, in newtons.
     """
-    residuals: list[float] = []
-    if model.dof < 14:
-        loads = model._closed_normal_loads(
-            output.normal_loads_n, output.suspension_forces_n,
-            output.geometric_vertical_forces_n, output.algebraic_load_transfer_n,
-        )
-        residuals.extend(output.normal_loads_n - np.maximum(loads, 0.0))
-    if model.dof < 10:
-        headings = output.toe_rad
-        forces = output.wheel_forces_body_n
-        fx = forces[:, 0] * np.cos(headings) + forces[:, 1] * np.sin(headings)
-        demand = (np.asarray(inputs.wheel_torques_nm) + output.wheel_moments_tire_nm[:, 1]) / np.asarray(
-            model.parameters.wheel_radius_m
-        )
-        residuals.extend(fx - demand)
-    return np.asarray(residuals, dtype=float)
+    return model.algebraic_residual(inputs, output)
 
 
 def solve_moment_state(
