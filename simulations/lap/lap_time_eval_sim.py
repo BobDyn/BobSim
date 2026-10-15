@@ -23,6 +23,7 @@ from simulations.lap.core import (
     write_transient_lap_csv,
 )
 from simulations.lap.core.racing_line import LineMode
+from common.physics_provenance import ggv_physics_sha256
 from common.vehicle_io import load_yaml, repo_root, tire_template_name, tire_templates_root
 
 
@@ -262,21 +263,6 @@ def _ggv_provenance(
     effective_power_limit_w: float,
 ) -> dict[str, Any]:
     root = repo_root()
-    physics_digest = hashlib.sha256()
-    physics_inputs = [
-        Path(__file__),
-        root / "simulations/envelope/ggv/ggv_generation.py",
-        root / "simulations/envelope/ggv/parallel.py",
-        root / "simulations/envelope/vehicle_yaml.py",
-        root / "common/vehicle_io.py",
-        *sorted((root / "engines/dynpy").rglob("*.py")),
-        *sorted((root / "engines/kinpy").rglob("*.py")),
-    ]
-    for source in physics_inputs:
-        physics_digest.update(source.relative_to(root).as_posix().encode("utf-8"))
-        physics_digest.update(b"\0")
-        physics_digest.update(source.read_bytes())
-        physics_digest.update(b"\0")
     vehicle_data = load_yaml(vehicle_path)
     tire_root = tire_templates_root(vehicle_data)
     tire_paths = {
@@ -310,7 +296,7 @@ def _ggv_provenance(
         "effective_drive_power_limit_w": float(effective_power_limit_w),
         "settings": {"sampling": "automatic", "acceleration_bounds": "adaptive"},
         "vehicle_sha256": hashlib.sha256(vehicle_path.read_bytes()).hexdigest(),
-        "physics_sha256": physics_digest.hexdigest(),
+        "physics_sha256": ggv_physics_sha256(root),
         "input_sha256": input_hashes,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
