@@ -373,6 +373,17 @@ vm.runInContext(`
   renderSimConfigForm();
   assert.equal(form.innerHTML,'edited inputs','background refresh must preserve unsaved fields');
   state.dirtySimConfig=false;
+  state.status={jobs:[]};
+  state.simConfigPayload.fields=[
+    {path:['simulation','solver'],key:'solver',label:'Solver',group:'Numerics',kind:'string',value:'dassl'},
+    {path:['simulation','stop_time'],key:'stop',label:'Stop time',group:'Simulation',kind:'number',value:10},
+    {path:['sweep','velocity'],key:'velocity',label:'Velocity',group:'Sweep',kind:'number',value:12},
+  ];
+  renderSimConfigForm();
+  assert.ok(form.innerHTML.indexOf('sweep.velocity') < form.innerHTML.indexOf('simulation.stop_time'));
+  assert.ok(form.innerHTML.indexOf('<summary>Advanced</summary>') < form.innerHTML.indexOf('simulation.solver'));
+  assert.ok(!form.innerHTML.includes(' open'));
+  state.simConfigPayload=null;
   document=originalDocument;
 }
 `,ctx);
