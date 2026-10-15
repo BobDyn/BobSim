@@ -67,6 +67,7 @@ def test_thread_start_failure_releases_workspace(monkeypatch):
 
 def test_input_edit_is_rejected_while_job_owns_workspace():
     handler = object.__new__(server.BobSimHandler)
+    handler.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json"}
     handler.path = '/api/configs/vehicle'
     responses = []
     handled = []
@@ -99,6 +100,7 @@ def test_signal_archive_selects_job_owner_not_timestamp(tmp_path: Path, monkeypa
 @pytest.mark.parametrize('query,run_id', [('id=analysis', None), ('id=analysis&run_id=run', 'run')])
 def test_comparison_can_be_read_during_a_job(monkeypatch, query, run_id):
     handler = object.__new__(server.BobSimHandler)
+    handler.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json"}
     handler.path = '/api/simulations/comparison?vehicle_key=original&' + query
     responses = []
     monkeypatch.setattr(server, 'sync_runtime', lambda: None)
@@ -114,6 +116,7 @@ def test_comparison_can_be_read_during_a_job(monkeypatch, query, run_id):
 
 def test_plot_settings_route_only_updates_visualizations_during_a_job(monkeypatch):
     handler = object.__new__(server.BobSimHandler)
+    handler.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json"}
     handler.path = '/api/simulations/visualization-settings'
     responses = []
     monkeypatch.setattr(server, 'sync_runtime', lambda: None)
@@ -134,6 +137,7 @@ def test_cancel_route_is_available_while_job_owns_workspace(monkeypatch):
     monkeypatch.setattr(server, 'JOBS', store)
     monkeypatch.setattr(server, 'sync_runtime', lambda: None)
     handler = object.__new__(server.BobSimHandler)
+    handler.headers = {"Host": "127.0.0.1:8765", "Content-Type": "application/json"}
     handler.path = f"/api/jobs/{job['id']}/cancel"
     handler._read_json_body = lambda: {}
     responses = []
