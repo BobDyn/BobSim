@@ -2017,10 +2017,12 @@ def test_result_color_signal_stays_aligned_with_sampled_points(tmp_path, monkeyp
     monkeypatch.setattr(app, 'ROOT', tmp_path)
     result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x',
                                        signals=['y'], color_signal='color', max_points=50)
-    assert result['stride'] == 2
-    assert result['color']['values'][:4] == [0., 6., None, 18.]
-    assert result['series'][0]['values'][:4] == [0., 4., 8., 12.]
-    assert len(result['x']) == len(result['color']['values']) == 50
+    indices = result['row_indices']
+    assert indices[0] == 0 and indices[-1] == 99
+    assert 4 in indices
+    assert result['color']['values'] == [float(i*3) if i != 4 else None for i in indices]
+    assert result['series'][0]['values'] == [float(i*2) for i in indices]
+    assert len(result['x']) == len(result['color']['values']) <= 50
     with pytest.raises(ValueError, match='color_signal'):
         app.result_series_payload(path.relative_to(tmp_path).as_posix(), color_signal='missing')
 
@@ -2033,10 +2035,12 @@ def test_result_inspection_coordinates_follow_sample_rows(tmp_path, monkeypatch,
         f'{i if i != 4 else ""},{i*2},{i/10},{i*3 if i != 6 else ""}' for i in range(100)))
     monkeypatch.setattr(app, 'ROOT', tmp_path)
     result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x', signals=['y'], max_points=50)
-    assert result['row_indices'][:4] == [0, 2, 6, 8]
-    assert result['coordinates']['time'][:4] == [0., .2, .6, .8]
-    assert result['coordinates']['station_m'][:4] == [0., 6., None, 24.]
-    assert len(result['coordinates']['time']) == len(result['x']) == 49
+    indices = result['row_indices']
+    assert indices[0] == 0 and indices[-1] == 99
+    assert 4 not in indices
+    assert result['coordinates']['time'] == [i / 10 for i in indices]
+    assert result['coordinates']['station_m'] == [float(i*3) if i != 6 else None for i in indices]
+    assert len(result['coordinates']['time']) == len(result['x']) <= 50
 
 
 def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2076,3 +2080,21 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
     assert yaml.safe_load(seed.read_text()) == original
     brand_only = yaml.safe_dump({"procedure": original["procedure"], "report": {"brand": "Legacy brand"}})
     assert "brand" not in app.save_raw_config("four-post", brand_only)["data"]["report"]
+
+
+def test_signal_sampling_preserves_short_extrema_and_endpoints(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/pulse.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('time,force,roll\n' + '\n'.join(
+        f'{i},{100 if i == 1 else -80 if i == 1799 else 0},{5 if i == 2471 else 0}'
+        for i in range(3601)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(),
+                                      x_axis='time', signals=['force', 'roll'], max_points=50)
+    assert result['row_indices'][0] == 0
+    assert result['row_indices'][-1] == 3600
+    assert {1, 1799, 2471}.issubset(result['row_indices'])
+    assert max(result['series'][0]['values']) == 100.
+    assert min(result['series'][0]['values']) == -80.
+    assert max(result['series'][1]['values']) == 5.
+    assert len(result['x']) <= 50
