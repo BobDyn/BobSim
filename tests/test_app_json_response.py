@@ -29,3 +29,23 @@ def test_large_json_response_roundtrip(accept):
     else:
         assert "Content-Encoding" not in headers
     assert json.loads(encoded) == payload
+
+
+@pytest.mark.parametrize('extra,status', [
+    ({'Origin': 'https://unrelated.example'}, 403),
+    ({'Origin': 'null'}, 403),
+    ({'Content-Type': 'text/plain'}, 415),
+    ({'Sec-Fetch-Site': 'cross-site'}, 403),
+    ({'Host': 'rebind.example:8765', 'Origin': 'http://rebind.example:8765'}, 403),
+    ({'Origin': 'http://127.0.0.1:8765'}, 200),
+    ({}, 200),
+])
+def test_api_post_rejects_foreign_origins_before_dispatch(extra, status):
+    handler: Any = object.__new__(BobSimHandler)
+    handler.headers = {'Host': '127.0.0.1:8765', 'Content-Type': 'application/json', **extra}
+    handler.path = '/api/jobs'
+    responses = []
+    handler._send_error = lambda code, message: responses.append(int(code))
+    handler._handle_post = lambda: responses.append(200)
+    handler.do_POST()
+    assert responses == [status]

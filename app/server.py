@@ -4,6 +4,7 @@ import gzip
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from ipaddress import ip_address
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -188,6 +189,22 @@ class BobSimHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def do_POST(self) -> None:  # noqa: N802
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        try:
+            hostname = urlparse("//" + host).hostname or ""
+            if hostname != "localhost":
+                ip_address(hostname)
+        except ValueError:
+            self._send_error(HTTPStatus.FORBIDDEN, "Unrecognized API host")
+            return
+        if (origin is not None and origin not in (f"http://{host}", f"https://{host}")) \
+                or self.headers.get("Sec-Fetch-Site") == "cross-site":
+            self._send_error(HTTPStatus.FORBIDDEN, "Cross-origin API requests are not allowed")
+            return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            self._send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "API requests require application/json")
+            return
         path = urlparse(self.path).path
         launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
         read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
