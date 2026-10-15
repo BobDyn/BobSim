@@ -16,6 +16,7 @@ import subprocess
 from typing import Any
 
 import pytest
+import yaml
 
 from simulations.response.mbd import _modelica_runner
 from simulations.response.mbd._modelica_runner import (
@@ -448,6 +449,44 @@ def test_a_typo_in_ramp_steer_init_parameters_fails_before_any_case_runs(
         RampSteerEvalSim(config).run()
 
     assert _reasons(excinfo.value) == [("velGian", "unknown_name"), ("velGian", "unknown_name")]
+
+
+def test_transient_cases_plan_cleanly_against_a_vcu_with_a_derived_step_duration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from simulations.response.mbd.transient.transient_eval_sim import TransientEvalSim
+
+    # BobLib StandardVCU binds stepDuration = frRampSteerDuration, so it is a calculated parameter.
+    init_xml = tmp_path / "VehicleSim_init.xml"
+    init_xml.write_text(
+        "<fmiModelDescription><ModelVariables>\n"
+        + "".join(
+            _scalar(name, "-1.0")
+            for name in (
+                "initialVel",
+                "vcu.useMode",
+                "vcu.steerStart",
+                "vcu.frRampSteerHeight",
+                "vcu.frRampSteerDuration",
+                "vcu.steerAmp",
+                "vcu.steerFreq",
+            )
+        )
+        + _scalar("vcu.stepDuration", None, causality="calculatedParameter", changeable=False)
+        + "</ModelVariables></fmiModelDescription>",
+        encoding="utf-8",
+    )
+    variables = load_init_variables(init_xml)
+    monkeypatch.setattr(_modelica_runner.ModelicaRunner, "from_config", lambda config: None)
+    config = yaml.safe_load(Path("simulations/response/mbd/transient/transient_eval_config.yml").read_text())
+
+    cases, metadata = TransientEvalSim(config).build_cases()
+    step_cases = [case for case, meta in zip(cases, metadata) if meta["mode"] == "step"]
+
+    assert step_cases
+    for case in cases:
+        plan_overrides(case, variables)
+    assert {case["frRampSteerDuration"] for case in step_cases} == {config["test"]["stepDuration"]}
 
 
 def test_optsim_reads_the_init_xml_with_the_runner_loader(build_dir: Path) -> None:
