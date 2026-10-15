@@ -112,20 +112,27 @@ class GGVMap:
         lateral_acceleration_mps2: float,
         mode: Literal["drive", "brake"],
     ) -> float:
-        """Interpolate the drive or braking boundary at ``(speed, |ay|)``."""
+        """## Longitudinal Boundary
 
+        Interpolate drive or braking at ``(speed, |ay|)`` using equal fractions
+        of each speed slice's lateral limit. Infeasible queries return NaN.
+        """
+
+        lateral = abs(lateral_acceleration_mps2)
+        limit = self.lateral_limit(speed_mps)
+        if lateral > limit + 1e-9:
+            return float("nan")
+        fraction = lateral / limit if limit > 0.0 else 0.0
+        # Match lateral utilization so unequal slice endpoints remain connected.
         values = np.asarray(
             [
-                _slice_longitudinal_limit(item, abs(lateral_acceleration_mps2), mode)
+                _slice_longitudinal_limit(item, fraction * _slice_lateral_limit(item), mode)
                 for item in self.slices
             ],
             dtype=float,
         )
         speeds = np.asarray([item.speed_mps for item in self.slices], dtype=float)
-        finite = np.isfinite(values)
-        if not np.any(finite):
-            return float("nan")
-        return float(np.interp(speed_mps, speeds[finite], values[finite]))
+        return float(np.interp(speed_mps, speeds, values))
 
     def lateral_limit(self, speed_mps: float) -> float:
         """Interpolate maximum sustainable absolute lateral acceleration."""

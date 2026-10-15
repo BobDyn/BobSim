@@ -42,6 +42,56 @@ def synthetic_ggv() -> GGVMap:
     return GGVMap.from_arrays(speed, ay, acceleration, braking)
 
 
+@pytest.fixture
+def varying_ggv() -> GGVMap:
+    return GGVMap.from_arrays(
+        [10.0, 20.0], [0.0, 5.0, 10.0, 15.0],
+        [[4.0, 0.0, np.nan, np.nan], [8.0, 16.0 / 3.0, 8.0 / 3.0, 0.0]],
+        [[-8.0, 0.0, np.nan, np.nan], [-16.0, -32.0 / 3.0, -16.0 / 3.0, 0.0]],
+    )
+
+
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+@pytest.mark.parametrize("speed,ay", [(10.0, 10.0), (15.0, 11.0), (5.0, 6.0), (25.0, 16.0)])
+def test_ggv_does_not_borrow_feasibility_from_another_speed(varying_ggv, mode, speed, ay):
+    assert np.isnan(varying_ggv.longitudinal_limit(speed, ay, mode))
+    assert np.isnan(varying_ggv.longitudinal_limit(speed, -ay, mode))
+
+
+@pytest.mark.parametrize("mode,scale", [("drive", 1.0), ("brake", -2.0)])
+def test_ggv_interpolates_within_the_local_lateral_boundary(varying_ggv, mode, scale):
+    assert varying_ggv.longitudinal_limit(10.0, 2.5, mode) == pytest.approx(2.0 * scale)
+    assert varying_ggv.longitudinal_limit(15.0, 5.0, mode) == pytest.approx(3.0 * scale)
+    for speed in [5.0, 10.0, 12.0, 15.0, 20.0, 25.0]:
+        limit = varying_ggv.lateral_limit(speed)
+        assert varying_ggv.longitudinal_limit(speed, limit, mode) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+def test_ggv_keeps_missing_speed_slices(mode):
+    ggv = GGVMap.from_arrays(
+        [10.0, 20.0, 30.0], [0.0, 5.0],
+        [[4.0, 0.0], [np.nan, np.nan], [8.0, 0.0]],
+        [[-8.0, 0.0], [np.nan, np.nan], [-16.0, 0.0]],
+    )
+    for speed in [15.0, 20.0, 25.0]:
+        assert np.isnan(ggv.longitudinal_limit(speed, 1.0, mode))
+    assert np.isfinite(ggv.longitudinal_limit(10.0, 1.0, mode))
+    assert np.isfinite(ggv.longitudinal_limit(30.0, 1.0, mode))
+
+
+def test_qss_lap_uses_varying_speed_slice_boundaries(circular_corridor, varying_ggv):
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    lap = solve_qss_lap(line, varying_ggv)
+
+    assert lap.converged
+    assert np.isfinite(lap.lap_time_s)
+    for speed, ay in zip(lap.speed_mps, lap.lateral_acceleration_mps2):
+        assert abs(ay) <= varying_ggv.lateral_limit(float(speed)) + 1e-6
+        for mode in ("drive", "brake"):
+            assert np.isfinite(varying_ggv.longitudinal_limit(float(speed), float(ay), mode))
+
+
 def test_track_corridor_builds_closed_clearance_constrained_line(
     circular_corridor: TrackCorridor,
 ) -> None:
