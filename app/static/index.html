@@ -361,17 +361,17 @@
         <section id="studies-view" class="screen">
           <div id="signal-explorer" class="result-explorer-shell" hidden>
             <aside class="workflow-list">
-              <h2><input id="signal-explorer-name" aria-label="Signal Explorer name" maxlength="120"></h2>
-              <label>X axis<select id="result-x-axis"></select></label>
-              <label>Color by<select id="result-color-signal"></select></label>
+              <h2 class="form-field"><input id="signal-explorer-name" aria-label="Signal Explorer name" maxlength="120"></h2>
+              <label class="form-field"><span>X axis</span><select id="result-x-axis"></select></label>
+              <label class="form-field"><span>Color by</span><select id="result-color-signal"></select></label>
               <details id="result-comparison" class="result-comparison">
                 <summary>Comparison</summary>
-                <label>Baseline<select id="result-baseline-source"></select></label>
+                <label class="form-field"><span>Baseline</span><select id="result-baseline-source"></select></label>
                 <label class="result-compare-toggle"><input type="checkbox" id="result-compare-baseline">Show baseline</label>
                 <p id="result-comparison-status" class="muted" role="status"></p>
                 <details id="result-input-changes"><summary title="Compares archived vehicle and analysis settings. Referenced file contents and solver versions are not compared.">Saved settings</summary><div id="result-input-changes-list"></div></details>
               </details>
-              <label>Y signals<input id="result-signal-search" type="search" placeholder="Find a signal"></label>
+              <label class="form-field"><span>Y signals</span><input id="result-signal-search" type="search" placeholder="Find a signal"></label>
               <div id="result-signal-list" class="result-signal-list"></div>
             </aside>
             <section class="result-plot-shell">

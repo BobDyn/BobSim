@@ -7067,7 +7067,14 @@ function renderSimConfigForm() {
   }
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
   const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof")));
-  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>${fieldGroupSections(fields, "sim-config")}</fieldset>`;
+  const advancedGroups = new Set(["Numerics", "Execution", "Closed loop", "Fit"]);
+  const physical = fields.filter(field => !advancedGroups.has(field.group));
+  physical.sort((a, b) => (["Simulation", "Report"].indexOf(a.group) + 1) - (["Simulation", "Report"].indexOf(b.group) + 1));
+  const advanced = fields.filter(field => advancedGroups.has(field.group));
+  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>
+    ${fieldGroupSections(physical, "sim-config")}
+    ${advanced.length ? `<details class="component-details"><summary>Advanced</summary>${fieldGroupSections(advanced, "sim-config")}</details>` : ""}
+  </fieldset>`;
   if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
     control.title = "Simulation settings are locked while a run is active.";
   });
