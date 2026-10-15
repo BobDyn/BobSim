@@ -1,6 +1,6 @@
 """Tire grip use and lateral load transfer for BobVis.
 
-Numpy only, like :mod:`visualization.navigation`, so it tests without the
+Shares peak coefficients and contact conventions with DynPy without the
 rendering stack. Two things are derived here from signals a run already has:
 
 Friction circles
@@ -29,15 +29,15 @@ from __future__ import annotations
 from typing import Mapping
 
 import numpy as np
+from engines.dynpy.tire import CONTACT_LOAD_N, peak_friction
 
 REQUIRED_TIR_KEYS = ("FNOMIN", "PDX1", "PDX2", "PDY1", "PDY2")
-OPTIONAL_TIR_KEYS = {"LFZO": 1.0, "LMUX": 1.0, "LMUY": 1.0, "PDX3": 0.0, "PDY3": 0.0}
+OPTIONAL_TIR_KEYS = {
+    "LFZO": 1.0, "LMUX": 1.0, "LMUY": 1.0, "PDX3": 0.0, "PDY3": 0.0,
+    "LGAX": 1.0, "LGAY": 1.0, "FZMIN": CONTACT_LOAD_N,
+}
 
-MU_FLOOR = 0.05
-"""Smallest peak friction used, so extreme load or camber never divides by ~0."""
-
-MIN_LOAD_N = 10.0
-"""Below this a tire is treated as off the ground: it has no grip to use."""
+MIN_LOAD_N = CONTACT_LOAD_N
 
 LLTD_MIN_FRACTION = 0.01
 """LLTD is undefined until total transfer reaches this share of the car's weight."""
@@ -61,17 +61,8 @@ def peak_mu(
     fz: np.ndarray | float, gamma: np.ndarray | float, coeffs: Mapping[str, float]
 ) -> tuple[np.ndarray, np.ndarray]:
     """Longitudinal and lateral peak friction at a normal load and camber (radians)."""
-    fz = np.asarray(fz, dtype=float)
-    gamma_sq = np.asarray(gamma, dtype=float) ** 2
-    fz0 = float(coeffs["FNOMIN"]) * float(coeffs.get("LFZO", 1.0))
-    dfz = (fz - fz0) / fz0
-
-    mu_x = (coeffs["PDX1"] + coeffs["PDX2"] * dfz) * (1.0 - coeffs.get("PDX3", 0.0) * gamma_sq)
-    mu_y = (coeffs["PDY1"] + coeffs["PDY2"] * dfz) * (1.0 - coeffs.get("PDY3", 0.0) * gamma_sq)
-    # PDY1 is negative in the ISO sign convention; grip is a magnitude.
-    mu_x = np.maximum(np.abs(mu_x * coeffs.get("LMUX", 1.0)), MU_FLOOR)
-    mu_y = np.maximum(np.abs(mu_y * coeffs.get("LMUY", 1.0)), MU_FLOOR)
-    return mu_x, mu_y
+    mu_x, mu_y = peak_friction(fz, gamma, coeffs)
+    return np.abs(mu_x), np.abs(mu_y)
 
 
 def grip_usage(
@@ -84,7 +75,7 @@ def grip_usage(
     """Forces as fractions of peak grip: ``(longitudinal, lateral, usage)``.
 
     ``usage`` is the friction-ellipse radius, 1.0 at the limit. All three are
-    NaN where the tire is off the ground.
+    NaN where the tire has no contact or no grip capacity.
     """
     fx = np.asarray(fx, dtype=float)
     fy = np.asarray(fy, dtype=float)
@@ -93,8 +84,10 @@ def grip_usage(
 
     loaded = fz > MIN_LOAD_N
     safe_fz = np.where(loaded, fz, 1.0)
-    longitudinal = np.where(loaded, fx / (mu_x * safe_fz), np.nan)
-    lateral = np.where(loaded, fy / (mu_y * safe_fz), np.nan)
+    longitudinal = np.full_like(fx, np.nan)
+    lateral = np.full_like(fy, np.nan)
+    np.divide(fx, mu_x * safe_fz, out=longitudinal, where=loaded & (mu_x > 0.))
+    np.divide(fy, mu_y * safe_fz, out=lateral, where=loaded & (mu_y > 0.))
     return longitudinal, lateral, np.hypot(longitudinal, lateral)
 
 

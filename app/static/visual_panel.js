@@ -247,11 +247,12 @@
       ctx.stroke();
 
       const airborne = state.scene.scalar(corner.slot_airborne, f) > 0.5;
+      const unavailable = corner.slot_grip_unavailable !== undefined && state.scene.scalar(corner.slot_grip_unavailable, f) > 0.5;
       const usage = state.scene.scalar(corner.slot_usage, f);
       const gx = state.scene.scalar(corner.slot_x, f);
       const gy = state.scene.scalar(corner.slot_y, f);
 
-      if (!airborne) {
+      if (!airborne && !unavailable) {
         // Lateral is the horizontal axis: it is the one a driver feels.
         const px = cx + gy * radius / extent;
         const py = cy - gx * radius / extent;
@@ -266,7 +267,7 @@
       ctx.textAlign = "center";
       ctx.fillText(corner.corner.toUpperCase(), cx, cy - radius - 10 * dpr);
       ctx.fillText(
-        airborne ? "off the ground" : Math.round(usage * 100) + "% of peak",
+        airborne ? "off the ground" : unavailable ? "grip unavailable" : Math.round(usage * 100) + "% of peak",
         cx,
         cy + radius + 18 * dpr
       );
