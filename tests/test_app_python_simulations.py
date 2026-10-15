@@ -75,7 +75,7 @@ def test_step_steer_uses_active_config_and_exports_signals(tmp_path, monkeypatch
         seen.update(kwargs)
         return SimpleNamespace(time_s=np.array([0, 0.1]),
                                signals={"yawVel": [0, 0.2], "accY": [0, 1.5],
-                                        "velX": [8, 8], "handwheelAngle": [0, 0.03]}, success=True)
+                                        "velX": [8, 8], "roadwheelSteer": [0, 0.03]}, success=True)
 
     monkeypatch.setattr(python_simulations, "run_step_steer", simulate)
     python_simulations.run("reduced-step-steer")
@@ -167,7 +167,7 @@ def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch)
         seen.update(kwargs)
         return SimpleNamespace(time_s=np.array([0, 0.1, 0.2, 0.3]), success=True,
                                signals={"yawVel": [0, 0, -0.1, -0.2], "accY": [0, 0, -0.5, -1],
-                                        "velX": [8] * 4, "handwheelAngle": [0, 0, -0.0035, -0.007]})
+                                        "velX": [8] * 4, "roadwheelSteer": [0, 0, -0.0035, -0.007]})
 
     monkeypatch.setattr(python_simulations, "run_ramp_steer", simulate)
     python_simulations.run("reduced-ramp-steer")

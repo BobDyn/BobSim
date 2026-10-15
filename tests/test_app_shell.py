@@ -2099,3 +2099,14 @@ def test_signal_sampling_preserves_short_extrema_and_endpoints(tmp_path, monkeyp
     assert min(result['series'][0]['values']) == -80.
     assert max(result['series'][1]['values']) == 5.
     assert len(result['x']) <= 50
+
+
+def test_result_series_carries_known_units_without_guessing_unknown_channels(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/units.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('time,accY,roll,yawVel,custom\n0,1,2,3,4\n')
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    payload = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='time',
+                                        signals=['accY', 'roll', 'yawVel', 'custom'])
+    assert payload['x_unit'] == 's'
+    assert [series['unit'] for series in payload['series']] == ['m/s²', 'rad', 'rad/s', None]

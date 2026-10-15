@@ -16,7 +16,7 @@ from engines.dynpy.parameters import _combine_mass_properties, _mass_components
 def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch):
     vehicle = yaml.safe_load((Path(__file__).resolve().parents[1] / "vehicle.yml").read_text())
     signals = {"time": np.array([0., 1., 2.]), "x": np.array([0., 2., 4.]),
-               "handwheelAngle": np.zeros(3), "y": np.zeros(3), "yaw": np.array([0., np.pi/2, np.pi]),
+               "roadwheelSteer": np.zeros(3), "y": np.zeros(3), "yaw": np.array([0., np.pi/2, np.pi]),
                "z": np.array([0., .02, .04]), "roll": np.zeros(3), "pitch": np.zeros(3)}
     for corner in ("FL", "FR", "RL", "RR"):
         signals.update({f"jounce{corner}": np.zeros(3), f"toe{corner}": np.zeros(3), f"camber{corner}": np.full(3, 0.1),
@@ -67,7 +67,7 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch)
     archived = visual.reduced_scene_payload(tmp_path / "vehicle.yml", tmp_path / "signals.csv", dof)
     assert archived.header["representation"] == config["representation"]
     assert archived.buffer == payload.buffer
-    signals["handwheelAngle"] = np.array([0., .02, .04])
+    signals["roadwheelSteer"] = np.array([0., .02, .04])
     for index, corner in enumerate(("FL", "FR", "RL", "RR")):
         signals[f"jounce{corner}"] = np.array([0., .005, .01]) * (-1 if index % 2 else 1)
     signals["roll"] = np.array([0., .01, .02])

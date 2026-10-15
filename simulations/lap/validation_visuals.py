@@ -325,7 +325,7 @@ def _write_lap_figures(output: Path, corridor: TrackCorridor, qss: Any, transien
         "lateral_error": transient.lateral_error_m[:count],
         "heading_error": transient.heading_error_rad[:count],
         "yaw_rate": state["yawVel"][:count],
-        "steering": state["handwheelAngle"][:count],
+        "steering": state["roadwheelSteer"][:count],
         "ax": state["accX"][:count],
         "ay": state["accY"][:count],
     }

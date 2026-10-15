@@ -262,6 +262,34 @@ def _extrema_rows(reader, columns: list[str], bucket_size: int):
             yield bucket[index]
 
 
+def _signal_unit(name: str) -> str | None:
+    """## Signal Units
+
+    Return known exported units. Unrecognized channels remain explicitly unknown.
+    """
+    units = {
+        "time": "s", "time_s": "s", "x": "m", "y": "m", "z": "m", "station_m": "m",
+        "u": "m/s", "v": "m/s", "w": "m/s", "velX": "m/s", "velY": "m/s",
+        "accX": "m/s²", "accY": "m/s²", "yawAccel": "rad/s²",
+        "yawVel": "rad/s", "yaw_rate": "rad/s", "roll_rate": "rad/s", "pitch_rate": "rad/s",
+        "roll": "rad", "pitch": "rad", "yaw": "rad", "sideslip": "rad",
+        "roadwheelSteer": "rad", "handwheelAngle": "rad", "steering_rad": "rad",
+    }
+    if name in units:
+        return units[name]
+    for pattern, unit in (
+        (r"tireF[xyzXYZ](FL|FR|RL|RR)", "N"), (r"tireM[xyzXYZ](FL|FR|RL|RR)", "N m"),
+        (r"(camber|toe|caster|kpi)(FL|FR|RL|RR)", "rad"),
+        (r"(jounce|mechanicalTrail|scrubRadius|contactPatch[XYZ]|wheelCenterOffset[XYZ])(FL|FR|RL|RR)", "m"),
+        (r"jounceVel(FL|FR|RL|RR)", "m/s"),
+        (r"(contactPatchTangent[XYZ]|instantLinkLongitudinal|instantLinkLateral)(FL|FR|RL|RR)", "1"),
+        (r"wheel_angle_(fl|fr|rl|rr)", "rad"), (r"wheel_speed_(fl|fr|rl|rr)", "rad/s"),
+    ):
+        if re.fullmatch(pattern, name):
+            return unit
+    return None
+
+
 def result_series_payload(
     raw_path: str,
     *,
@@ -314,10 +342,12 @@ def result_series_payload(
 
     return {
         "source": source,
-        "color": {"signal": color_signal, "values": color_values} if color_signal else None,
+        "color": ({"signal": color_signal, "values": color_values, "unit": _signal_unit(color_signal)}
+                  if color_signal else None),
         "coordinates": coordinates,
         "row_indices": row_indices,
         "x_axis": x_axis,
+        "x_unit": _signal_unit(x_axis),
         "x": x_values,
         "stride": stride,
         "row_count": row_count,
@@ -325,6 +355,7 @@ def result_series_payload(
             {
                 "signal": signal,
                 "label": signal.replace("_", " "),
+                "unit": _signal_unit(signal),
                 "values": values,
             }
             for signal, values in series.items()

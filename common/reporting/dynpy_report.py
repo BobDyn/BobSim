@@ -94,7 +94,7 @@ def build_dynpy_report(
                 ("Final yaw rate (deg/s)", float(frame.yawVel.iloc[-1] * deg)),
                 ("Final speed (m/s)", float(frame.get("speed", frame.velX).iloc[-1]))]
         plots = [
-            _plot("Steering input", "time", "handwheelAngle", "Time (s)", "Roadwheel steer (deg)", deg),
+            _plot("Steering input", "time", "roadwheelSteer", "Time (s)", "Roadwheel steer (deg)", deg),
             _plot("Yaw response", "time", "yawVel", "Time (s)", "Yaw rate (deg/s)", deg),
             _plot("Lateral response", "time", "accY", "Time (s)", "Lateral acceleration (m/s²)"),
             _plot("Speed", "time", "speed" if "speed" in frame else "velX", "Time (s)", "Speed (m/s)"),
