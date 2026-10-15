@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from common.vehicle_io import repo_root
 from pathlib import Path
 import shutil
 
@@ -12,7 +13,7 @@ from optimization.response.pipeline.generator import generate_variants
 from optimization.response.pipeline.sampler import sample
 
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 DOE_CONFIG = STANDARD_DIR / "configs/_doe_config.yaml"
 COMPILER_CONFIG = STANDARD_DIR / "configs/compiler_config.yaml"

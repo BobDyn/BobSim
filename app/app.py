@@ -107,6 +107,7 @@ def _prepare_runtime_root() -> Path:
 
     runtime_root = _default_runtime_root()
     _seed_runtime_root(runtime_root)
+    os.environ[PRIMARY_HOME_ENV] = runtime_root.as_posix()
     os.chdir(runtime_root)
     return runtime_root
 

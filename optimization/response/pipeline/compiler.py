@@ -32,7 +32,7 @@ from optimization.response.pipeline._pipeline_hash import (
     variant_is_stale,
 )
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 REPO_ROOT = repo_root()
 DEFAULT_COMPILER_CONFIG = STANDARD_DIR / "configs/compiler_config.yaml"

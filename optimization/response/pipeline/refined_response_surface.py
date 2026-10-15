@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 import fnmatch
 import os
+from common.vehicle_io import repo_root
 from pathlib import Path
 import shutil
 from typing import Any
@@ -18,7 +19,7 @@ from optimization.response.pipeline.generator import generate_variants
 from optimization.response.pipeline.sampler import sample
 
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 OPTSIM_RESULTS_DIR = OPTSIM_DIR / "results"
 STANDARD_BUILD_DIR = OPTSIM_DIR / "Build" / "StandardSens"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from common.vehicle_io import repo_root
 from pathlib import Path
 import textwrap
 from typing import Any
@@ -19,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 OPTSIM_RESULTS_DIR = OPTSIM_DIR / "results"
 DEFAULT_REFINED_BUILD_DIR = OPTSIM_DIR / "Build/StandardSens/refined_response_surfaces"

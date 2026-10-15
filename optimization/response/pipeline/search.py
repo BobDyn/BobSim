@@ -28,7 +28,7 @@ from scipy.spatial import KDTree
 
 from optimization.response.pipeline.generate_configs import SWEEP_SCOPE_ALL
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 DEFAULT_PARQUET = OPTSIM_DIR / "Build/StandardSens/standard_sensitivity_results.parquet"
 DEFAULT_DOE_CONFIG = STANDARD_DIR / "configs/_doe_config.yaml"
