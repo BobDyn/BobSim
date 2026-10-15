@@ -128,8 +128,6 @@ COMMON_SIM_FIELDS = (
     _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
     _field("report.title", "Title", kind="string", group="Report"),
     _field("report.subtitle", "Subtitle", kind="string", group="Report"),
-    _field("report.output_path", "Report path", kind="string", group="Report"),
-    _field("report.metrics_csv_path", "Metrics CSV path", kind="string", group="Report"),
     _field("report.metric_target_velocity_mps", "Metric target velocity", kind="number", group="Report", unit="m/s"),
 )
 
@@ -731,9 +729,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         fields=(
             _field("report.title", "Title", kind="string", group="Report"),
             _field("report.subtitle", "Subtitle", kind="string", group="Report"),
-            _field("output.results_dir", "Results directory", kind="string", group="Output"),
-            _field("output.pdf_filename", "PDF filename", kind="string", group="Output"),
-            _field("output.metrics_csv_filename", "Metrics CSV filename", kind="string", group="Output"),
             _field("generation.regenerate_ggv", "Regenerate GGV", kind="boolean", group="Generation"),
             _field("generation.regenerate_ymd", "Regenerate YMD", kind="boolean", group="Generation"),
         ),
