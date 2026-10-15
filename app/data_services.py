@@ -2026,9 +2026,6 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
             if not path.is_file():
                 continue
             config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            if workflow.id == "envelope-sens":
-                path = path.parent / config["ggv_config"]
-                config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             dofs.add(int(config.get("model_dof", config.get("generation", {}).get("model_dof", 3))))
     fidelity = workflow.fidelity
     if dofs:

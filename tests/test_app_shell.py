@@ -2110,3 +2110,13 @@ def test_result_series_carries_known_units_without_guessing_unknown_channels(tmp
                                         signals=['accY', 'roll', 'yawVel', 'custom'])
     assert payload['x_unit'] == 's'
     assert [series['unit'] for series in payload['series']] == ['m/s²', 'rad', 'rad/s', None]
+
+
+def test_envelope_sensitivity_identifies_legacy_model(tmp_path: Path) -> None:
+    workflow = next(item for item in app.WORKFLOWS if item.id == "envelope-sens")
+    from app.data_services import workflow_model
+
+    model = workflow_model(workflow, root=tmp_path)
+    assert model["engine"] == "Legacy envelope"
+    assert model["model_dofs"] == []
+    assert model["fidelity"] == "QSS"
