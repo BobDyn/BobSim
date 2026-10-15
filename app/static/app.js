@@ -5628,7 +5628,7 @@ function studyDescription(workflow) {
     ymd: "Beta and steer sweeps for yaw moment authority.",
     "vehicle-review": "Report-ready vehicle, envelope, and rubric coverage.",
     "standard-sens": "Modelica DOE around the standard simulation model.",
-    "envelope-sens": "Fast reduced-order sensitivity sweep for envelope metrics.",
+    "envelope-sens": "Legacy capacity-model sensitivity sweep for envelope metrics.",
   }[workflow?.id] || workflow?.config?.path || "";
 }
 
@@ -5656,7 +5656,7 @@ function studyWorkflowGuide(workflow) {
     },
     "envelope-sens": {
       title: "Envelope Sensitivity",
-      copy: "The sampler defines a reduced-order sensitivity study of envelope settings.",
+      copy: "This study uses the legacy tire-capacity and yaw models, not DynPy or its selected DOF.",
       steps: ["Vehicle selected", "Sampler settings", "Study evaluation"],
     },
   }[workflow?.id] || {

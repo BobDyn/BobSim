@@ -132,7 +132,7 @@ When publishing results, use the workflow name or fidelity level in figure capti
 Sensitivity and design-of-experiments (DOE) runs sweep parameters across **any** of the above simulators:
 
 - `StandardSens`: sweeps StandardSim studies (VehicleSim/FourPostSim)
-- `EnvelopeSens`: sweeps EnvelopeSim outputs (GGV/YMD generation)
+- `EnvelopeSens`: sweeps the legacy capacity and yaw models. It does not use DynPy or the DOF selected for GGV/YMD.
 - `opt-standard`, `opt-envelope`, `opt-refined`: DOE targets using the sensitivity layer
 
 See [doe-reverse-engineering.md](doe-reverse-engineering.md) for details.
