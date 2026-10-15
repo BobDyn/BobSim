@@ -1095,7 +1095,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
         ),
         WorkflowSpec(
             id="envelope-sens",
-            engine="DynPy",
+            engine="Legacy envelope",
             fidelity="QSS",
             runtime="Python",
             group="opt",
