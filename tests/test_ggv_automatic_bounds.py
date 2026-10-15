@@ -148,3 +148,42 @@ def test_fourteen_dof_lateral_continuation_releases_temporary_load_floor():
     np.testing.assert_allclose(_algebraic_residual(model, result.inputs, result.output), 0., atol=1e-4)
     forward = model.evaluate(result.state, result.inputs)
     np.testing.assert_allclose(forward.generalized_acceleration, result.output.generalized_acceleration, atol=1e-6)
+
+
+def test_signed_generation_solves_both_turn_directions(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ggv, 'solve_lateral_limit',
+                        lambda *args, **kw: (8. if kw['ay_upper'] > 0. else -6., 0.))
+
+    def boundary(*args, **kw):
+        calls.append(kw['ay'])
+        value = (4. if kw['ay'] >= 0. else 3.) if kw['mode'] == 'drive' else -8.
+        return SimpleNamespace(success=True, unknowns={}, path_longitudinal_acceleration_mps2=value)
+
+    monkeypatch.setattr(ggv, '_solve_envelope_limit', boundary)
+    envelope = ggv.generate_ggv(object(), replace(config(), include_left_right=True), object())[0]
+    assert min(calls) < 0. < max(calls)
+    assert envelope.ay[0] == -6.
+    assert envelope.ay[-1] == 8.
+    assert np.all(np.diff(envelope.ay) > 0.)
+    assert 3. in envelope.ax_accel[envelope.ay < 0.]
+    assert 4. in envelope.ax_accel[envelope.ay > 0.]
+
+
+def test_real_offset_vehicle_has_independent_signed_lateral_limits(tmp_path):
+    import yaml
+    from engines.dynpy import Vehicle
+    from common.vehicle_io import load_yaml, vehicle_yaml_path
+    from simulations.envelope.vehicle_yaml import project_vehicle_yaml
+
+    data = load_yaml(vehicle_yaml_path())
+    data['driver_mass']['cg_m'][1] += .15
+    path = tmp_path / 'offset.yml'
+    path.write_text(yaml.safe_dump(data))
+    vehicle = Vehicle.from_yaml(path)
+    projected = project_vehicle_yaml(data).ggv
+    limits = [ggv.solve_lateral_limit(projected, speed=12., ay_upper=direction * 45.,
+                                     reduced_model=vehicle.model(3), trim_multistart=True)[0]
+              for direction in (1., -1.)]
+    assert limits[0] > 0. > limits[1]
+    assert abs(limits[0] + limits[1]) > .01
