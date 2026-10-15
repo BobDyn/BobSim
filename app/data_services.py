@@ -19,7 +19,7 @@ import yaml
 from common.vehicle_io import dump_vehicle
 
 from common import config_io
-from common.vehicle_io import parse_tir
+from common.vehicle_io import parse_tir, tire_template_name
 from app import registry as app_registry
 from app import storage as app_storage
 from app import tire_eval as tire_eval_core
@@ -1991,9 +1991,23 @@ def capture_workflow_inputs(workflow_id: str) -> dict[str, Any]:
         spec.path == workflow.config and spec.relocatable for spec in BASE_CONFIG_SPECS.values()
     ):
         config_path = config_io.resolve(config_path, root=ROOT)
+    vehicle_text = vehicle_path.read_text(encoding="utf-8") if vehicle_path.is_file() else None
+    vehicle_data = yaml.safe_load(vehicle_text) if vehicle_text else {}
+    tire_texts = {}
+    for axle in ("front", "rear"):
+        if axle not in vehicle_data:
+            continue
+        try:
+            name = tire_template_name(vehicle_data, vehicle_data[axle])
+        except KeyError:
+            continue
+        tire_root = Path(vehicle_data.get("paths", {}).get("tire_templates", "common/tire_templates"))
+        tire_path = ROOT / tire_root / f"{name}.tir"
+        tire_texts[axle] = tire_path.read_text(encoding="utf-8")
     return {
+        "tire_texts": tire_texts,
         "model": workflow_model(workflow, root=ROOT),
-        "vehicle_text": vehicle_path.read_text(encoding="utf-8") if vehicle_path.is_file() else None,
+        "vehicle_text": vehicle_text,
         "config_text": config_path.read_text(encoding="utf-8") if config_path and config_path.is_file() else None,
         "config_source": config_path.relative_to(ROOT).as_posix() if config_path else None,
         "ggv_signature": _ggv_link_signature() if workflow_id == "ggv" and vehicle_path.is_file()
@@ -2062,6 +2076,13 @@ def save_active_results(
         snapshot = result_dir / "vehicle.yml"
         snapshot.write_text(vehicle_text, encoding="utf-8")
         vehicle_snapshot = snapshot.relative_to(ROOT).as_posix()
+
+    for axle, text in inputs.get("tire_texts", {}).items():
+        if axle not in ("front", "rear"):
+            raise ValueError("Unknown archived tire axle")
+        tires_dir = result_dir / "tires"
+        tires_dir.mkdir(exist_ok=True)
+        (tires_dir / f"{axle}.tir").write_text(text, encoding="utf-8")
 
     config_snapshot = None
     if inputs.get("config_text") is not None:
