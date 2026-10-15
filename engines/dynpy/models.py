@@ -847,7 +847,7 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         # Include the axle reactions' roll moment when the CG is off the centerline.
         front_share = self._front_roll_stiffness_fraction()
         loads += self._roll_moment_load_transfer(
-            float(aero_moment[0] + np.dot(positions[:, 1], aero_loads)),
+            float(aero_moment[0] + np.dot(positions[:, 1], loads)),
             front_share,
         )
         return VerticalForceState(
