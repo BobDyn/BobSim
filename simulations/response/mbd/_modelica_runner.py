@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,36 +13,32 @@ import subprocess
 import sys
 import uuid
 import traceback
-import xml.etree.ElementTree as ET
 
 import numpy as np
 import pandas as pd
 
+from simulations.response.mbd.modelica_overrides import (
+    MODELICA_OVERRIDE_ALIASES,
+    InitVariable,
+    OverrideError,
+    OverridePlan,
+    OverrideRejection,
+    load_init_variables,
+    plan_overrides,
+    readback_overrides,
+    with_readback_stream,
+)
 
-MODELICA_OVERRIDE_ALIASES = {
-    # VCU targetVel derives from initialVel. Override the source so chassis, driveline, and VCU move together.
-    "targetVel": "initialVel",
-    "targetAy": "vcu.targetAy",
-    "useMode": "vcu.useMode",
-    "steerStart": "vcu.steerStart",
-    "linearitySlopeSamplePeriod": "vcu.linearitySlopeSamplePeriod",
-    "handwheelRampRate": "vcu.handwheelRampRate",
-    "handwheelRampStopDuration": "vcu.handwheelRampStopDuration",
-    "enableNormalLoadSteerLimiter": "vcu.enableNormalLoadSteerLimiter",
-    "tireNormalLoadMin": "vcu.tireNormalLoadMin",
-    "steadyStateAyRampRate": "vcu.steadyStateAyRampRate",
-    "steadyStateMaxHandwheel": "vcu.steadyStateMaxHandwheel",
-    "steadyStateAyGain": "vcu.steadyStateAyGain",
-    "steadyStateAyTi": "vcu.steadyStateAyTi",
-    "steadyStateSteerTimeConstant": "vcu.steadyStateSteerTimeConstant",
-    "frRampSteerHeight": "vcu.frRampSteerHeight",
-    "frRampSteerDuration": "vcu.frRampSteerDuration",
-    "stepDuration": "vcu.stepDuration",
-    "steerAmp": "vcu.steerAmp",
-    "steerFreq": "vcu.steerFreq",
-    "velGain": "vcu.velGain",
-    "velTi": "vcu.velTi",
-}
+__all__ = [
+    "MODELICA_OVERRIDE_ALIASES",
+    "InitVariable",
+    "ModelicaRunner",
+    "OverrideError",
+    "OverridePlan",
+    "OverrideRejection",
+    "load_init_variables",
+    "plan_overrides",
+]
 
 
 def _modelica_exec_base_name(exec_name: str) -> str:
@@ -148,7 +145,7 @@ class ModelicaRunner:
 
         if not self.init_xml.exists():
             raise FileNotFoundError(f"Init XML not found: {self.init_xml}")
-        self._init_defaults_cache: dict[str, str] | None = None
+        self._init_variables_cache: dict[str, InitVariable] | None = None
 
     @classmethod
     def from_config(cls, config):
@@ -162,6 +159,37 @@ class ModelicaRunner:
             ),
             simulation=sim_cfg,
         )
+
+    def init_variables(self) -> dict[str, InitVariable]:
+        if self._init_variables_cache is None:
+            if not self.init_xml.exists():
+                raise OverrideError(
+                    [
+                        OverrideRejection(
+                            "", "", "missing_init_xml", None, f"No init XML at {self.init_xml}. Rebuild the model."
+                        )
+                    ]
+                )
+            self._init_variables_cache = load_init_variables(self.init_xml)
+        return self._init_variables_cache
+
+    def plan_cases(self, cases) -> list[OverridePlan]:
+        """Plan every case, or raise one OverrideError that lists every rejection."""
+        init_variables = self.init_variables()
+        plans: list[OverridePlan] = []
+        rejections: list[OverrideRejection] = []
+        for index, case in enumerate(cases, start=1):
+            try:
+                plans.append(plan_overrides(case, init_variables))
+            except OverrideError as exc:
+                where = f"case {index} ({case.get('_case_label') or self._case_label(case)})"
+                rejections.extend(
+                    OverrideRejection(r.key, r.modelica_name, r.reason, r.requested, f"{where}: {r.detail}")
+                    for r in exc.rejections
+                )
+        if rejections:
+            raise OverrideError(rejections)
+        return plans
 
     def run(self, signals, mode, cases, execution=None):
         execution = execution or {}
@@ -191,12 +219,13 @@ class ModelicaRunner:
         )
 
     def run_cases(self, signals, mode, cases, cleanup=False, stream_logs=False, fail_fast=False):
+        plans = self.plan_cases(cases)
         results = []
         n_total = len(cases)
         n_done = 0
         n_failed = 0
 
-        for i, case in enumerate(cases, start=1):
+        for i, (case, plan) in enumerate(zip(cases, plans), start=1):
             label = self._case_label(case)
 
             print(f"[{i}/{n_total}] running {label}", flush=True)
@@ -207,6 +236,7 @@ class ModelicaRunner:
                 case=case,
                 cleanup=cleanup,
                 stream_logs=stream_logs,
+                plan=plan,
             )
             results.append(result)
 
@@ -240,6 +270,8 @@ class ModelicaRunner:
         stream_logs=False,
         fail_fast=False,
     ):
+        plans = self.plan_cases(cases)
+
         if fail_fast:
             print(
                 "Note: fail_fast is only immediate for serial execution; "
@@ -265,7 +297,7 @@ class ModelicaRunner:
                 flush=True,
             )
 
-            for i, case in enumerate(cases, start=1):
+            for i, (case, plan) in enumerate(zip(cases, plans), start=1):
                 label = self._case_label(case)
 
                 print(f"[{i}/{n_total}] queued {label}", flush=True)
@@ -280,6 +312,7 @@ class ModelicaRunner:
                     case,
                     cleanup,
                     stream_logs,
+                    plan,
                 )
 
                 futures[future] = i - 1
@@ -291,6 +324,9 @@ class ModelicaRunner:
                 idx = futures[future]
                 try:
                     result = future.result()
+                except OverrideError:
+                    pool.shutdown(wait=True, cancel_futures=True)
+                    raise
                 except Exception as exc:  # pragma: no cover - safety net
                     case = cases[idx]
                     label = self._case_label(case)
@@ -324,7 +360,9 @@ class ModelicaRunner:
 
         return results
 
-    def run_case(self, signals, mode, case, cleanup=False, stream_logs=False):
+    def run_case(self, signals, mode, case, cleanup=False, stream_logs=False, plan=None):
+        if plan is None:
+            (plan,) = self.plan_cases([case])
         run_id = str(uuid.uuid4())[:8]
         case_label = self._case_label(case)
 
@@ -337,34 +375,39 @@ class ModelicaRunner:
         log_file = run_dir / "run.log"
         manifest_file = run_dir / "manifest.json"
 
-        self._write_override_file(override_file, case)
-        self._write_run_manifest(
-            manifest_file,
-            {
-                "run_id": run_id,
-                "job_id": os.environ.get("BOBSIM_JOB_ID"),
-                "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
-                "case_label": case_label,
-                "status": "running",
-                "started_at": time.time(),
-                "build_dir": str(self.build_dir),
-                "executable": str(self.exe_path),
-                "run_dir": str(run_dir),
-                "override_file": str(override_file),
-                "result_file": str(result_file),
-                "log_file": str(log_file),
-                "mode": mode,
-                "signals": list(signals or []),
-                "case": case,
-            },
-        )
-        self._remove_stale_profile_files()
-
+        override_sha256 = self._write_override_file(override_file, plan)
         cmd = self._build_command(
             override_file=override_file,
             result_file=result_file,
             case=case,
         )
+        run_record = {
+            "run_id": run_id,
+            "job_id": os.environ.get("BOBSIM_JOB_ID"),
+            "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
+            "case_label": case_label,
+            "build_dir": str(self.build_dir),
+            "executable": str(self.exe_path),
+            "argv": cmd,
+            "run_dir": str(run_dir),
+            "override_file": str(override_file),
+            "result_file": str(result_file),
+            "log_file": str(log_file),
+            "mode": mode,
+            "signals": list(signals or []),
+            "case": case,
+        }
+        self._write_run_manifest(
+            manifest_file,
+            {
+                **run_record,
+                "status": "running",
+                "started_at": time.time(),
+                "overrides": plan.manifest(override_sha256),
+            },
+        )
+        self._remove_stale_profile_files()
+
         env = self._build_environment()
         timeout_s = self._timeout_seconds(case)
 
@@ -412,6 +455,21 @@ class ModelicaRunner:
                 f"{stdout_tail}"
             )
 
+        readback, not_applied = readback_overrides(plan, log_file.read_text(errors="replace"))
+        if not_applied:
+            error = OverrideError(not_applied)
+            self._write_run_manifest(
+                manifest_file,
+                {
+                    **run_record,
+                    "status": "failed",
+                    "ended_at": time.time(),
+                    "error": str(error),
+                    "overrides": plan.manifest(override_sha256, readback, not_applied),
+                },
+            )
+            raise error
+
         if not result_file.exists():
             raise FileNotFoundError(
                 f"Simulation finished but result file was not found: {result_file}"
@@ -439,21 +497,10 @@ class ModelicaRunner:
         self._write_run_manifest(
             manifest_file,
             {
-                "run_id": run_id,
-                "job_id": os.environ.get("BOBSIM_JOB_ID"),
-                "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
-                "case_label": case_label,
+                **run_record,
                 "status": "succeeded",
                 "ended_at": time.time(),
-                "build_dir": str(self.build_dir),
-                "executable": str(self.exe_path),
-                "run_dir": str(run_dir),
-                "override_file": str(override_file),
-                "result_file": str(result_file),
-                "log_file": str(log_file),
-                "mode": mode,
-                "signals": list(signals or []),
-                "case": case,
+                "overrides": plan.manifest(override_sha256, readback),
             },
         )
 
@@ -697,7 +744,7 @@ class ModelicaRunner:
             except FileNotFoundError:
                 continue
 
-    def _run_case_safe(self, signals, mode, case, cleanup=False, stream_logs=False):
+    def _run_case_safe(self, signals, mode, case, cleanup=False, stream_logs=False, plan=None):
         try:
             result = self.run_case(
                 signals=signals,
@@ -705,7 +752,11 @@ class ModelicaRunner:
                 case=case,
                 cleanup=cleanup,
                 stream_logs=stream_logs,
+                plan=plan,
             )
+        except OverrideError:
+            # A failed case is dropped from fits. An override that did not apply invalidates every case.
+            raise
         except Exception as exc:
             label = self._case_label(case)
             return {
@@ -718,77 +769,10 @@ class ModelicaRunner:
         result["_status"] = "ok"
         return result
 
-    def _write_override_file(self, path, case):
-        init_defaults = self._init_parameter_defaults()
-        with Path(path).open("w", newline="\n") as f:
-            for key, value in case.items():
-                # "_" keys are Python-only metadata.
-                if key.startswith("_"):
-                    continue
-
-                # _build_command() passes these as runtime flags.
-                if key in {"startTime", "stopTime"}:
-                    continue
-
-                modelica_key = MODELICA_OVERRIDE_ALIASES.get(key, key)
-                formatted_value = self._format_override_value(value)
-                if init_defaults is not None:
-                    default_value = init_defaults.get(modelica_key)
-                    if default_value is None:
-                        continue
-                    if self._override_matches_default(formatted_value, default_value):
-                        continue
-                f.write(f"{modelica_key}={formatted_value}\n")
-
-    def _init_parameter_defaults(self) -> dict[str, str] | None:
-        if not hasattr(self, "init_xml"):
-            return None
-        if not hasattr(self, "_init_defaults_cache"):
-            self._init_defaults_cache = None
-        if self._init_defaults_cache is not None:
-            return self._init_defaults_cache
-        if not self.init_xml.exists():
-            return None
-
-        defaults: dict[str, str] = {}
-        root = ET.parse(self.init_xml).getroot()
-        for variable in root.iter("ScalarVariable"):
-            name = variable.attrib.get("name")
-            if not name:
-                continue
-            value_node = next(iter(variable), None)
-            if value_node is None:
-                continue
-            start = value_node.attrib.get("start")
-            if start is not None:
-                defaults[name] = start
-
-        self._init_defaults_cache = defaults
-        return defaults
-
-    def _override_matches_default(self, override_value: str, default_value: str) -> bool:
-        override = override_value.strip()
-        default = default_value.strip()
-
-        if override.lower() in {"true", "false"} or default.lower() in {"true", "false"}:
-            return override.lower() == default.lower()
-
-        try:
-            return bool(np.isclose(float(override), float(default), rtol=0.0, atol=0.0))
-        except ValueError:
-            return override == default
-
-    def _format_override_value(self, value):
-        if isinstance(value, bool):
-            return "true" if value else "false"
-
-        if isinstance(value, (float, np.floating)):
-            return repr(float(value))
-
-        if isinstance(value, (int, np.integer)):
-            return str(int(value))
-
-        return str(value)
+    def _write_override_file(self, path, plan: OverridePlan) -> str:
+        data = plan.file_text().encode("utf-8")
+        Path(path).write_bytes(data)
+        return hashlib.sha256(data).hexdigest()
 
     def _build_command(self, override_file, result_file, case=None):
         case = case or {}
@@ -836,9 +820,7 @@ class ModelicaRunner:
         if tolerance is not None:
             cmd.append(f"-tolerance={float(tolerance)}")
 
-        log_level = self.simulation.get("log_level")
-        if log_level:
-            cmd.append(f"-lv={log_level}")
+        cmd.append(f"-lv={with_readback_stream(self.simulation.get('log_level'))}")
 
         variable_filter = self.simulation.get("variable_filter")
         if variable_filter:
@@ -913,6 +895,7 @@ def _run_case_worker(
     case,
     cleanup,
     stream_logs,
+    plan=None,
 ):
     runner = ModelicaRunner(
         build_dir=build_dir,
@@ -929,4 +912,5 @@ def _run_case_worker(
         case=case,
         cleanup=cleanup,
         stream_logs=stream_logs,
+        plan=plan,
     )

@@ -1,10 +1,10 @@
 """Mapping a DOE variable onto runtime overrides of a compiled executable.
 
-The runner drops any override name it cannot find without saying so, and
 OpenModelica accepts overrides of parameters it has already baked into the
-executable. Both failures are silent and both leave a knob at baseline while the
-solver believes it moved, so the mapping is checked here against a small
-hand-written init XML rather than trusted.
+executable. That failure is silent and leaves a knob at baseline while the
+solver believes it moved. The runner rejects an unknown name, but only after the
+DOE path is lost. So the mapping is checked here against a small hand-written
+init XML rather than trusted.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def test_one_value_fans_out_to_every_target_with_its_scale(init_parameters) -> N
     ("path", "reason"),
     [
         ("typo", "not in the compiled model"),
-        # The runner keys its lookup on the start value, so it drops this name silently.
+        # The runner rejects a name with no start value as no_start_value.
         ("no_start", "not in the compiled model"),
         ("frozen", "fixed at compile time"),
         ("aero.load_scale", "scaled tables are compiled"),

@@ -87,9 +87,12 @@ above. Keep the set small; a stale doc is worse than no doc.
   `isValueChangeable="true"`, the override gives no warning, and the simulated
   car does not change. Only the variables in `RUNTIME_SAFE_PATHS`
   (`optimization/response/pipeline/overrides.py`) are proven to follow an
-  override. Compile every other variable. The runner also silently drops an
-  override name that it cannot find in the init XML. Before you trust a new
-  override, read the comment in that file on how to check one.
+  override. Compile every other variable. Before you trust a new override,
+  read the comment in that file on how to check one. The runner catches the
+  other failures. Before any case runs, it rejects a name that is not in the
+  init XML, a parameter that is not changeable, and a name with no start value.
+  After each run, it fails if `run.log` says that an override was not applied.
+  See [Runtime overrides](docs/simulation-entrypoints.md#runtime-overrides).
 - **OptSim is three tools. The wrong tool wastes hours.** `opt-standard`
   samples a space to learn what matters. `opt-solve` inverts for the setup that
   hits target metrics. `opt-trade` compares vehicles that you name. None of them

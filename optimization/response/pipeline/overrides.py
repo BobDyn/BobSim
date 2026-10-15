@@ -6,12 +6,12 @@ cheaper than recompiling. It is only correct for some parameters, and the
 incorrect cases fail without a sound. This module owns both halves of that: which
 variables are safe, and what their override names are.
 
-Two silent failures are guarded here:
+Two failures are guarded here:
 
 - OpenModelica accepts an override of a parameter it has already evaluated into
   the executable. `RUNTIME_SAFE_PATHS` is the allow-list that keeps those out.
-- The runner drops any override name it cannot find in the init XML. Every name
-  is checked against the same XML before it is handed over.
+- A name that is not in the init XML cannot take effect. The runner rejects it
+  before any case runs. This module rejects it earlier and names the DOE path.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import xml.etree.ElementTree as ET
 
 from optimization.response.pipeline.generator import resolve_targets
+from simulations.response.mbd.modelica_overrides import load_init_variables
 
 VEHICLE_RECORD = "pVehicle"
 
@@ -51,22 +51,17 @@ class InitParameter:
 
 def load_init_parameters(init_xml: Path) -> dict[str, InitParameter]:
     """Read every scalar's start value and whether it may be set at runtime."""
-    parameters: dict[str, InitParameter] = {}
-    for variable in ET.parse(init_xml).getroot().iter("ScalarVariable"):
-        name = variable.attrib.get("name")
-        if not name:
-            continue
-        value_node = next(iter(variable), None)
-        raw = None if value_node is None else value_node.attrib.get("start")
-        try:
-            start = None if raw is None else float(raw)
-        except ValueError:
-            start = None
-        parameters[name] = InitParameter(
-            start=start,
-            changeable=variable.attrib.get("isValueChangeable") == "true",
-        )
-    return parameters
+    return {
+        name: InitParameter(start=_float_or_none(variable.start), changeable=variable.changeable)
+        for name, variable in load_init_variables(init_xml).items()
+    }
+
+
+def _float_or_none(raw: str | None) -> float | None:
+    try:
+        return None if raw is None else float(raw)
+    except ValueError:
+        return None
 
 
 def find_init_xml(build_dir: Path, exec_name: str) -> Path:
@@ -103,7 +98,7 @@ def variant_overrides(
             if target.get("operation") == "scale":
                 problems.append(f"{name} (from {path}): scaled tables are compiled, not overridden")
             elif parameter is None or parameter.start is None:
-                # The runner drops a scalar with no start value.
+                # The runner also rejects a scalar with no start value.
                 problems.append(f"{name} (from {path}): not in the compiled model")
             elif not parameter.changeable:
                 problems.append(f"{name} (from {path}): fixed at compile time")

@@ -71,6 +71,59 @@ Envelope maps and reports use `simulations/envelope/Build` and
 `simulations/envelope/results`. Standalone laps use `simulations/lap/results`.
 The app archives run inputs and results under its vehicle workspace.
 
+## BobLib runtime overrides
+
+A study passes each case to `ModelicaRunner` as a dictionary. The runner
+writes each key as an OpenModelica `-overrideFile` line, with these exceptions:
+
+- It skips a key that starts with `_`. That key is Python metadata.
+- It passes `startTime`, `stopTime` and `stepSize` as command-line flags.
+- It uses `timeout_s` itself.
+
+`MODELICA_OVERRIDE_ALIASES` maps short names such as `targetVel` to model names.
+
+The executable cannot apply some overrides. It then writes one `run.log`
+warning and exits 0. So the runner checks every case against the build's
+`*_init.xml` before it starts any process. One `OverrideError` lists every
+rejection. Its reasons are:
+
+| Reason | Cause |
+| --- | --- |
+| `unknown_name` | The model has no variable with this name. |
+| `no_start_value` | The init XML gives the variable no start value. |
+| `not_changeable` | The init XML marks it `isValueChangeable="false"`, for example a `calculatedParameter`. |
+| `conflicting_aliases` | Two keys set the same model name to different values. |
+| `missing_init_xml` | The build has no init XML. |
+| `not_applied` | `run.log` refuses an override, or reads back a different value. |
+
+A value equal to the compiled start value is not written. The runner records
+it as `already_compiled`. A rejection stops the whole run. It never becomes one
+failed case, because a study drops failed cases from its fits.
+
+The runner always adds `LOG_SOLVER` to `-lv`. With it, the executable writes
+`override NAME = VALUE` for each override that it applied. This is a readback
+of the parameter value only. `LOG_SOLVER` also writes lines for each solver
+step, so `run.log` gets larger.
+
+Each run directory has `run.log` and `manifest.json`. A failed run keeps its
+directory. With `execution.cleanup: true`, a run that succeeds deletes it. The
+manifest records the command line as `argv`. It also has an `overrides` block:
+
+| Field | Meaning |
+| --- | --- |
+| `requested` | The case keys and values, before aliases. |
+| `written` | The model names and values in `overrides.txt`. |
+| `already_compiled` | The model names whose request equals the compiled start value. |
+| `rejected` | The `not_applied` rejections of a failed run. |
+| `readback` | For each written name: `requested`, `observed` and `status` (`match`, `mismatch` or `unavailable`). |
+| `file_sha256` | The SHA-256 of `overrides.txt`. |
+
+The check cannot see a changeable parameter that OpenModelica evaluates at
+compile time, such as static toe. The override then applies and reads back,
+but the physics does not change. Only an achieved signal shows that a change
+took effect. See `RUNTIME_SAFE_PATHS` in
+`optimization/response/pipeline/overrides.py`.
+
 ## Optimization and validation
 
 StandardSens sweeps BobLib standard studies. EnvelopeSens uses a separate
