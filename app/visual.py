@@ -33,6 +33,7 @@ from typing import Any
 import numpy as np
 
 from visualization.sim_data import SimData, resolve_load_reference
+from engines.dynpy.tire import CONTACT_LOAD_N
 from visualization.tire_state import axle_load_transfer, grip_usage
 
 VISUAL_RESULTS_ROOT = Path("visualization/results")
@@ -290,8 +291,7 @@ def _grip_payload(data: SimData, scalar_slot: Any) -> dict[str, Any]:
                 "corner": str(corner),
                 "axle": str(entry.get("axle", "front")),
                 "tir": str(coeffs.get("tir", "")),
-                # NaN means "off the ground", which JSON cannot carry and the
-                # renderer must not draw as zero, so it travels as a flag.
+                # Invalid grip travels as a flag because scalar slots replace nonfinite values.
                 # ``scalar_slot`` zeroes the NaN itself; calling nan_to_num
                 # here first would turn an infinity into 1.8e308, which is
                 # finite enough to slip past that guard and then overflows
@@ -299,7 +299,8 @@ def _grip_payload(data: SimData, scalar_slot: Any) -> dict[str, Any]:
                 "slot_x": scalar_slot(longitudinal),
                 "slot_y": scalar_slot(lateral),
                 "slot_usage": scalar_slot(usage),
-                "slot_airborne": scalar_slot(np.isnan(usage).astype(float)),
+                "slot_airborne": scalar_slot((fz <= CONTACT_LOAD_N).astype(float)),
+                "slot_grip_unavailable": scalar_slot((~np.isfinite(usage)).astype(float)),
             }
         )
     if not corners:
