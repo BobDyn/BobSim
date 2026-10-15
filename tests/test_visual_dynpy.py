@@ -101,13 +101,18 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch)
                        np.array([0., 2., 0.]) / vehicle["front"]["wheel"]["radius_m"])
     np.savetxt(tmp_path / "signals.csv", np.column_stack(list(signals.values())),
                delimiter=",", header=",".join(signals), comments="")
+    from common.vehicle_io import tire_template_name, tire_templates_root
+    (tmp_path / "tires").mkdir(exist_ok=True)
+    for axle in ("front", "rear"):
+        name = tire_template_name(vehicle, vehicle[axle])
+        (tmp_path / "tires" / f"{axle}.tir").write_bytes((tire_templates_root(vehicle) / f"{name}.tir").read_bytes())
     with_grip = visual.reduced_scene_payload(tmp_path / "vehicle.yml", tmp_path / "signals.csv", dof)
     assert len(with_grip.header["grip"]["corners"]) == 4
     values = np.frombuffer(with_grip.buffer, dtype=np.float32)
     layout = with_grip.header["layout"]["scalars"]
     scalars = values[layout["offset"]:layout["offset"] + layout["count"]].reshape(3, -1)
     assert all(np.all(scalars[:, corner["slot_usage"]] > 0) for corner in with_grip.header["grip"]["corners"])
-    def unavailable_tire(_path):
+    def unavailable_tire(_path, **_kwargs):
         raise FileNotFoundError("Archived tire template is unavailable")
     monkeypatch.setattr("visualization.from_results.axle_friction", unavailable_tire)
     without_grip = visual.reduced_scene_payload(tmp_path / "vehicle.yml", tmp_path / "signals.csv", dof)

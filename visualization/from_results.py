@@ -426,7 +426,7 @@ def _relative_posix(path: Path, start: Path) -> str:
         return path.resolve().as_posix()
 
 
-def axle_friction(vehicle_yaml: Path) -> dict[str, dict[str, Any]]:
+def axle_friction(vehicle_yaml: Path, *, tire_snapshot_dir: Path | None = None) -> dict[str, dict[str, Any]]:
     """Peak-friction coefficients for each axle's tire, from the ``.tir`` that ``vehicle.yml`` names."""
     from common.vehicle_io import load_yaml, parse_tir, tire_template_name, tire_templates_root
     from visualization.tire_state import friction_coefficients
@@ -435,7 +435,9 @@ def axle_friction(vehicle_yaml: Path) -> dict[str, dict[str, Any]]:
     friction: dict[str, dict[str, Any]] = {}
     for axle in ("front", "rear"):
         name = tire_template_name(vehicle, vehicle[axle])
-        coeffs = friction_coefficients(parse_tir(tire_templates_root(vehicle) / f"{name}.tir"))
+        tire_path = (tire_snapshot_dir / f"{axle}.tir" if tire_snapshot_dir is not None
+                     else tire_templates_root(vehicle) / f"{name}.tir")
+        coeffs = friction_coefficients(parse_tir(tire_path))
         friction[axle] = {"tir": name, **coeffs}
     return friction
 

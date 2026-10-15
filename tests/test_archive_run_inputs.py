@@ -603,3 +603,25 @@ def test_existing_result_view_names(archive_workspace):
     }]))
     views = app.simulation_workspace('list')['simulations'][0]['visualizations']
     assert [view['name'] for view in views] == ['Animation', 'Signal Explorer 1', 'Signal Explorer 2', 'Tire loads']
+
+
+def test_archive_retains_job_start_tires_after_library_changes(archive_workspace):
+    from visualization.from_results import axle_friction
+    from common.vehicle_io import load_yaml, vehicle_yaml_path, tire_templates_root, tire_template_name
+
+    root, _ = archive_workspace
+    vehicle = load_yaml(vehicle_yaml_path())
+    tires = root / 'common/tire_templates'
+    tires.mkdir(parents=True)
+    for axle in ('front', 'rear'):
+        name = tire_template_name(vehicle, vehicle[axle])
+        (tires / f'{name}.tir').write_bytes((tire_templates_root(vehicle) / f'{name}.tir').read_bytes())
+    (root / 'vehicle.yml').write_text(yaml.safe_dump(vehicle))
+    snapshot = app.capture_workflow_inputs('study')
+    for tire in tires.glob('*.tir'):
+        tire.write_text('LMUY = 0.01\n')
+    saved = app.save_active_results('study', input_snapshot=snapshot)['saved']
+    archived = root / saved['vehicle_snapshot']
+    friction = axle_friction(archived, tire_snapshot_dir=archived.parent / 'tires')
+    assert friction['front']['LMUY'] != .01
+    assert (archived.parent / 'tires/front.tir').read_text() == snapshot['tire_texts']['front']
