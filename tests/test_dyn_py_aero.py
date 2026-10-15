@@ -71,7 +71,7 @@ def test_models_use_current_aero_pose_and_full_wrench(aero, dof):
         assert sum(vertical.normal_loads_n)-sum(parameters.static_wheel_loads_n) == pytest.approx(-force[2])
         np.testing.assert_allclose(model._aero_load(velocity, pose)[1], moment)
         vertical_forces = np.zeros((4, 3))
-        vertical_forces[:, 2] = vertical.normal_loads_n - parameters.static_wheel_loads_n
+        vertical_forces[:, 2] = vertical.normal_loads_n
         reaction = np.cross(parameters.corner_positions, vertical_forces).sum(axis=0)
         np.testing.assert_allclose(reaction[:2] + moment[:2], 0, atol=1e-9)
 
