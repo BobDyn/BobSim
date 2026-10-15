@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import math
+from itertools import islice
 from pathlib import Path
 import re
 import shutil
@@ -239,6 +240,28 @@ def result_source_payload(raw_path: str) -> dict[str, Any]:
     return _csv_source_summary(path)
 
 
+def _extrema_rows(reader, columns: list[str], bucket_size: int):
+    """## Plot Samples
+
+    Yield bucket endpoints, extrema, and missing-value markers in source order.
+    """
+    indexed = enumerate(reader)
+    while bucket := list(islice(indexed, bucket_size)):
+        selected = {0, len(bucket) - 1}
+        for column in columns:
+            finite = [(i, value) for i, (_, row) in enumerate(bucket)
+                      if (value := _float_or_none(row.get(column))) is not None]
+            if finite:
+                selected.add(min(finite, key=lambda item: item[1])[0])
+                selected.add(max(finite, key=lambda item: item[1])[0])
+            missing = next((i for i, (_, row) in enumerate(bucket)
+                            if _float_or_none(row.get(column)) is None), None)
+            if missing is not None:
+                selected.add(missing)
+        for index in sorted(selected):
+            yield bucket[index]
+
+
 def result_series_payload(
     raw_path: str,
     *,
@@ -262,7 +285,10 @@ def result_series_payload(
 
     row_count = int(source.get("row_count") or 0)
     point_limit = max(50, min(10_000, int(max_points or 1800)))
-    stride = max(1, math.ceil(row_count / point_limit)) if row_count else 1
+    sampled_columns = list(dict.fromkeys([*selected_signals, *([x_axis] if x_axis != "__index__" else []),
+                                          *([color_signal] if color_signal else [])]))
+    bucket_count = max(1, point_limit // (3 * len(sampled_columns) + 2))
+    stride = max(1, math.ceil(row_count / bucket_count)) if row_count > point_limit else 1
     coordinate_columns = {name: next((column for column in columns if column in numeric_columns), None)
                           for name, columns in (("time", ("time", "time_s")), ("station_m", ("station_m",)))}
     coordinates: dict[str, list[float | None]] = {name: [] for name, column in coordinate_columns.items() if column}
@@ -273,9 +299,7 @@ def result_series_payload(
 
     with path.open("r", encoding="utf-8", newline="", errors="replace") as handle:
         reader = csv.DictReader(handle)
-        for index, row in enumerate(reader):
-            if index % stride != 0:
-                continue
+        for index, row in _extrema_rows(reader, sampled_columns, stride):
             x_value = float(index) if x_axis == "__index__" else _float_or_none(row.get(x_axis))
             if x_value is None:
                 continue
