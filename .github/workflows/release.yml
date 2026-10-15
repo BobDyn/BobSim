@@ -48,7 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r common/deploy/requirements.txt
 
-      - name: Build and package BobSim
+      - name: Build, test bundled simulation, and package BobSim
         shell: bash
         run: |
           version="${{ inputs.version }}"
