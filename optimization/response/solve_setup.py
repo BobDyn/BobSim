@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+from common.vehicle_io import repo_root
 import sys
 import time
 from typing import Any
@@ -27,7 +27,7 @@ from optimization.response.pipeline.overrides import RUNTIME_SAFE_PATHS
 from optimization.response.pipeline.solver import Knob, SolveResult, solve
 from optimization.response.pipeline.steady_state_eval_report import Isoline
 
-CONFIG = Path(__file__).resolve().parent / "configs/solve_config.yaml"
+CONFIG = repo_root() / "optimization/response" / "configs/solve_config.yaml"
 # Accept metric names copied from the aggregated sweep table.
 METRIC_PREFIX = "SteadyStateEval_"
 

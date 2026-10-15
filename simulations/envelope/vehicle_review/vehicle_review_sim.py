@@ -50,8 +50,8 @@ from simulations.envelope.vehicle_loader import (  # noqa: E402
 
 
 G = 9.80665
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("vehicle_review_config.yml")
-DEFAULT_RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "VehicleReview"
+DEFAULT_CONFIG_PATH = repo_root() / "simulations/envelope/vehicle_review/vehicle_review_config.yml"
+DEFAULT_RESULTS_DIR = repo_root() / "simulations/envelope/results" / "VehicleReview"
 DEFAULT_PDF_NAME = "vehicle_review_report.pdf"
 DEFAULT_METRICS_NAME = "vehicle_review_report_metrics.csv"
 STEADY_STATE_METRICS_PATH = (

@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = repo_root() / "optimization"
 REPO_ROOT = repo_root()
 
 from optimization.response.pipeline.sampler import sample  # noqa: E402

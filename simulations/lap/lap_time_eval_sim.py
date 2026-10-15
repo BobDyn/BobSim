@@ -26,7 +26,7 @@ from simulations.lap.core.racing_line import LineMode
 from common.vehicle_io import load_yaml, repo_root, tire_template_name, tire_templates_root
 
 
-DEFAULT_CONFIG = Path(__file__).with_name("lap_time_eval_config.yml")
+DEFAULT_CONFIG = repo_root() / "simulations/lap/lap_time_eval_config.yml"
 Scenario = Literal["qss", "transient", "both"]
 
 

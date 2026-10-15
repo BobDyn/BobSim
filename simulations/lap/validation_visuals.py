@@ -49,7 +49,7 @@ from simulations.envelope.ymd.ymd_generation import (
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
 
-DEFAULT_CONFIG = Path(__file__).with_name("lap_validation_config.yml")
+DEFAULT_CONFIG = repo_root() / "simulations/lap/lap_validation_config.yml"
 
 
 def generate_validation_visuals(

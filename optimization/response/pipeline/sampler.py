@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 from itertools import product
+from common.vehicle_io import repo_root
 from pathlib import Path
 
 import yaml
@@ -202,7 +203,7 @@ if __name__ == "__main__":
     import sys
 
     cfg_path = sys.argv[1] if len(sys.argv) > 1 else (
-        Path(__file__).resolve().parent.parent / "configs/_doe_config.yaml"
+        repo_root() / "optimization/response" / "configs/_doe_config.yaml"
     )
     variants = sample(cfg_path)
     print(f"Generated {len(variants)} variants ({len(variants) - 1} sampled + 1 baseline)")
