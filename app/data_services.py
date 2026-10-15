@@ -2327,10 +2327,12 @@ def save_active_vehicle(name: str | None = None) -> dict[str, Any]:
     data = _load_vehicle_yaml_file(active_path)
     vehicle = data.get("vehicle", {})
     default_name = vehicle.get("name", "vehicle") if isinstance(vehicle, dict) else "vehicle"
-    vehicle_id = _saved_vehicle_id(name or str(default_name))
+    saved_name = str(name or default_name).strip()
+    vehicle_id = _saved_vehicle_id(saved_name)
+    data.setdefault("vehicle", {})["name"] = saved_name
     saved_path = _saved_vehicle_path(vehicle_id)
     saved_path.parent.mkdir(parents=True, exist_ok=True)
-    saved_path.write_text(active_path.read_text(encoding="utf-8"), encoding="utf-8")
+    saved_path.write_text(dump_vehicle(data), encoding="utf-8")
     _sync_vehicle_workspace_config(vehicle_id, saved_path, data)
     return {
         "saved": _vehicle_summary(f"saved:{vehicle_id}", "saved", saved_path, data),
