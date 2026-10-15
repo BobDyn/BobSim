@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 from typing import Iterable
 import zipfile
 
@@ -696,6 +697,25 @@ def upload_github_release(version: str | None, tag: str | None, files: Iterable[
     )
 
 
+def check_bundle(mode: str) -> None:
+    """## Bundled Workflow Check
+
+    Parameters
+    ----------
+    mode : str
+        Built artifact layout, onefile or onedir.
+    """
+    executable = _artifact_path(DIST_ROOT / mode, mode)
+    if executable.suffix == ".app":
+        executable /= "Contents/MacOS/BobSim"
+    with tempfile.TemporaryDirectory(prefix="bobsim-bundle-smoke-") as directory:
+        env = {**os.environ, "BOBSIM_HOME": directory, "BOBSIM_BUNDLE_SMOKE": "1"}
+        subprocess.run([str(executable), "--run-module", "app.bundle_smoke"],
+                       cwd=directory, env=env, check=True, timeout=300)
+        if not (Path(directory) / "bundle-smoke-passed.json").is_file():
+            raise RuntimeError("The packaged simulation check did not finish.")
+
+
 def build_release(
     mode: str,
     version: str | None,
@@ -706,6 +726,7 @@ def build_release(
 ) -> None:
     clean_generated_artifacts(include_deploy=True)
     build_pyinstaller(mode, install_deps, skip_conflict_check)
+    check_bundle(mode)
     archive, checksum_path = package_release(mode, version)
     if upload_release:
         upload_github_release(version, tag, [archive, checksum_path])
