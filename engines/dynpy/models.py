@@ -265,6 +265,8 @@ class VehicleDynamicsSystem(ABC):
                 fx_body,
                 fy_body,
                 wheel_moments_body,
+                corner_positions,
+                suspension_forces,
             )
             closed_loads = np.maximum(
                 self._closed_normal_loads(
@@ -306,6 +308,8 @@ class VehicleDynamicsSystem(ABC):
             fx_body,
             fy_body,
             wheel_moments_body,
+            corner_positions,
+            suspension_forces,
         )
         unsprung_accel = self._unsprung_acceleration_with_geometry(
             unsprung_accel,
@@ -603,10 +607,12 @@ class VehicleDynamicsSystem(ABC):
         fx_body: FloatArray,
         fy_body: FloatArray,
         tire_moments_body: FloatArray,
+        corner_positions: FloatArray,
+        suspension_forces: FloatArray,
     ) -> FloatArray:
         """Return planar pitch/roll load transfer when suspension DOFs are absent."""
 
-        del fx_body, fy_body, tire_moments_body
+        del fx_body, fy_body, tire_moments_body, corner_positions, suspension_forces
         return np.zeros(4)
 
     def _unsprung_acceleration_with_geometry(
@@ -864,28 +870,29 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
         fx_body: FloatArray,
         fy_body: FloatArray,
         tire_moments_body: FloatArray,
+        corner_positions: FloatArray,
+        suspension_forces: FloatArray,
     ) -> FloatArray:
         """Close planar pitch and roll moments with contact-patch reactions."""
 
-        positions = self.parameters.corner_positions
-        front_x = float(np.mean(positions[:2, 0]))
-        rear_x = float(np.mean(positions[2:, 0]))
-        wheelbase = front_x - rear_x
+        positions = corner_positions if self.dof == 3 else self.parameters.corner_positions
+        wheelbase = float(np.mean(positions[:2, 0]) - np.mean(positions[2:, 0]))
+        pitch_moment = float(np.sum(positions[:, 2] * fx_body + tire_moments_body[:, 1]))
+        roll_moment = float(np.sum(-positions[:, 2] * fy_body + tire_moments_body[:, 0]))
+        pitch_basis = np.array([0.5, 0.5, -0.5, -0.5]) / wheelbase
+        roll_basis = self._roll_moment_load_transfer(1.0, self._front_roll_stiffness_fraction())
+        if self.dof != 3:
+            return pitch_moment * pitch_basis + roll_moment * roll_basis
 
-        # r x F gives My = z*Fx. Axle vertical reactions balance it.
-        horizontal_pitch_moment = float(np.sum(positions[:, 2] * fx_body + tire_moments_body[:, 1]))
-        front_delta = horizontal_pitch_moment / wheelbase
-        pitch_transfer = np.array(
-            [front_delta / 2.0, front_delta / 2.0, -front_delta / 2.0, -front_delta / 2.0]
-        )
-
-        # Tire lateral force gives Mx = -z*Fy. Roll stiffness splits the reaction by axle.
-        horizontal_roll_moment = float(np.sum(-positions[:, 2] * fy_body + tire_moments_body[:, 0]))
-        roll_transfer = self._roll_moment_load_transfer(
-            horizontal_roll_moment,
-            self._front_roll_stiffness_fraction(),
-        )
-        return pitch_transfer + roll_transfer
+        # The base weight/aero reactions were balanced at nominal contact positions.
+        offset = positions - self.parameters.corner_positions
+        pitch_moment -= float(np.dot(offset[:, 0], suspension_forces))
+        roll_moment += float(np.dot(offset[:, 1], suspension_forces))
+        roll_basis[:2] *= self.parameters.track_front_m / (positions[0, 1] - positions[1, 1])
+        roll_basis[2:] *= self.parameters.track_rear_m / (positions[2, 1] - positions[3, 1])
+        basis = np.column_stack((pitch_basis, roll_basis))
+        moments = np.vstack((positions[:, 1] @ basis, -positions[:, 0] @ basis))
+        return basis @ np.linalg.solve(moments, [-roll_moment, -pitch_moment])
 
     def _front_roll_stiffness_fraction(self) -> float:
         spring_rates = np.asarray(self.parameters.suspension_stiffness_n_per_m)
