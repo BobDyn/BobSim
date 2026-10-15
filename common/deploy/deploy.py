@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app import storage as app_storage  # noqa: E402
+from common.physics_provenance import GGV_PHYSICS_DIGEST_FILE, ggv_physics_sha256  # noqa: E402
 
 APP_NAME = "BobSim"
 DEPLOY_ROOT = ROOT / "common" / "deploy"
@@ -474,6 +475,9 @@ def build_pyinstaller(mode: str, install_deps: bool, skip_conflict_check: bool) 
     for module in discover_hidden_imports():
         cmd.extend(["--hidden-import", module])
 
+    physics_digest = work_root / GGV_PHYSICS_DIGEST_FILE
+    physics_digest.write_text(ggv_physics_sha256(ROOT) + "\n", encoding="utf-8")
+    cmd.extend(["--add-data", _data_arg(physics_digest, ".")])
     cmd.append(str(ROOT / "app" / "desktop.py"))
     _run(cmd, env={"MPLCONFIGDIR": str(matplotlib_cache), "QT_API": "pyqt6"})
 

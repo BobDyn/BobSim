@@ -14,10 +14,10 @@ from simulations.lap import lap_time_eval_sim as lap
 @pytest.fixture
 def provenance_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(lap, 'repo_root', lambda: tmp_path)
-    monkeypatch.setattr(lap, '__file__', str(tmp_path / 'lap.py'))
-    for name in ('lap.py', 'simulations/envelope/ggv/ggv_generation.py',
+    for name in ('simulations/lap/lap_time_eval_sim.py', 'simulations/envelope/ggv/ggv_generation.py',
                  'simulations/envelope/ggv/parallel.py',
-    'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'common/physics_provenance.py',
                  'engines/dynpy/parameters.py', 'engines/kinpy/geometry.py'):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,8 @@ def provenance_workspace(tmp_path: Path, monkeypatch):
     'tires/front.tir', 'tires/rear.tir',
     'simulations/mbd/generated_results/four_post_eval_report_metrics.csv',
     'simulations/mbd/results/four_post_eval_report_metrics.csv',
-    'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'simulations/envelope/vehicle_yaml.py', 'common/vehicle_io.py',
+                 'common/physics_provenance.py',
     'engines/kinpy/geometry.py', 'simulations/envelope/ggv/parallel.py',
 ])
 def test_ggv_fingerprint_tracks_referenced_physics(provenance_workspace, relative):
@@ -189,3 +190,82 @@ def test_legacy_numerical_settings_do_not_change_automatic_cache(provenance_work
     before = lap._ggv_provenance(**arguments)['fingerprint']
     arguments['qss_config'] = {'ay_max_g': .1, 'ax_search_max_g': .1, 'speeds_mps': [2.]}
     assert lap._ggv_provenance(**arguments)['fingerprint'] == before
+
+
+def test_frozen_provenance_matches_source_without_source_files(provenance_workspace, monkeypatch):
+    import sys
+
+    from common.physics_provenance import GGV_PHYSICS_DIGEST_FILE
+
+    root, arguments = provenance_workspace
+    expected = lap._ggv_provenance(**arguments)
+    bundle = root / 'bundle'
+    bundle.mkdir()
+    (bundle / GGV_PHYSICS_DIGEST_FILE).write_text(expected['physics_sha256'] + '\n')
+    # A stale writable copy must not override the digest in the installed app.
+    (root / GGV_PHYSICS_DIGEST_FILE).write_text('0' * 64)
+    for path in root.rglob('*.py'):
+        path.unlink()
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, '_MEIPASS', str(bundle), raising=False)
+    assert lap._ggv_provenance(**arguments) == expected
+
+    cache = root / 'ggv.csv'
+    cache.write_text('cached envelope')
+    cache.with_suffix('.csv.metadata.json').write_text(json.dumps(expected))
+    monkeypatch.setattr(lap.GGVMap, 'from_csv', lambda _: 'cached map')
+    result, provenance = lap._load_or_generate_ggv(cache, model=None, **arguments)
+    assert result == 'cached map'
+    assert provenance['status'] == 'verified_cache'
+
+    (root / 'tires/front.tir').write_text('PDX1 = 0.8\n')
+    changed = lap._ggv_provenance(**arguments)
+    assert changed['physics_sha256'] == expected['physics_sha256']
+    assert changed['fingerprint'] != expected['fingerprint']
+    with arguments['vehicle_path'].open('a') as handle:
+        handle.write('# edited vehicle\n')
+    assert lap._ggv_provenance(**arguments)['fingerprint'] != changed['fingerprint']
+
+
+@pytest.mark.parametrize('contents', [None, '', 'invalid', 'a' * 63])
+def test_frozen_provenance_requires_valid_bundled_digest(provenance_workspace, monkeypatch, contents):
+    import sys
+
+    from common.physics_provenance import GGV_PHYSICS_DIGEST_FILE
+
+    root, arguments = provenance_workspace
+    bundle = root / 'bundle'
+    bundle.mkdir()
+    if contents is not None:
+        (bundle / GGV_PHYSICS_DIGEST_FILE).write_text(contents)
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, '_MEIPASS', str(bundle), raising=False)
+    with pytest.raises(FileNotFoundError if contents is None else ValueError):
+        lap._ggv_provenance(**arguments)
+
+
+@pytest.mark.parametrize('mode', ['onefile', 'onedir'])
+def test_packaging_embeds_current_physics_digest(provenance_workspace, monkeypatch, mode):
+    from common.deploy import deploy
+    from common.physics_provenance import GGV_PHYSICS_DIGEST_FILE, ggv_physics_sha256
+
+    root, _ = provenance_workspace
+    monkeypatch.setattr(deploy, 'ROOT', root)
+    monkeypatch.setattr(deploy, 'DIST_ROOT', root / 'dist')
+    monkeypatch.setattr(deploy, 'WORK_ROOT', root / 'build')
+    monkeypatch.setattr(deploy, 'preflight', lambda **kwargs: None)
+    monkeypatch.setattr(deploy, '_ensure_build_dependencies', lambda *args: None)
+    monkeypatch.setattr(deploy, 'generate_icon_assets', lambda: {})
+    monkeypatch.setattr(deploy, '_icon_arg', lambda: root / 'icon.ico')
+    commands = []
+    monkeypatch.setattr(deploy, '_run', lambda cmd, **kwargs: commands.append(cmd))
+    deploy.build_pyinstaller(mode, install_deps=False, skip_conflict_check=True)
+    digest_path = root / 'build' / mode / GGV_PHYSICS_DIGEST_FILE
+    first = digest_path.read_text().strip()
+    assert first == ggv_physics_sha256(root)
+    cmd = commands[0]
+    assert any(cmd[i:i + 2] == ['--add-data', deploy._data_arg(digest_path, '.')]
+               for i in range(len(cmd) - 1))
+    (root / 'engines/dynpy/parameters.py').write_text('# changed physics\n')
+    deploy.build_pyinstaller(mode, install_deps=False, skip_conflict_check=True)
+    assert digest_path.read_text().strip() == ggv_physics_sha256(root) != first
