@@ -593,7 +593,7 @@ def _solve_envelope_limit(
     if mode == "lateral":
         names.append("path_ay_mps2")
         scales.append(G)
-        bounds.append((0., ay / G))
+        bounds.append((min(0., ay / G), max(0., ay / G)))
     scale_array = np.asarray(scales)
     seed = initial_unknowns
     if seed is None:
@@ -662,7 +662,7 @@ def _solve_envelope_limit(
         return np.asarray(constraints)
 
     def objective(values: FloatArray) -> float:
-        return float(values[-1]) * (1. if mode == "brake" else -1.)
+        return float(values[-1]) * (1. if mode == "brake" else -np.sign(ay) if mode == "lateral" else -1.)
 
     for attempt in range(2 if initial_unknowns is not None else 1):
         if attempt:
@@ -771,7 +771,7 @@ def _consistent_boundary(
         This conservative numerical fallback does not prove a global optimum.
     """
     rejected = ay if mode == "lateral" else ax
-    direction = 1. if mode == "brake" else -1.
+    direction = -np.sign(ay) if mode == "lateral" else 1. if mode == "brake" else -1.
     interior_bound = 0. if mode == "lateral" else ax_bounds[1 if mode == "brake" else 0]
     seed = initial_unknowns
 
@@ -1114,6 +1114,8 @@ def generate_ggv(
     vehicle: VehicleParams,
     config: GGVConfig,
     reduced_model: ReducedVehicleModel | None = None,
+    *,
+    _lateral_direction: float = 1.,
 ) -> list[GGVEnvelope]:
     """
     Generate GGV envelopes across the configured speeds.
@@ -1121,6 +1123,17 @@ def generate_ggv(
     if (not np.all(np.isfinite([config.ay_max_g, config.ax_search_min_g, config.ax_search_max_g]))
             or config.ay_max_g <= 0. or config.ax_search_min_g >= 0. or config.ax_search_max_g <= 0.):
         raise ValueError("Initial bounds must be finite, with positive lateral and signed longitudinal acceleration.")
+
+    if config.include_left_right and reduced_model is not None:
+        branch_config = replace(config, include_left_right=False)
+        positive = generate_ggv(vehicle, branch_config, reduced_model)
+        negative = generate_ggv(vehicle, branch_config, reduced_model, _lateral_direction=-1.)
+        return [GGVEnvelope(
+            speed=left.speed,
+            ay=np.concatenate((right.ay[:-1], left.ay)),
+            ax_accel=np.concatenate((right.ax_accel[:-1], left.ax_accel)),
+            ax_brake=np.concatenate((right.ax_brake[:-1], left.ax_brake)),
+        ) for left, right in zip(positive, negative)]
 
     envelopes: list[GGVEnvelope] = []
     total_speeds = len(config.speeds)
@@ -1155,7 +1168,7 @@ def generate_ggv(
             lateral_limit, endpoint_ax = solve_lateral_limit(
                 vehicle,
                 speed=speed,
-                ay_upper=lateral_upper,
+                ay_upper=_lateral_direction * lateral_upper,
                 reduced_model=reduced_model,
                 max_abs_beta_rad=config.max_abs_beta_rad,
                 max_abs_steering_rad=config.max_abs_steering_rad,
@@ -1163,6 +1176,7 @@ def generate_ggv(
                 enforce_tire_load_range=config.enforce_tire_load_range,
                 trim_multistart=config.trim_multistart,
             )
+            lateral_limit *= _lateral_direction
             if not np.all(np.isfinite([lateral_limit, endpoint_ax])):
                 raise RuntimeError(f"No finite lateral limit at {speed:g} m/s.")
             if lateral_limit < lateral_upper - 1e-4:
@@ -1182,7 +1196,7 @@ def generate_ggv(
         interior_indices = np.flatnonzero(ay_positive < lateral_limit - 1e-9)
         seeds: dict[str, Mapping[str, float] | None] = {"drive": None, "brake": None}
         for i in interior_indices:
-            ay = float(ay_positive[i])
+            ay = _lateral_direction * float(ay_positive[i])
             branches: tuple[tuple[Literal["drive", "brake"], FloatArray], ...] = (
                 ("drive", ax_accel_pos), ("brake", ax_brake_pos),
             )
@@ -1303,6 +1317,11 @@ def generate_ggv(
             ay_full = ay_branch
             ax_accel_full = ax_accel_branch
             ax_brake_full = ax_brake_branch
+
+        if _lateral_direction < 0.:
+            ay_full = -ay_full[::-1]
+            ax_accel_full = ax_accel_full[::-1]
+            ax_brake_full = ax_brake_full[::-1]
 
         envelopes.append(
             GGVEnvelope(

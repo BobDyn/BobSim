@@ -200,8 +200,8 @@ yaw rate or, with a full inertia tensor, zero net moment. Along a real racing
 line, `psi_ddot = curvature * at + V² * d(curvature)/ds` when sideslip is constant.
 The envelope omits this yaw-acceleration demand and does not certify dynamic
 stability. Continuation and optional multistart reduce local-solver failures,
-but do not prove global optimality. The generated opposite-turn branch remains
-a reflection, not an independent asymmetric solve.
+but do not prove global optimality. DynPy solves both turn directions independently. Signed lateral acceleration
+is retained through GGV storage and lap interpolation.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
 range. GGV requires positive load at every wheel. Below `FZMIN`, the existing

@@ -45,13 +45,13 @@ class GGVMap:
         with Path(path).open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 speed = float(row["speed_mps"])
-                ay = abs(float(row["ay_mps2"]))
+                ay = float(row["ay_mps2"])
                 rows.setdefault(speed, []).append(
                     (ay, float(row["ax_accel_mps2"]), float(row["ax_brake_mps2"]))
                 )
         slices: list[_GGVSlice] = []
         for speed, raw in sorted(rows.items()):
-            # Left/right rows collapse to the conservative capability at |ay|.
+            # Repeated rows retain the conservative capability at the same signed ay.
             grouped: dict[float, list[tuple[float, float]]] = {}
             for ay, accel, brake in raw:
                 grouped.setdefault(ay, []).append((accel, brake))
@@ -119,14 +119,15 @@ class GGVMap:
         """
 
         lateral = abs(lateral_acceleration_mps2)
-        limit = self.lateral_limit(speed_mps)
+        direction = -1. if lateral_acceleration_mps2 < 0. else 1.
+        limit = self.lateral_limit(speed_mps, direction=direction)
         if lateral > limit + 1e-9:
             return float("nan")
         fraction = lateral / limit if limit > 0.0 else 0.0
         # Match lateral utilization so unequal slice endpoints remain connected.
         values = np.asarray(
             [
-                _slice_longitudinal_limit(item, fraction * _slice_lateral_limit(item), mode)
+                _slice_longitudinal_limit(item, fraction * _slice_lateral_limit(item, direction), mode, direction)
                 for item in self.slices
             ],
             dtype=float,
@@ -134,10 +135,10 @@ class GGVMap:
         speeds = np.asarray([item.speed_mps for item in self.slices], dtype=float)
         return float(np.interp(speed_mps, speeds, values))
 
-    def lateral_limit(self, speed_mps: float) -> float:
+    def lateral_limit(self, speed_mps: float, *, direction: float = 1.) -> float:
         """Interpolate maximum sustainable absolute lateral acceleration."""
 
-        limits = np.asarray([_slice_lateral_limit(item) for item in self.slices])
+        limits = np.asarray([_slice_lateral_limit(item, direction) for item in self.slices])
         speeds = np.asarray([item.speed_mps for item in self.slices])
         return float(np.interp(speed_mps, speeds, limits))
 
@@ -171,7 +172,7 @@ def solve_qss_lap(
         float(max_speed_mps) if max_speed_mps is not None else ggv.max_speed_mps,
     )
     speed = np.asarray(
-        [_corner_speed_limit(abs(kappa), ggv, speed_ceiling) for kappa in line.curvature_per_m]
+        [_corner_speed_limit(kappa, ggv, speed_ceiling) for kappa in line.curvature_per_m]
     )
     converged = False
     completed_sweeps = 0
@@ -180,14 +181,14 @@ def solve_qss_lap(
         previous = speed.copy()
         for index in range(count):
             next_index = (index + 1) % count
-            ay = speed[index] ** 2 * abs(line.curvature_per_m[index])
+            ay = speed[index] ** 2 * line.curvature_per_m[index]
             ax = ggv.longitudinal_limit(speed[index], ay, "drive")
             if np.isfinite(ax):
                 reachable = np.sqrt(max(speed[index] ** 2 + 2.0 * ax * line.segment_length_m[index], 0.0))
                 speed[next_index] = min(speed[next_index], reachable, speed_ceiling)
         for index in range(count - 1, -1, -1):
             next_index = (index + 1) % count
-            ay_next = speed[next_index] ** 2 * abs(line.curvature_per_m[next_index])
+            ay_next = speed[next_index] ** 2 * line.curvature_per_m[next_index]
             ax_brake = ggv.longitudinal_limit(speed[next_index], ay_next, "brake")
             if np.isfinite(ax_brake):
                 reachable = np.sqrt(
@@ -216,11 +217,23 @@ def solve_qss_lap(
     )
 
 
+def _directional_slice(item: _GGVSlice, direction: float) -> _GGVSlice:
+    # Nonnegative legacy maps explicitly represent both turn directions.
+    if not np.any(item.ay_mps2 < 0.):
+        return item
+    mask = item.ay_mps2 * direction >= 0.
+    order = np.argsort(item.ay_mps2[mask] * direction)
+    return _GGVSlice(item.speed_mps, (item.ay_mps2[mask] * direction)[order],
+                     item.ax_accel_mps2[mask][order], item.ax_brake_mps2[mask][order])
+
+
 def _slice_longitudinal_limit(
     item: _GGVSlice,
     ay_mps2: float,
     mode: Literal["drive", "brake"],
+    direction: float = 1.,
 ) -> float:
+    item = _directional_slice(item, direction)
     values = item.ax_accel_mps2 if mode == "drive" else item.ax_brake_mps2
     finite = np.isfinite(item.ay_mps2) & np.isfinite(values)
     if not np.any(finite):
@@ -232,7 +245,8 @@ def _slice_longitudinal_limit(
     return float(np.interp(ay_mps2, ay, boundary))
 
 
-def _slice_lateral_limit(item: _GGVSlice) -> float:
+def _slice_lateral_limit(item: _GGVSlice, direction: float = 1.) -> float:
+    item = _directional_slice(item, direction)
     finite = np.isfinite(item.ax_accel_mps2) | np.isfinite(item.ax_brake_mps2)
     if not np.any(finite):
         return 0.0
@@ -240,14 +254,14 @@ def _slice_lateral_limit(item: _GGVSlice) -> float:
 
 
 def _corner_speed_limit(curvature_per_m: float, ggv: GGVMap, ceiling_mps: float) -> float:
-    if curvature_per_m <= 1e-10:
+    if abs(curvature_per_m) <= 1e-10:
         return ceiling_mps
     lo = 0.1
     hi = ceiling_mps
     for _ in range(40):
         midpoint = 0.5 * (lo + hi)
-        required_ay = midpoint**2 * curvature_per_m
-        if required_ay <= ggv.lateral_limit(midpoint):
+        required_ay = midpoint**2 * abs(curvature_per_m)
+        if required_ay <= ggv.lateral_limit(midpoint, direction=np.sign(curvature_per_m)):
             lo = midpoint
         else:
             hi = midpoint
