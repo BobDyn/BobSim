@@ -189,7 +189,7 @@ def simulate_transient(
             "accX": body_acceleration[:, 0],
             "accY": body_acceleration[:, 1],
             "yawAccel": body_acceleration[:, 2],
-            "handwheelAngle": steering,
+            "roadwheelSteer": steering,
             "velX": signals["u"],
             "velY": signals["v"],
             "yawVel": signals["yaw_rate"],

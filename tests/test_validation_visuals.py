@@ -20,7 +20,7 @@ def test_validation_visuals_render_corner_kinematic_histories(tmp_path) -> None:
         "velX": np.full(sample_count, 10.0),
         "velY": zeros,
         "yawVel": zeros,
-        "handwheelAngle": zeros,
+        "roadwheelSteer": zeros,
         "accX": zeros,
         "accY": zeros,
         "z": zeros,

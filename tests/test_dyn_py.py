@@ -635,6 +635,8 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
     )
 
     assert result.success
+    assert "roadwheelSteer" in result.signals
+    assert "handwheelAngle" not in result.signals
     for signal in (
         "velX",
         "velY",
