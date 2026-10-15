@@ -56,6 +56,9 @@ against their own directories.
 Generated builds, results and app state are ignored by Git. Moving from the
 numbered layout requires rebuilding executables. Existing local vehicles need
 their `paths.boblib` and `paths.tire_templates` updated to the new locations.
+The generator stops before it writes anything when `paths.boblib` has no
+`package.mo` that declares `package BobLib`. The error names the path. The
+generator also refuses to write a file that resolves outside that package.
 
 The response source move retains build and result paths under `simulations/mbd`
 and `simulations/reduced` for existing consumers. Optimization assets now live

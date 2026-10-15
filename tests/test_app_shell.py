@@ -1159,6 +1159,8 @@ def test_app_can_generate_modelica_payload_from_active_vehicle(tmp_path: Path, m
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
     shutil.copy(app.ROOT / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
+    (tmp_path / "BobLib").mkdir()
+    (tmp_path / "BobLib/package.mo").write_text("within ;\npackage BobLib\nend BobLib;\n", encoding="utf-8")
     (tmp_path / "vehicle.yml").write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
 

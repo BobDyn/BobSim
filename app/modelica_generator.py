@@ -9,6 +9,7 @@ from typing import Any
 import hashlib
 import math
 import re
+import sys
 
 import numpy as np
 
@@ -48,7 +49,12 @@ class ModelicaGenerationResult:
 class ModelicaStackPlan:
     result: ModelicaGenerationResult
     contents: tuple[tuple[Path, str], ...]
+    boblib_root: Path
     initialization_error: str | None = None
+
+
+class BobLibRootError(ValueError):
+    """paths.boblib does not name a BobLib package root, or a write would leave it."""
 
 
 @dataclass(frozen=True)
@@ -275,6 +281,9 @@ def generate_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None
     plan = plan_modelica_stack(vehicle_path, root=root)
     if plan.initialization_error:
         raise ValueError(plan.initialization_error)
+    _require_inside_boblib_root(
+        plan.boblib_root, [path for path, _ in plan.contents] + list(plan.result.package_orders)
+    )
     for path, text in plan.contents:
         _write_text(path, text)
     for path, entry in (
@@ -304,6 +313,7 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
     front_arch = _architecture(str(architecture.get("front", "direct")), "architecture.front")
     rear_arch = _architecture(str(architecture.get("rear", "direct")), "architecture.rear")
     boblib_root = _boblib_root(data, repo_root)
+    _require_boblib_package_root(boblib_root, repo_root)
     tire_root = _tire_root(data, repo_root)
 
     record_path = boblib_root / "Records/VehicleDefn" / f"{record_name}.mo"
@@ -384,7 +394,12 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name, calibrated=bool(initialization))),
         (four_post_entry_path, _four_post_entry_text(four_post_template_name)),
     )
-    return ModelicaStackPlan(result=result, contents=contents, initialization_error=initialization_error)
+    return ModelicaStackPlan(
+        result=result,
+        contents=contents,
+        boblib_root=boblib_root,
+        initialization_error=initialization_error,
+    )
 
 
 
@@ -1275,6 +1290,32 @@ def _resolve_path(repo_root: Path, raw_path: str) -> Path:
     return path if path.is_absolute() else (repo_root / path).resolve()
 
 
+def _require_boblib_package_root(boblib_root: Path, repo_root: Path) -> None:
+    package_mo = boblib_root / "package.mo"
+    if not package_mo.is_file():
+        problem = f"{package_mo} does not exist."
+    elif not re.search(r"^\s*package\s+BobLib\b", package_mo.read_text(encoding="utf-8"), re.MULTILINE):
+        problem = f"{package_mo} does not declare 'package BobLib'."
+    else:
+        return
+    raise BobLibRootError(
+        f"paths.boblib does not point to the BobLib package root. {problem} "
+        f"Relative paths resolve against {repo_root}. "
+        "Set paths.boblib to the BobLib package directory (BobSim uses engines/boblib/BobLib), "
+        "or remove the key to use that default. No Modelica files were written."
+    )
+
+
+def _require_inside_boblib_root(boblib_root: Path, paths: Iterable[Path]) -> None:
+    root = boblib_root.resolve()
+    for path in paths:
+        if not path.resolve().is_relative_to(root):
+            raise BobLibRootError(
+                f"Refusing to write {path}. It resolves to {path.resolve()}, "
+                f"outside the BobLib package root {root}. No Modelica files were written."
+            )
+
+
 def _modelica_identifier(raw_name: str) -> str:
     name = re.sub(r"\W+", "_", raw_name.strip())
     name = re.sub(r"_+", "_", name).strip("_")
@@ -1356,7 +1397,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
-    status = modelica_stack_status_payload(args.vehicle, root)
+    try:
+        status = modelica_stack_status_payload(args.vehicle, root)
+    except BobLibRootError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     if not args.write:
         print("\n".join(_cli_status_lines(status)))
