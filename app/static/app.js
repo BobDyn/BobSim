@@ -6360,9 +6360,43 @@ function renderResultPlotCanvas() {
   requestAnimationFrame(drawResultPlotCanvas);
 }
 
+function resultUnitGroups(payload) {
+  const groups = new Map();
+  for (const series of payload?.series || []) {
+    const key = series.unit || `unknown:${series.signal}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(series);
+  }
+  return [...groups.values()];
+}
+
 function drawResultPlotCanvas() {
   const canvas = document.getElementById("result-plot-canvas");
   if (!canvas) return;
+  const payload = state.resultPlotPayload;
+  const groups = isLapMap() ? [payload?.series || []] : resultUnitGroups(payload);
+  if (!groups.length) groups.push([]);
+  const shell = canvas.parentElement;
+  shell.classList.toggle("multiple-unit-plots", groups.length > 1);
+  const legend = document.getElementById("result-selected-signals");
+  if (legend) legend.innerHTML = "";
+  const canvases = [canvas, ...shell.querySelectorAll(".result-unit-canvas")];
+  while (canvases.length > groups.length) canvases.pop().remove();
+  while (canvases.length < groups.length) {
+    const extra = canvas.cloneNode(false);
+    extra.removeAttribute("id");
+    extra.className = "result-unit-canvas";
+    shell.append(extra);
+    canvases.push(extra);
+  }
+  groups.forEach((series, index) => {
+    const baseline = state.resultBaselinePayload;
+    drawResultPlotPanel(canvases[index], payload ? {...payload, series} : null,
+      baseline ? {...baseline, series: baseline.series.filter(item => series.some(current => current.signal === item.signal))} : null);
+  });
+}
+
+function drawResultPlotPanel(canvas, payload, baseline) {
   canvas.onclick = canvas.onpointermove = canvas.onpointerleave = canvas.onkeydown = null;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(360, Math.floor(rect.width || 760));
@@ -6378,9 +6412,7 @@ function drawResultPlotCanvas() {
   ctx.fillRect(0, 0, width, height);
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
-  const payload = state.resultPlotPayload;
   const legend = document.getElementById("result-selected-signals");
-  if (legend) legend.innerHTML = "";
   if (title) title.textContent = isLapMap() ? "Lap map" : "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
@@ -6407,7 +6439,6 @@ function drawResultPlotCanvas() {
     return;
   }
   const plot = { x: 58, y: 28, width: width - 78, height: height - 76 };
-  const baseline = state.resultBaselinePayload;
   let xDomain = plotDomain([...payload.x, ...(baseline?.x || [])], { padFraction: 0.02 });
   const yValues = [...payload.series, ...(baseline?.series || [])].flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
   let yDomain = plotDomain(yValues, { padFraction: 0.1 });
@@ -6421,6 +6452,8 @@ function drawResultPlotCanvas() {
   const finiteColors = [...(colorValues || []), ...(baseline?.color?.values || [])].filter(value => value !== null && Number.isFinite(value));
   const colorDomain = finiteColors.length ? [Math.min(...finiteColors), Math.max(...finiteColors)] : null;
   drawPlotGrid(ctx, { plot, xDomain, yDomain });
+  drawCanvasText(ctx, payload.series.map(series => series.signal).join(", ") + ` (${payload.series[0].unit || "unit unknown"})`,
+    plot.x, 16, {size: 11, color: palette.muted});
   const toX = (value) => plot.x + ((value - xDomain[0]) / Math.max(1e-9, xDomain[1] - xDomain[0])) * plot.width;
   const toY = (value) => plot.y + plot.height - ((value - yDomain[0]) / Math.max(1e-9, yDomain[1] - yDomain[0])) * plot.height;
   const colors = [palette.blue, palette.green, palette.amber, palette.red, palette.tireFront, palette.tireRear, "#7c3aed", "#0f766e"];
@@ -6465,11 +6498,11 @@ function drawResultPlotCanvas() {
       ctx.restore();
     });
   }
-  legend.innerHTML = payload.series.map((series, index) =>
-    `<span class="result-series-key">${colorDomain ? "" : `<i style="background:${colors[index % colors.length]}"></i>`}${escapeHtml(series.signal)}</span>`
+  legend.innerHTML += payload.series.map((series, index) =>
+    `<span class="result-series-key">${colorDomain ? "" : `<i style="background:${colors[index % colors.length]}"></i>`}${escapeHtml(series.signal)} (${escapeHtml(series.unit || "unit unknown")})</span>`
   ).join("");
   if (baseline) legend.innerHTML += baseline.series.map(series =>
-    `<span class="result-series-key"><i style="background:${seriesColor(series.signal)}"></i>Baseline: ${escapeHtml(series.signal)}</span>`
+    `<span class="result-series-key"><i style="background:${seriesColor(series.signal)}"></i>Baseline: ${escapeHtml(series.signal)} (${escapeHtml(series.unit || "unit unknown")})</span>`
   ).join("");
   if (isLapMap()) legend.innerHTML = baseline ? "Baseline: dashed" : "";
   if (colorDomain) legend.innerHTML += `<span class="result-color-key">${escapeHtml(payload.color?.signal || baseline?.color?.signal)}
@@ -6513,7 +6546,7 @@ function drawResultPlotCanvas() {
       + payload.series.map(series => `${series.signal}: ${series.values[hovered.index] === null ? "—" : formatNumber(series.values[hovered.index])}`).join(" | ")
       + (colorValues ? ` | ${payload.color.signal}: ${colorValues[hovered.index] === null ? "missing" : formatNumber(colorValues[hovered.index])}` : "");
   }
-  drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : state.resultXAxis, plot.x + plot.width / 2, height - 18, {
+  drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : `${state.resultXAxis} (${payload.x_unit || "unit unknown"})`, plot.x + plot.width / 2, height - 18, {
     align: "center",
     size: 11,
     weight: 760,

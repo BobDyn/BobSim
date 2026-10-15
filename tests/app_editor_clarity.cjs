@@ -495,10 +495,11 @@ vm.runInContext(`
   const plotContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,plotContext);
   vm.runInContext(`
+    assert.equal(resultUnitGroups({series:[{signal:'accY',unit:'m/s²'},{signal:'roll',unit:'rad'},{signal:'pitch',unit:'rad'},{signal:'custom'}]}).length,3);
     const fills=[];
     const pen=new Proxy({fillRect:(...args)=>fills.push(args)}, {get:(target,key)=>key in target?target[key]:()=>{}});
     const legend={innerHTML:''};
-    const canvas={getBoundingClientRect:()=>({width:800,height:400,left:0,top:0}),getContext:()=>pen,focus(){}};
+    const canvas={parentElement:{classList:{toggle(){}},querySelectorAll:()=>[]},getBoundingClientRect:()=>({width:800,height:400,left:0,top:0}),getContext:()=>pen,focus(){}};
     document={getElementById:id=>id==='result-plot-canvas'?canvas:id==='result-selected-signals'?legend:{}};
     window={devicePixelRatio:1};
     canvasPalette=()=>({surface:'#000',blue:'#00f',green:'#0f0'});
@@ -507,17 +508,17 @@ vm.runInContext(`
     drawCanvasText=()=>{};
     selectedResultSource=()=>null;
     state.resultPlotStatus='ready';state.resultXAxis='time';
-    state.resultPlotPayload={x:[0,1,2],series:[{signal:'small',values:[-1,0,2]},{signal:'large',values:[-1000,null,2000]}]};
+    state.resultPlotPayload={x:[0,1,2],series:[{signal:'small',unit:'N',values:[-1,0,2]},{signal:'large',unit:'N',values:[-1000,null,2000]}]};
     drawResultPlotCanvas();
     assert.ok(limits.yDomain[0]<-1000&&limits.yDomain[1]>2000);
     assert.ok(legend.innerHTML.includes('small')&&legend.innerHTML.includes('large'));
     assert.equal(fills.length,1,'the legend must not paint over the plot');
-    state.resultBaselinePayload={x:[-5,7],series:[{signal:'small',values:[-3000,4000]}]};
+    state.resultBaselinePayload={x:[-5,7],series:[{signal:'small',unit:'N',values:[-3000,4000]}]};
     drawResultPlotCanvas();
     assert.ok(limits.xDomain[0]<-5 && limits.xDomain[1]>7);
     assert.ok(limits.yDomain[0]<-3000 && limits.yDomain[1]>4000);
     assert.ok(legend.innerHTML.includes('Baseline: small'));
-    state.resultBaselinePayload={x:[0,1],series:[{signal:'large',values:[2,3]}]};
+    state.resultBaselinePayload={x:[0,1],series:[{signal:'large',unit:'N',values:[2,3]}]};
     drawResultPlotCanvas();
     assert.equal(pen.strokeStyle,'#0f0','baseline must match the same signal color even when earlier signals are missing');
     assert.ok(legend.innerHTML.includes('background:#0f0"></i>Baseline: large'));

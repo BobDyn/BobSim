@@ -5098,3 +5098,6 @@ summary:focus-visible {
 [data-aero-reference-editor] .array-bracket { display: none; }
 [data-aero-reference-editor] .coordinate-cell { display: grid; min-width: 0; gap: 4px; }
 [data-aero-reference-editor] input { width: 100%; min-width: 0; box-sizing: border-box; }
+
+#signal-explorer .multiple-unit-plots { overflow-y: auto; }
+#signal-explorer .multiple-unit-plots canvas { width: 100%; height: 330px; min-height: 330px; flex: 0 0 330px; }

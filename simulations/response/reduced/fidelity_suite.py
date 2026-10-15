@@ -36,7 +36,6 @@ FloatArray = np.ndarray[Any, np.dtype[np.float64]]
 ControlLaw = Callable[[float, FloatArray], ModelInputs]
 MODEL_DOFS: tuple[DOFModel, ...] = (3, 6, 10, 14)
 COMMON_SIGNALS = (
-    "handwheelAngle",
     "velX",
     "velY",
     "yawVel",
@@ -347,7 +346,7 @@ def _write_case_plots(
             "subplots": tuple(
                 _overlay_signal(series, labels, signal, title, y_label)
                 for signal, title, y_label in (
-                    ("handwheelAngle", "Roadwheel steer", "Steer (rad)"),
+                    ("roadwheelSteer", "Roadwheel steer", "Steer (rad)"),
                     ("accY", "Lateral acceleration", "ay (m/s²)"),
                     ("yawVel", "Yaw rate", "Yaw rate (rad/s)"),
                     ("roll", "Body roll", "Roll (rad)"),
