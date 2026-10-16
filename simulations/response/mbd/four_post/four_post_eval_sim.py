@@ -538,6 +538,18 @@ def _static_balance_summary(setup: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _static_balance_metric_status(balance_summary: dict[str, Any]) -> dict[str, str]:
+    """A static balance check that could not run reports its values as unavailable, not invalid."""
+    if balance_summary["static_balance_status"] != "unavailable":
+        return {}
+    return {
+        key: "unavailable"
+        for key in balance_summary
+        if key.startswith(("static_balance_", "static_equilibrium_", "static_spring_"))
+        and key not in ("static_balance_status", "static_balance_reason")
+    }
+
+
 def _indexed_table_overrides(prefix: str, table: np.ndarray) -> dict[str, float]:
     table = np.asarray(table, dtype=float)
     return {
@@ -932,7 +944,9 @@ class FourPostEvalSim:
 
         summary, series = self.summarize(result)
         setup = self.build_setup(summary, series, result)
-        summary.update(_static_balance_summary(setup))
+        balance_summary = _static_balance_summary(setup)
+        summary.update(balance_summary)
+        self.metric_status.update(_static_balance_metric_status(balance_summary))
 
         metrics_csv_path = write_metrics_csv(
             summary,

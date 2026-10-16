@@ -84,6 +84,7 @@ The metrics CSV has the columns `metric`, `value` and `status`.
 | `ok` | Every counted pose gave a valid sample. |
 | `partial` | Some poses gave a valid sample. The value uses only those. |
 | `invalid` | No pose gave a valid sample. The value is empty. |
+| `unavailable` | The check did not run, for example because a signal is missing. The static balance keys use it. |
 
 A sample is invalid when it is missing or not plausible. These rules replace
 quiet filters that hid an invalid sample:

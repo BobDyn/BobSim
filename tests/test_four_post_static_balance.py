@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from common.metrics_csv import read_metric_status
 from simulations.response.mbd.four_post import four_post_eval_sim as fp
 
 GRAVITY = fp.GRAVITY_MPS2
@@ -207,6 +208,7 @@ def test_closure_is_checked_on_every_zero_command_row(monkeypatch: pytest.Monkey
     assert summary["static_balance_status"] == "fail"
     assert summary["static_balance_max_abs_fz_error_n"] == pytest.approx(0.0, abs=1e-9)
     assert rows["static_balance_pass"] == "False"
+    assert "static_balance_pass" not in out["metric_status"]
 
 
 def test_ramp_end_rows_close_but_stay_out_of_corner_loads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -241,6 +243,12 @@ def test_missing_executed_signals_make_static_balance_unavailable(
     assert "frChassisActuator.sprungLoads.frame_a.f[1]" in summary["static_balance_reason"]
     assert rows["static_balance_status"] == "unavailable"
     assert rows["static_balance_max_abs_fz_error_n"] == ""
+
+    status = {metric: status for metric, (_, status) in read_metric_status(tmp_path / "metrics.csv").items()}
+    for key in ("static_balance_pass", "static_balance_max_abs_fz_error_n", "static_equilibrium_rows"):
+        assert status[key] == "unavailable", key
+        assert out["metric_status"][key] == "unavailable", key
+    assert status["static_balance_status"] == "ok"
 
 
 @pytest.mark.parametrize(
