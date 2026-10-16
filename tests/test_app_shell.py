@@ -1155,7 +1155,6 @@ def test_app_can_generate_modelica_payload_from_active_vehicle(tmp_path: Path, m
     template_path = app.ROOT / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml"
     data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     data["paths"] = {"boblib": "engines/boblib/BobLib", "tire_templates": "tires"}
-    data["brake"] = yaml.safe_load((app.ROOT / "vehicle.yml").read_text(encoding="utf-8"))["brake"]
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
     tire_root.mkdir()

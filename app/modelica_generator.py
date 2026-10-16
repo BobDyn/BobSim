@@ -51,6 +51,7 @@ class ModelicaStackPlan:
     contents: tuple[tuple[Path, str], ...]
     boblib_root: Path
     initialization_error: str | None = None
+    front_brake_bias: float | None = None
 
 
 class BobLibRootError(ValueError):
@@ -59,6 +60,11 @@ class BobLibRootError(ValueError):
 
 # simulations/response/mbd/build_*_sim.mos load this package.
 BUILD_BOBLIB_DIR = "engines/boblib/BobLib"
+
+FRONT_BRAKE_BIAS_UNSET_NOTE = (
+    "brake.front_bias is not set. The VehicleSim template binds no front brake bias, "
+    "so BobLib BasicVCUBrakes keeps its own frontBrakeBias default."
+)
 
 
 @dataclass(frozen=True)
@@ -407,6 +413,7 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         contents=contents,
         boblib_root=boblib_root,
         initialization_error=initialization_error,
+        front_brake_bias=front_brake_bias,
     )
 
 
@@ -515,6 +522,11 @@ def modelica_stack_status_payload(vehicle_path: str | Path, repo_root: str | Pat
         "four_post_template": plan.result.four_post_template_name,
         "latest_modified": latest_modified or None,
         "signatures": _modelica_stack_signatures(plan),
+        "front_brake_bias": {
+            "value": plan.front_brake_bias,
+            "source": "boblib_default" if plan.front_brake_bias is None else "brake.front_bias",
+            "note": FRONT_BRAKE_BIAS_UNSET_NOTE if plan.front_brake_bias is None else None,
+        },
         "files": files,
         "package_orders": list(package_orders),
     }
@@ -906,14 +918,11 @@ def _aero_section(data: Mapping[str, Any]) -> str:
     return _format_parameter("Aero.CFDAeroMapRecord", "pAero", assignments)
 
 
-def _front_brake_bias(data: Mapping[str, Any]) -> float:
+def _front_brake_bias(data: Mapping[str, Any]) -> float | None:
     brake = data.get("brake")
-    raw = brake.get("front_bias") if isinstance(brake, Mapping) else None
+    raw = None if brake is None else _mapping(brake, "brake").get("front_bias")
     if raw is None:
-        raise KeyError(
-            "Missing required key brake.front_bias. Set it to the front share of mechanical brake torque, "
-            "from 0 to 1. The generator binds it to brakes.frontBrakeBias in VehicleSim."
-        )
+        return None
     value = _number(raw, "brake.front_bias")
     if not 0.0 <= value <= 1.0:
         raise ValueError(f"brake.front_bias must be between 0 and 1. The vehicle file has {raw!r}.")
@@ -938,7 +947,7 @@ def _vehicle_template_text(
     record_name: str,
     front_arch: ArchitectureSpec,
     rear_arch: ArchitectureSpec,
-    front_brake_bias: float,
+    front_brake_bias: float | None,
 ) -> str:
     chassis_assignments: list[tuple[str, Any]] = [
         ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
@@ -960,15 +969,14 @@ def _vehicle_template_text(
             ("pVehicle", ModelicaExpression("pVehicle")),
         )
     )
-    extends_call = ModelicaCall(
-        "BaseVehicleSim",
-        (
-            ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
-            ("redeclare BobLib.Chassis.Chassis_DW chassis", ModelicaCall("", tuple(chassis_assignments))),
-            # BaseVehicleSim binds only maxTorque, so BasicVCUBrakes would otherwise use its own default bias.
-            ("brakes", ModelicaCall("", (("frontBrakeBias", front_brake_bias),))),
-        ),
-    )
+    extends_assignments: list[tuple[str, Any]] = [
+        ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
+        ("redeclare BobLib.Chassis.Chassis_DW chassis", ModelicaCall("", tuple(chassis_assignments))),
+    ]
+    if front_brake_bias is not None:
+        # BaseVehicleSim binds only maxTorque, so BasicVCUBrakes would otherwise use its own default bias.
+        extends_assignments.append(("brakes", ModelicaCall("", (("frontBrakeBias", front_brake_bias),))))
+    extends_call = ModelicaCall("BaseVehicleSim", tuple(extends_assignments))
     lines = [
         "within BobLib.Experiments.Standards.Templates.Vehicle;",
         "",
@@ -1388,7 +1396,9 @@ def _display_path(path: Path, repo_root: Path) -> str:
 
 
 def _cli_status_lines(status: Mapping[str, Any]) -> list[str]:
-    lines = [f"vehicle:  {status['vehicle_name']}", f"state:    {status['state']}", ""]
+    brake = status["front_brake_bias"]
+    brake_line = brake["note"] or f"frontBrakeBias = {brake['value']} from brake.front_bias"
+    lines = [f"vehicle:  {status['vehicle_name']}", f"state:    {status['state']}", f"brake:    {brake_line}", ""]
     for item in status["files"]:
         if not item["exists"]:
             mark = "missing"
