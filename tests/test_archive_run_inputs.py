@@ -629,3 +629,25 @@ def test_archive_retains_job_start_tires_after_library_changes(archive_workspace
     friction = axle_friction(archived, tire_snapshot_dir=archived.parent / 'tires')
     assert friction['front']['LMUY'] != .01
     assert (archived.parent / 'tires/front.tir').read_text() == snapshot['tire_texts']['front']
+
+
+def test_maneuver_model_change_persists_without_losing_waveform(archive_workspace, monkeypatch):
+    root, active = archive_workspace
+    settings = {'model_dof': 6, 'maneuver': 'sine', 'frequency_hz': .75, 'amplitude_deg': 4.}
+    active.write_text(yaml.safe_dump(settings))
+    workflows = tuple(app.WorkflowSpec(name, 'response', 'Maneuver', 'sim.yml', (), (),
+        engine='BobLib' if name == 'mbd-maneuver' else 'DynPy', fidelity='Transient')
+        for name in ('maneuver', 'mbd-maneuver'))
+    monkeypatch.setattr(app, 'WORKFLOWS', workflows)
+    monkeypatch.setattr(app, 'BASE_CONFIG_SPECS', {w.id: app.ConfigSpec(w.id, 'response', 'Maneuver',
+        'sim.yml', workflow_id=w.id, relocatable=True) for w in workflows})
+    simulation = app.simulation_workspace('create', {'workflow_id': 'maneuver'})['simulation']
+    for model in ('14', 'mbd', '3'):
+        app.simulation_workspace('set-maneuver-model', {'id': simulation['id'], 'model': model})
+        loaded = app.simulation_workspace('load', {'id': simulation['id']})
+        assert loaded['simulation']['workflow_id'] == ('mbd-maneuver' if model == 'mbd' else 'maneuver')
+        data = yaml.safe_load(active.read_text())
+        assert data['frequency_hz'] == .75
+        assert data['amplitude_deg'] == 4.
+        if model != 'mbd':
+            assert data['model_dof'] == int(model)

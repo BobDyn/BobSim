@@ -950,6 +950,11 @@ def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
         data = _vehicle_with_powertrain_defaults(data)
         data = _vehicle_with_architecture_defaults(data, prune_inactive=True)
     _validate_model_dof(data)
+    if config_id in {"maneuver", "mbd-maneuver"}:
+        from simulations.response.maneuver import validate_maneuver
+        if not isinstance(data, dict):
+            raise ValueError("Maneuver settings must be a mapping.")
+        validate_maneuver(data)
     _write_yaml_config(path, data)
     return config_payload(config_id)
 
@@ -961,6 +966,11 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     if not isinstance(data, (dict, list)):
         raise TypeError("Config must contain a YAML mapping or list")
     _validate_model_dof(data)
+    if config_id in {"maneuver", "mbd-maneuver"}:
+        from simulations.response.maneuver import validate_maneuver
+        if not isinstance(data, dict):
+            raise ValueError("Maneuver settings must be a mapping.")
+        validate_maneuver(data)
     path.write_text(text if text.endswith("\n") else f"{text}\n", encoding="utf-8")
     return config_payload(config_id)
 
@@ -1431,6 +1441,20 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
         item["name"] = str(payload.get("name") or item["name"]).strip()[:120] or item["name"]
+    elif action == "set-maneuver-model":
+        if item is None or item["workflow_id"] not in {"maneuver", "mbd-maneuver"}:
+            raise ValueError("Choose a maneuver analysis.")
+        model = str(payload.get("model", ""))
+        if model not in {"3", "6", "10", "14", "mbd"}:
+            raise ValueError("Choose 3, 6, 10, 14 DOF or MBD.")
+        item["workflow_id"] = "mbd-maneuver" if model == "mbd" else "maneuver"
+        data = yaml.safe_load(item["config_text"])
+        if model != "mbd":
+            data["model_dof"] = int(model)
+        item["config_text"] = yaml.safe_dump(data, sort_keys=False)
+        item["model"] = workflow_model(_workflow_by_id(item["workflow_id"]), root=ROOT)
+        if model != "mbd":
+            item["model"].update(model_dofs=[int(model)], fidelity=f"{model} DOF Transient")
     elif action == "set-racing-line":
         if item is None or item["workflow_id"] != "lap-qss":
             raise ValueError("Racing-line connections require a QSS lap.")
@@ -1573,7 +1597,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
     if action in {"add-analysis", "remove-analysis", "create", "save", "rename", "delete", "duplicate", "set-baseline",
-                  "set-ggv", "set-racing-line", "add-visualization", "delete-visualization",
+                  "set-ggv", "set-racing-line", "set-maneuver-model", "add-visualization", "delete-visualization",
                   "update-visualization", "rename-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
@@ -2094,7 +2118,7 @@ def workflow_model(workflow: WorkflowSpec, *, root: Path) -> dict[str, Any]:
         if workflow.id == "vehicle-review":
             configs = [root / f"simulations/envelope/{name}/{name}_config.yml" for name in ("ggv", "ymd")]
         for path in configs:
-            if workflow.id in {"reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient"}:
+            if workflow.id in {"maneuver", "reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient"}:
                 path = config_io.resolve(path, root=root)
             if not path.is_file():
                 continue

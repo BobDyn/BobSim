@@ -66,12 +66,14 @@ def build_dynpy_report(
     Path
         Generated PDF path.
     """
-    response = workflow_id in {"reduced-step-steer", "reduced-ramp-steer"}
+    response = workflow_id in {"maneuver", "reduced-step-steer", "reduced-ramp-steer"}
     ramp = workflow_id == "reduced-ramp-steer"
     transient = workflow_id == "lap-transient"
     title = "Step-steer response" if response else "Transient lap" if transient else "QSS lap"
     if ramp:
         title = "Ramp-steer response"
+    if workflow_id == "maneuver":
+        title = f"{config['maneuver'].capitalize()} steering response"
     method = "Transient" if response else "Transient with QSS reference" if transient else "QSS"
     model = f"DynPy | {summary['model_dof']} DOF | {method} | Python"
     filename = "report.pdf" if response else "transient_report.pdf" if transient else "qss_report.pdf"
@@ -81,6 +83,11 @@ def build_dynpy_report(
     if response:
         frame = pd.read_csv(output_directory / "signals.csv")
         inputs = (
+            [("Maneuver", config["maneuver"]), ("Magnitude (deg)", config["amplitude_deg"]),
+             ("Start time (s)", config["start_time_s"]),
+             ({"ramp": "Ramp duration (s)", "step": "Rise time (s)", "sine": "Frequency (Hz)"}[config["maneuver"]],
+              config[{"ramp": "ramp_duration_s", "step": "rise_time_s", "sine": "frequency_hz"}[config["maneuver"]]])]
+            if workflow_id == "maneuver" else
             [("Roadwheel rate (deg/s)", config["roadwheel_rate_deg_s"]),
              ("Ramp start (s)", config["start_time_s"]),
              ("Ramp end (s)", config.get("ramp_end_time_s", config["stop_time_s"]))] if ramp else
