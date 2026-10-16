@@ -1104,8 +1104,20 @@ def _build_review_metrics(review: dict[str, Any]) -> MetricRows:
     add("Suspension", "scrub_gain_roll_m_per_rad", suspension["scrub_gain_roll_m_per_rad"], "m/rad", "Roll scrub gain")
     add("Suspension", "avg_anti_dive_pct", suspension["avg_anti_dive_pct"], "%", "Average anti-dive")
     add("Suspension", "avg_anti_squat_pct", suspension["avg_anti_squat_pct"], "%", "Average anti-squat")
-    add("Suspension", "avg_anti_roll_front_pct", suspension["avg_anti_roll_front_pct"], "%", "Average front anti-roll")
-    add("Suspension", "avg_anti_roll_rear_pct", suspension["avg_anti_roll_rear_pct"], "%", "Average rear anti-roll")
+    add(
+        "Suspension",
+        "avg_anti_roll_front_pct",
+        suspension["avg_anti_roll_front_pct"],
+        "%",
+        "Front net axle jacking, legacy anti-roll key. Not geometric anti-roll.",
+    )
+    add(
+        "Suspension",
+        "avg_anti_roll_rear_pct",
+        suspension["avg_anti_roll_rear_pct"],
+        "%",
+        "Rear net axle jacking, legacy anti-roll key. Not geometric anti-roll.",
+    )
     add(
         "Suspension",
         "avg_lateral_jacking_coeff_front",

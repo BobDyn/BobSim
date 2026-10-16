@@ -434,12 +434,14 @@ def add_knc_summary_page(
         ])
 
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
-        "Anti Metrics", [
+        "Jacking (CP force, upright)", [
             ("Anti-Dive", "avg_anti_dive_pct", "%", "{:.1f}"),
             ("Anti-Squat", "avg_anti_squat_pct", "%", "{:.1f}"),
-            ("Front Anti-Roll", "avg_anti_roll_front_pct", "%", "{:.1f}"),
-            ("Rear Anti-Roll", "avg_anti_roll_rear_pct", "%", "{:.1f}"),
-            ("LLTD (Front)", "avg_lltd_front_pct", "%", "{:.1f}"),
+            ("dFz/dFx Front", "avg_longitudinal_jacking_coeff_front", "N/N", "{:.4f}"),
+            ("dFz/dFx Rear", "avg_longitudinal_jacking_coeff_rear", "N/N", "{:.4f}"),
+            ("Net Jacking Fr", "avg_anti_roll_front_pct", "%", "{:.2f}"),
+            ("Net Jacking Rr", "avg_anti_roll_rear_pct", "%", "{:.2f}"),
+            ("Elastic Share Fr", "avg_lltd_front_pct", "%", "{:.1f}"),
         ])
 
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,

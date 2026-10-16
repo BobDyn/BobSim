@@ -53,6 +53,9 @@ FOUR_POST_MOTION_RATIO_ABS_LIMIT = 20.0
 FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD = 0.01308996938995747
 FOUR_POST_LEGACY_ROLL_MAGNITUDE_RAD = 0.035
 FOUR_POST_MIN_CONTACT_FZ_N = 1.0
+FOUR_POST_ANTI_FORCE_PATH = "contact_patch_upright_reacted"
+# Plots whose meaning or label changed. Older app-data copies take them from the seed.
+FOUR_POST_SEED_OWNED_PLOTS = ("jacking_heave", "jacking_roll", "fbrc_roll", "lltd_roll")
 
 
 FOUR_POST_EVAL_SIGNALS = [
@@ -126,66 +129,9 @@ def load_config(path: str | Path) -> dict[str, Any]:
     return cast(dict[str, Any], config)
 
 
-def _four_post_jacking_roll_plot_config() -> dict[str, Any]:
-    return {
-        "layout": "dual",
-        "title": "Geometric Anti-Roll vs Roll",
-        "subplots": [
-            {
-                "title": "Front",
-                "x": {
-                    "key": "fr_jacking_vs_roll_x",
-                    "scale": 57.2958,
-                    "label": "Roll (deg)",
-                },
-                "y": {"key": "fr_anti_vs_roll", "label": "Geometric Anti-Roll (%)"},
-            },
-            {
-                "title": "Rear",
-                "x": {
-                    "key": "rr_jacking_vs_roll_x",
-                    "scale": 57.2958,
-                    "label": "Roll (deg)",
-                },
-                "y": {"key": "rr_anti_vs_roll", "label": "Geometric Anti-Roll (%)"},
-            },
-        ],
-    }
-
-
-def _four_post_fbrc_roll_plot_config() -> dict[str, Any]:
-    return {
-        "layout": "dual",
-        "title": "FBRC-Equivalent Height vs Roll (Loaded Contact Patches Only)",
-        "subplots": [
-            {
-                "title": "Front",
-                "x": {
-                    "key": "fr_fbrc_vs_roll_x",
-                    "scale": 57.2958,
-                    "label": "Roll (deg)",
-                },
-                "y": {
-                    "key": "fr_fbrc_height_vs_roll",
-                    "scale": 1000.0,
-                    "label": "FBRC-equivalent height (mm)",
-                },
-            },
-            {
-                "title": "Rear",
-                "x": {
-                    "key": "rr_fbrc_vs_roll_x",
-                    "scale": 57.2958,
-                    "label": "Roll (deg)",
-                },
-                "y": {
-                    "key": "rr_fbrc_height_vs_roll",
-                    "scale": 1000.0,
-                    "label": "FBRC-equivalent height (mm)",
-                },
-            },
-        ],
-    }
+def _seed_plot_configs() -> dict[str, Any]:
+    plots = _as_mapping(load_config(REPO_ROOT / SEED_CONFIG_PATH).get("plots"), name="plots")
+    return {key: copy.deepcopy(plots[key]) for key in FOUR_POST_SEED_OWNED_PLOTS}
 
 
 def _normalize_four_post_report_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -203,8 +149,7 @@ def _normalize_four_post_report_config(config: dict[str, Any]) -> dict[str, Any]
             procedure_cfg["rollMagnitude"] = FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD
     plots_cfg = config.setdefault("plots", {})
     if isinstance(plots_cfg, dict):
-        plots_cfg["jacking_roll"] = copy.deepcopy(_four_post_jacking_roll_plot_config())
-        plots_cfg["fbrc_roll"] = copy.deepcopy(_four_post_fbrc_roll_plot_config())
+        plots_cfg.update(_seed_plot_configs())
     return config
 
 
@@ -1337,7 +1282,7 @@ class FourPostEvalSim:
         rr_anti_roll = _plausible_array(100.0 * rr_coeff_roll / ref_roll, FOUR_POST_PERCENT_ABS_LIMIT)
 
         # Force-based roll-center height: h_eq = (track / 2) * (dFz_right - dFz_left) / Fy.
-        # Geometric anti-roll uses total axle jacking instead of the left/right split.
+        # The legacy anti-roll key is net axle jacking: the axle sum, not the left/right split.
         fr_fbrc_ratio = _safe_divide_series(
             roll_fz_delta[("frKnC", "right")] - roll_fz_delta[("frKnC", "left")],
             fr_roll_force_denominator,
@@ -1656,6 +1601,7 @@ class FourPostEvalSim:
             "arb_roll_stiffness_rear_Nm_per_rad": float(kphi_arb_r),
             "elastic_roll_stiffness_front_Nm_per_rad": float(kphi_el_f),
             "elastic_roll_stiffness_rear_Nm_per_rad": float(kphi_el_r),
+            "anti_force_path": FOUR_POST_ANTI_FORCE_PATH,
         }
 
         series: dict[str, np.ndarray] = {

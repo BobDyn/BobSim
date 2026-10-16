@@ -182,18 +182,18 @@ plots:
 
   jacking_heave:
     layout: dual
-    title: "Anti vs Heave"
+    title: "Anti-Dive and Anti-Squat vs Heave (CP Fx, upright-reacted)"
     subplots:
       - {
           title: "Front",
           x: { key: fr_jacking_vs_heave_x, scale: 1000, label: "Heave (mm)" },
-          y: { key: fr_anti_vs_heave, label: "Geometric Anti-Dive (%)" },
+          y: { key: fr_anti_vs_heave, label: "Anti-dive (%)" },
         }
 
       - {
           title: "Rear",
           x: { key: rr_jacking_vs_heave_x, scale: 1000, label: "Heave (mm)" },
-          y: { key: rr_anti_vs_heave, label: "Geometric Anti-Squat (%)" },
+          y: { key: rr_anti_vs_heave, label: "Anti-squat (%)" },
         }
 
   camber_roll:
@@ -260,18 +260,18 @@ plots:
 
   jacking_roll:
     layout: dual
-    title: "Geometric Anti-Roll vs Roll"
+    title: "Net Axle Jacking vs Roll"
     subplots:
       - {
           title: "Front",
           x: { key: fr_jacking_vs_roll_x, scale: 57.2958, label: "Roll (deg)" },
-          y: { key: fr_anti_vs_roll, label: "Geometric Anti-Roll (%)" },
+          y: { key: fr_anti_vs_roll, label: "Net jacking (% of h/t)" },
         }
 
       - {
           title: "Rear",
           x: { key: rr_jacking_vs_roll_x, scale: 57.2958, label: "Roll (deg)" },
-          y: { key: rr_anti_vs_roll, label: "Geometric Anti-Roll (%)" },
+          y: { key: rr_anti_vs_roll, label: "Net jacking (% of h/t)" },
         }
 
   fbrc_roll:
@@ -283,15 +283,15 @@ plots:
 
   lltd_roll:
     layout: single
-    title: "Load-Transfer LLTD vs Roll: Measured vs Roll-Rate Distribution"
+    title: "Elastic Load-Transfer Share vs Imposed Roll (no lateral force)"
     xlim: [-1.0, 1.0]
     x: { key: lltd_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }
-    y: { key: lltd_contact_force_vs_roll, scale: 100.0, label: "LLTD Front (%)" }
-    label: "Measured baseline-delta load transfer"
+    y: { key: lltd_contact_force_vs_roll, scale: 100.0, label: "Elastic share front (%)" }
+    label: "Measured from contact loads"
     overlay:
       - x: { key: lltd_vs_roll_x, scale: 57.2958, label: "Roll (deg)" }
-        y: { key: lltd_stiffness_vs_roll, scale: 100.0, label: "LLTD Front (%)" }
-        label: "Hand calc roll-rate distribution"
+        y: { key: lltd_stiffness_vs_roll, scale: 100.0, label: "Elastic share front (%)" }
+        label: "Roll-stiffness share"
         color: "black"
         linestyle: "--"
         linewidth: 2

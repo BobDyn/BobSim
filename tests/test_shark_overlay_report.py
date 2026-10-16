@@ -341,9 +341,9 @@ def test_four_post_section_gates_and_flags_confounds() -> None:
     open_gate = sor.four_post_section(runs, differences=diffs, mode="imported", gated=False)
     assert open_gate["rows"], "with the gate open the numbers are published"
     assert any("CONFOUNDED" in line for line in open_gate["lines"])
-    # The label must not read as total roll stiffness.
+    # The label must not read as total roll stiffness or as geometric load transfer.
     labels = " ".join(label for _key, label in sor.SCALAR_METRICS)
-    assert "geometric anti-roll" in labels.lower() and "jacking" in labels.lower()
+    assert "net axle jacking" in labels.lower() and "geometric anti-roll" not in labels.lower()
 
 
 def test_design_position_is_sampled_not_extrapolated() -> None:

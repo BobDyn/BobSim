@@ -1126,3 +1126,96 @@ def test_four_post_sends_bar_rates_only_to_the_rig_bars_that_exist(
     assert not [key for key in overrides if key.startswith("pVehicle.") and "Stabar" in key]
     assert "pFrStabar.barRate" not in overrides
     assert overrides["pRrStabar.barRate"] == 0.0
+
+
+def _four_post_unit_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[four_post_eval.FourPostEvalSim, dict[str, np.ndarray], dict[str, object]]:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    result = _four_post_result_from_kinematics(
+        vehicle,
+        np.linspace(-0.03, 0.03, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+        np.linspace(-1.25, 1.25, four_post_eval.FOUR_POST_ROLL_POSE_COUNT),
+    )
+    return four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)), result, vehicle
+
+
+def _pose_indices(result: dict[str, np.ndarray], start_s: float, count: int) -> list[tuple[int, int]]:
+    """(pulse row, tail row) per pose."""
+    return [
+        (int(np.argmin(np.abs(result["time"] - jack))), int(np.argmin(np.abs(result["time"] - tail))))
+        for jack, tail in zip(_jack_times(start_s, count), _pose_sample_times(start_s, count), strict=True)
+    ]
+
+
+def _roll_poses(result: dict[str, np.ndarray]) -> list[tuple[int, int]]:
+    return _pose_indices(result, four_post_eval.FOUR_POST_ROLL_START_S, four_post_eval.FOUR_POST_ROLL_POSE_COUNT)
+
+
+def _set_roll_pulse_loads(
+    result: dict[str, np.ndarray],
+    left_delta_n: float,
+    right_delta_n: float,
+    jacking_delta_n: float,
+) -> None:
+    for pulse, tail in _roll_poses(result):
+        for prefix in ("frKnC", "rrKnC"):
+            result[f"{prefix}.leftFz"][pulse] = result[f"{prefix}.leftFz"][tail] + left_delta_n
+            result[f"{prefix}.rightFz"][pulse] = result[f"{prefix}.rightFz"][tail] + right_delta_n
+            # The fixture reaction signal is opposite to the chassis jacking response.
+            result[f"{prefix}.jackingForce"][pulse] = result[f"{prefix}.jackingForce"][tail] - jacking_delta_n
+
+
+def test_four_post_anti_roll_key_is_net_jacking_with_zero_net_and_nonzero_differential(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _set_roll_pulse_loads(result, left_delta_n=40.0, right_delta_n=-40.0, jacking_delta_n=0.0)
+
+    summary, _series = sim.summarize(result)
+
+    assert summary["avg_anti_roll_front_pct"] == pytest.approx(0.0, abs=1e-12)
+    assert summary["avg_lateral_jacking_coeff_front"] == pytest.approx(0.0, abs=1e-12)
+    assert summary["avg_fbrc_differential_jacking_ratio_front"] == pytest.approx(-0.08)
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    half_track = float(front["suspension"]["wheel_center_m"][1])
+    assert summary["avg_fbrc_equivalent_height_front_m"] == pytest.approx(-0.08 * half_track)
+    plots = four_post_eval._normalize_four_post_report_config({})["plots"]
+    assert "Anti-Roll" not in plots["jacking_roll"]["title"]
+    assert "Net Axle Jacking" in plots["jacking_roll"]["title"]
+
+
+def test_four_post_fbrc_height_is_set_by_the_differential_and_not_by_net_jacking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _set_roll_pulse_loads(result, left_delta_n=70.0, right_delta_n=-10.0, jacking_delta_n=60.0)
+
+    summary, series = sim.summarize(result)
+
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    half_track = float(front["suspension"]["wheel_center_m"][1])
+    assert summary["avg_lateral_jacking_coeff_front"] == pytest.approx(0.06)
+    np.testing.assert_allclose(series["fr_fbrc_height_vs_roll"], -0.08 * half_track)
+    assert summary["avg_fbrc_equivalent_height_front_m"] == pytest.approx(-0.08 * half_track)
+
+
+def test_four_post_anti_outputs_state_their_force_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+
+    summary, _series = sim.summarize(result)
+
+    assert summary["anti_force_path"] == "contact_patch_upright_reacted"
+    assert "avg_longitudinal_jacking_coeff_front" in summary
+    plots = four_post_eval._normalize_four_post_report_config({})["plots"]
+    assert "upright" in plots["jacking_heave"]["title"]
+    assert "LLTD" not in plots["lltd_roll"]["title"]

@@ -271,7 +271,7 @@ def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> N
         assert config["report"]["raw_time_series_appendix"] is False
 
         jacking_roll = config["plots"]["jacking_roll"]
-        assert jacking_roll["title"] == "Geometric Anti-Roll vs Roll"
+        assert jacking_roll["title"] == "Net Axle Jacking vs Roll"
         assert [subplot["x"]["key"] for subplot in jacking_roll["subplots"]] == [
             "fr_jacking_vs_roll_x",
             "rr_jacking_vs_roll_x",
@@ -318,17 +318,19 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
                         },
                     },
                 ],
-            }
+            },
+            "lltd_roll": {"title": "Load-Transfer LLTD vs Roll: Measured vs Roll-Rate Distribution"},
         },
     }
 
     normalized = _normalize_four_post_report_config(config)
     jacking_roll = normalized["plots"]["jacking_roll"]
     fbrc_roll = normalized["plots"]["fbrc_roll"]
+    assert "LLTD" not in normalized["plots"]["lltd_roll"]["title"]
 
     assert normalized["report"]["raw_time_series_appendix"] is False
     assert normalized["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
-    assert jacking_roll["title"] == "Geometric Anti-Roll vs Roll"
+    assert jacking_roll["title"] == "Net Axle Jacking vs Roll"
     assert [subplot["x"]["key"] for subplot in jacking_roll["subplots"]] == [
         "fr_jacking_vs_roll_x",
         "rr_jacking_vs_roll_x",
