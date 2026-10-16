@@ -40,9 +40,10 @@ def test_invalid_maneuver(settings, values):
 
 
 @pytest.mark.parametrize('kind', ['ramp', 'step', 'sine'])
-def test_mbd_waveform_mapping(settings, kind):
+@pytest.mark.parametrize('amplitude', [-8., 8.])
+def test_mbd_waveform_mapping(settings, kind, amplitude):
     from simulations.response.mbd.transient.transient_eval_sim import TransientEvalSim
-    settings.update(maneuver=kind, amplitude_deg=8., start_time_s=2., ramp_duration_s=3.)
+    settings.update(maneuver=kind, amplitude_deg=amplitude, start_time_s=2., ramp_duration_s=3.)
     seed = yaml.safe_load((ROOT / 'simulations/response/mbd/transient/transient_eval_config.yml').read_text())
     config = mbd_config(settings, seed)
     simulator = object.__new__(TransientEvalSim)
@@ -51,13 +52,14 @@ def test_mbd_waveform_mapping(settings, kind):
     selected = [(case, meta) for case, meta in zip(cases, metadata)
                 if (meta['mode'] == 'continuous_sine') == (kind == 'sine')]
     assert len(selected) == 1
-    case, _ = selected[0]
+    case, metadata = selected[0]
+    assert metadata['directionSign'] == (1 if amplitude > 0 else -1)
     assert case['steerStart'] == 2.
     assert case['targetVel'] == settings['speed_mps']
     if kind == 'sine':
-        assert case['steerAmp'] == pytest.approx(np.deg2rad(8.))
+        assert case['steerAmp'] == pytest.approx(np.deg2rad(amplitude))
         assert case['steerFreq'] == settings['frequency_hz']
     else:
-        assert case['frRampSteerHeight'] == pytest.approx(np.deg2rad(8.))
+        assert case['frRampSteerHeight'] == pytest.approx(np.deg2rad(amplitude))
         assert case['stepDuration'] == (3. if kind == 'ramp' else settings['rise_time_s'])
     assert config['simulation']['stop_time'] == settings['stop_time_s']
