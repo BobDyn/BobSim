@@ -39,10 +39,14 @@ def run(workflow_id: str) -> None:
         return
     if workflow_id in {"lap-qss", "lap-transient"}:
         config = config_io.resolve("simulations/lap/lap_time_eval_config.yml", root=root)
+        data = load_yaml(config)
+        print(f"DynPy | {data['model_dof']} DOF | {workflow_id}", flush=True)
+        if data.get("qss", {}).get("linked_ggv"):
+            print("Using linked GGV. Solving the racing line and lap speed profile.", flush=True)
         summary = run_lap_time_evaluation(
             config, scenario="qss" if workflow_id == "lap-qss" else "transient"
         )
-        data = load_yaml(config)
+        print("Rendering lap report.", flush=True)
         output = root / str(data["output"]["directory"]).format(model_dof=summary["model_dof"])
         vehicle = load_yaml(root / data.get("vehicle", "vehicle.yml"))
         build_dynpy_report(

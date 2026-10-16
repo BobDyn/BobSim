@@ -80,6 +80,34 @@ def test_ggv_keeps_missing_speed_slices(mode):
     assert np.isfinite(ggv.longitudinal_limit(30.0, 1.0, mode))
 
 
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+def test_cached_ggv_matches_full_slice_interpolation(mode):
+    from simulations.lap.core.qss import _directional_slice, _slice_lateral_limit
+
+    rng = np.random.default_rng(17)
+    ay = np.arange(-6., 7.)
+    drive = rng.uniform(0., 5., (4, ay.size))
+    brake = -rng.uniform(0., 8., drive.shape)
+    drive[1, :3] = np.nan
+    brake[2, -3:] = np.nan
+    ggv = GGVMap.from_arrays([5., 10., 20., 30.], ay, drive, brake)
+    for speed in [0., 5., 7., 10., 15., 20., 25., 30., 40.]:
+        for direction in [-1., 1.]:
+            limits = [_slice_lateral_limit(item, direction) for item in ggv.slices]
+            for fraction in [0., .1, .5, 1.]:
+                values = []
+                for original, limit in zip(ggv.slices, limits):
+                    item = _directional_slice(original, direction)
+                    boundary = item.ax_accel_mps2 if mode == "drive" else item.ax_brake_mps2
+                    finite = np.isfinite(boundary)
+                    target = fraction * limit
+                    values.append(np.interp(target, item.ay_mps2[finite], boundary[finite])
+                                  if target <= item.ay_mps2[finite][-1] else np.nan)
+                expected = np.interp(speed, [5., 10., 20., 30.], values)
+                lateral = direction * fraction * np.interp(speed, [5., 10., 20., 30.], limits)
+                np.testing.assert_allclose(ggv.longitudinal_limit(speed, lateral, mode), expected, rtol=1e-14)
+
+
 def test_qss_lap_uses_varying_speed_slice_boundaries(circular_corridor, varying_ggv):
     line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
     lap = solve_qss_lap(line, varying_ggv)
