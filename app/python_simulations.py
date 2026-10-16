@@ -31,6 +31,13 @@ def run(workflow_id: str) -> None:
         Ramp steer, step steer, QSS lap or transient lap workflow ID.
     """
     root = repo_root()
+    if workflow_id == "racing-line":
+        from simulations.lap.racing_line_sim import run as generate_line
+        config = config_io.resolve("simulations/lap/racing_line_config.yml", root=root)
+        print("Generating racing line from track boundaries and vehicle width.", flush=True)
+        line_result = generate_line(load_yaml(config), root)
+        print(f"Racing line ready: {line_result['length_m']:.1f} m", flush=True)
+        return
     if workflow_id == "mbd-step-steer":
         from simulations.response.mbd.transient.transient_eval_sim import main as run_mbd_transient
 
@@ -42,7 +49,7 @@ def run(workflow_id: str) -> None:
         data = load_yaml(config)
         print(f"DynPy | {data['model_dof']} DOF | {workflow_id}", flush=True)
         if data.get("qss", {}).get("linked_ggv"):
-            print("Using linked GGV. Solving the racing line and lap speed profile.", flush=True)
+            print("Using linked GGV. Solving the lap speed profile.", flush=True)
         summary = run_lap_time_evaluation(
             config, scenario="qss" if workflow_id == "lap-qss" else "transient"
         )
@@ -114,7 +121,8 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "workflow", choices=("reduced-step-steer", "reduced-ramp-steer", "mbd-step-steer", "lap-qss", "lap-transient")
+        "workflow", choices=("reduced-step-steer", "reduced-ramp-steer", "mbd-step-steer",
+                             "lap-qss", "lap-transient", "racing-line")
     )
     run(parser.parse_args().workflow)
 

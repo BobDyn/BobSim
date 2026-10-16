@@ -129,15 +129,94 @@ class TrackCorridor:
 
     @classmethod
     def from_csv(cls, path: str | Path, *, closed: bool = True) -> TrackCorridor:
-        """Load columns ``left_x_m,left_y_m,right_x_m,right_y_m``."""
+        """Load ``x1,y1,x2,y2`` or the legacy left/right column names."""
 
         left: list[tuple[float, float]] = []
         right: list[tuple[float, float]] = []
-        with Path(path).open(newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                left.append((float(row["left_x_m"]), float(row["left_y_m"])))
-                right.append((float(row["right_x_m"]), float(row["right_y_m"])))
-        return cls(np.asarray(left), np.asarray(right), closed=closed)
+        with Path(path).open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            reader.fieldnames = [name.strip() for name in (reader.fieldnames or [])]
+            columns = ("x1", "y1", "x2", "y2") if "x1" in (reader.fieldnames or []) else (
+                "left_x_m", "left_y_m", "right_x_m", "right_y_m")
+            if not set(columns).issubset(reader.fieldnames or []):
+                raise ValueError("Track CSV needs x1,y1,x2,y2 columns in metres.")
+            try:
+                for row in reader:
+                    left.append((float(row[columns[0]]), float(row[columns[1]])))
+                    right.append((float(row[columns[2]]), float(row[columns[3]])))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid track coordinates on row {reader.line_num}.") from exc
+        if len(left) > 1 and np.linalg.norm(np.asarray(left[0]) - left[-1]) <= 1e-6 \
+                and np.linalg.norm(np.asarray(right[0]) - right[-1]) <= 1e-6:
+            left.pop()
+            right.pop()
+        corridor = cls(np.asarray(left), np.asarray(right), closed=closed)
+        corridor.validate_order()
+        return corridor
+
+    def validate_order(self) -> None:
+        """## Boundary Ordering
+
+        Reject crossed boundaries, duplicate gates and reversed gate pairings.
+        """
+        centers = self.center_points_m
+        tangent = np.roll(centers, -1, axis=0) - np.roll(centers, 1, axis=0)
+        gates = self.left_boundary_m - self.right_boundary_m
+        side = tangent[:, 0] * gates[:, 1] - tangent[:, 1] * gates[:, 0]
+        if np.any(side > 1e-8) and np.any(side < -1e-8):
+            raise ValueError("Track boundary pairs change sides. Keep each boundary in circuit order.")
+        if np.any(np.linalg.norm(np.roll(centers, -1, axis=0) - centers, axis=1) <= 1e-6):
+            raise ValueError("Consecutive track gates must be distinct.")
+        starts = np.vstack((self.left_boundary_m, self.right_boundary_m))
+        ends = np.vstack((np.roll(self.left_boundary_m, -1, axis=0),
+                          np.roll(self.right_boundary_m, -1, axis=0)))
+        delta = ends - starts
+        for index, (point, vector) in enumerate(zip(starts, delta)):
+            relative = starts[index + 1:] - point
+            others = delta[index + 1:]
+            denominator = vector[0] * others[:, 1] - vector[1] * others[:, 0]
+            valid = np.abs(denominator) > 1e-10
+            first = np.zeros_like(denominator)
+            second = np.zeros_like(denominator)
+            np.divide(relative[:, 0] * others[:, 1] - relative[:, 1] * others[:, 0],
+                      denominator, out=first, where=valid)
+            np.divide(relative[:, 0] * vector[1] - relative[:, 1] * vector[0],
+                      denominator, out=second, where=valid)
+            if np.any(valid & (first > 1e-8) & (first < 1. - 1e-8) & (second > 1e-8) & (second < 1. - 1e-8)):
+                raise ValueError("Track boundaries cross. Check the CSV row order and boundary pairing.")
+
+    def interpolated_boundaries(self, sample_step_m: float = 1.0) -> tuple[FloatArray, FloatArray]:
+        """## Boundary Splines
+
+        Interpolate every paired gate with closed, periodic cubic splines.
+
+        Parameters
+        ----------
+        sample_step_m : float
+            Maximum sampling interval along each boundary's chord parameter.
+
+        Returns
+        -------
+        tuple[FloatArray, FloatArray]
+            Boundary samples including every input point and the closing point.
+        """
+        if not self.closed:
+            raise NotImplementedError("Boundary splines require a closed track.")
+        if not np.isfinite(sample_step_m) or sample_step_m <= 0.:
+            raise ValueError("Boundary sample spacing must be positive and finite.")
+        boundaries = []
+        for points in (self.left_boundary_m, self.right_boundary_m):
+            chords = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
+            if np.any(chords <= 1e-6):
+                raise ValueError("Consecutive boundary points must be distinct.")
+            parameter = np.concatenate(([0.], np.cumsum(chords)))
+            spline = CubicSpline(parameter, np.vstack((points, points[0])), bc_type="periodic")
+            samples = np.concatenate([
+                np.linspace(start, end, max(2, int(np.ceil((end - start) / sample_step_m)) + 1))[:-1]
+                for start, end in zip(parameter[:-1], parameter[1:])
+            ] + [parameter[-1:]])
+            boundaries.append(np.asarray(spline(samples), dtype=float))
+        return boundaries[0], boundaries[1]
 
     @property
     def gate_count(self) -> int:
@@ -164,6 +243,10 @@ class TrackCorridor:
     ) -> tuple[FloatArray, FloatArray]:
         """Return lateral center-position bounds after vehicle-footprint clearance."""
 
+        if not np.isfinite(vehicle_width_m) or vehicle_width_m <= 0.:
+            raise ValueError("Vehicle width must be positive and finite.")
+        if not np.isfinite(safety_margin_m) or safety_margin_m < 0.:
+            raise ValueError("Edge clearance must be nonnegative and finite.")
         clearance = 0.5 * float(vehicle_width_m) + float(safety_margin_m)
         half_available = 0.5 * self.gate_widths_m - clearance
         if np.any(half_available <= 0.0):
