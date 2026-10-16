@@ -10,7 +10,6 @@ event:
 
 track:
   boundary_csv: simulations/lap/tracks/endurance_michigan_2019.csv
-  vehicle_width_m: 1.35
   safety_margin_m: 0.15
   sample_step_m: 1.0
 

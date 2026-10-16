@@ -7,7 +7,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import minimize
+from scipy.optimize import OptimizeResult, minimize
 
 from simulations.lap.core.qss import GGVMap, QSSLapResult, solve_qss_lap
 from simulations.lap.core.track import RacingLine, TrackCorridor
@@ -65,24 +65,9 @@ def optimize_racing_line(
             iterations=0,
         )
 
-    def curvature_cost(offsets: FloatArray) -> float:
-        try:
-            line = corridor.line_from_offsets(offsets, sample_step_m=sample_step_m)
-        except ValueError:
-            return 1e12
-        curvature_energy = np.sum(
-            line.curvature_per_m**2 * line.segment_length_m
-        )
-        offset_roughness = np.diff(offsets, n=2, append=offsets[:2])
-        return float(curvature_energy + 1e-3 * np.sum(offset_roughness**2))
-
-    curvature_solution = minimize(
-        curvature_cost,
-        center_offsets,
-        method="SLSQP",
-        bounds=bounds,
-        options={"maxiter": curvature_max_iterations, "ftol": 1e-8},
-    )
+    curvature_solution = minimize_curvature(corridor, vehicle_width_m=vehicle_width_m,
+        safety_margin_m=safety_margin_m, sample_step_m=sample_step_m,
+        max_iterations=curvature_max_iterations)
     curvature_offsets = np.asarray(curvature_solution.x, dtype=float)
     curvature_line = corridor.line_from_offsets(
         curvature_offsets,
@@ -154,3 +139,51 @@ def optimize_racing_line(
         message=str(time_solution.message),
         iterations=int(curvature_solution.nit + time_solution.nit),
     )
+
+
+def minimize_curvature(corridor: TrackCorridor, *, vehicle_width_m: float,
+                       safety_margin_m: float = 0.15, sample_step_m: float = 1.,
+                       max_iterations: int = 200) -> OptimizeResult:
+    """## Minimum-Curvature Line
+
+    Parameters
+    ----------
+    corridor : TrackCorridor
+        Paired track boundaries.
+    vehicle_width_m : float
+        Nominal outside-tire width.
+    safety_margin_m : float
+        Clearance beyond each side of the vehicle.
+    sample_step_m : float
+        Path sampling distance.
+    max_iterations : int
+        Curvature optimizer iteration limit.
+
+    Returns
+    -------
+    scipy.optimize.OptimizeResult
+        Gate offsets and convergence diagnostics.
+    """
+    lower, upper = corridor.offset_bounds(vehicle_width_m=vehicle_width_m, safety_margin_m=safety_margin_m)
+    bounds = list(zip(lower, upper))
+    center_offsets = np.zeros(corridor.gate_count)
+
+    def curvature_cost(offsets: FloatArray) -> float:
+        try:
+            line = corridor.line_from_offsets(offsets, sample_step_m=sample_step_m)
+        except ValueError:
+            return 1e12
+        curvature_energy = np.sum(
+            line.curvature_per_m**2 * line.segment_length_m
+        )
+        offset_roughness = np.diff(offsets, n=2, append=offsets[:2])
+        return float(curvature_energy + 1e-3 * np.sum(offset_roughness**2))
+
+    curvature_solution = minimize(
+        curvature_cost,
+        center_offsets,
+        method="SLSQP",
+        bounds=bounds,
+        options={"maxiter": max_iterations, "ftol": 1e-8},
+    )
+    return curvature_solution

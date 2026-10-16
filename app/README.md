@@ -70,6 +70,7 @@ Removing a simulation keeps its saved runs.
 - `http_utils.py`: small HTTP parsing helpers.
 - `storage.py`: canonical folder layout for shipped app assets and mutable user
   data.
+- `tracks.py`: track CSV import and boundary previews.
 - `tire_eval.py`: MF52 tire-load and curve payload generation for the UI.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
 - `desktop.py`: desktop/webview wrapper for packaged builds.
