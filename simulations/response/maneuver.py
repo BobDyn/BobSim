@@ -72,12 +72,16 @@ def mbd_config(data: dict[str, Any], seed: dict[str, Any]) -> dict[str, Any]:
     config["simulation"]["stop_time"] = data["stop_time_s"]
     config["simulation"]["step_size"] = data["sample_period_s"]
     config["execution"]["parallel"] = False
+    amplitude = abs(data["amplitude_deg"])
+    direction = "left" if data["amplitude_deg"] >= 0 else "right"
     config["test"].update(testVel=[data["speed_mps"]], stepTime=data["start_time_s"],
-        run_step=True, run_continuous_sine=data["maneuver"] == "sine", directions=["left"],
-        steerStep_deg=[data["amplitude_deg"]], representative_step_deg=data["amplitude_deg"],
+        run_step=True, run_continuous_sine=data["maneuver"] == "sine", directions=[direction],
+        steerStep_deg=[amplitude], representative_step_deg=amplitude,
+        representative_step_direction=direction, representative_cont_direction=direction,
+        freq_response_direction=direction, freq_response_amp_deg=amplitude,
         stepDuration=data["ramp_duration_s"] if data["maneuver"] == "ramp" else data["rise_time_s"],
-        sweep_freq_hz=[data["frequency_hz"]], sweep_amp_deg=[data["amplitude_deg"]],
-        representative_cont_freq_hz=data["frequency_hz"], representative_cont_amp_deg=data["amplitude_deg"],
+        sweep_freq_hz=[data["frequency_hz"]], sweep_amp_deg=[amplitude],
+        representative_cont_freq_hz=data["frequency_hz"], representative_cont_amp_deg=amplitude,
         n_cycles=max(1, int((data["stop_time_s"] - data["start_time_s"]) * data["frequency_hz"])),
         analyze_cycles_after=0)
     config["report"].update(title=f"{data['maneuver'].capitalize()} steering response",
