@@ -14,6 +14,17 @@ from matplotlib.text import Text  # noqa: E402
 
 from common.reporting.vehicle_review_sections import add_review_suspension_page  # noqa: E402
 from optimization.response.pipeline import generator  # noqa: E402
+from simulations.envelope import vehicle_yaml  # noqa: E402
+
+ROLL_STIFFNESS_ROWS = (
+    "elastic_roll_stiffness_front_Nm_per_rad,40000.0,{status}\n"
+    "elastic_roll_stiffness_rear_Nm_per_rad,40000.0,ok\n"
+    "arb_roll_stiffness_front_Nm_per_rad,20000.0,ok\n"
+    "arb_roll_stiffness_rear_Nm_per_rad,20000.0,ok\n"
+    "spring_roll_stiffness_front_Nm_per_rad,20000.0,ok\n"
+    "spring_roll_stiffness_rear_Nm_per_rad,20000.0,ok\n"
+)
+
 
 def test_static_balance_free_length_rejects_a_partial_motion_ratio(
     tmp_path: Path,
@@ -33,6 +44,22 @@ def test_static_balance_free_length_rejects_a_partial_motion_ratio(
     assert generator._computed_motion_ratio("rear", context) == pytest.approx(0.71)
     with pytest.raises(ValueError, match="status ok"):
         generator._computed_motion_ratio("front", context)
+
+
+def _project_lltd_source(tmp_path: Path, status: str) -> str:
+    metrics_csv = tmp_path / vehicle_yaml.DEFAULT_FOUR_POST_METRICS.relative_to(vehicle_yaml.REPO_ROOT)
+    metrics_csv.parent.mkdir(parents=True, exist_ok=True)
+    metrics_csv.write_text("metric,value,status\n" + ROLL_STIFFNESS_ROWS.format(status=status), encoding="utf-8")
+    vehicle = {axle: {"actuation": {"stabar": {"rate_n_m_per_rad": 300.0}}} for axle in ("front", "rear")}
+    _lltd, summary = vehicle_yaml._project_lltd(vehicle, repo_root=tmp_path)
+    return str(summary["lltd_source"])
+
+
+def test_lltd_source_names_the_roll_stiffness_that_fell_back_to_a_default(tmp_path: Path) -> None:
+    assert _project_lltd_source(tmp_path, "ok") == "four_post_report_roll_stiffness"
+    source = _project_lltd_source(tmp_path, "partial")
+    assert source.startswith("four_post_report_roll_stiffness; defaults for ")
+    assert "elastic_roll_stiffness_front_Nm_per_rad" in source
 
 
 def test_vehicle_review_labels_the_legacy_anti_roll_key_as_net_jacking(monkeypatch: pytest.MonkeyPatch) -> None:

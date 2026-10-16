@@ -284,11 +284,18 @@ def _project_lltd(
     total_roll = total_front + total_rear
     lltd = total_front / total_roll if total_roll > 0.0 else raw_bar_lltd
     lltd = _clip(lltd, 0.05, 0.95)
-    lltd_source = (
-        "four_post_report_roll_stiffness"
-        if four_post_metrics
-        else "nominal_roll_stiffness_defaults"
-    )
+    roll_keys = [
+        f"{kind}_roll_stiffness_{axle}_Nm_per_rad"
+        for kind in ("elastic", "arb", "spring")
+        for axle in ("front", "rear")
+    ]
+    defaulted = [key for key in roll_keys if not _is_finite(four_post_metrics.get(key, float("nan")))]
+    if len(defaulted) == len(roll_keys):
+        lltd_source = "nominal_roll_stiffness_defaults"
+    elif defaulted:
+        lltd_source = "four_post_report_roll_stiffness; defaults for " + ", ".join(defaulted)
+    else:
+        lltd_source = "four_post_report_roll_stiffness"
 
     summary: dict[str, float | str] = {
         "lltd_front_frac": lltd,
