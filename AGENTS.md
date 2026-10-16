@@ -90,8 +90,9 @@ above. Keep the set small; a stale doc is worse than no doc.
   override. Compile every other variable. Before you trust a new override,
   read the comment in that file on how to check one. The runner catches the
   other failures. Before any case runs, it rejects a name that is not in the
-  init XML, a parameter that is not changeable, and a name with no start value.
-  After each run, it fails if `run.log` says that an override was not applied.
+  init XML, a parameter that is not changeable, a name with no start value, and
+  a value of the wrong kind. After each run, it fails unless `run.log` reads
+  back each written override.
   See [Runtime overrides](docs/simulation-entrypoints.md#runtime-overrides).
 - **OptSim is three tools. The wrong tool wastes hours.** `opt-standard`
   samples a space to learn what matters. `opt-solve` inverts for the setup that

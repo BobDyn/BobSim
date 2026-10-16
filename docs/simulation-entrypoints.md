@@ -94,16 +94,23 @@ rejection. Its reasons are:
 | `not_changeable` | The init XML marks it `isValueChangeable="false"`, for example a `calculatedParameter`. |
 | `conflicting_aliases` | Two keys set the same model name to different values. |
 | `missing_init_xml` | The build has no init XML. |
-| `not_applied` | `run.log` refuses an override, or reads back a different value. |
+| `invalid_value` | The value does not fit the variable's kind in the init XML: `Real`, `Integer` or `Boolean`. |
+| `not_applied` | `run.log` refuses an override, reads back a different value, or has no readback line for it. |
 
-A value equal to the compiled start value is not written. The runner records
-it as `already_compiled`. A rejection stops the whole run. It never becomes one
-failed case, because a study drops failed cases from its fits.
+The executable can read a value of the wrong kind, such as `fast` for a
+`Real`, as 0 and still exit 0. So the runner writes a `Real` as a finite
+number, an `Integer` as a whole number and a `Boolean` as `true` or `false`.
 
-The runner always adds `LOG_SOLVER` to `-lv`. With it, the executable writes
-`override NAME = VALUE` for each override that it applied. This is a readback
-of the parameter value only. `LOG_SOLVER` also writes lines for each solver
-step, so `run.log` gets larger.
+A changeable variable whose value equals the compiled start value is not
+written. The runner records it as `already_compiled`. A rejection stops the
+whole run. It never becomes one failed case, because a study drops failed cases
+from its fits.
+
+The runner always adds `LOG_SOLVER` to `-lv`. It merges a `-lv=` entry in
+`extra_args` into the same flag, because a second `-lv` replaces the first.
+With `LOG_SOLVER`, the executable writes `override NAME = VALUE` for each
+override that it applied. This is a readback of the parameter value only.
+`LOG_SOLVER` also writes lines for each solver step, so `run.log` gets larger.
 
 Each run directory has `run.log` and `manifest.json`. A failed run keeps its
 directory. With `execution.cleanup: true`, a run that succeeds deletes it. The
@@ -113,7 +120,7 @@ manifest records the command line as `argv`. It also has an `overrides` block:
 | --- | --- |
 | `requested` | The case keys and values, before aliases. |
 | `written` | The model names and values in `overrides.txt`. |
-| `already_compiled` | The model names whose request equals the compiled start value. |
+| `already_compiled` | The changeable model names whose request equals the compiled start value. |
 | `rejected` | The `not_applied` rejections of a failed run. |
 | `readback` | For each written name: `requested`, `observed` and `status` (`match`, `mismatch` or `unavailable`). |
 | `file_sha256` | The SHA-256 of `overrides.txt`. |

@@ -150,6 +150,11 @@ def test_load_init_variables_reads_the_start_value_from_the_child_element(build_
     assert calculated.changeable is False
     assert variables["vcu.useMode"].start == "0"
     assert variables["enableLinearityTermination"].start == "true"
+    assert [variables[name].kind for name in ("vcu.velGain", "vcu.useMode", "enableLinearityTermination")] == [
+        "Real",
+        "Integer",
+        "Boolean",
+    ]
 
 
 @pytest.mark.parametrize("parallel", [False, True])
@@ -193,18 +198,54 @@ def test_one_error_lists_every_rejection_of_every_case(runner: ModelicaRunner) -
 
 
 @pytest.mark.parametrize(
-    "name", ["frAxleDW.pAxle.springFreeLength", "frAxleDW.pAxle.barRate"], ids=["no-start", "with-start"]
+    ("name", "value"),
+    [
+        ("frAxleDW.pAxle.springFreeLength", 300.0),
+        ("frAxleDW.pAxle.barRate", 300.0),
+        ("frAxleDW.pAxle.barRate", 257.62),
+    ],
+    ids=["no-start", "with-start", "equal-to-start"],
 )
-def test_a_calculated_parameter_is_not_changeable(build_dir: Path, name: str) -> None:
+def test_a_calculated_parameter_is_not_changeable(build_dir: Path, name: str, value: float) -> None:
     variables = load_init_variables(build_dir / f"{EXEC_NAME}_init.xml")
 
     with pytest.raises(OverrideError) as excinfo:
-        plan_overrides({name: 300.0}, variables)
+        plan_overrides({name: value}, variables)
 
     rejection = excinfo.value.rejections[0]
     assert (rejection.key, rejection.modelica_name, rejection.reason) == (name, name, "not_changeable")
-    assert rejection.requested == 300.0
+    assert rejection.requested == value
     assert "recompile" in rejection.detail
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("velGain", "fast"),
+        ("velGain", True),
+        ("velGain", float("nan")),
+        ("useMode", 1.5),
+        ("useMode", True),
+        ("enableLinearityTermination", 0.0),
+        ("enableLinearityTermination", "yes"),
+    ],
+    ids=["real-text", "real-bool", "real-nan", "integer-fraction", "integer-bool", "boolean-number", "boolean-text"],
+)
+def test_a_value_of_the_wrong_kind_is_rejected(build_dir: Path, key: str, value: object) -> None:
+    variables = load_init_variables(build_dir / f"{EXEC_NAME}_init.xml")
+
+    with pytest.raises(OverrideError) as excinfo:
+        plan_overrides({key: value}, variables)
+
+    assert _reasons(excinfo.value) == [(key, "invalid_value")]
+
+
+def test_a_value_of_the_right_kind_is_written_in_that_kind(build_dir: Path) -> None:
+    variables = load_init_variables(build_dir / f"{EXEC_NAME}_init.xml")
+
+    plan = plan_overrides({"useMode": 2.0, "enableLinearityTermination": "False", "velGain": "120"}, variables)
+
+    assert plan.written == {"vcu.useMode": "2", "enableLinearityTermination": "false", "vcu.velGain": "120"}
 
 
 def test_a_value_equal_to_the_compiled_start_is_recorded_and_not_written(build_dir: Path) -> None:
@@ -212,7 +253,6 @@ def test_a_value_equal_to_the_compiled_start_is_recorded_and_not_written(build_d
 
     plan = plan_overrides(
         {
-            "frAxleDW.pAxle.barRate": 257.62,
             "pVehicle.pFrAxleDW.springFreeLength": 0.1997,
             "useMode": 0,
             "enableLinearityTermination": True,
@@ -222,7 +262,6 @@ def test_a_value_equal_to_the_compiled_start_is_recorded_and_not_written(build_d
     )
 
     assert plan.already_compiled == {
-        "frAxleDW.pAxle.barRate": "257.62",
         "pVehicle.pFrAxleDW.springFreeLength": "0.1997",
         "vcu.useMode": "0",
         "enableLinearityTermination": "true",
@@ -267,6 +306,15 @@ def test_a_missing_init_xml_is_an_override_error(runner: ModelicaRunner, build_d
 
     with pytest.raises(OverrideError) as excinfo:
         runner.plan_cases([{"targetVel": 12.0}])
+
+    assert [rejection.reason for rejection in excinfo.value.rejections] == ["missing_init_xml"]
+
+
+def test_a_build_without_an_init_xml_fails_when_the_runner_is_made(build_dir: Path) -> None:
+    (build_dir / f"{EXEC_NAME}_init.xml").unlink()
+
+    with pytest.raises(OverrideError) as excinfo:
+        ModelicaRunner(build_dir=build_dir, exec_name=EXEC_NAME, simulation={})
 
     assert [rejection.reason for rejection in excinfo.value.rejections] == ["missing_init_xml"]
 
@@ -365,20 +413,22 @@ def test_a_readback_that_differs_from_the_request_is_not_applied(
     assert "1.0" in rejection.detail and "390.0" in rejection.detail
 
 
-def test_a_missing_readback_line_is_unavailable_not_match(
+def test_a_missing_readback_line_is_not_applied(
     runner: ModelicaRunner, build_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(_modelica_runner.subprocess, "run", FakeExecutable(echo=False))
 
-    results = runner.run(
-        signals=["sig"],
-        mode="last",
-        cases=[{"pVehicle.pFrStabar.barRate": 390.0}],
-        execution={"parallel": False},
-    )
+    with pytest.raises(OverrideError) as excinfo:
+        runner.run(
+            signals=["sig"],
+            mode="last",
+            cases=[{"pVehicle.pFrStabar.barRate": 390.0}],
+            execution={"parallel": False},
+        )
 
-    assert results[0]["_status"] == "ok"
+    assert _reasons(excinfo.value) == [("pVehicle.pFrStabar.barRate", "not_applied")]
     (manifest,) = _manifests(build_dir)
+    assert manifest["status"] == "failed"
     assert manifest["overrides"]["readback"] == {
         "pVehicle.pFrStabar.barRate": {"requested": "390.0", "observed": None, "status": "unavailable"},
     }
@@ -413,6 +463,10 @@ def test_the_command_always_asks_for_the_override_readback_stream(build_dir: Pat
     assert log_flag({}) == ["-lv=LOG_SOLVER"]
     four_post = "LOG_STATS,LOG_SOLVER,LOG_INIT,LOG_STDOUT,LOG_ASSERT"
     assert log_flag({"log_level": four_post}) == [f"-lv={four_post}"]
+    # A second -lv would replace the first and switch the readback off.
+    assert log_flag({"log_level": "LOG_STATS", "extra_args": ["-lv=LOG_INIT,LOG_STATS"]}) == [
+        "-lv=LOG_STATS,LOG_INIT,LOG_SOLVER"
+    ]
 
 
 def test_an_override_error_survives_the_process_pool() -> None:

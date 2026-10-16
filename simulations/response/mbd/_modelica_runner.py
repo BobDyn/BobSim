@@ -144,7 +144,7 @@ class ModelicaRunner:
         self.exe_path = exe_path
 
         if not self.init_xml.exists():
-            raise FileNotFoundError(f"Init XML not found: {self.init_xml}")
+            raise self._missing_init_xml()
         self._init_variables_cache: dict[str, InitVariable] | None = None
 
     @classmethod
@@ -163,15 +163,13 @@ class ModelicaRunner:
     def init_variables(self) -> dict[str, InitVariable]:
         if self._init_variables_cache is None:
             if not self.init_xml.exists():
-                raise OverrideError(
-                    [
-                        OverrideRejection(
-                            "", "", "missing_init_xml", None, f"No init XML at {self.init_xml}. Rebuild the model."
-                        )
-                    ]
-                )
+                raise self._missing_init_xml()
             self._init_variables_cache = load_init_variables(self.init_xml)
         return self._init_variables_cache
+
+    def _missing_init_xml(self) -> OverrideError:
+        detail = f"No init XML at {self.init_xml}. Rebuild the model."
+        return OverrideError([OverrideRejection("", "", "missing_init_xml", None, detail)])
 
     def plan_cases(self, cases) -> list[OverridePlan]:
         """Plan every case, or raise one OverrideError that lists every rejection."""
@@ -820,7 +818,10 @@ class ModelicaRunner:
         if tolerance is not None:
             cmd.append(f"-tolerance={float(tolerance)}")
 
-        cmd.append(f"-lv={with_readback_stream(self.simulation.get('log_level'))}")
+        extra_args = [str(arg) for arg in self.simulation.get("extra_args") or []]
+        # A second -lv replaces the first, so merge it to keep the readback stream.
+        log_levels = [self.simulation.get("log_level"), *(arg[4:] for arg in extra_args if arg.startswith("-lv="))]
+        cmd.append(f"-lv={with_readback_stream(','.join(str(level) for level in log_levels if level))}")
 
         variable_filter = self.simulation.get("variable_filter")
         if variable_filter:
@@ -835,8 +836,7 @@ class ModelicaRunner:
         if self.simulation.get("no_equidistant_output_frequency", False):
             cmd.append("-noEquidistantOutputFrequency")
 
-        extra_args = self.simulation.get("extra_args", [])
-        cmd.extend(str(arg) for arg in extra_args)
+        cmd.extend(arg for arg in extra_args if not arg.startswith("-lv="))
 
         return cmd
 

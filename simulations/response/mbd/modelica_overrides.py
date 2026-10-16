@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
+import math
 import os
 import re
 from typing import Any
@@ -55,6 +56,7 @@ OVERRIDE_REASONS = (
     "not_changeable",
     "conflicting_aliases",
     "missing_init_xml",
+    "invalid_value",
     "not_applied",
 )
 
@@ -75,6 +77,7 @@ class InitVariable:
     causality: str | None
     variability: str | None
     changeable: bool
+    kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +152,7 @@ def load_init_variables(init_xml: str | os.PathLike[str]) -> dict[str, InitVaria
                 causality=element.attrib.get("causality"),
                 variability=element.attrib.get("variability"),
                 changeable=element.attrib.get("isValueChangeable") == "true",
+                kind=None if value_node is None else value_node.tag,
             )
         element.clear()
     return variables
@@ -205,12 +209,20 @@ def plan_overrides(
         first_key[name] = (key, formatted)
 
         variable = init_variables.get(name)
-        if variable is not None and variable.start is not None and values_match(formatted, variable.start):
-            already_compiled[name] = formatted
-        elif variable is not None and variable.changeable and variable.start is not None:
-            written[name] = formatted
-        else:
+        if variable is None or not variable.changeable or variable.start is None:
             rejections.append(_rejection(key, name, value, variable))
+            continue
+        typed = _typed_value(value, variable.kind)
+        if typed is None:
+            detail = (
+                f"The init XML declares a {variable.kind} with compiled start {variable.start}. "
+                "The executable can read a value of another kind as 0 and still exit 0."
+            )
+            rejections.append(OverrideRejection(key, name, "invalid_value", value, detail))
+        elif values_match(typed, variable.start):
+            already_compiled[name] = typed
+        else:
+            written[name] = typed
 
     if rejections:
         raise OverrideError(rejections)
@@ -251,6 +263,7 @@ def readback_overrides(
         observed = log.applied.get(name)
         if observed is None:
             status = "unavailable"
+            reject(name, f"run.log has no `override {name} = ...` line, so the run cannot confirm it.")
         elif values_match(observed, requested):
             status = "match"
         else:
@@ -265,10 +278,31 @@ def readback_overrides(
 
 
 def with_readback_stream(log_level: str | None) -> str:
-    streams = [stream.strip() for stream in str(log_level or "").split(",") if stream.strip()]
+    streams = list(dict.fromkeys(stream.strip() for stream in str(log_level or "").split(",") if stream.strip()))
     if READBACK_LOG_STREAM not in streams:
         streams.append(READBACK_LOG_STREAM)
     return ",".join(streams)
+
+
+def _typed_value(value: Any, kind: str | None) -> str | None:
+    """Format `value` for an init XML variable of this kind, or return None if the kind cannot hold it."""
+    text = format_override_value(value)
+    if kind not in {"Real", "Integer", "Boolean"}:
+        return text
+    text = text.strip()
+    if isinstance(value, (bool, np.bool_)) or text.lower() in {"true", "false"}:
+        return text.lower() if kind == "Boolean" else None
+    if kind == "Boolean":
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    if not math.isfinite(number):
+        return None
+    if kind == "Integer":
+        return str(int(number)) if number.is_integer() else None
+    return text
 
 
 def _rejection(key: str, name: str, value: Any, variable: InitVariable | None) -> OverrideRejection:
