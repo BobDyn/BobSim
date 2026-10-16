@@ -7361,10 +7361,12 @@ async function startSelectedWorkflow() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({simulation_id: state.selectedSimulationId, vehicle_key: activeVehicleKey()}),
     });
+    state.status = await api("/api/status");
     state.selectedJobId = job.id;
+    document.getElementById("job-log").textContent = "";
+    document.getElementById("job-log").scrollTop = 0;
     document.getElementById("run-log-menu").open = true;
     state.simModalOpen = true;
-    state.status = await api("/api/status");
     renderStandard();
   } catch (error) {
     document.getElementById("run-log-menu").open = true;
