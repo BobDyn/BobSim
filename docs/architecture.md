@@ -56,9 +56,12 @@ against their own directories.
 Generated builds, results and app state are ignored by Git. Moving from the
 numbered layout requires rebuilding executables. Existing local vehicles need
 their `paths.boblib` and `paths.tire_templates` updated to the new locations.
-The generator stops before it writes anything when `paths.boblib` has no
-`package.mo` that declares `package BobLib`. The error names the path. The
-generator also refuses to write a file that resolves outside that package.
+The Modelica builds load `engines/boblib/BobLib`. The generator stops before
+it writes anything when `paths.boblib` resolves to another directory or that
+package has no `package.mo`. An old BobLib tree left on disk by a layout move
+also fails. The error names both paths. The generator also refuses to write a
+file that resolves outside that package. The app build stops with the same
+error.
 
 The response source move retains build and result paths under `simulations/mbd`
 and `simulations/reduced` for existing consumers. Optimization assets now live

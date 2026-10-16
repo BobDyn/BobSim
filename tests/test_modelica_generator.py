@@ -9,15 +9,23 @@ import yaml
 from common.vehicle_io import load_yaml
 from app.modelica_generator import (
     ARCHITECTURES,
+    BobLibRootError,
     generate_modelica_stack,
     modelica_generation_payload,
     modelica_stack_status_payload,
 )
 
 BOBLIB_PACKAGE_MO = "within ;\npackage BobLib\nend BobLib;\n"
+# The package that simulations/response/mbd/build_*_sim.mos load.
+BUILD_BOBLIB = "engines/boblib/BobLib"
 
 
-def _write_temp_vehicle(repo_root: Path, tmp_path: Path, *, boblib: str = "BobLib") -> Path:
+def _write_boblib_package(path: Path) -> None:
+    path.mkdir(parents=True)
+    (path / "package.mo").write_text(BOBLIB_PACKAGE_MO, encoding="utf-8")
+
+
+def _write_temp_vehicle(repo_root: Path, tmp_path: Path, *, boblib: str = BUILD_BOBLIB) -> Path:
     data = load_yaml(repo_root / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml")
     active_data = load_yaml(repo_root / "vehicle.yml")
     if isinstance(active_data.get("powertrain"), dict):
@@ -27,9 +35,7 @@ def _write_temp_vehicle(repo_root: Path, tmp_path: Path, *, boblib: str = "BobLi
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
     shutil.copy(repo_root / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
-    if boblib == "BobLib":
-        (tmp_path / "BobLib").mkdir()
-        (tmp_path / "BobLib/package.mo").write_text(BOBLIB_PACKAGE_MO, encoding="utf-8")
+    _write_boblib_package(tmp_path / BUILD_BOBLIB)
 
     vehicle_path = tmp_path / "vehicle.yml"
     vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -59,7 +65,8 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
     assert result.record_name == "EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord"
     assert result.vehicle_template_name == "VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar"
     assert result.four_post_template_name == "FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar"
-    assert payload["record"]["path"] == "BobLib/Records/VehicleDefn/EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord.mo"
+    record_rel = "Records/VehicleDefn/EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord.mo"
+    assert payload["record"]["path"] == f"{BUILD_BOBLIB}/{record_rel}"
     assert post_status["written_to_boblib"] is True
     assert post_status["state"] == "written"
     assert post_status["signatures"]["vehicle"]["generated"]
@@ -82,7 +89,8 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
 
     vehicle_template_text = (
         tmp_path
-        / "BobLib/Experiments/Standards/Templates/Vehicle/VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar.mo"
+        / BUILD_BOBLIB
+        / "Experiments/Standards/Templates/Vehicle/VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar.mo"
     ).read_text(encoding="utf-8")
     record_redeclare = (
         "redeclare record VehicleRecord = "
@@ -96,16 +104,19 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
 
     four_post_template_text = (
         tmp_path
-        / "BobLib/Experiments/Standards/Templates/FourPost/FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar.mo"
+        / BUILD_BOBLIB
+        / "Experiments/Standards/Templates/FourPost/FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar.mo"
     ).read_text(encoding="utf-8")
     assert "extends BaseFourPostSim(" in four_post_template_text
     assert ("frAxleDW(" in four_post_template_text) is front_arch.has_stabar
     assert ("rrAxleDW(" in four_post_template_text) is rear_arch.has_stabar
     assert ("barRate = 0" in four_post_template_text) is (front_arch.has_stabar or rear_arch.has_stabar)
 
-    vehicle_entry_text = (tmp_path / "BobLib/Experiments/Standards/VehicleSim.mo").read_text(encoding="utf-8")
+    vehicle_entry_text = (tmp_path / BUILD_BOBLIB / "Experiments/Standards/VehicleSim.mo").read_text(encoding="utf-8")
     assert "extends Templates.Vehicle.VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar;" in vehicle_entry_text
-    four_post_entry_text = (tmp_path / "BobLib/Experiments/Standards/FourPostSim.mo").read_text(encoding="utf-8")
+    four_post_entry_text = (tmp_path / BUILD_BOBLIB / "Experiments/Standards/FourPostSim.mo").read_text(
+        encoding="utf-8"
+    )
     assert "extends Templates.FourPost.FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar;" in four_post_entry_text
 
 
@@ -118,13 +129,13 @@ def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: P
 
     assert second.record_name == first.record_name
     assert (
-        tmp_path / "BobLib/Records/VehicleDefn/package.order"
+        tmp_path / BUILD_BOBLIB / "Records/VehicleDefn/package.order"
     ).read_text(encoding="utf-8").splitlines().count(first.record_name) == 1
     assert (
-        tmp_path / "BobLib/Experiments/Standards/Templates/Vehicle/package.order"
+        tmp_path / BUILD_BOBLIB / "Experiments/Standards/Templates/Vehicle/package.order"
     ).read_text(encoding="utf-8").splitlines().count(first.vehicle_template_name) == 1
     assert (
-        tmp_path / "BobLib/Experiments/Standards/Templates/FourPost/package.order"
+        tmp_path / BUILD_BOBLIB / "Experiments/Standards/Templates/FourPost/package.order"
     ).read_text(encoding="utf-8").splitlines().count(first.four_post_template_name) == 1
 
 
@@ -220,7 +231,7 @@ def test_current_pinned_calibration_cannot_be_silently_transplanted():
     assert plan.initialization_error is not None
 
 
-# lhre's vehicle.yml at the old BobSim layout carries this value.
+# BobSim's vehicle.yml used this path before the #82 layout move.
 STALE_LAYOUT_BOBLIB = "_0_Utils/external/BobLib/BobLib"
 
 
@@ -229,22 +240,37 @@ def test_stale_boblib_root_fails_before_writing(tmp_path: Path) -> None:
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib=STALE_LAYOUT_BOBLIB)
     before = _tree(tmp_path)
 
-    with pytest.raises(ValueError, match="paths.boblib") as excinfo:
+    with pytest.raises(BobLibRootError, match="paths.boblib") as excinfo:
         generate_modelica_stack(vehicle_path, root=tmp_path)
 
     message = str(excinfo.value)
-    assert str(tmp_path / STALE_LAYOUT_BOBLIB / "package.mo") in message
-    assert "engines/boblib/BobLib" in message
+    assert str(tmp_path / STALE_LAYOUT_BOBLIB) in message
+    assert str(tmp_path / BUILD_BOBLIB) in message
     assert "No Modelica files were written." in message
     assert _tree(tmp_path) == before
     assert not (tmp_path / "_0_Utils").exists()
 
 
+def test_valid_boblib_tree_at_a_stale_path_fails_before_writing(tmp_path: Path) -> None:
+    # An in-place submodule update from the old layout can leave the old tree on disk.
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib=STALE_LAYOUT_BOBLIB)
+    _write_boblib_package(tmp_path / STALE_LAYOUT_BOBLIB)
+    before = _tree(tmp_path)
+
+    with pytest.raises(BobLibRootError, match="the Modelica builds load") as excinfo:
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+
+    assert str(tmp_path / BUILD_BOBLIB) in str(excinfo.value)
+    assert _tree(tmp_path) == before
+
+
 def test_stale_boblib_root_fails_the_status_check(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib=STALE_LAYOUT_BOBLIB)
+    _write_boblib_package(tmp_path / STALE_LAYOUT_BOBLIB)
 
-    with pytest.raises(ValueError, match="does not point to the BobLib package root"):
+    with pytest.raises(BobLibRootError, match="the Modelica builds load"):
         modelica_stack_status_payload(vehicle_path, tmp_path)
 
 
@@ -253,6 +279,7 @@ def test_cli_write_with_stale_boblib_root_fails_and_writes_nothing(tmp_path: Pat
 
     repo_root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib=STALE_LAYOUT_BOBLIB)
+    _write_boblib_package(tmp_path / STALE_LAYOUT_BOBLIB)
     before = _tree(tmp_path)
 
     assert modelica_generator.main([str(vehicle_path), "--root", str(tmp_path), "--write"]) == 2
@@ -265,16 +292,37 @@ def test_cli_write_with_stale_boblib_root_fails_and_writes_nothing(tmp_path: Pat
 
 def test_boblib_root_must_be_the_top_level_package(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib="BobLib/Records")
-    (tmp_path / "BobLib/Records").mkdir(parents=True)
-    (tmp_path / "BobLib/Records/package.mo").write_text(
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path, boblib=f"{BUILD_BOBLIB}/Records")
+    (tmp_path / BUILD_BOBLIB / "Records").mkdir()
+    (tmp_path / BUILD_BOBLIB / "Records/package.mo").write_text(
         "within BobLib;\npackage Records\nend Records;\n", encoding="utf-8"
     )
     before = _tree(tmp_path)
 
-    with pytest.raises(ValueError, match="does not declare 'package BobLib'"):
+    with pytest.raises(BobLibRootError, match="the Modelica builds load"):
         generate_modelica_stack(vehicle_path, root=tmp_path)
     assert _tree(tmp_path) == before
+
+
+def test_uninitialized_boblib_submodule_fails_before_writing(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    (tmp_path / BUILD_BOBLIB / "package.mo").unlink()
+    before = _tree(tmp_path)
+
+    with pytest.raises(BobLibRootError, match="package.mo does not exist"):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert _tree(tmp_path) == before
+
+
+def test_build_scripts_load_the_package_the_generator_writes() -> None:
+    from app.modelica_generator import BUILD_BOBLIB_DIR
+
+    repo_root = Path(__file__).resolve().parents[1]
+    assert BUILD_BOBLIB_DIR == BUILD_BOBLIB
+    for script in ("build_vehicle_sim.mos", "build_four_post_sim.mos"):
+        text = (repo_root / "simulations/response/mbd" / script).read_text(encoding="utf-8")
+        assert f'boblibDir := root + "/{BUILD_BOBLIB_DIR}";' in text, script
 
 
 def test_generator_refuses_to_write_outside_the_boblib_root(tmp_path: Path) -> None:
@@ -282,9 +330,9 @@ def test_generator_refuses_to_write_outside_the_boblib_root(tmp_path: Path) -> N
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (tmp_path / "BobLib/Records").symlink_to(outside, target_is_directory=True)
+    (tmp_path / BUILD_BOBLIB / "Records").symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(ValueError, match="outside the BobLib package root"):
+    with pytest.raises(BobLibRootError, match="outside the BobLib package root"):
         generate_modelica_stack(vehicle_path, root=tmp_path)
     assert list(outside.iterdir()) == []
-    assert not (tmp_path / "BobLib/Experiments").exists()
+    assert not (tmp_path / BUILD_BOBLIB / "Experiments").exists()

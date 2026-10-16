@@ -54,7 +54,11 @@ class ModelicaStackPlan:
 
 
 class BobLibRootError(ValueError):
-    """paths.boblib does not name a BobLib package root, or a write would leave it."""
+    """paths.boblib does not name the BobLib package the builds load, or a write would leave it."""
+
+
+# simulations/response/mbd/build_*_sim.mos load this package.
+BUILD_BOBLIB_DIR = "engines/boblib/BobLib"
 
 
 @dataclass(frozen=True)
@@ -1273,8 +1277,7 @@ def _tir_number(values: Mapping[str, float | str], tir_key: str, tire_path: Path
 
 def _boblib_root(data: Mapping[str, Any], repo_root: Path) -> Path:
     paths = data.get("paths", {})
-    default = "engines/boblib/BobLib"
-    raw_path = paths.get("boblib", default) if isinstance(paths, Mapping) else default
+    raw_path = paths.get("boblib", BUILD_BOBLIB_DIR) if isinstance(paths, Mapping) else BUILD_BOBLIB_DIR
     return _resolve_path(repo_root, str(raw_path))
 
 
@@ -1291,18 +1294,19 @@ def _resolve_path(repo_root: Path, raw_path: str) -> Path:
 
 
 def _require_boblib_package_root(boblib_root: Path, repo_root: Path) -> None:
-    package_mo = boblib_root / "package.mo"
-    if not package_mo.is_file():
-        problem = f"{package_mo} does not exist."
-    elif not re.search(r"^\s*package\s+BobLib\b", package_mo.read_text(encoding="utf-8"), re.MULTILINE):
-        problem = f"{package_mo} does not declare 'package BobLib'."
+    build_root = (repo_root / BUILD_BOBLIB_DIR).resolve()
+    package_mo = build_root / "package.mo"
+    if boblib_root.resolve() != build_root:
+        problem = f"It resolves to {boblib_root.resolve()}."
+    elif not package_mo.is_file():
+        problem = f"{package_mo} does not exist. Initialize the BobLib submodule."
     else:
         return
     raise BobLibRootError(
-        f"paths.boblib does not point to the BobLib package root. {problem} "
-        f"Relative paths resolve against {repo_root}. "
-        "Set paths.boblib to the BobLib package directory (BobSim uses engines/boblib/BobLib), "
-        "or remove the key to use that default. No Modelica files were written."
+        f"paths.boblib does not name the BobLib package that the Modelica builds load ({build_root}). "
+        f"{problem} Relative paths resolve against {repo_root}. "
+        f"Set paths.boblib to {BUILD_BOBLIB_DIR}, or remove the key to use that default. "
+        "No Modelica files were written."
     )
 
 

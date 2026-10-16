@@ -1154,13 +1154,15 @@ def test_app_can_switch_direct_vehicle_to_bellcrank_actuation_defaults(
 def test_app_can_generate_modelica_payload_from_active_vehicle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     template_path = app.ROOT / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml"
     data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
-    data["paths"] = {"boblib": "BobLib", "tire_templates": "tires"}
+    data["paths"] = {"boblib": "engines/boblib/BobLib", "tire_templates": "tires"}
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
     shutil.copy(app.ROOT / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
-    (tmp_path / "BobLib").mkdir()
-    (tmp_path / "BobLib/package.mo").write_text("within ;\npackage BobLib\nend BobLib;\n", encoding="utf-8")
+    (tmp_path / "engines/boblib/BobLib").mkdir(parents=True)
+    (tmp_path / "engines/boblib/BobLib/package.mo").write_text(
+        "within ;\npackage BobLib\nend BobLib;\n", encoding="utf-8"
+    )
     (tmp_path / "vehicle.yml").write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
 
