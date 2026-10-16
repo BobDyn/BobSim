@@ -366,7 +366,7 @@ vm.runInContext(`
 vm.runInContext(`
 {
   const originalDocument = document;
-  const form = {dataset:{instance:'named:step'},innerHTML:'edited inputs'};
+  const form = {dataset:{instance:'named:step'},innerHTML:'edited inputs',classList:{toggle(){}}};
   document = {getElementById:()=>form};
   state.selectedSimulationId='named'; state.simConfigPayload={id:'step',fields:[]};
   state.dirtySimConfig=true;
@@ -1041,5 +1041,17 @@ vm.runInContext(`
   drawCanvasText = originalText;
   fitCanvasText = originalFit;
   createPlotChart = originalChart;
+}
+`,ctx);
+
+vm.runInContext(`
+{
+  const data={amplitude_deg:6,start_time_s:1,ramp_duration_s:3,rise_time_s:.02,frequency_hz:2};
+  assert.equal(maneuverSteering(0,{...data,maneuver:'ramp'}),0);
+  assert.equal(maneuverSteering(2.5,{...data,maneuver:'ramp'}),3);
+  assert.equal(maneuverSteering(10,{...data,maneuver:'ramp'}),6);
+  assert.ok(Math.abs(maneuverSteering(1.01,{...data,maneuver:'step'})-3)<1e-10);
+  assert.equal(maneuverSteering(1.125,{...data,maneuver:'sine'}),6);
+  assert.equal(maneuverSteering(1.375,{...data,maneuver:'sine'}),-6);
 }
 `,ctx);

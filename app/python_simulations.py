@@ -38,6 +38,26 @@ def run(workflow_id: str) -> None:
         line_result = generate_line(load_yaml(config), root)
         print(f"Racing line ready: {line_result['length_m']:.1f} m", flush=True)
         return
+    if workflow_id in {"maneuver", "mbd-maneuver"}:
+        from simulations.response.maneuver import validate_maneuver, steering_degrees, mbd_config
+        data = load_yaml(config_io.resolve("simulations/response/maneuver_config.yml", root=root))
+        validate_maneuver(data)
+        if workflow_id == "mbd-maneuver":
+            from simulations.response.mbd.transient.transient_eval_sim import TransientEvalSim, TransientEval_SIGNALS
+            from common.reporting.report_engine import ReportEngine
+            mbd_settings = mbd_config(data, load_yaml(
+                root / "simulations/response/mbd/transient/transient_eval_config.yml"))
+            simulator = TransientEvalSim(mbd_settings)
+            cases, metadata = simulator.build_cases()
+            selected = [(case, meta) for case, meta in zip(cases, metadata)
+                        if (meta["mode"] == "continuous_sine") == (data["maneuver"] == "sine")]
+            for case, meta in selected:
+                case["stopTime"] = meta["stopTime"] = data["stop_time_s"]
+            raw = simulator.runner.run(signals=TransientEval_SIGNALS, mode="raw",
+                cases=[pair[0] for pair in selected], execution=mbd_settings["execution"])
+            result_mbd = simulator.summarize(simulator._attach_case_metadata(raw, [pair[1] for pair in selected]))
+            ReportEngine(mbd_settings).build(result_mbd)
+            return
     if workflow_id == "mbd-step-steer":
         from simulations.response.mbd.transient.transient_eval_sim import main as run_mbd_transient
 
@@ -67,11 +87,12 @@ def run(workflow_id: str) -> None:
         ):
             raise RuntimeError("Transient lap did not complete. Inspect the summary.")
         return
-    if workflow_id not in {"reduced-step-steer", "reduced-ramp-steer"}:
+    if workflow_id not in {"maneuver", "reduced-step-steer", "reduced-ramp-steer"}:
         raise ValueError(f"Unknown Python simulation: {workflow_id}")
     ramp = workflow_id == "reduced-ramp-steer"
     filename = "ramp_steer_config.yml" if ramp else "reduced_order_eval_config.yml"
-    config = config_io.resolve(f"simulations/response/reduced/{filename}", root=root)
+    config = config_io.resolve("simulations/response/maneuver_config.yml" if workflow_id == "maneuver"
+                               else f"simulations/response/reduced/{filename}", root=root)
     data = load_yaml(config)
     data["kinematics_mode"] = "lookup"
     dof = int(data["model_dof"])
@@ -87,9 +108,13 @@ def run(workflow_id: str) -> None:
         {"roadwheel_rate_deg_s": float(data["roadwheel_rate_deg_s"]),
          "start_time_s": float(data["start_time_s"]),
          "ramp_end_time_s": float(data.get("ramp_end_time_s", duration))} if ramp else
+        {} if workflow_id == "maneuver" else
         {"roadwheel_step_deg": float(data["roadwheel_step_deg"]),
          "step_time_s": float(data["step_time_s"]), "rise_time_s": float(data["rise_time_s"])}
     )
+    if workflow_id == "maneuver":
+        import math
+        inputs = {"steering_input": lambda t: math.radians(steering_degrees(t, data))}
     simulate = run_ramp_steer if ramp else run_step_steer
     result = simulate(
         dof=cast(DOFModel, dof), vehicle_path=root / "vehicle.yml",
@@ -122,7 +147,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "workflow", choices=("reduced-step-steer", "reduced-ramp-steer", "mbd-step-steer",
-                             "lap-qss", "lap-transient", "racing-line")
+                             "lap-qss", "lap-transient", "racing-line", "maneuver", "mbd-maneuver")
     )
     run(parser.parse_args().workflow)
 

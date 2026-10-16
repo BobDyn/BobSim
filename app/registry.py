@@ -625,6 +625,24 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("test.directions", "Directions", kind="list", group="Input", choices=DIRECTION_CHOICES),
         ),
     ),
+    **{
+        name: ConfigSpec(id=name, group="response", label="Maneuver",
+            path="simulations/response/maneuver_config.yml", workflow_id=name, relocatable=True,
+            fields=(
+                *((_field("model_dof", "Fidelity", kind="select", group="Model",
+                          choices=("3", "6", "10", "14")),) if name == "maneuver" else ()),
+                _field("maneuver", "Maneuver", kind="select", group="Input", choices=("ramp", "step", "sine")),
+                _field("speed_mps", "Target speed", kind="number", group="Run", unit="m/s"),
+                _field("amplitude_deg", "Handwheel magnitude" if name == "mbd-maneuver" else "Roadwheel magnitude",
+                       kind="number", group="Input", unit="deg"),
+                _field("start_time_s", "Start time", kind="number", group="Input", unit="s"),
+                _field("ramp_duration_s", "Ramp duration", kind="number", group="Input", unit="s"),
+                _field("rise_time_s", "Rise time", kind="number", group="Input", unit="s"),
+                _field("frequency_hz", "Frequency", kind="number", group="Input", unit="Hz"),
+                _field("stop_time_s", "Simulation end", kind="number", group="Run", unit="s"),
+                _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
+            )) for name in ("maneuver", "mbd-maneuver")
+    },
     "racing-line": ConfigSpec(
         id="racing-line", group="track", label="Racing line",
         path="simulations/lap/racing_line_config.yml", workflow_id="racing-line", relocatable=True,
@@ -848,6 +866,9 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             ),
             requires_external_toolchain=True,
         ),
+        "run-mbd-maneuver": ActionSpec(id="run-mbd-maneuver", label="Run maneuver",
+            argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-maneuver"),
+            requires_external_toolchain=True),
         "run-mbd-step-steer": ActionSpec(
             id="run-mbd-step-steer", label="Run MBD step steer",
             argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-step-steer"),
@@ -867,7 +888,8 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
                 label=f"Run {name}",
                 argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), name),
             )
-            for name in ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient", "racing-line")
+            for name in ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient",
+                         "racing-line", "maneuver")
         },
         "run-ggv": ActionSpec(
             id="run-ggv",
@@ -994,6 +1016,18 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                 OutputSpec("Metrics", "simulations/mbd/generated_results/step_steer_report_metrics.csv", "csv"),
             ),
         ),
+        *(WorkflowSpec(id=name, group="response", label="Maneuver",
+            engine="BobLib" if name == "mbd-maneuver" else "DynPy",
+            fidelity="MBD" if name == "mbd-maneuver" else "Transient",
+            runtime="OpenModelica compiled executable" if name == "mbd-maneuver" else "Python",
+            config="simulations/response/maneuver_config.yml",
+            actions=("build-vehicle", "run-mbd-maneuver") if name == "mbd-maneuver" else ("run-maneuver",),
+            outputs=(OutputSpec("Report", f"app/user_data/results/{name}/report.pdf", "pdf"),
+                     *((OutputSpec("Metrics", f"app/user_data/results/{name}/report_metrics.csv", "csv"),)
+                       if name == "mbd-maneuver" else (
+                         OutputSpec("Signals", f"app/user_data/results/{name}/signals.csv", "csv"),
+                         OutputSpec("Summary", f"app/user_data/results/{name}/summary.json", "json")))),
+        ) for name in ("maneuver", "mbd-maneuver")),
         WorkflowSpec(
             id="racing-line", group="track", label="Racing line", engine="Track",
             fidelity="Geometry", runtime="Python", config="simulations/lap/racing_line_config.yml",

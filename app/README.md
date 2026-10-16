@@ -56,7 +56,7 @@ Removing a simulation keeps its saved runs.
   and outputs.
 - `registry.py`: declarative workflow/action/build-target/config-field
   registry.
-- `python_simulations.py`: app entry point for ramp-steer, step-steer and DynPy lap runs.
+- `python_simulations.py`: app entry point for steering maneuvers, racing lines and DynPy lap runs.
 - `runtime.py`: packaged-app runtime seeding, manifests, and cache invalidation.
 - `toolchain.py`: OpenModelica discovery, verification, and environment setup.
 - `server.py`: HTTP routing, JSON/file responses, and static/repo file serving.

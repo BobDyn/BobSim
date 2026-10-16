@@ -160,6 +160,7 @@ MODELICA_RUN_TARGETS_BY_ACTION = {
     "run-steady-state": MODELICA_BUILD_TARGETS["vehicle"],
     "run-transient": MODELICA_BUILD_TARGETS["vehicle"],
     "run-mbd-step-steer": MODELICA_BUILD_TARGETS["vehicle"],
+    "run-mbd-maneuver": MODELICA_BUILD_TARGETS["vehicle"],
     "run-four-post": MODELICA_BUILD_TARGETS["four_post"],
 }
 WORKFLOWS = build_workflows()
