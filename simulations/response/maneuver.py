@@ -82,8 +82,7 @@ def mbd_config(data: dict[str, Any], seed: dict[str, Any]) -> dict[str, Any]:
         stepDuration=data["ramp_duration_s"] if data["maneuver"] == "ramp" else data["rise_time_s"],
         sweep_freq_hz=[data["frequency_hz"]], sweep_amp_deg=[amplitude],
         representative_cont_freq_hz=data["frequency_hz"], representative_cont_amp_deg=amplitude,
-        n_cycles=max(1, int((data["stop_time_s"] - data["start_time_s"]) * data["frequency_hz"])),
-        analyze_cycles_after=0)
+        n_cycles=max(1, int((data["stop_time_s"] - data["start_time_s"]) * data["frequency_hz"])))
     config["report"].update(title=f"{data['maneuver'].capitalize()} steering response",
         subtitle="BobLib | MBD | Transient", metric_target_velocity_mps=data["speed_mps"],
         output_path="app/user_data/results/mbd-maneuver/report.pdf", notes=[])

@@ -63,3 +63,4 @@ def test_mbd_waveform_mapping(settings, kind, amplitude):
         assert case['frRampSteerHeight'] == pytest.approx(np.deg2rad(amplitude))
         assert case['stepDuration'] == (3. if kind == 'ramp' else settings['rise_time_s'])
     assert config['simulation']['stop_time'] == settings['stop_time_s']
+    assert config['test']['analyze_cycles_after'] == seed['test']['analyze_cycles_after']
