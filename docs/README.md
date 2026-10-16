@@ -11,6 +11,7 @@ Documentation for this checkout. The public documentation is at
 | [workflows.md](workflows.md) | App, simulation, optimization, and test commands |
 | [doe-reverse-engineering.md](doe-reverse-engineering.md) | Parameter sweeps, target-metric solving, and vehicle comparisons |
 | [reduced-order-dynamics.md](reduced-order-dynamics.md) | 3/6/10/14DOF dynamics, QSS envelopes, and BobLib correlation |
+| [four-post-metrics.md](four-post-metrics.md) | FourPost metric meanings, statuses and key migration |
 | [lap-time-simulation.md](lap-time-simulation.md) | Racing lines, speed profiles, and transient laps |
 | [boblib-submodule.md](boblib-submodule.md) | BobLib setup and Modelica build troubleshooting |
 | [conventions.md](conventions.md) | Vehicle geometry, axes, signs, hardpoints, and SHARK imports |
