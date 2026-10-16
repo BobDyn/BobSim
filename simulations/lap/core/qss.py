@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
@@ -36,6 +37,29 @@ class GGVMap:
         speeds = np.asarray([item.speed_mps for item in self.slices])
         if np.any(np.diff(speeds) <= 0.0):
             raise ValueError("GGV speed slices must be strictly increasing.")
+
+    @cached_property
+    def _speeds(self) -> FloatArray:
+        return np.asarray([item.speed_mps for item in self.slices])
+
+    @cached_property
+    def _branches(self) -> dict[float, tuple[tuple[FloatArray, FloatArray, FloatArray, FloatArray], ...]]:
+        branches = {}
+        for direction in (-1., 1.):
+            rows = []
+            for original in self.slices:
+                item = _directional_slice(original, direction)
+                drive = np.isfinite(item.ay_mps2) & np.isfinite(item.ax_accel_mps2)
+                brake = np.isfinite(item.ay_mps2) & np.isfinite(item.ax_brake_mps2)
+                rows.append((item.ay_mps2[drive], item.ax_accel_mps2[drive],
+                             item.ay_mps2[brake], item.ax_brake_mps2[brake]))
+            branches[direction] = tuple(rows)
+        return branches
+
+    @cached_property
+    def _lateral_limits(self) -> dict[float, FloatArray]:
+        return {direction: np.asarray([_slice_lateral_limit(item, direction) for item in self.slices])
+                for direction in (-1., 1.)}
 
     @classmethod
     def from_csv(cls, path: str | Path) -> GGVMap:
@@ -124,23 +148,22 @@ class GGVMap:
         if lateral > limit + 1e-9:
             return float("nan")
         fraction = lateral / limit if limit > 0.0 else 0.0
-        # Match lateral utilization so unequal slice endpoints remain connected.
-        values = np.asarray(
-            [
-                _slice_longitudinal_limit(item, fraction * _slice_lateral_limit(item, direction), mode, direction)
-                for item in self.slices
-            ],
-            dtype=float,
-        )
-        speeds = np.asarray([item.speed_mps for item in self.slices], dtype=float)
-        return float(np.interp(speed_mps, speeds, values))
+        # Only the two neighboring speed slices contribute to interpolation.
+        upper = min(int(np.searchsorted(self._speeds, speed_mps, side="right")), len(self.slices) - 1)
+        lower = max(upper - 1, 0)
+        values = []
+        for index in (lower, upper):
+            row = self._branches[direction][index]
+            ay, boundary = row[:2] if mode == "drive" else row[2:]
+            target = fraction * self._lateral_limits[direction][index]
+            values.append(float(np.interp(target, ay, boundary))
+                          if ay.size and target <= ay[-1] + 1e-9 else float("nan"))
+        return float(np.interp(speed_mps, self._speeds[[lower, upper]], values))
 
     def lateral_limit(self, speed_mps: float, *, direction: float = 1.) -> float:
         """Interpolate maximum sustainable absolute lateral acceleration."""
 
-        limits = np.asarray([_slice_lateral_limit(item, direction) for item in self.slices])
-        speeds = np.asarray([item.speed_mps for item in self.slices])
-        return float(np.interp(speed_mps, speeds, limits))
+        return float(np.interp(speed_mps, self._speeds, self._lateral_limits[-1. if direction < 0. else 1.]))
 
 
 @dataclass(frozen=True)
@@ -171,9 +194,18 @@ def solve_qss_lap(
         ggv.max_speed_mps,
         float(max_speed_mps) if max_speed_mps is not None else ggv.max_speed_mps,
     )
-    speed = np.asarray(
-        [_corner_speed_limit(kappa, ggv, speed_ceiling) for kappa in line.curvature_per_m]
-    )
+    curvature = np.abs(line.curvature_per_m)
+    lo = np.full(curvature.shape, 0.1)
+    hi = np.full(curvature.shape, speed_ceiling)
+    for _ in range(40):
+        midpoint = 0.5 * (lo + hi)
+        limits = np.where(line.curvature_per_m < 0.,
+                          np.interp(midpoint, ggv._speeds, ggv._lateral_limits[-1.]),
+                          np.interp(midpoint, ggv._speeds, ggv._lateral_limits[1.]))
+        feasible = midpoint**2 * curvature <= limits
+        lo = np.where(feasible, midpoint, lo)
+        hi = np.where(feasible, hi, midpoint)
+    speed = np.where(curvature <= 1e-10, speed_ceiling, lo)
     converged = False
     completed_sweeps = 0
     count = speed.size
@@ -227,24 +259,6 @@ def _directional_slice(item: _GGVSlice, direction: float) -> _GGVSlice:
                      item.ax_accel_mps2[mask][order], item.ax_brake_mps2[mask][order])
 
 
-def _slice_longitudinal_limit(
-    item: _GGVSlice,
-    ay_mps2: float,
-    mode: Literal["drive", "brake"],
-    direction: float = 1.,
-) -> float:
-    item = _directional_slice(item, direction)
-    values = item.ax_accel_mps2 if mode == "drive" else item.ax_brake_mps2
-    finite = np.isfinite(item.ay_mps2) & np.isfinite(values)
-    if not np.any(finite):
-        return float("nan")
-    ay = item.ay_mps2[finite]
-    boundary = values[finite]
-    if ay_mps2 > float(np.max(ay)) + 1e-9:
-        return float("nan")
-    return float(np.interp(ay_mps2, ay, boundary))
-
-
 def _slice_lateral_limit(item: _GGVSlice, direction: float = 1.) -> float:
     item = _directional_slice(item, direction)
     finite = np.isfinite(item.ax_accel_mps2) | np.isfinite(item.ax_brake_mps2)
@@ -253,16 +267,3 @@ def _slice_lateral_limit(item: _GGVSlice, direction: float = 1.) -> float:
     return float(np.max(item.ay_mps2[finite]))
 
 
-def _corner_speed_limit(curvature_per_m: float, ggv: GGVMap, ceiling_mps: float) -> float:
-    if abs(curvature_per_m) <= 1e-10:
-        return ceiling_mps
-    lo = 0.1
-    hi = ceiling_mps
-    for _ in range(40):
-        midpoint = 0.5 * (lo + hi)
-        required_ay = midpoint**2 * abs(curvature_per_m)
-        if required_ay <= ggv.lateral_limit(midpoint, direction=np.sign(curvature_per_m)):
-            lo = midpoint
-        else:
-            hi = midpoint
-    return lo
