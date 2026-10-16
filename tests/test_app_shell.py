@@ -1896,6 +1896,31 @@ def test_failed_rebuild_cannot_certify_previous_executable(tmp_path, monkeypatch
     assert not (build_dir / app.BUILD_METADATA_FILENAME).exists()
 
 
+def test_bad_boblib_root_stops_the_app_build(tmp_path, monkeypatch):
+    from app import modelica_build as builds
+    from app.jobs import JobStore
+    from app.modelica_generator import BobLibRootError
+
+    target = app.MODELICA_BUILD_TARGETS['vehicle']
+    monkeypatch.setattr(builds, '_safe_repo_path', lambda path: tmp_path / path)
+    jobs = JobStore(10000)
+    job = jobs.create('build', 'Build', [])
+    monkeypatch.setattr(builds, 'JOBS', jobs)
+
+    def bad_root(*_args):
+        raise BobLibRootError('paths.boblib does not name the BobLib package that the Modelica builds load.')
+
+    monkeypatch.setattr(builds, 'modelica_stack_status_payload', bad_root)
+    compiled = []
+    monkeypatch.setattr(builds, '_run_subprocess_action', lambda *args: compiled.append(args) or 0)
+
+    assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) == 1
+    assert compiled == []
+    log = jobs.get(job['id'])['log']
+    assert 'paths.boblib does not name the BobLib package' in log
+    assert 'Build cache unavailable' not in log
+
+
 def test_architecture_defaults_read_templates_once(monkeypatch):
     from app import data_services
     from unittest.mock import Mock

@@ -10,7 +10,7 @@ from typing import Any
 import uuid
 
 from app.contracts import ActionSpec, BuildTargetSpec
-from app.modelica_generator import modelica_stack_status_payload
+from app.modelica_generator import BobLibRootError, modelica_stack_status_payload
 from app.registry import BUILD_METADATA_FILENAME
 from app import storage as app_storage
 
@@ -423,6 +423,9 @@ def _run_modelica_build_action(action: ActionSpec, target: BuildTargetSpec, job_
     try:
         stack = modelica_stack_status_payload(_safe_repo_path("vehicle.yml"), ROOT)
         signature = _modelica_build_signature_payload(target, stack)
+    except BobLibRootError as exc:
+        JOBS.append_log(job_id, f"{exc}\n")
+        return 1
     except Exception as exc:
         JOBS.append_log(job_id, f"Build cache unavailable: {type(exc).__name__}: {exc}\n")
         return _compile_fresh(action, target, job_id)
