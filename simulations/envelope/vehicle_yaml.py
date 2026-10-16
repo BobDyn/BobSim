@@ -9,7 +9,6 @@ kinematics, compliance, damping, and transient effects are not.
 
 from __future__ import annotations
 
-import csv
 from dataclasses import dataclass
 import math
 from pathlib import Path
@@ -23,6 +22,7 @@ from simulations.envelope.ymd.ymd_generation import VehicleParams as YMDVehicleP
 from engines.dynpy.parameters import project_powertrain_limits
 
 
+from common.metrics_csv import read_metrics
 from common.vehicle_io import repo_root, tire_template_name
 
 REPO_ROOT = repo_root()
@@ -335,18 +335,7 @@ def _load_four_post_metrics(repo_root: Path) -> dict[str, float]:
     path = repo_root / DEFAULT_FOUR_POST_METRICS.relative_to(REPO_ROOT)
     if not path.exists():
         return {}
-    metrics: dict[str, float] = {}
-    with path.open(newline="") as f:
-        for row in csv.DictReader(f):
-            metric = row.get("metric")
-            value = row.get("value")
-            if metric is None or value is None:
-                continue
-            try:
-                metrics[metric] = float(value)
-            except ValueError:
-                continue
-    return metrics
+    return read_metrics(path)
 
 
 def _load_baseline_vehicle_yaml(repo_root: Path) -> dict[str, Any]:

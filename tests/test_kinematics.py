@@ -694,14 +694,16 @@ def test_four_post_summary_filters_implausible_samples(
     result["frKnC.jackingForce"][heave_jack_index] = 1e292
     result["frKnC.leftFz"][roll_index] = 1e292
 
-    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
+    assert sim.metric_status["avg_anti_dive_pct"] == "partial"
     assert abs(summary["avg_anti_dive_pct"]) <= four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT
     assert not np.any(np.abs(series["fr_anti_vs_heave"]) > four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT)
     assert not np.any(np.abs(series["front_load_transfer_vs_roll"]) > four_post_eval.FOUR_POST_SIGNAL_ABS_LIMIT)
 
 
-def test_four_post_anti_roll_uses_commanded_force_when_measured_fy_is_bad(
+def test_four_post_anti_roll_does_not_replace_a_bad_measured_force_with_the_commanded_force(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -723,11 +725,12 @@ def test_four_post_anti_roll_uses_commanded_force_when_measured_fy_is_bad(
     result["frKnC.fy"][roll_jack_index] = 1e-12
     result["frKnC.jackingForce"][roll_jack_index] = -50.0
 
-    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
     assert np.isfinite(summary["avg_anti_roll_front_pct"])
-    assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT
-    assert not np.any(np.abs(series["fr_anti_vs_roll"]) > four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT)
+    assert sim.metric_status["avg_anti_roll_front_pct"] == "partial"
+    assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT - 1
 
 
 def test_four_post_anti_roll_samples_offset_force_pulses(
@@ -862,7 +865,7 @@ def test_four_post_fbrc_uses_differential_wheel_load_and_axle_track(
         assert summary[f"avg_fbrc_equivalent_height_{axle}_m"] == pytest.approx(expected_height)
 
 
-def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
+def test_four_post_anti_roll_does_not_switch_to_the_contact_load_sum_when_jacking_force_is_bad(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -899,10 +902,13 @@ def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
                 tail_fz = float(result[f"{prefix}.{side}Fz"][tail_index])
                 result[f"{prefix}.{side}Fz"][jack_index] = tail_fz + 0.5 * fz_delta
 
-    _summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
-    assert np.ptp(series["fr_anti_vs_roll"]) > 0.1
-    assert np.ptp(series["rr_anti_vs_roll"]) > 0.1
+    assert len(series["fr_anti_vs_roll"]) == 0
+    assert np.isnan(summary["avg_anti_roll_front_pct"])
+    assert sim.metric_status["avg_anti_roll_front_pct"] == "invalid"
+    assert sim.metric_status["avg_lateral_jacking_coeff_rear"] == "invalid"
 
 
 def test_four_post_lltd_uses_spring_roll_stiffness_when_arb_is_absent(
@@ -1206,6 +1212,81 @@ def test_four_post_fbrc_height_is_set_by_the_differential_and_not_by_net_jacking
     assert summary["avg_fbrc_equivalent_height_front_m"] == pytest.approx(-0.08 * half_track)
 
 
+def test_four_post_pose_without_a_sample_in_its_window_is_not_filled_from_outside(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _pulse, tail = _roll_poses(result)[3]
+    keep = np.arange(result["time"].size) != tail
+    result = {key: values[keep] for key, values in result.items()}
+
+    summary, series = sim.summarize(result)
+
+    assert len(series["roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT - 1
+    assert sim.metric_status["camber_gain_roll_rad_per_rad"] == "partial"
+    assert np.isfinite(summary["camber_gain_roll_rad_per_rad"])
+
+
+def test_four_post_elastic_share_does_not_fill_a_bad_pose_from_its_neighbors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _pulse, tail = _roll_poses(result)[2]
+    result["frKnC.leftFz"][tail] = 1e292
+
+    summary, series = sim.summarize(result)
+
+    # The bad pose and the zero-roll pose, where the share is 0/0.
+    assert np.count_nonzero(np.isnan(series["lltd_contact_force_vs_roll"])) == 2
+    assert sim.metric_status["avg_lltd_front_pct"] == "partial"
+    assert np.isfinite(summary["avg_lltd_front_pct"])
+
+
+def test_four_post_elastic_share_keeps_the_sign_of_each_axle_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    for _pulse, tail in _roll_poses(result):
+        roll_rad = float(result["rrKnC.roll"][tail])
+        result["rrKnC.leftFz"][tail] = 1000.0 - 300.0 * roll_rad
+        result["rrKnC.rightFz"][tail] = 1000.0 + 300.0 * roll_rad
+
+    summary, _series = sim.summarize(result)
+
+    assert np.isnan(summary["avg_lltd_front_pct"])
+    assert sim.metric_status["avg_lltd_front_pct"] == "invalid"
+
+
+def test_four_post_heave_poses_in_tension_are_flagged_and_anti_records_kept(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    poses = _pose_indices(result, four_post_eval.FOUR_POST_HEAVE_START_S, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT)
+    for index, (pulse, tail) in enumerate(poses):
+        for prefix in ("frKnC", "rrKnC"):
+            if prefix == "frKnC" and index in (0, 1):
+                result[f"{prefix}.leftFz"][[pulse, tail]] = 0.0
+                result[f"{prefix}.rightFz"][[pulse, tail]] = 0.0
+                result[f"{prefix}.jackingForce"][[pulse, tail]] = 300.0
+            else:
+                total = result[f"{prefix}.leftFz"][tail] + result[f"{prefix}.rightFz"][tail]
+                result[f"{prefix}.jackingForce"][[pulse, tail]] = -total
+
+    summary, series = sim.summarize(result)
+
+    assert summary["heave_cp_tension_points"] == 2
+    residual = series["fr_tension_residual_vs_heave"]
+    assert np.count_nonzero(np.isclose(residual, 300.0)) == 2
+    assert np.count_nonzero(np.isclose(residual, 0.0)) == four_post_eval.FOUR_POST_HEAVE_POSE_COUNT - 2
+    assert np.count_nonzero(np.isnan(series["fr_l_fz_vs_heave"])) == 2
+    assert sim.metric_status["avg_anti_dive_pct"] == "ok"
+    assert summary["avg_anti_dive_pct"] == pytest.approx(0.0, abs=1e-12)
+
+
 def test_four_post_anti_outputs_state_their_force_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1219,3 +1300,31 @@ def test_four_post_anti_outputs_state_their_force_path(
     plots = four_post_eval._normalize_four_post_report_config({})["plots"]
     assert "upright" in plots["jacking_heave"]["title"]
     assert "LLTD" not in plots["lltd_roll"]["title"]
+
+
+def test_four_post_metrics_csv_carries_a_status_column(tmp_path: Path) -> None:
+    from common.metrics_csv import read_metric_status, read_metrics
+
+    path = four_post_eval.write_metrics_csv(
+        {"a": 1.0, "b": 2.0, "c": float("nan"), "d": True},
+        tmp_path / "metrics.csv",
+        status={"b": "partial"},
+    )
+
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["metric", "value", "status"],
+        ["a", "1.0", "ok"],
+        ["b", "2.0", "partial"],
+        ["c", "", "invalid"],
+        ["d", "True", "ok"],
+    ]
+    assert read_metric_status(path)["b"] == (2.0, "partial")
+    assert np.isnan(read_metrics(path)["b"])
+    assert read_metrics(path, accept=frozenset({"ok", "partial"}))["b"] == 2.0
+
+    legacy = tmp_path / "legacy.csv"
+    legacy.write_text("metric,value\na,1.0\n", encoding="utf-8")
+    assert read_metric_status(legacy)["a"] == (1.0, "unknown")
+    assert np.isnan(read_metrics(legacy)["a"])

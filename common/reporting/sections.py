@@ -369,6 +369,7 @@ def add_knc_summary_page(
     summary,
     title="KnC Metrics Summary",
     unit_overrides: Mapping[str, object] | None = None,
+    status: Mapping[str, str] | None = None,
 ):
 
     import matplotlib.pyplot as plt
@@ -411,8 +412,12 @@ def add_knc_summary_page(
             val = summary.get(key, None)
             unit, scale = _resolve_unit(unit_overrides, key, unit)
             val_str = _format_table_value(val, fmt, scale)
+            key_status = (status or {}).get(key, "ok")
 
             color = section_color or metric_color(key)
+            if key_status != "ok":
+                unit = f"{unit} ({key_status})"
+                color = "#b45309"
             plt.text(x_label, y, label, fontsize=11, color=color)
             plt.text(x_val, y, val_str, fontsize=11, ha="right", color=color)
             plt.text(x_unit, y, unit, fontsize=11, color=color)

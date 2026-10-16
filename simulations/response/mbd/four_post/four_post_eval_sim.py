@@ -56,6 +56,7 @@ FOUR_POST_MIN_CONTACT_FZ_N = 1.0
 FOUR_POST_ANTI_FORCE_PATH = "contact_patch_upright_reacted"
 # Plots whose meaning or label changed. Older app-data copies take them from the seed.
 FOUR_POST_SEED_OWNED_PLOTS = ("jacking_heave", "jacking_roll", "fbrc_roll", "lltd_roll")
+STATUS_ORDER = ("ok", "partial", "invalid")
 
 
 FOUR_POST_EVAL_SIGNALS = [
@@ -161,21 +162,36 @@ def _as_mapping(value: Any, *, name: str) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
-def write_metrics_csv(summary: dict[str, Any], path: str | Path) -> Path:
+def write_metrics_csv(
+    summary: dict[str, Any],
+    path: str | Path,
+    status: dict[str, str] | None = None,
+) -> Path:
+    """Write metric, value and status. A metric without a given status is ok, or invalid when NaN."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.unlink(missing_ok=True)
+    status = status or {}
 
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, lineterminator="\n")
-        writer.writerow(["metric", "value"])
+        writer.writerow(["metric", "value", "status"])
         for key in sorted(summary):
             value = summary[key]
-            if isinstance(value, float) and np.isnan(value):
-                value = ""
-            writer.writerow([key, value])
+            missing = isinstance(value, float) and np.isnan(value)
+            writer.writerow([key, "" if missing else value, status.get(key, "invalid" if missing else "ok")])
 
     return path
+
+
+def _coverage_status(n_valid: int, n_total: int) -> str:
+    if n_total > 0 and n_valid == n_total:
+        return "ok"
+    return "partial" if n_valid > 0 else "invalid"
+
+
+def _worst_status(*statuses: str) -> str:
+    return max(statuses, key=STATUS_ORDER.index)
 
 
 def _load_active_vehicle_yaml() -> dict[str, Any]:
@@ -333,17 +349,17 @@ def _safe_divide_series(
     return out
 
 
-def _force_denominator_series(measured_force: Any, fallback_abs_force: float) -> np.ndarray:
+def _force_denominator_series(measured_force: Any, commanded_abs_force: float) -> np.ndarray:
+    """Measured force, NaN where it is outside 5 % to 500 % of the commanded force."""
     measured = _plausible_array(measured_force)
-    fallback_abs_force = abs(float(fallback_abs_force))
-    fallback = np.full(measured.shape, fallback_abs_force, dtype=float)
-    if fallback_abs_force <= 0.0:
+    commanded_abs_force = abs(float(commanded_abs_force))
+    if commanded_abs_force <= 0.0:
         return measured
 
-    min_force = max(1e-3, 0.05 * fallback_abs_force)
-    max_force = 5.0 * fallback_abs_force
+    min_force = max(1e-3, 0.05 * commanded_abs_force)
+    max_force = 5.0 * commanded_abs_force
     measured_ok = _finite_abs_mask(measured) & (np.abs(measured) >= min_force) & (np.abs(measured) <= max_force)
-    return np.where(measured_ok, measured, fallback)
+    return np.where(measured_ok, measured, float("nan"))
 
 
 def _sort_xy(x: Any, y: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -356,19 +372,6 @@ def _sort_xy(x: Any, y: Any) -> tuple[np.ndarray, np.ndarray]:
     y_trimmed = y_arr[:size]
     idx = np.argsort(x_trimmed)
     return x_trimmed[idx], y_trimmed[idx]
-
-
-def _has_variation(
-    values: Any,
-    *,
-    min_range_abs: float,
-    max_abs: float = FOUR_POST_SIGNAL_ABS_LIMIT,
-) -> bool:
-    arr = _plausible_array(values, max_abs)
-    finite = arr[np.isfinite(arr)]
-    if finite.size < 2:
-        return False
-    return bool(float(np.nanmax(finite) - np.nanmin(finite)) > float(min_range_abs))
 
 
 def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
@@ -657,6 +660,7 @@ class FourPostEvalSim:
             "simulation": copy.deepcopy(FOUR_POST_SIMULATION),
             "execution": {"parallel": False, "cleanup": False, "stream_logs": False},
         }
+        self.metric_status: dict[str, str] = {}
 
     def build_overrides(self) -> dict[str, Any]:
         procedure = _as_mapping(self.config.get("procedure"), name="procedure")
@@ -933,10 +937,12 @@ class FourPostEvalSim:
         metrics_csv_path = write_metrics_csv(
             summary,
             report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH),
+            self.metric_status,
         )
 
         return {
             "summary": summary,
+            "metric_status": dict(self.metric_status),
             "series": series,
             "setup": setup,
             "metrics_csv_path": str(metrics_csv_path),
@@ -963,17 +969,7 @@ class FourPostEvalSim:
             half_window = 0.5 * FOUR_POST_SAMPLE_WINDOW_S
             for ti in times:
                 window = valid_time & (np.abs(time - ti) <= half_window) & np.isfinite(signal)
-                if np.any(window):
-                    samples.append(float(np.nanmedian(signal[window])))
-                    continue
-
-                valid_signal = valid_time & np.isfinite(signal)
-                if not np.any(valid_signal):
-                    samples.append(float("nan"))
-                    continue
-
-                local_index = int(np.nanargmin(np.abs(time[valid_signal] - ti)))
-                samples.append(float(signal[valid_signal][local_index]))
+                samples.append(float(np.nanmedian(signal[window])) if np.any(window) else float("nan"))
             return np.array(samples, dtype=float)
 
         def sample_in_window(signal: np.ndarray, center_s: float, half_window_s: float) -> float:
@@ -983,12 +979,7 @@ class FourPostEvalSim:
             signal = signal[:size]
             valid = np.isfinite(time) & np.isfinite(signal)
             window = valid & (np.abs(time - center_s) <= half_window_s)
-            if np.any(window):
-                return float(np.nanmedian(signal[window]))
-            if not np.any(valid):
-                return float("nan")
-            local_index = int(np.nanargmin(np.abs(time[valid] - center_s)))
-            return float(signal[valid][local_index])
+            return float(np.nanmedian(signal[window])) if np.any(window) else float("nan")
 
         def sample_force_pulses(
             pose_signal: np.ndarray,
@@ -1014,7 +1005,6 @@ class FourPostEvalSim:
             force_samples: list[float] = []
             for pose_index in range(count):
                 pose_start = start_s + FOUR_POST_POSE_STEP_S * pose_index
-                fallback_pulse_time = pose_start + 1.5
                 tail_time = pose_start + 4.0
                 pulse_window = (
                     valid_time & (time >= pose_start + 0.5) & (time <= pose_start + 2.25) & np.isfinite(response)
@@ -1026,18 +1016,7 @@ class FourPostEvalSim:
                     selected_index = int(candidates[np.nanargmax(np.abs(force[candidates]))])
 
                 if selected_index is None:
-                    if np.any(pulse_window):
-                        candidates = np.flatnonzero(pulse_window)
-                        selected_index = int(candidates[np.nanargmin(np.abs(time[candidates] - fallback_pulse_time))])
-                        pose_pulse = float(pose[selected_index])
-                        response_pulse = float(response[selected_index])
-                        force_pulse = (
-                            float(force[selected_index]) if np.isfinite(force[selected_index]) else float("nan")
-                        )
-                    else:
-                        pose_pulse = sample_at_times(pose_signal, [fallback_pulse_time])[0]
-                        response_pulse = float("nan")
-                        force_pulse = sample_at_times(force_signal, [fallback_pulse_time])[0]
+                    pose_pulse = response_pulse = force_pulse = float("nan")
                 else:
                     pose_pulse = float(pose[selected_index])
                     response_pulse = float(response[selected_index])
@@ -1112,6 +1091,8 @@ class FourPostEvalSim:
 
         heave_series: dict[str, np.ndarray] = {}
         roll_series: dict[str, np.ndarray] = {}
+        validation_cfg = _as_mapping(self.config.get("validation"), name="validation")
+        min_contact_fz_n = float(validation_cfg.get("min_contact_fz_n", FOUR_POST_MIN_CONTACT_FZ_N))
 
         for key, suffix in signals.items():
             for corner in corners:
@@ -1123,6 +1104,16 @@ class FourPostEvalSim:
                 roll_sig = roll_sig[roll_mask]
                 heave_series[f"{corner}_{key}_vs_heave"] = heave_sig[heave_idx]
                 roll_series[f"{corner}_{key}_vs_roll"] = roll_sig[roll_idx]
+
+        heave_tension = np.zeros(heave_vals.size, dtype=bool)
+        for prefix, corner_pair in (("frKnC", ("fr_l", "fr_r")), ("rrKnC", ("rr_l", "rr_r"))):
+            jacking_tail = sample_at_times(sig(prefix, "jackingForce"), heave_sample_times)[heave_mask][heave_idx]
+            contact = [heave_series[f"{corner}_fz_vs_heave"] for corner in corner_pair]
+            heave_series[f"{prefix[:2]}_tension_residual_vs_heave"] = contact[0] + contact[1] + jacking_tail
+            for corner, fz in zip(corner_pair, contact, strict=True):
+                clamped = fz < min_contact_fz_n
+                heave_tension |= clamped
+                heave_series[f"{corner}_fz_vs_heave"] = np.where(clamped, float("nan"), fz)
 
         # Jacking is the load from the force pulse only. Subtract the dead-tail force at the same pose.
         fr_jack = -sig("frKnC", "jackingForce")
@@ -1182,8 +1173,6 @@ class FourPostEvalSim:
                 )
                 roll_fz_delta[(prefix, side)] = delta_fz
         roll_contact_fz = np.vstack(roll_contact_samples)
-        validation_cfg = _as_mapping(self.config.get("validation"), name="validation")
-        min_contact_fz_n = float(validation_cfg.get("min_contact_fz_n", FOUR_POST_MIN_CONTACT_FZ_N))
         roll_contact_loaded = np.all(
             np.isfinite(roll_contact_fz) & (roll_contact_fz >= min_contact_fz_n),
             axis=0,
@@ -1196,35 +1185,10 @@ class FourPostEvalSim:
                 f"roll angles [{invalid_text}] deg (minimum required Fz "
                 f"{min_contact_fz_n:.1f} N). Reduce procedure.rollMagnitude or fix the suspension setup."
             )
-        fr_total_fz = corner_signal("frKnC", "fr_l", "Fz") + corner_signal("frKnC", "fr_r", "Fz")
-        rr_total_fz = corner_signal("rrKnC", "rr_l", "Fz") + corner_signal("rrKnC", "rr_r", "Fz")
-        _, fr_roll_fz_delta, _ = sample_force_pulses(
-            roll,
-            fr_total_fz,
-            fr_fy,
-            start_s=FOUR_POST_ROLL_START_S,
-            count=FOUR_POST_ROLL_POSE_COUNT,
-        )
-        _, rr_roll_fz_delta, _ = sample_force_pulses(
-            roll,
-            rr_total_fz,
-            rr_fy,
-            start_s=FOUR_POST_ROLL_START_S,
-            count=FOUR_POST_ROLL_POSE_COUNT,
-        )
         procedure_cfg = _as_mapping(self.config.get("procedure"), name="procedure")
         roll_force_denominator_n = FOUR_POST_FORCE_SAMPLE_FRACTION * abs(
             float(procedure_cfg.get("forceMagnitude", 1000.0))
         )
-        min_roll_jacking_variation_n = max(1e-6, 1e-5 * roll_force_denominator_n)
-        if not _has_variation(fr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n) and _has_variation(
-            fr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n
-        ):
-            fr_roll_jack_y = fr_roll_fz_delta
-        if not _has_variation(rr_roll_jack_y, min_range_abs=min_roll_jacking_variation_n) and _has_variation(
-            rr_roll_fz_delta, min_range_abs=min_roll_jacking_variation_n
-        ):
-            rr_roll_jack_y = rr_roll_fz_delta
         fr_roll_force_denominator = _force_denominator_series(fr_roll_fy, roll_force_denominator_n)
         rr_roll_force_denominator = _force_denominator_series(rr_roll_fy, roll_force_denominator_n)
 
@@ -1297,6 +1261,29 @@ class FourPostEvalSim:
         )
         fr_fbrc_height = _plausible_array(0.5 * track_front * fr_fbrc_ratio)
         rr_fbrc_height = _plausible_array(0.5 * track_rear * rr_fbrc_ratio)
+
+        heave_count = FOUR_POST_HEAVE_POSE_COUNT
+        roll_count = FOUR_POST_ROLL_POSE_COUNT
+        status: dict[str, str] = {}
+
+        def coverage(name: str, valid: Any, n_total: int) -> None:
+            status[name] = _coverage_status(int(np.count_nonzero(valid)), n_total)
+
+        coverage("avg_anti_dive_pct", np.isfinite(fr_anti_heave), heave_count)
+        coverage("avg_anti_squat_pct", np.isfinite(rr_anti_heave), heave_count)
+        coverage("avg_longitudinal_jacking_coeff_front", np.isfinite(fr_coeff_heave), heave_count)
+        coverage("avg_longitudinal_jacking_coeff_rear", np.isfinite(rr_coeff_heave), heave_count)
+        coverage("avg_anti_roll_front_pct", np.isfinite(fr_anti_roll) & roll_contact_loaded, roll_count)
+        coverage("avg_anti_roll_rear_pct", np.isfinite(rr_anti_roll) & roll_contact_loaded, roll_count)
+        coverage("avg_lateral_jacking_coeff_front", np.isfinite(fr_coeff_roll), roll_count)
+        coverage("avg_lateral_jacking_coeff_rear", np.isfinite(rr_coeff_roll), roll_count)
+        for axle_name, height in (("front", fr_fbrc_height), ("rear", rr_fbrc_height)):
+            coverage(f"avg_fbrc_equivalent_height_{axle_name}_m", np.isfinite(height) & roll_contact_loaded, roll_count)
+            coverage(
+                f"avg_fbrc_differential_jacking_ratio_{axle_name}",
+                np.isfinite(height) & roll_contact_loaded,
+                roll_count,
+            )
 
         mask_fr_h = np.isfinite(fr_heave_jack_x) & np.isfinite(fr_anti_heave)
         mask_rr_h = np.isfinite(rr_heave_jack_x) & np.isfinite(rr_anti_heave)
@@ -1421,20 +1408,6 @@ class FourPostEvalSim:
                 dtype=float,
             )
 
-        def fill_from_finite_neighbors(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-            x = np.asarray(x, dtype=float).reshape(-1)
-            y = np.asarray(y, dtype=float).reshape(-1).copy()
-            finite = _finite_abs_mask(x) & _finite_abs_mask(y)
-            missing = np.isfinite(x) & ~np.isfinite(y)
-            if not missing.any() or finite.sum() < 2:
-                return y
-
-            y[missing] = np.asarray(
-                [_interp_with_extrap(float(xi), x[finite], y[finite]) for xi in x[missing]],
-                dtype=float,
-            )
-            return y
-
         def bar_roll_stiffness(
             bar_rate: float,
             motion_ratio: np.ndarray,
@@ -1515,8 +1488,8 @@ class FourPostEvalSim:
         fr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, fr_r_fz_roll)
         rr_l_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_l_fz_roll)
         rr_r_fz_ref = _interp_with_extrap(0.0, roll_vals, rr_r_fz_roll)
-        front_load_transfer_roll = np.abs((fr_l_fz_roll - fr_l_fz_ref) - (fr_r_fz_roll - fr_r_fz_ref))
-        rear_load_transfer_roll = np.abs((rr_l_fz_roll - rr_l_fz_ref) - (rr_r_fz_roll - rr_r_fz_ref))
+        front_load_transfer_roll = (fr_l_fz_roll - fr_l_fz_ref) - (fr_r_fz_roll - fr_r_fz_ref)
+        rear_load_transfer_roll = (rr_l_fz_roll - rr_l_fz_ref) - (rr_r_fz_roll - rr_r_fz_ref)
         front_load_transfer_roll = _plausible_array(front_load_transfer_roll)
         rear_load_transfer_roll = _plausible_array(rear_load_transfer_roll)
         total_load_transfer_roll = front_load_transfer_roll + rear_load_transfer_roll
@@ -1524,10 +1497,10 @@ class FourPostEvalSim:
             front_load_transfer_roll,
             total_load_transfer_roll,
             out=np.full_like(total_load_transfer_roll, float("nan"), dtype=float),
-            where=total_load_transfer_roll > 1e-9,
+            where=(np.abs(total_load_transfer_roll) > 1e-9)
+            & (front_load_transfer_roll * rear_load_transfer_roll >= 0.0),
         )
         lltd_contact_roll = _plausible_array(lltd_contact_roll, FOUR_POST_FRACTION_ABS_LIMIT)
-        lltd_contact_roll = fill_from_finite_neighbors(roll_vals, lltd_contact_roll)
         lltd_roll = lltd_contact_roll.copy()
         lltd_geometry_delta_roll = _plausible_array(
             lltd_contact_roll - lltd_stiffness_roll,
@@ -1539,20 +1512,42 @@ class FourPostEvalSim:
         kphi_el_f = kphi_spr_f + kphi_arb_f
         kphi_el_r = kphi_spr_r + kphi_arb_r
 
-        gains = {
-            "camber_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_camber_vs_heave"]),
-            "toe_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_toe_vs_heave"]),
-            "caster_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_caster_vs_heave"]),
-            "kpi_gain_heave_rad_per_m": compute_gain(heave_vals, heave_series["fr_l_kpi_vs_heave"]),
-            "trail_gain_heave_m_per_m": compute_gain(heave_vals, heave_series["fr_l_trail_vs_heave"]),
-            "scrub_gain_heave_m_per_m": compute_gain(heave_vals, heave_series["fr_l_scrub_vs_heave"]),
-            "camber_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_camber_vs_roll"]),
-            "toe_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_toe_vs_roll"]),
-            "caster_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_caster_vs_roll"]),
-            "kpi_gain_roll_rad_per_rad": compute_gain(roll_vals, roll_series["fr_l_kpi_vs_roll"]),
-            "trail_gain_roll_m_per_rad": compute_gain(roll_vals, roll_series["fr_l_trail_vs_roll"]),
-            "scrub_gain_roll_m_per_rad": compute_gain(roll_vals, roll_series["fr_l_scrub_vs_roll"]),
+        gain_names = {
+            "camber": ("camber_gain_heave_rad_per_m", "camber_gain_roll_rad_per_rad"),
+            "toe": ("toe_gain_heave_rad_per_m", "toe_gain_roll_rad_per_rad"),
+            "caster": ("caster_gain_heave_rad_per_m", "caster_gain_roll_rad_per_rad"),
+            "kpi": ("kpi_gain_heave_rad_per_m", "kpi_gain_roll_rad_per_rad"),
+            "trail": ("trail_gain_heave_m_per_m", "trail_gain_roll_m_per_rad"),
+            "scrub": ("scrub_gain_heave_m_per_m", "scrub_gain_roll_m_per_rad"),
         }
+        gains: dict[str, float] = {}
+        for signal_key, (heave_name, roll_name) in gain_names.items():
+            for name, x, y, count in (
+                (heave_name, heave_vals, heave_series[f"fr_l_{signal_key}_vs_heave"], heave_count),
+                (roll_name, roll_vals, roll_series[f"fr_l_{signal_key}_vs_roll"], roll_count),
+            ):
+                gains[name] = compute_gain(x, y)
+                coverage(name, np.isfinite(x) & np.isfinite(y), count)
+
+        share_count = roll_count - int(np.count_nonzero(np.abs(roll_vals) <= 1e-9))
+        for name in ("avg_lltd_front_frac", "avg_lltd_front_pct"):
+            coverage(name, np.isfinite(lltd_roll), share_count)
+        coverage("avg_antiroll_geometry_lltd_delta_pct", np.isfinite(lltd_geometry_delta_roll), share_count)
+        coverage("avg_roll_rate_distribution_front_pct", np.isfinite(lltd_stiffness_roll), roll_count)
+        for axle_name, axle_corners, smr_samples, arb_samples in (
+            ("front", corners[:2], y_smr_f, kphi_arb_f_roll),
+            ("rear", corners[2:], y_smr_r, kphi_arb_r_roll),
+        ):
+            mr_samples = sum(motion_ratio_series[f"{corner}_motion_ratio_vs_heave"].size for corner in axle_corners)
+            status[f"avg_motion_ratio_{axle_name}"] = _coverage_status(mr_samples, 2 * heave_count)
+            status[f"spring_roll_stiffness_{axle_name}_Nm_per_rad"] = status[f"avg_motion_ratio_{axle_name}"]
+            status[f"avg_stabar_motion_ratio_{axle_name}"] = _coverage_status(smr_samples.size, roll_count)
+            coverage(f"arb_roll_stiffness_{axle_name}_Nm_per_rad", np.isfinite(arb_samples), roll_count)
+            status[f"elastic_roll_stiffness_{axle_name}_Nm_per_rad"] = _worst_status(
+                status[f"spring_roll_stiffness_{axle_name}_Nm_per_rad"],
+                status[f"arb_roll_stiffness_{axle_name}_Nm_per_rad"],
+            )
+        self.metric_status = status
 
         summary = {
             **{k: float(v) for k, v in gains.items()},
@@ -1601,6 +1596,7 @@ class FourPostEvalSim:
             "arb_roll_stiffness_rear_Nm_per_rad": float(kphi_arb_r),
             "elastic_roll_stiffness_front_Nm_per_rad": float(kphi_el_f),
             "elastic_roll_stiffness_rear_Nm_per_rad": float(kphi_el_r),
+            "heave_cp_tension_points": int(np.count_nonzero(heave_tension)),
             "anti_force_path": FOUR_POST_ANTI_FORCE_PATH,
         }
 

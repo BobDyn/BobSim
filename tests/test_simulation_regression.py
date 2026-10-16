@@ -10,12 +10,13 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any, Mapping, cast
+from typing import Any, Iterable, Mapping, cast
 
 import pytest
 import yaml
 
 from common import config_io
+from common.metrics_csv import read_metric_status
 from simulations.response.mbd.four_post.four_post_eval_sim import FOUR_POST_SIMULATION, FourPostEvalSim
 
 
@@ -193,6 +194,14 @@ def _metric_key(row: Mapping[str, str | None]) -> str:
     if group:
         return f"{group}.{metric_name}"
     return metric_name
+
+
+def _status_failures(metrics_csv: Path, names: Iterable[str]) -> list[str]:
+    """Baselined metrics whose status column is present and not ok."""
+    statuses = {name: status for name, (_value, status) in read_metric_status(metrics_csv).items()}
+    return [
+        f"  {name}: status {statuses[name]}" for name in names if statuses.get(name, "unknown") not in {"ok", "unknown"}
+    ]
 
 
 def _load_metrics_csv(path: Path) -> dict[str, MetricValue]:
@@ -459,6 +468,21 @@ def test_transient_regression_metrics_remain_physically_consistent(
     assert 0.0 <= _numeric_metric(metrics, "quality.yaw_fit_error") <= 0.05
 
 
+def test_baseline_gate_rejects_a_baselined_metric_whose_status_is_not_ok(tmp_path: Path) -> None:
+    metrics_csv = tmp_path / "metrics.csv"
+    metrics_csv.write_text(
+        "metric,value,status\navg_anti_dive_pct,-2.8,partial\navg_anti_squat_pct,-4.7,ok\nother,1.0,invalid\n",
+        encoding="utf-8",
+    )
+    legacy_csv = tmp_path / "legacy.csv"
+    legacy_csv.write_text("metric,value\navg_anti_dive_pct,-2.8\n", encoding="utf-8")
+
+    assert _status_failures(metrics_csv, ["avg_anti_dive_pct", "avg_anti_squat_pct"]) == [
+        "  avg_anti_dive_pct: status partial"
+    ]
+    assert _status_failures(legacy_csv, ["avg_anti_dive_pct"]) == []
+
+
 def test_baseline_provenance_matches_simulation_inputs() -> None:
     """Fail fast when the baseline no longer describes the current inputs.
 
@@ -554,7 +578,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
     # Check every metric before failing, because a refresh takes about 12 min.
-    failures: list[str] = []
+    failures = _status_failures(workflow_data.metrics_csv, _metric_baselines(workflow_data.spec))
 
     for metric, spec in _metric_baselines(workflow_data.spec).items():
         assert "value" in spec, f"{workflow_data.name}.{metric} baseline must define value"

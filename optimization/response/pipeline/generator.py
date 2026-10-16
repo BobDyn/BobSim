@@ -9,6 +9,7 @@ import yaml
 
 from optimization.response.pipeline.modelica_params import replace_value, scale_value
 
+from common.metrics_csv import read_metrics
 from common.vehicle_io import repo_root
 
 REPO_ROOT = repo_root()
@@ -40,7 +41,7 @@ def _load_metrics_csv(path: Path | None = None) -> dict[str, float]:
             f"Searched:\n  {searched}"
         )
 
-    return read_metrics_csv(path)
+    return read_metrics(path)
 
 
 def read_metrics_csv(path: Path) -> dict[str, float]:
@@ -66,8 +67,8 @@ def _computed_motion_ratio(axle: str, context: dict[str, Any]) -> float:
         if math.isfinite(value) and abs(value) > 1e-12:
             return value
     raise ValueError(
-        "Static balance free length requires a computed FourPostEval motion "
-        f"ratio metric for axle {axle!r}."
+        "Static balance free length requires a FourPostEval motion ratio metric "
+        f"with status ok for axle {axle!r}. Run 'make standard-eval-four-post' again."
     )
 
 
