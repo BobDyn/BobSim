@@ -1146,3 +1146,20 @@ def test_four_post_preserves_vehicle_spring_curves_without_rate_overrides(
     })
     np.testing.assert_array_equal(overridden["front_spring_table"][:, 1], np.asarray(tables["front"])[:, 0] * 10000.0)
     np.testing.assert_array_equal(overridden["rear_spring_table"], tables["rear"])
+
+
+def test_four_post_sends_bar_rates_only_to_the_rig_bars_that_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    front["actuation"].pop("stabar")
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+
+    overrides = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).build_model_setup_overrides()
+
+    assert not [key for key in overrides if key.startswith("pVehicle.") and "Stabar" in key]
+    assert "pFrStabar.barRate" not in overrides
+    assert overrides["pRrStabar.barRate"] == 0.0
