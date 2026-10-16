@@ -330,6 +330,12 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tires/template":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)
+            elif parsed.path == "/api/tracks/import":
+                from app.tracks import import_track
+                self._send_json(import_track(ROOT, str(body.get("name", "")), str(body.get("text", ""))))
+            elif parsed.path == "/api/tracks/preview":
+                from app.tracks import track_payload
+                self._send_json(track_payload(ROOT, str(body.get("path", ""))))
             elif parsed.path == "/api/tires/import":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)

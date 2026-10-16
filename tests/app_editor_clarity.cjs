@@ -722,7 +722,8 @@ vm.runInContext(`
     state.simulationWorkspace.simulations[0].ggv_source_id='ggv';
     state.simulationWorkspace.simulations[0].ggv_input={name:'GGV',status:'Ready'};
     renderSimulationWorkspace();
-    assert.doesNotMatch(elements['simulation-tree'].innerHTML,/ggv-link-empty/);
+    assert.match(elements['simulation-tree'].innerHTML,/Link Racing line/);
+    assert.match(elements['simulation-tree'].innerHTML,/ggv-link-supplied/);
     assert.match(elements['simulation-tree'].innerHTML,/GGV → GGV/);
     assert.match(elements['simulation-tree'].innerHTML,/ggv-link-supplied/);
     assert.match(elements['simulation-tree'].innerHTML,/data-ggv-linked="ggv"/);
@@ -813,7 +814,7 @@ vm.runInContext(`
     wireSimulationGgvDrag();
     const transfer={setData(type,value){assert.equal(type,'text/plain');assert.equal(value,'ggv');}};
     const start=()=>events.dragstart({target:{closest:()=>({dataset:{ggvSource:'ggv'}})},dataTransfer:transfer});
-    const drop={target:{closest:()=>lap},dataTransfer:transfer,preventDefault(){this.accepted=true;}};
+    const drop={target:{closest:selector=>selector==='[data-input-kind]' ? null : lap},dataTransfer:transfer,preventDefault(){this.accepted=true;}};
     events.dragover(drop); assert.equal(drop.accepted,undefined);
     start(); assert.equal(transfer.effectAllowed,'link');
     events.dragover(drop); assert.equal(drop.accepted,true); assert.equal(highlighted,true);

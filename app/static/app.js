@@ -628,7 +628,7 @@ function fmtBytes(value) {
 }
 
 function standardWorkflows() {
-  return (state.status?.workflows || []).filter((workflow) => ["standard", "response", "envelope", "lap"].includes(workflow.group));
+  return (state.status?.workflows || []).filter((workflow) => ["standard", "response", "envelope", "lap", "track"].includes(workflow.group));
 }
 
 function activeVehicleWorkspace() {
@@ -727,6 +727,8 @@ function canUseStandardSim() {
 
 function canRunStandardWorkflow(workflow = selectedWorkflow()) {
   if (!workflow || !activeVehicleConfigReady() || state.dirtyVehicle) return false;
+  if (workflow.id === "lap-qss" && selectedSimulation() &&
+      [selectedSimulation().ggv_input, selectedSimulation().racing_line_input].some(input => input?.status !== "Ready")) return false;
   return (!workflow.requires_mbd || canUseStandardSim()) && workflowAvailable(workflow);
 }
 
@@ -1162,6 +1164,11 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
   if (!activeVehicleConfigReady()) return "Save this vehicle to your library first.";
   if (state.dirtyVehicle) return "Save your vehicle changes first.";
   if (workflow?.requires_mbd && !canUseStandardSim()) return simulationLockedMessage();
+  if (workflow?.id === "lap-qss" && selectedSimulation()) {
+    const blocked = [selectedSimulation().ggv_input, selectedSimulation().racing_line_input].find(input => input?.status !== "Ready");
+    if (blocked) return blocked.message;
+    if (!selectedSimulation().ggv_input || !selectedSimulation().racing_line_input) return "Connect GGV and racing-line results.";
+  }
   if (!workflowAvailable(workflow)) return workflowUnavailableMessage(workflow);
   return "";
 }
@@ -4375,10 +4382,10 @@ function openSimulationVisualization(child) {
   }
 }
 
-async function openSimulationGgv(id) {
+async function openSimulationGgv(id, kind = "ggv") {
   await openSimulation(id);
   state.simModalOpen = false;
-  state.simulationGgvEditor = true;
+  state.simulationGgvEditor = kind;
   renderSimulationWorkspace();
 }
 
@@ -4388,23 +4395,25 @@ function renderSimulationGgv() {
   if (!panel) return;
   panel.hidden = state.view !== "standard" || !state.simulationGgvEditor;
   if (panel.hidden) return;
+  const isLine = state.simulationGgvEditor === "racing-line";
+  const kind = isLine ? "racing-line" : "ggv";
+  const label = isLine ? "Racing line" : "GGV";
+  const sourceId = isLine ? simulation.racing_line_source_id : simulation.ggv_source_id;
+  const input = isLine ? simulation.racing_line_input : simulation.ggv_input;
+  panel.querySelector("h2").textContent = `${label} input`;
   const source = document.getElementById("simulation-ggv-source");
-  source.innerHTML = '<option value="">Generate for this lap</option>' + (state.simulationWorkspace?.simulations || [])
-    .filter(item => item.workflow_id === "ggv").map(item => `<option value="${escapeHtml(item.id)}"${item.id === simulation.ggv_source_id ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
-  if (simulation.ggv_source_id && ![...source.options].some(option => option.value === simulation.ggv_source_id)) {
-    source.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(simulation.ggv_source_id)}" selected>Unavailable GGV</option>`);
-  }
-  const input = simulation.ggv_input;
-  document.getElementById("simulation-ggv-status").textContent = `${input?.status || "Local"}: ${input?.message || "Generate with this lap's envelope settings."}`
-    + (input?.needs_rerun ? " Rerun the lap to use this result." : "");
+  source.innerHTML = '<option value="">Not connected</option>' + (state.simulationWorkspace?.simulations || [])
+    .filter(item => item.workflow_id === kind).map(item => `<option value="${escapeHtml(item.id)}"${item.id === sourceId ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
+  document.getElementById("simulation-ggv-status").textContent = `${input?.status || "Unavailable"}: ${input?.message || `Connect a ${label.toLowerCase()} result.`}`;
   const open = document.getElementById("simulation-ggv-open");
-  open.textContent = simulation.ggv_source_id ? "Open GGV analysis" : "Edit lap envelope settings";
-  open.disabled = Boolean(simulation.ggv_source_id && !(state.simulationWorkspace?.simulations || []).some(item => item.id === simulation.ggv_source_id));
-  open.title = open.disabled ? "The linked GGV analysis is no longer available." : "";
-  open.onclick = () => workspaceAction(() => openSimulation(simulation.ggv_source_id || simulation.id));
+  open.textContent = `Open ${label.toLowerCase()} analysis`;
+  open.disabled = !sourceId || !(state.simulationWorkspace?.simulations || []).some(item => item.id === sourceId);
+  open.title = open.disabled ? "No available analysis is connected." : "";
+  open.onclick = () => workspaceAction(() => openSimulation(sourceId));
   source.onchange = () => workspaceAction(async () => {
-    await simulationRequest("set-ggv", {id: simulation.id, source_id: source.value || null});
+    await simulationRequest(isLine ? "set-racing-line" : "set-ggv", {id: simulation.id, source_id: source.value || null});
     renderSimulationWorkspace();
+    renderJobs();
   });
 }
 
@@ -4437,6 +4446,9 @@ function wireSimulationGgvDrag() {
   const clear = () => tree.querySelectorAll(".ggv-drop-target").forEach(node => node.classList.remove("ggv-drop-target"));
   const targetFor = event => {
     const branch = event.target.closest("[data-simulation-branch]");
+    const input = event.target.closest("[data-input-kind]");
+    const source = state.simulationWorkspace?.simulations?.find(item => item.id === sourceId);
+    if (input && input.dataset.inputKind !== source?.workflow_id) return null;
     return sourceId && state.simulationWorkspace?.simulations?.some(item =>
       item.id === branch?.dataset.simulationBranch && item.workflow_id === "lap-qss") ? branch : null;
   };
@@ -4468,8 +4480,9 @@ function wireSimulationGgvDrag() {
     const id = target.dataset.simulationBranch;
     workspaceAction(async () => {
       await saveSimulationEdits();
-      await simulationRequest("set-ggv", {id, source_id: source});
-      await openSimulationGgv(id);
+      const kind = state.simulationWorkspace.simulations.find(item => item.id === source)?.workflow_id;
+      await simulationRequest(kind === "racing-line" ? "set-racing-line" : "set-ggv", {id, source_id: source});
+      await openSimulationGgv(id, kind);
     });
   });
 }
@@ -4531,7 +4544,7 @@ function wireSimulationContextMenu() {
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
-    const envelope = ["ggv", "ymd"].includes(simulation?.workflow_id);
+    const envelope = ["ggv", "ymd", "racing-line"].includes(simulation?.workflow_id);
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
       const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
@@ -4661,7 +4674,7 @@ function mountSimulationWorkspace() {
     clearTimeout(overviewClickTimer);
     if (event.target.closest("[data-simulation-home]")) { workspaceAction(openSimulationHome); return; }
     const ggv = event.target.closest("[data-simulation-ggv]");
-    if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv)); return; }
+    if (ggv) { workspaceAction(() => openSimulationGgv(ggv.dataset.simulationGgv, ggv.dataset.inputKind || "ggv")); return; }
     const group = event.target.closest("[data-simulation-add-group]");
     if (group) {
       workspaceAction(() => showSimulationCatalog(group.dataset.simulationAddGroup));
@@ -4768,10 +4781,10 @@ function renderSimulationWorkspace() {
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
-        ${item.workflow_id === "lap-qss" ? `<button type="button" class="simulation-tree-run ${!item.ggv_source_id ? "ggv-link-empty" : "ggv-link-supplied"} ${selected && state.simulationGgvEditor ? "active" : ""}" data-simulation-ggv="${escapeHtml(item.id)}"${item.ggv_source_id ? ` data-ggv-linked="${escapeHtml(item.ggv_source_id)}"` : ""} title="${item.ggv_source_id ? "Supplied by another GGV analysis. Click to change the connection." : "Drag a GGV result here, or click to choose."}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${item.ggv_source_id ? `GGV → ${escapeHtml(item.ggv_input?.name || "Unavailable")}` : "Link GGV"}</span><span class="simulation-tree-model">${escapeHtml(item.ggv_input?.status || "Local")}</span></button>` : ""}
+        ${item.workflow_id === "lap-qss" ? [["ggv", "GGV", item.ggv_source_id, item.ggv_input], ["racing-line", "Racing line", item.racing_line_source_id, item.racing_line_input]].map(([kind, label, source, input]) => `<button type="button" class="simulation-tree-run ${source ? "ggv-link-supplied" : "ggv-link-empty"}" data-simulation-ggv="${escapeHtml(item.id)}" data-input-kind="${kind}"${source ? ` data-ggv-linked="${escapeHtml(source)}"` : ""} title="${escapeHtml(input?.message || `Drag a ${label.toLowerCase()} result here, or click to choose.`)}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${source ? `${label} → ${escapeHtml(input?.name || "Unavailable")}` : `Link ${label}`}</span><span class="simulation-tree-model">${escapeHtml(input?.status || "Unavailable")}</span></button>`).join("") : ""}
         <div class="simulation-tree-row simulation-results-row" data-simulation-results="${escapeHtml(item.id)}">
           ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : ""}
-          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (item.workflow_id === "ggv" ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (item.workflow_id === "ggv" ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && item.workflow_id === "ggv" ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
+          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && ["ggv", "racing-line"].includes(item.workflow_id) ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
         </div>
         <div class="simulation-tree-children simulation-result-children"${state.collapsedSimulations.has(`results:${item.id}`) ? " hidden" : ""}>
           ${children.map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}"${runs.length ? "" : " disabled"} title="${runs.length ? escapeHtml(child.name) : "Results are available after a successful run."}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
@@ -4862,19 +4875,21 @@ function responseModelPicker(workflow) {
 
 let activeSimulationGroup = "transient";
 const SIMULATION_GROUPS = [
+  {id: "track", label: "Track", description: "Track boundaries and reusable racing lines."},
   {id: "kinematic", label: "Kinematic", description: "Suspension motion and loads."},
   {id: "steady-state", label: "Steady state", description: "Choose equilibrium, an envelope or a quasi-steady lap."},
   {id: "transient", label: "Transient", description: "Choose a maneuver or a driver-controlled lap."},
 ];
 
 function simulationAnalysisGroup(workflow) {
+  if (workflow.id === "racing-line") return "track";
   if (workflow.id === "four-post") return "kinematic";
   if (["steady-state", "ggv", "ymd", "lap-qss"].includes(workflow.id)) return "steady-state";
   return "transient";
 }
 
 function renderWorkflows() {
-  const order = ["four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
+  const order = ["racing-line", "four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
   const rank = (workflow) => {
     const index = order.indexOf(responseFamily(workflow) || workflow.id);
     return index < 0 ? order.length : index;
@@ -5091,7 +5106,7 @@ function simulationVisualHtml(workflow) {
     } else {
       // Minimum-curvature line solved inside this schematic's 17-unit-wide track.
       drawing += '<path d="M51.5 27.8L55.4 25.5L59.4 23.5L63.5 21.8L67.8 20.5L72.2 19.4L76.6 18.6L81.0 18.0L85.5 17.7L90.0 17.7L94.5 17.8L99.0 18.1L103.4 18.6L107.9 19.2L112.3 19.9L116.7 20.8L121.1 21.7L125.5 22.7L129.8 23.8L134.2 24.8L138.5 25.9L142.9 26.9L147.3 27.9L151.7 28.9L156.1 29.8L160.5 30.5L164.9 31.2L169.4 31.7L173.8 32.0L178.3 32.4L182.8 32.7L187.3 33.1L191.7 33.5L196.2 34.2L200.5 35.1L204.9 36.3L209.1 37.9L213.1 39.8L216.9 42.2L220.4 45.0L223.6 48.2L226.2 51.8L228.3 55.8L229.8 60.0L230.6 64.4L230.7 68.9L230.1 73.3L228.7 77.6L226.6 81.5L224.0 85.1L220.8 88.3L217.2 90.9L213.2 93.0L209.0 94.6L204.6 95.7L200.2 96.3L195.7 96.4L191.2 96.3L186.8 95.8L182.4 95.0L178.0 94.1L173.6 93.0L169.3 91.9L164.9 90.8L160.6 89.7L156.2 88.8L151.8 88.0L147.3 87.5L142.8 87.3L138.3 87.4L133.9 87.8L129.4 88.5L125.0 89.3L120.7 90.3L116.3 91.5L112.0 92.7L107.7 94.0L103.4 95.3L99.1 96.5L94.8 97.7L90.4 98.8L86.0 99.8L81.6 100.5L77.2 101.0L72.7 101.2L68.2 101.2L63.7 100.7L59.3 99.9L55.0 98.6L50.9 96.9L46.9 94.8L43.3 92.2L39.9 89.2L37.0 85.8L34.5 82.0L32.6 78.0L31.1 73.8L30.2 69.4L29.9 64.9L30.1 60.4L30.8 56.0L32.1 51.7L33.8 47.6L35.9 43.6L38.4 39.9L41.3 36.4L44.4 33.2L47.8 30.3Z" fill="none" stroke="currentColor" stroke-width="2"/>';
-      caption = 'A racing line and speed profile from the track and grip envelope.';
+      caption = id === 'racing-line' ? 'A fixed path generated from paired track boundaries.' : 'A speed profile along the linked racing line.';
     }
   }
   return `<figure class="simulation-visual">
@@ -5389,15 +5404,15 @@ function simulationMethodGuide(workflowId) {
   },
   "lap-qss": {
     "method": [
-      "The envelope comes from a linked or supplied GGV, a matching cached result, or generation with the selected DynPy model.",
-      "Boundary coordinates define a closed track corridor with allowance for vehicle width and the safety margin.",
-      "The line can follow the centerline, minimize curvature, or minimize QSS lap time from the minimum-curvature starting point.",
+      "The linked GGV supplies the acceleration envelope, model fidelity and available vehicle power.",
+      "The Track analysis supplies a saved racing line with vehicle width and edge clearance already applied at its gates.",
+      "The lap uses the saved line samples without re-optimizing the path.",
       "At each candidate speed, curvature sets lateral demand. GGV interpolation at that speed and demand supplies the remaining acceleration and braking capacity.",
       "The lateral boundary limits corner speed. Alternating forward acceleration and backward braking passes produce a converged closed-lap speed profile. Segment travel times give the lap time."
     ],
     "inputs": [
-      "Track boundary CSV, vehicle width, safety margin and line sampling distance.",
-      "Line mode and optimizer iteration limits, speed ceiling and optional event drive-power limit.",
+      "A generated racing-line result from the Track analysis.",
+      "A GGV result generated for the current vehicle.",
       "A GGV result or envelope-generation settings. A linked GGV supplies the model fidelity and must match the vehicle and power limit."
     ],
     "outputs": [
@@ -5407,7 +5422,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "limits": [
       "This is a spatial speed-profile calculation. It does not integrate suspension, wheel or body states around the lap, even when its envelope comes from 14 DOF.",
-      "The planar corridor has no elevation or banking. Generated GGV values use path-tangent and path-normal axes. Lookup uses absolute lateral demand and conservative capability when left and right CSV rows differ.",
+      "The planar track has no elevation or banking. Signed lateral demand selects the corresponding left or right GGV branch.",
       "Speed is capped by the highest GGV speed and any lower configured ceiling. Envelope and line resolution affect the result.",
       "The constrained line optimizer is local and can reach its iteration limit. A minimum-time result is not a guarantee of the global fastest line."
     ],
@@ -5520,6 +5535,12 @@ function simulationMathHtml(id) {
 }
 
 function simulationMethodHtml(workflow) {
+  if (workflow.id === "racing-line") return `<div class="simulation-math">
+    <section><h3>Track format</h3><p>CSV coordinates are in metres. Each row pairs two points across the track. Rows follow the circuit in order. Each boundary stays on the same side. The circuit closes automatically.</p>
+    <pre>x1,y1,x2,y2</pre>
+    <svg viewBox="0 0 520 180" class="track-format-diagram" role="img" aria-label="Paired boundary points define a track corridor"><path d="M40 140L180 140L350 105L480 60M40 70L180 70L330 35L450 10" fill="none" stroke="currentColor" stroke-width="3"/><path d="M180 70L180 140M330 35L350 105" stroke="var(--blue)" stroke-dasharray="5 4"/><circle cx="180" cy="70" r="5" fill="var(--blue)"/><circle cx="180" cy="140" r="5" fill="var(--blue)"/><text x="115" y="59">(x1, y1)</text><text x="110" y="159">(x2, y2)</text><text x="290" y="150">One row per paired gate</text></svg></section>
+    <section><h3>Vehicle clearance</h3><p>Nominal width is the larger axle span, measured between the outside tire edges with the wheels straight ahead. Wheel-center positions and tire section widths come from Setup. Edge clearance adds space on each side.</p></section>
+    <section><h3>Line generation</h3><p>Both boundaries are periodic cubic splines through every CSV point, with a smooth closure at the finish line.</p><p>Minimum-curvature generation minimizes integrated squared curvature, with a small smoothness penalty on gate offsets. The line stays within the vehicle-center bounds at the paired gates. These are sampled constraints, not a swept-body clearance check between gates.</p><p>The saved line is independent of GGV fidelity. A linked QSS lap uses its original samples without changing the line.</p></section></div>`;
   const guide = simulationMethodGuide(workflow.id);
   if (!guide) return "";
   const dynpy = guide.sources.includes("engines/dynpy/models.py");
@@ -5573,11 +5594,12 @@ function simWorkflowMeta(workflow) {
       parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
       outputs: ["PDF report, signals CSV and summary"],
     },
+    "racing-line": {title: "Racing line", summary: "A reusable path from track boundaries and vehicle clearance."},
     "lap-qss": {
       title: "QSS lap",
-      summary: "Racing line and speed profile from a vehicle acceleration envelope.",
-      sequence: ["GGV validation, racing line and speed profile"],
-      parameters: ["DOF, track, racing line and power cap"],
+      summary: "A speed profile along a saved racing line using the linked GGV.",
+      sequence: ["Linked-input validation and speed profile"],
+      parameters: ["Linked GGV and racing-line results"],
       outputs: ["PDF report, lap CSV and summary"],
     },
     "lap-transient": {
@@ -7066,7 +7088,11 @@ function renderSimConfigForm() {
     return;
   }
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
-  const fields = (state.simConfigPayload.fields || []).filter(field => !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof")));
+  const fields = (state.simConfigPayload.fields || []).filter(field => {
+    if (selectedWorkflow()?.id === "lap-qss") return false;
+    if (selectedWorkflow()?.id === "racing-line" && field.path?.join(".") === "track.boundary_csv") return false;
+    return !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof"));
+  });
   const advancedGroups = new Set(["Numerics", "Execution", "Closed loop", "Fit"]);
   const physical = fields.filter(field => !advancedGroups.has(field.group));
   physical.sort((a, b) => (["Simulation", "Report"].indexOf(a.group) + 1) - (["Simulation", "Report"].indexOf(b.group) + 1));
@@ -7075,12 +7101,61 @@ function renderSimConfigForm() {
     ${fieldGroupSections(physical, "sim-config")}
     ${advanced.length ? `<details class="component-details"><summary>Advanced</summary>${fieldGroupSections(advanced, "sim-config")}</details>` : ""}
   </fieldset>`;
+  if (selectedWorkflow()?.id === "lap-qss") {
+    form.innerHTML = `<div class="simulation-inputs-summary">${[["GGV", selectedSimulation()?.ggv_input], ["Racing line", selectedSimulation()?.racing_line_input]].map(([label, input]) => `<section><h3>${label}</h3><p>${escapeHtml(input?.name || "Not connected")}</p><p class="muted">${escapeHtml(input?.message || "Connection available in the outline.")}</p></section>`).join("")}</div>`;
+  }
+  if (selectedWorkflow()?.id === "racing-line") renderTrackImport(form, busy);
   if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
     control.title = "Simulation settings are locked while a run is active.";
   });
   form.oninput = () => markSimConfigDirty();
   form.onchange = () => markSimConfigDirty();
   form.onclick = handleArrayEditorClick;
+}
+
+function trackPreviewSvg(payload) {
+  const points = [...payload.left, ...payload.right];
+  const xs = points.map(p => p[0]), ys = points.map(p => -p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const width = Math.max(...xs) - x, height = Math.max(...ys) - y;
+  const pad = Math.max(width, height) * .06 || 1;
+  const boundary = points => [...points, points[0]].map(([x, y]) => `${x},${-y}`).join(" ");
+  return `<svg class="track-preview" viewBox="${x-pad} ${y-pad} ${width+2*pad} ${height+2*pad}" role="img" aria-label="Track boundaries">
+    <polyline points="${boundary(payload.left)}"/><polyline points="${boundary(payload.right)}"/>
+    </svg>`;
+}
+
+function renderTrackImport(form, busy) {
+  const path = state.simConfigPayload.data.track.boundary_csv;
+  const section = document.createElement("section");
+  section.className = "track-import";
+  section.innerHTML = `<div class="track-import-bar"><button type="button" class="ghost-button"${busy ? " disabled" : ""}>Import track</button><input type="file" accept=".csv" aria-label="Import track CSV" hidden><span class="track-name">${escapeHtml(path.split("/").pop())}</span></div><div class="track-preview-area"></div><p class="track-status" role="status"></p>`;
+  form.prepend(section);
+  section.querySelector("button").onclick = () => section.querySelector("input").click();
+  form.querySelectorAll('select option').forEach(option => {
+    option.textContent = option.value === "minimum_curvature" ? "Minimum curvature" : "Centerline";
+  });
+  const preview = payload => {
+    if (!section.isConnected) return;
+    section.querySelector(".track-preview-area").innerHTML = trackPreviewSvg(payload);
+    section.querySelector(".track-status").textContent = `Vehicle width: ${payload.vehicle_width_m.toFixed(3)} m (from Setup)`;
+  };
+  api("/api/tracks/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path})})
+    .then(preview).catch(error => { section.querySelector(".track-status").textContent = error.message; });
+  section.querySelector("input").oninput = event => event.stopPropagation();
+  section.querySelector("input").onchange = async event => {
+    event.stopPropagation();
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      if (state.dirtySimConfig && !await applySimConfigEdits()) return;
+      const payload = await api("/api/tracks/import", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name:file.name,text:await file.text()})});
+      state.simConfigPayload = await api("/api/configs/racing-line", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({values:{'["track","boundary_csv"]':payload.path}})});
+      await simulationRequest("save", {id: state.selectedSimulationId});
+      state.dirtySimConfig = false;
+      renderSimConfigForm();
+    } catch(error) { section.querySelector(".track-status").textContent = error.message; }
+  };
 }
 
 function markSimConfigDirty() {

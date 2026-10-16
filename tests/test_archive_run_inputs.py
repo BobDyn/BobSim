@@ -253,6 +253,10 @@ def linked_ggv_workspace(tmp_path, monkeypatch):
 
     monkeypatch.setattr(app, 'ROOT', tmp_path)
     monkeypatch.setattr(data_services, '_ggv_link_signature', lambda: 'current-inputs')
+    monkeypatch.setattr(data_services, '_simulation_line_input', lambda *args: {
+        'status': 'Ready', 'path': 'line.json', 'sha256': 'line-hash',
+        'source_id': 'line', 'run_id': 'line-run', 'track': {},
+    })
     monkeypatch.setattr(vehicle_yaml, 'project_vehicle_yaml', lambda _: SimpleNamespace(
         ggv=SimpleNamespace(max_drive_power=80000.)))
     (tmp_path / 'vehicle.yml').write_text('vehicle:\n  name: Linked\n')
@@ -261,7 +265,7 @@ def linked_ggv_workspace(tmp_path, monkeypatch):
     (tmp_path / ggv_path).write_text(yaml.safe_dump({
         'vehicle_template': '../../../vehicle.yml', 'generation': {'model_dof': 14}}))
     (tmp_path / 'lap.yml').write_text(yaml.safe_dump({
-        'model_dof': 14, 'qss': {'ggv_csv': 'local.csv', 'generate_if_missing': True}}))
+        'model_dof': 14, 'track': {}, 'qss': {'ggv_csv': 'local.csv', 'generate_if_missing': True}}))
     (tmp_path / 'envelope.csv').write_text('speed_mps,ay_mps2,ax_accel_mps2,ax_brake_mps2\n5,0,10,-10\n')
     workflows = (
         app.WorkflowSpec('ggv', 'envelope', 'GGV', ggv_path, (),
@@ -306,12 +310,11 @@ def test_linked_ggv_requires_a_saved_compatible_result(linked_ggv_workspace):
     with pytest.raises(ValueError, match='deleted'):
         app.simulation_workspace('prepare-run', {'id': lap['id']})
     app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': None})
-    app.simulation_workspace('prepare-run', {'id': lap['id']})
-    assert yaml.safe_load((root / 'lap.yml').read_text())['qss']['generate_if_missing'] is True
+    with pytest.raises(ValueError, match='Connect a GGV'):
+        app.simulation_workspace('prepare-run', {'id': lap['id']})
 
 
 @pytest.mark.parametrize('change,message', [
-    ('power', 'Power limits differ'),
     ('settings', 'settings changed'), ('physics', 'current vehicle'),
 ])
 def test_linked_ggv_rejects_stale_or_incompatible_inputs(linked_ggv_workspace, monkeypatch, change, message):
@@ -356,6 +359,7 @@ def test_linked_lap_inherits_source_fidelity(linked_ggv_workspace):
     app.simulation_workspace('prepare-run', {'id': lap['id']})
     prepared = yaml.safe_load((root / 'lap.yml').read_text())
     assert prepared['model_dof'] == prepared['qss']['linked_ggv']['model_dof'] == 6
+    assert prepared['event']['drive_power_limit_w'] is None
     app.simulation_workspace('set-ggv', {'id': lap['id'], 'source_id': None})
     app.simulation_workspace('load', {'id': lap['id']})
     assert yaml.safe_load((root / 'lap.yml').read_text())['model_dof'] == 6
@@ -516,7 +520,7 @@ def test_analysis_groups_are_explicit_unique_and_vehicle_owned(archive_workspace
     assert result['analysis_groups'] == ['kinematic', 'transient']
     assert result['simulations'] == []
     assert app.simulation_workspace()['analysis_groups'] == ['kinematic', 'transient']
-    with pytest.raises(ValueError, match='Choose Kinematic'):
+    with pytest.raises(ValueError, match='Choose Track, Kinematic'):
         app.simulation_workspace('add-analysis', {'group': 'unknown'})
     with pytest.raises(ValueError, match='active vehicle changed'):
         app.simulation_workspace('add-analysis', {'group': 'steady-state', 'vehicle_key': 'other'})

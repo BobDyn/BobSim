@@ -625,6 +625,15 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("test.directions", "Directions", kind="list", group="Input", choices=DIRECTION_CHOICES),
         ),
     ),
+    "racing-line": ConfigSpec(
+        id="racing-line", group="track", label="Racing line",
+        path="simulations/lap/racing_line_config.yml", workflow_id="racing-line", relocatable=True,
+        fields=(
+            _field("track.boundary_csv", "Track", kind="string", group="Track"),
+            _field("track.safety_margin_m", "Edge clearance", kind="number", group="Track", unit="m"),
+            _field("mode", "Line", kind="select", group="Track", choices=("minimum_curvature", "centerline")),
+        ),
+    ),
     "reduced-ramp-steer": ConfigSpec(
         id="reduced-ramp-steer", group="response", label="Ramp steer",
         path="simulations/response/reduced/ramp_steer_config.yml",
@@ -667,7 +676,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             fields=(
                 _field("model_dof", "Model DOF", kind="select", group="Model", choices=("3", "6", "10", "14")),
                 _field("track.boundary_csv", "Track CSV", kind="string", group="Track"),
-                _field("track.vehicle_width_m", "Vehicle width", kind="number", group="Track", unit="m"),
                 _field("track.safety_margin_m", "Edge clearance", kind="number", group="Track", unit="m"),
                 _field("track.sample_step_m", "Track sample spacing", kind="number", group="Track", unit="m"),
                 _field("racing_line.mode", "Racing line", kind="select", group="Track",
@@ -859,7 +867,7 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
                 label=f"Run {name}",
                 argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), name),
             )
-            for name in ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient")
+            for name in ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient", "racing-line")
         },
         "run-ggv": ActionSpec(
             id="run-ggv",
@@ -984,6 +992,15 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/step_steer_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/step_steer_report_metrics.csv", "csv"),
+            ),
+        ),
+        WorkflowSpec(
+            id="racing-line", group="track", label="Racing line", engine="Track",
+            fidelity="Geometry", runtime="Python", config="simulations/lap/racing_line_config.yml",
+            actions=("run-racing-line",), outputs=(
+                OutputSpec("Report", "app/user_data/results/racing-line/report.pdf", "pdf"),
+                OutputSpec("Racing line", "app/user_data/results/racing-line/line.json", "json"),
+                OutputSpec("Signals", "app/user_data/results/racing-line/signals.csv", "csv"),
             ),
         ),
         WorkflowSpec(
