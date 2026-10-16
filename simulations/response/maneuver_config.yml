@@ -1,0 +1,11 @@
+model_dof: 6
+maneuver: ramp
+speed_mps: 15.0
+amplitude_deg: 5.0
+start_time_s: 1.0
+ramp_duration_s: 4.0
+rise_time_s: 0.02
+frequency_hz: 1.0
+stop_time_s: 6.0
+sample_period_s: 0.01
+kinematics_mode: lookup

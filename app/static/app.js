@@ -4834,6 +4834,7 @@ function renderStandard() {
 }
 
 const RESPONSE_MODEL_VARIANTS = {
+  "maneuver": ["maneuver", "mbd-maneuver"],
   "ramp-steer": ["reduced-ramp-steer", "ramp-steer"],
   "step-steer": ["reduced-step-steer", "mbd-step-steer"],
 };
@@ -4846,14 +4847,14 @@ function responseFamily(workflow) {
 }
 
 function simulationCards() {
-  const workflows = standardWorkflows();
+  const workflows = standardWorkflows().filter(w => !["ramp-steer", "reduced-ramp-steer", "reduced-step-steer", "mbd-step-steer", "transient"].includes(w.id));
   const emitted = new Set();
   return workflows.flatMap((workflow) => {
     const family = responseFamily(workflow);
     if (!family) return [workflow];
     if (emitted.has(family)) return [];
     emitted.add(family);
-    const id = responseModelSelections[family] || (family === "ramp-steer" ? "ramp-steer" : "reduced-step-steer");
+    const id = responseModelSelections[family] || RESPONSE_MODEL_VARIANTS[family][0];
     return [workflows.find((item) => item.id === id) || workflow];
   });
 }
@@ -4866,7 +4867,7 @@ function responseModelPicker(workflow) {
   const options = [3, 6, 10, 14].map((dof) => [`${reduced}:${dof}`, `DynPy · ${dof} DOF`]);
   options.push([mbd, "BobLib · MBD"]);
   return `<label class="simulation-model-picker">Model
-    <select data-response-model="${family}" aria-label="${family === 'ramp-steer' ? 'Ramp steer' : 'Step steer'} model">
+    <select data-response-model="${family}" aria-label="${escapeHtml(workflow.label)} model">
       ${options.map(([value, label]) => `<option value="${value}"${value === current ? ' selected' : ''}>${label}</option>`).join('')}
     </select><span class="card-meta">${escapeHtml(workflow.model.runtime)}</span>
     ${responseModelErrors[family] ? `<span role="alert">${escapeHtml(responseModelErrors[family])}</span>` : ""}
@@ -4889,7 +4890,7 @@ function simulationAnalysisGroup(workflow) {
 }
 
 function renderWorkflows() {
-  const order = ["racing-line", "four-post", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
+  const order = ["racing-line", "four-post", "maneuver", "ramp-steer", "steady-state", "step-steer", "transient", "ggv", "ymd", "lap-qss", "lap-transient"];
   const rank = (workflow) => {
     const index = order.indexOf(responseFamily(workflow) || workflow.id);
     return index < 0 ? order.length : index;
@@ -5053,7 +5054,10 @@ function simulationVisualHtml(workflow) {
   const axes = `<path d="M26 14V100H234" ${stroke} opacity=".3"/>${text(223, 116, 't')}${text(10, 20, 'δ')}`;
   let drawing;
   let caption;
-  if (id.includes('ramp-steer') || id.includes('step-steer')) {
+  if (["maneuver", "mbd-maneuver"].includes(id)) {
+    drawing = `<path d="M28 35H70L130 13H230M28 70H105V48H230M28 100H70C90 65 110 135 130 100S170 65 190 100S215 135 230 100" ${stroke}/>`;
+    caption = "Ramp, step and sinusoidal steering inputs.";
+  } else if (id.includes('ramp-steer') || id.includes('step-steer')) {
     const ramp = id.includes('ramp-steer');
     const continuous = id === 'ramp-steer';
     drawing = `${axes}<path d="${ramp ? (continuous ? 'M27 94H65L224 24' : 'M27 94H65L165 24H224') : 'M27 94H91L105 26H224'}" ${stroke} stroke-width="2.5"/>`;
@@ -5519,22 +5523,25 @@ function simulationMathHtml(id) {
       {title: "Driver feedback", equation: tex`\begin{aligned}\delta_{\mathrm{cmd}}&=\operatorname{clip}\!\left(\delta_{\mathrm{ff}}+k_\psi e_\psi-\operatorname{atan2}(k_e e_y,v)\right)\\ a_{\mathrm{cmd}}&=\operatorname{clip}\!\left(a_x^{\mathrm{ref}}+k_v(v_{\mathrm{ref}}-v)\right)\end{aligned}`, text: "Feedback corrects the reference steering and acceleration within command limits. Preview selects the reference steering and target speed.", symbols: [[tex`\delta_{\mathrm{ff}}`, "Feedforward steering from cornering trims"], [tex`e_\psi,e_y`, "Heading and cross-track errors"], [tex`k_\psi,k_e,k_v`, "Driver feedback gains"]]}, ode
     ];
   } else {
-    const reduced = ["reduced-ramp-steer", "reduced-step-steer"].includes(id);
+    const maneuver = ["maneuver", "mbd-maneuver"].includes(id);
+    const reduced = ["maneuver", "reduced-ramp-steer", "reduced-step-steer"].includes(id);
     const isStep = ["reduced-step-steer", "mbd-step-steer"].includes(id);
     const isRamp = ["reduced-ramp-steer", "ramp-steer"].includes(id);
-    if (!reduced && !isStep && !isRamp && id !== "transient") return "";
+    if (!maneuver && !reduced && !isStep && !isRamp && id !== "transient") return "";
     intro = reduced ? "The selected DynPy model starts from straight-line trim and responds to steering with closed-loop speed control." : "The multibody vehicle responds to steering with closed-loop speed control.";
     const ramp = {title: "Steering ramp", equation: reduced ? tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\,\operatorname{clip}(t-t_0,0,t_{\mathrm{end}}-t_0)` : tex`\delta(t)=\dot\delta_{\mathrm{cmd}}\max(t-t_0,0)`, text: reduced ? "Steering increases at a constant rate, then remains fixed after ramp end. Simulation end is separate." : "Handwheel angle increases at a constant rate until the run stops or a termination condition is reached.", symbols: [[tex`\dot\delta_{\mathrm{cmd}}`, "Commanded steering rate"], [tex`t_0`, "Steering start time"], ...(reduced ? [[tex`t_{\mathrm{end}}`, "Ramp end time"]] : [])]};
     const sine = {title: "Step and sine inputs", equation: tex`\delta_{\mathrm{sine}}(t)=A\sin(2\pi f(t-t_0))`, text: "The cases cover finite-rise steps and sustained sine inputs. Step metrics describe timing and overshoot. Sine fits give response gain and phase at each test frequency.", symbols: [[tex`A,f`, "Steering amplitude and frequency"], [tex`t_0`, "Steering start time"]]};
-    sections = [isStep ? step : isRamp ? ramp : sine, reduced ? ode : dae];
+    const waveform = {title: "Steering waveform", equation: tex`\delta(t)=A\,s(\max(0,t-t_0)),\qquad s(\tau)=\begin{cases}\min(1,\tau/T)&\text{ramp or finite-rise step}\\\sin(2\pi f\tau)&\text{sine}\end{cases}`, text: "Ramp and step inputs hold their final magnitude. A sine continues until simulation end. One sine run gives a response at one frequency, not a frequency sweep.", symbols: [[tex`A`, "Steering magnitude"], [tex`t_0`, "Input start time"], [tex`T`, "Ramp duration or step rise time"], [tex`f`, "Sine frequency"]]};
+    sections = [maneuver ? waveform : isStep ? step : isRamp ? ramp : sine, reduced ? ode : dae];
     if (reduced) sections.push(speed);
     intro += reduced ? " Steering is nominal mean front roadwheel angle." : " Steering is handwheel angle.";
   }
   const math = (value, displayMode = false) => katex.renderToString(value, {displayMode, throwOnError: true, trust: false});
-  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
+  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(["maneuver", "mbd-maneuver"].includes(id) ? "transient" : id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
 }
 
 function simulationMethodHtml(workflow) {
+  if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return simulationMathHtml(workflow.id);
   if (workflow.id === "racing-line") return `<div class="simulation-math">
     <section><h3>Track format</h3><p>CSV coordinates are in metres. Each row pairs two points across the track. Rows follow the circuit in order. Each boundary stays on the same side. The circuit closes automatically.</p>
     <pre>x1,y1,x2,y2</pre>
@@ -5554,6 +5561,10 @@ function simulationMethodHtml(workflow) {
 }
 
 function simWorkflowMeta(workflow) {
+  if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return {
+    title: "Maneuver", summary: "Vehicle response to ramp, step or sinusoidal steering.",
+    sequence: ["Initial trim", "Steering input and speed control", "Time integration"],
+    parameters: ["Model fidelity, steering waveform and timing"], outputs: ["Report and response signals"]};
   if (workflow?.id === "mbd-step-steer") return {
     title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
     sequence: ["MBD initialization", "Finite-rise steering step", "Vehicle response"],
@@ -5773,6 +5784,9 @@ function workflowModelLabel(workflow) {
   const model = workflow?.model;
   if (!model) return "";
   let dofs = model.model_dofs || [];
+  if (workflow.id === "maneuver" && state.simModalOpen && state.simConfigPayload?.id === "maneuver") {
+    dofs = [Number(state.simConfigPayload.data.model_dof)];
+  }
   if (state.simModalOpen && workflow.id === state.selectedWorkflowId
       && state.simConfigPayload?.id === workflow.config_id) {
     const dofInput = Array.from(document.querySelectorAll("#sim-config-form [data-config-path]"))
@@ -7083,12 +7097,14 @@ function renderSimConfigForm() {
   const instance = `${state.selectedSimulationId || ""}:${state.simConfigPayload?.id || ""}`;
   if (state.dirtySimConfig && form.dataset.instance === instance) return;
   form.dataset.instance = instance;
+  form.classList.toggle("maneuver-form", ["maneuver", "mbd-maneuver"].includes(selectedWorkflow()?.id));
   if (!state.simConfigPayload) {
     form.innerHTML = `<div class="empty-state">Select a workflow to configure its simulation inputs.</div>`;
     return;
   }
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
   const fields = (state.simConfigPayload.fields || []).filter(field => {
+    if (["maneuver", "mbd-maneuver"].includes(selectedWorkflow()?.id) && field.path?.[0] === "model_dof") return false;
     if (selectedWorkflow()?.id === "lap-qss") return false;
     if (selectedWorkflow()?.id === "racing-line" && field.path?.join(".") === "track.boundary_csv") return false;
     return !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof"));
@@ -7108,9 +7124,60 @@ function renderSimConfigForm() {
   if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
     control.title = "Simulation settings are locked while a run is active.";
   });
-  form.oninput = () => markSimConfigDirty();
-  form.onchange = () => markSimConfigDirty();
+  form.oninput = () => { markSimConfigDirty(); updateManeuverPreview(form); };
+  form.onchange = () => { markSimConfigDirty(); updateManeuverPreview(form); };
+  if (["maneuver", "mbd-maneuver"].includes(selectedWorkflow()?.id)) renderManeuverSetup(form, busy);
   form.onclick = handleArrayEditorClick;
+}
+
+function maneuverSteering(time, data) {
+  const elapsed = Math.max(0, time - data.start_time_s);
+  return data.amplitude_deg * (data.maneuver === "sine"
+    ? Math.sin(2 * Math.PI * data.frequency_hz * elapsed)
+    : Math.min(1, elapsed / (data.maneuver === "ramp" ? data.ramp_duration_s : data.rise_time_s)));
+}
+
+function updateManeuverPreview(form) {
+  const preview = form.querySelector(".maneuver-preview");
+  if (!preview) return;
+  const data = {...state.simConfigPayload.data};
+  form.querySelectorAll("[data-config-path]").forEach(input => {
+    const key = JSON.parse(input.dataset.configPath)[0];
+    data[key] = key === "maneuver" ? input.value : Number(input.value);
+  });
+  const controls = {ramp_duration_s: "ramp", rise_time_s: "step", frequency_hz: "sine"};
+  form.querySelectorAll("[data-config-path]").forEach(input => {
+    const kind = controls[JSON.parse(input.dataset.configPath)[0]];
+    if (kind) input.closest(".form-field").hidden = data.maneuver !== kind;
+  });
+  if (!(data.stop_time_s > 0) || !Number.isFinite(data.amplitude_deg)) { preview.innerHTML = ""; return; }
+  const amplitude = Math.max(Math.abs(data.amplitude_deg), 1), end = data.stop_time_s;
+  const count = Math.max(600, Math.min(6000, Math.ceil(end * (data.frequency_hz || 1) * 40)));
+  const points = Array.from({length:count+1}, (_,i) => {const t = end*i/count;
+    return `${60+680*t/end},${140-90*maneuverSteering(t,data)/amplitude}`;}).join(" ");
+  const unit = selectedWorkflow().id === "mbd-maneuver" ? "Handwheel angle (deg)" : "Roadwheel angle (deg)";
+  preview.innerHTML = `<svg viewBox="0 0 800 285" role="img" aria-label="${unit} over time">
+    <text x="60" y="25">${unit}</text><path d="M60 45V240H740M60 140H740" class="maneuver-axis"/>
+    <text x="48" y="55" text-anchor="end">${amplitude.toFixed(1)}</text><text x="48" y="145" text-anchor="end">0</text><text x="48" y="235" text-anchor="end">${(-amplitude).toFixed(1)}</text>
+    <polyline points="${points}"/><text x="60" y="260">0</text><text x="740" y="260" text-anchor="end">${end.toFixed(2)}</text><text x="400" y="278" text-anchor="middle">Time (s)</text></svg>`;
+}
+
+function renderManeuverSetup(form, busy) {
+  const section = document.createElement("section");
+  section.className = "maneuver-setup";
+  const current = selectedWorkflow().id === "mbd-maneuver" ? "mbd" : String(state.simConfigPayload.data.model_dof);
+  section.innerHTML = `<label class="simulation-model-picker">Model fidelity <select aria-label="Model fidelity" ${busy ? "disabled" : ""}>${["3","6","10","14","mbd"].map(value => `<option value="${value}" ${value === current ? "selected" : ""}>${value === "mbd" ? "BobLib · MBD" : `DynPy · ${value} DOF`}</option>`).join("")}</select></label><div class="maneuver-preview"></div>`;
+  form.prepend(section);
+  section.querySelector("select").oninput = e => e.stopPropagation();
+  section.querySelector("select").onchange = e => {
+    e.stopPropagation();
+    const model = e.target.value;
+    workspaceAction(async () => {await saveSimulationEdits(); await simulationRequest("set-maneuver-model", {id:state.selectedSimulationId, model}); await openSimulation(state.selectedSimulationId);});
+  };
+  form.querySelectorAll('select[data-config-path] option').forEach(option => {
+    if (["ramp","step","sine"].includes(option.value)) option.textContent = {ramp:"Ramp and hold",step:"Step",sine:"Sine"}[option.value];
+  });
+  updateManeuverPreview(form);
 }
 
 function trackPreviewSvg(payload) {
