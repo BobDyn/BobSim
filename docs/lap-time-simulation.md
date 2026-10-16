@@ -72,10 +72,10 @@ Periodic cubic splines → arc-length-sampled line with heading, curvature, segm
 Three line modes are available:
 
 - `centerline` uses zero gate offset.
-- `minimum_curvature` minimizes integrated squared curvature and is useful as a
-  fast, vehicle-independent seed.
+- `minimum_curvature` minimizes integrated squared curvature. This is the default.
+  The lap speed profile is solved along this fixed, vehicle-independent line.
 - `minimum_time_qss` starts from the minimum-curvature line and minimizes the
-  actual propagated QSS lap time. This is the default.
+  actual propagated QSS lap time. This optional search takes longer.
 
 Integrated absolute curvature is deliberately not the final objective. It is
 nearly fixed at one revolution for many simple closed tracks and does not price
