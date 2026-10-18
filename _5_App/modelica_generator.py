@@ -469,7 +469,16 @@ def _file_status_payload(item: GeneratedModelicaFile, expected: str | None, repo
         stat = item.path.stat()
         modified = stat.st_mtime
         size = stat.st_size
-        current = expected is None or item.path.read_text(encoding="utf-8", errors="replace") == expected
+        actual = item.path.read_text(encoding="utf-8", errors="replace")
+        current = expected is None or actual == expected
+        if not current and expected is not None and item.kind == "vehicle_record":
+            # These values are fallbacks for standalone BobLib. Standard studies
+            # resolve the active damper settings into a runtime file instead.
+            def without_dampers(source: str) -> str:
+                source = re.sub(r"damperTable\s*=\s*\[[^\]]+\]", "damperTable = []", source)
+                return re.sub(r"^\s*// (front|rear) damper:.*\n", "", source, flags=re.MULTILINE)
+
+            current = without_dampers(actual) == without_dampers(expected)
     return {
         "kind": item.kind,
         "name": item.class_name,
@@ -925,7 +934,11 @@ def _vehicle_entry_text(vehicle_template_name: str) -> str:
             "model VehicleSim",
             "",
             "  \"VehicleInterfaces-aligned BobLib vehicle simulation entrypoint\"",
-            f"  extends Templates.Vehicle.{vehicle_template_name};",
+            "  parameter Boolean useRuntimeDamperTables = false annotation(Evaluate = false);",
+            '  parameter String damperTableFile = "damper_tables.txt" annotation(Evaluate = false);',
+            f"  extends Templates.Vehicle.{vehicle_template_name}(",
+            "    chassis(useRuntimeDamperTable = useRuntimeDamperTables,",
+            "      runtimeDamperTableFile = damperTableFile));",
             "  extends BobLib.Icons.SimulationIcon;",
             "",
             "  annotation(",
@@ -952,7 +965,19 @@ def _four_post_entry_text(four_post_template_name: str) -> str:
             "",
             "model FourPostSim",
             "",
-            f"  extends Templates.FourPost.{four_post_template_name};",
+            "  parameter Boolean useRuntimeDamperTables = false annotation(Evaluate = false);",
+            '  parameter String damperTableFile = "damper_tables.txt" annotation(Evaluate = false);',
+            f"  extends Templates.FourPost.{four_post_template_name}(",
+            "    frAxleDW(",
+            "      leftShockLinkage(useRuntimeDamperTable = useRuntimeDamperTables,",
+            '        runtimeDamperTableFile = damperTableFile, runtimeDamperTableName = "front"),',
+            "      rightShockLinkage(useRuntimeDamperTable = useRuntimeDamperTables,",
+            '        runtimeDamperTableFile = damperTableFile, runtimeDamperTableName = "front")),',
+            "    rrAxleDW(",
+            "      leftShockLinkage(useRuntimeDamperTable = useRuntimeDamperTables,",
+            '        runtimeDamperTableFile = damperTableFile, runtimeDamperTableName = "rear"),',
+            "      rightShockLinkage(useRuntimeDamperTable = useRuntimeDamperTables,",
+            '        runtimeDamperTableFile = damperTableFile, runtimeDamperTableName = "rear")));',
             "  extends BobLib.Icons.SimulationIcon;",
             "",
             "  annotation(",

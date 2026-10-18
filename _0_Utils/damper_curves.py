@@ -7,8 +7,10 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
+import uuid
 from typing import Any, Mapping, Sequence
 
 from _0_Utils.vehicle_io import repo_root
@@ -161,6 +163,24 @@ def vehicle_damper_provenance(data: Mapping[str, Any]) -> dict[str, Any]:
         curve = resolve_damper_curve(data[axle]["actuation"]["shock"])
         result[axle] = {**curve.provenance, "table": curve.table}
     return result
+
+
+def write_runtime_damper_file(data: Mapping[str, Any], build_dir: Path) -> Path:
+    """Write MSL named tables loaded by VehicleSim and FourPostSim at startup."""
+    sections = ["#1"]
+    for axle in ("front", "rear"):
+        table = resolve_damper_curve(data[axle]["actuation"]["shock"]).table
+        sections.append(f"double {axle}({len(table)},2)")
+        sections.extend(f"{speed:.15g} {force:.15g}" for speed, force in table)
+    destination = build_dir / "damper_tables.txt"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    temporary = build_dir / f".damper_tables.{uuid.uuid4().hex}.tmp"
+    try:
+        temporary.write_text("\n".join(sections) + "\n", encoding="ascii")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
 
 
 def write_modelica_damper_tables(data: Mapping[str, Any], record_path: Path) -> bool:

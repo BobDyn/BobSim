@@ -63,25 +63,37 @@ From the BobSim root, inspect the resolved table and its provenance:
 
 ```bash
 python -m _0_Utils.damper_curves vehicle.yml --output resolved_dampers.json
-python -m _0_Utils.damper_curves vehicle.yml --write-modelica
-make standard-build
+make standard-eval-transient
 ```
 
-The damper-only write updates the two `damperTable` fields in the existing
-Modelica record without changing its QSS initialization, vehicle template, or
-FourPost files. YAML edits alone do not update an already compiled model.
+Standard VehicleSim and FourPostSim studies resolve the active `vehicle.yml`
+damper settings at launch. Each simulation case receives its own
+`damper_tables.txt` and `damper_curves.json` under its ignored run directory.
+BobLib reads the named front and rear tables during simulation initialization.
+After one initial build with runtime-table support, changing supported damper
+settings reuses the same executable. No record write, submodule commit, or
+rebuild is needed for a damper-only change. Changes apply to the next study;
+a launched batch of cases keeps its settings snapshot.
+
+Older executables are rejected with a request to rebuild once. Standalone
+BobLib simulations retain their record-based defaults; BobSim explicitly enables
+runtime tables and passes each case's file path. Unsupported settings fail
+before cases are queued. Geometry and other compiled vehicle changes still
+require the normal Modelica generation/build workflow.
 The resolved JSON records dataset SHA-256, settings, contributing curves,
 interpolation weights, and limitations. Result archives include
 `damper_curves.json`; packaged builds include only the runtime TTX25 dataset JSON.
 The existing full-stack `make sync-vehicle-write` and app **Write to MBD** actions
 rewrite other Modelica files, so do not use them for a damper-only settings change.
+The optional `--write-modelica` command remains available for updating the
+record fallback used by standalone BobLib simulations.
 
 Curve generation works with the existing BobLib tabular component. The additional
 table validation and diagnostic outputs require the updated BobLib checkout.
 The sibling `BobLib` repository and BobSim's `_0_Utils/external/BobLib` submodule
 are separate checkouts: editing one does not update the other. Publish the BobLib
-changes separately, advance BobSim's submodule to that commit, then sync the
-damper tables and rebuild. Commit that submodule pointer with the BobSim
+changes separately, advance BobSim's submodule to that commit, and build once.
+Commit that submodule pointer with the BobSim
 changes so other users receive the same implementation.
 
 Reduced-order 6/10/14DOF models now evaluate the full table. Their existing static

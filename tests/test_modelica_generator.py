@@ -91,9 +91,27 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
     assert ("barRate = 0" in four_post_template_text) is (front_arch.has_stabar or rear_arch.has_stabar)
 
     vehicle_entry_text = (tmp_path / "BobLib/Experiments/Standards/VehicleSim.mo").read_text(encoding="utf-8")
-    assert "extends Templates.Vehicle.VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar;" in vehicle_entry_text
+    assert "extends Templates.Vehicle.VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar(" in vehicle_entry_text
+    assert "useRuntimeDamperTable = useRuntimeDamperTables" in vehicle_entry_text
+    assert "runtimeDamperTableFile = damperTableFile" in vehicle_entry_text
     four_post_entry_text = (tmp_path / "BobLib/Experiments/Standards/FourPostSim.mo").read_text(encoding="utf-8")
-    assert "extends Templates.FourPost.FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar;" in four_post_entry_text
+    assert "extends Templates.FourPost.FourPostSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar(" in four_post_entry_text
+    assert 'runtimeDamperTableName = "front"' in four_post_entry_text
+    assert 'runtimeDamperTableName = "rear"' in four_post_entry_text
+
+
+def test_runtime_damper_changes_do_not_hide_other_pending_vehicle_changes(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    data = load_yaml(vehicle_path)
+    shock = data["front"]["actuation"]["shock"]
+    shock["damper_table"]["table"][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["written_to_boblib"] is True
+    shock["spring_table"]["table"][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["written_to_boblib"] is False
 
 
 def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: Path) -> None:

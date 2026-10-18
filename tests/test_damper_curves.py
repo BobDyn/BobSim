@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 import yaml
 
-from _0_Utils.damper_curves import resolve_damper_curve, write_modelica_damper_tables
+from _0_Utils.damper_curves import (
+    resolve_damper_curve, write_modelica_damper_tables, write_runtime_damper_file,
+)
 from _0_Utils.dyn_py import create_model, load_reduced_vehicle_parameters
 from _0_Utils.vehicle_io import load_yaml, repo_root
 from _5_App.modelica_generator import plan_modelica_stack, _modelica_stack_signatures
@@ -93,6 +95,25 @@ def test_modelica_damper_sync_preserves_other_record_content(tmp_path):
     assert "pQSSInitialization(referenceVelocity = 15)" in changed
     assert "-0.25, -324.8" in changed
     assert not write_modelica_damper_tables(data, record)
+
+
+def test_runtime_table_file_reflects_settings_without_modelica_record_edit(tmp_path):
+    data = {
+        axle: {"actuation": {"shock": deepcopy(ttx())}}
+        for axle in ("front", "rear")
+    }
+    path = write_runtime_damper_file(data, tmp_path)
+    original = path.read_text(encoding="ascii")
+    assert original.startswith("#1\ndouble front(27,2)\n")
+    assert "double rear(27,2)\n" in original
+    assert "0.1 235.9\n" in original
+
+    compression = data["front"]["actuation"]["shock"]["damper"]["compression"]
+    compression["low_speed_clicks_from_closed"] = 10
+    assert write_runtime_damper_file(data, tmp_path) == path
+    updated = path.read_text(encoding="ascii")
+    assert updated != original
+    assert updated.split("double rear(27,2)\n", 1)[1] == original.split("double rear(27,2)\n", 1)[1]
 
 
 @pytest.mark.parametrize("table", [

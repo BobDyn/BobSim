@@ -690,6 +690,8 @@ def test_modelica_build_action_creates_build_directory_before_omc(
 
     def fake_build(_action: app.ActionSpec, _job_id: str) -> int:
         assert (tmp_path / target.build_dir).is_dir()
+        (tmp_path / target.build_dir / target.exec_name).write_text("exe", encoding="utf-8")
+        (tmp_path / target.build_dir / f"{target.exec_name}_init.xml").write_text("<init />", encoding="utf-8")
         return 0
 
     monkeypatch.setattr(app, "_run_subprocess_action", fake_build)
@@ -1153,6 +1155,21 @@ def test_modelica_build_signature_changes_when_boblib_source_changes(
 
     assert before["modelica_source_digest"] != after["modelica_source_digest"]
     assert before["signature"] != after["signature"]
+
+
+def test_runtime_damper_settings_do_not_invalidate_modelica_build_signature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    target = app.MODELICA_BUILD_TARGETS["vehicle"]
+    script_path = tmp_path / target.script
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text("// fixed build script\n", encoding="utf-8")
+    signatures = []
+    for generated in ("compression-clicks-6", "compression-clicks-10"):
+        stack = {"written_to_boblib": False, "signatures": {"vehicle": {"generated": generated}}}
+        signatures.append(app._modelica_build_signature_payload(target, stack)["signature"])
+    assert signatures[0] == signatures[1]
 
 
 def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
