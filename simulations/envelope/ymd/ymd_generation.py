@@ -51,7 +51,7 @@ from engines.dynpy.qss import solve_moment_state
 G = 9.80665
 IN_TO_M = 0.0254
 MPH_TO_MPS = 0.44704
-YMD_DIR = Path(__file__).resolve().parent
+YMD_DIR = repo_root() / "simulations/envelope/ymd"
 ENVELOPE_DIR = YMD_DIR.parent
 REPO_ROOT = repo_root()
 BUILD_DIR = ENVELOPE_DIR / "Build" / "YMD"

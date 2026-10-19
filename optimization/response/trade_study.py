@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import csv
+from common.vehicle_io import repo_root
 from pathlib import Path
 import sys
 import time
@@ -39,7 +40,7 @@ from optimization.response.pipeline.standards import (
 )
 from optimization.response.pipeline.variants import VariantStore, split_cpus
 
-DEFAULT_STUDY = Path(__file__).resolve().parent / "configs/trade_study.yaml"
+DEFAULT_STUDY = repo_root() / "optimization/response" / "configs/trade_study.yaml"
 # One store for every study, so shared candidates are compiled once.
 TRADE_DIR = STANDARD_BUILD_DIR / "trade"
 RUN_TIMEOUT_S = 3600

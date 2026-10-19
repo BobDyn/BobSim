@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from common.vehicle_io import repo_root
 from pathlib import Path
 
 from optimization.response.pipeline.compiler import (
@@ -27,7 +28,7 @@ from optimization.response.pipeline._pipeline_hash import (
     write_pipeline_hash,
 )
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from common.vehicle_io import repo_root
 from pathlib import Path
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
@@ -26,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 OPTSIM_RESULTS_DIR = OPTSIM_DIR / "results"
 DEFAULT_INPUT = OPTSIM_RESULTS_DIR / "standard_sensitivity_results.csv"

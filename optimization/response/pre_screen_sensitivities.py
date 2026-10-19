@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
+from common.vehicle_io import repo_root
 
 from optimization._shared.console import elapsed, stage
 from optimization._shared.plot_sensitivity_tornado import (
@@ -23,7 +23,7 @@ from optimization.response.pipeline.orchestration import (
 )
 
 
-STANDARD_DIR = Path(__file__).resolve().parent
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 BUILD_DIR = OPTSIM_DIR / "Build" / "StandardSens"
 POPULATION_DIR = BUILD_DIR / "population"

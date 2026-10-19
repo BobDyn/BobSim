@@ -312,7 +312,7 @@ def generate_variants(
 if __name__ == "__main__":
     from optimization.response.pipeline.sampler import sample
 
-    standard_dir = Path(__file__).resolve().parents[1]
+    standard_dir = repo_root() / "optimization/response"
     optsim_dir = standard_dir.parent
     config = standard_dir / "configs/_doe_config.yaml"
     population = optsim_dir / "Build" / "StandardSens" / "population"

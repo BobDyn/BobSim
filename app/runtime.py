@@ -11,11 +11,14 @@ import time
 from typing import Any, Iterable
 
 from app import storage as app_storage
+from common.vehicle_io import (
+    APP_NAME as APP_NAME,
+    PROJECT_NAME as PROJECT_NAME,
+    PRIMARY_HOME_ENV as PRIMARY_HOME_ENV,
+    LEGACY_HOME_ENV as LEGACY_HOME_ENV,
+    default_runtime_root as _default_runtime_root,
+)
 
-PROJECT_NAME = "BobDyn"
-APP_NAME = "BobSim"
-PRIMARY_HOME_ENV = "BOBSIM_HOME"
-LEGACY_HOME_ENV = "BOBDYN_HOME"
 PACKAGE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])).resolve()
 FROZEN_APP = bool(getattr(sys, "frozen", False))
 APP_RUNTIME_SEED_SCHEMA_VERSION = 4
@@ -46,21 +49,6 @@ APP_SEED_RUNTIME_PATHS = (
     "optimization/envelope/config.yml",
     "optimization/response/configs",
 )
-
-
-def _default_runtime_root() -> Path:
-    override = os.environ.get(PRIMARY_HOME_ENV) or os.environ.get(LEGACY_HOME_ENV)
-    if override:
-        return Path(override).expanduser().resolve()
-
-    system = platform.system()
-    if system == "Windows":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif system == "Darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return (base / PROJECT_NAME / APP_NAME).resolve()
 
 
 def _runtime_copy_ignore(_: str, names: list[str]) -> set[str]:
@@ -319,5 +307,6 @@ def _prepare_runtime_root() -> Path:
 
     runtime_root = _default_runtime_root()
     _seed_runtime_root(runtime_root)
+    os.environ[PRIMARY_HOME_ENV] = runtime_root.as_posix()
     os.chdir(runtime_root)
     return runtime_root

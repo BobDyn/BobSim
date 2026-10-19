@@ -27,7 +27,9 @@ from typing import Any
 import numpy as np
 import yaml
 
-OUT_DIR = Path(__file__).resolve().parent / "results"
+from common.vehicle_io import repo_root
+
+OUT_DIR = repo_root() / "visualization/results"
 CONFIG_NAME = "demo_step_steer.yml"
 DATA_NAME = "demo_step_steer.npz"
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from common.vehicle_io import repo_root
 from pathlib import Path
 import textwrap
 from typing import Any, cast
@@ -26,7 +27,7 @@ from optimization._shared.plot_sensitivity_tornado import (
 )
 
 
-PIPELINE_DIR = Path(__file__).resolve().parent
+PIPELINE_DIR = repo_root() / "optimization/envelope/_pipeline"
 ENVELOPE_DIR = PIPELINE_DIR.parent
 OPTSIM_DIR = ENVELOPE_DIR.parent
 DEFAULT_INPUTS = (
