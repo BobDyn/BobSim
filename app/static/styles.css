@@ -5122,3 +5122,18 @@ summary:focus-visible {
 @media (max-width: 850px) {
   .maneuver-form .simulation-input-fields { grid-template-columns: 1fr; }
 }
+
+.simulation-inputs-summary {
+  display: grid;
+  gap: 20px;
+  padding: 20px;
+}
+.simulation-inputs-summary section {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+.simulation-inputs-summary h3 { margin: 0 0 8px; }
+.simulation-inputs-summary p { margin: 4px 0; }
+
+.simulation-inputs-summary h3 small { color: var(--muted); font-size: 12px; margin-left: 8px; font-weight: 400; }
+.simulation-inputs-summary button { margin-bottom: 6px; }

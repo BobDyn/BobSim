@@ -207,7 +207,7 @@ class BobSimHandler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
-        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
+        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval", "/api/tracks/preview"}
         cancels_job = path.startswith("/api/jobs/") and path.endswith("/cancel")
         if launches_job or cancels_job or read_only or path == "/api/simulations/visualization-settings":
             self._handle_post()

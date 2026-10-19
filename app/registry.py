@@ -697,7 +697,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                 _field("track.safety_margin_m", "Edge clearance", kind="number", group="Track", unit="m"),
                 _field("track.sample_step_m", "Track sample spacing", kind="number", group="Track", unit="m"),
                 _field("racing_line.mode", "Racing line", kind="select", group="Track",
-                       choices=("centerline", "minimum_curvature", "minimum_time_qss")),
+                       choices=("centerline", "minimum_curvature")),
                 _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
                 _field("qss.regenerate", "Rebuild GGV", kind="boolean", group="Envelope"),
                 *(
@@ -707,7 +707,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                         _field("transient.lookahead_m", "Driver lookahead", kind="number", group="Transient", unit="m"),
                     ) if name == "lap-transient" else ()
                 ),
-            ),
+            ) if name == "lap-transient" else (),
         )
         for name, label in (("lap-qss", "QSS lap"), ("lap-transient", "Transient lap"))
     },

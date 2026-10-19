@@ -93,7 +93,7 @@ def test_app_envelope_settings_only_expose_model_choice():
 
     ggv = BASE_CONFIG_SPECS["ggv"]
     assert [field.path for field in ggv.fields] == [("generation", "model_dof")]
-    for name in ("lap-qss", "lap-transient"):
-        assert [field.path for field in BASE_CONFIG_SPECS[name].fields if field.path[0] == "qss"] == [
-            ("qss", "regenerate"),
-        ]
+    assert BASE_CONFIG_SPECS["lap-qss"].fields == ()
+    assert [field.path for field in BASE_CONFIG_SPECS["lap-transient"].fields if field.path[0] == "qss"] == [
+        ("qss", "regenerate"),
+    ]
