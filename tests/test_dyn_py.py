@@ -201,6 +201,27 @@ def test_component_cg_move_recomputes_total_cg_and_yaw_inertia(
     )
 
 
+@pytest.mark.parametrize("lateral_offset_m", [-0.10, 0.0, 0.10])
+@pytest.mark.parametrize("speed_mps", [0.0, 12.0])
+def test_3dof_balances_offset_cg_weight_and_roll_moment(tmp_path, lateral_offset_m, speed_mps):
+    data = deepcopy(load_yaml(vehicle_yaml_path()))
+    data["driver_mass"]["cg_m"][1] += lateral_offset_m
+    path = tmp_path / "offset_driver.yml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    model = create_model(3, load_reduced_vehicle_parameters(path))
+    state = model.initial_state(speed_mps)
+    state[4] = 0.03 * speed_mps
+    output = model.evaluate(state)
+
+    assert np.all(output.normal_loads_n > 0.0)
+    np.testing.assert_allclose(output.body_force_n[2], 0.0, atol=1e-6)
+    np.testing.assert_allclose(output.body_moment_nm[:2], 0.0, atol=1e-6)
+    if speed_mps == 0.0 and lateral_offset_m:
+        left_load = np.sum(output.normal_loads_n[[0, 2]])
+        right_load = np.sum(output.normal_loads_n[[1, 3]])
+        assert (left_load - right_load) * lateral_offset_m > 0.0
+
+
 def test_dyn_py_applies_full_aero_wrench_at_reference_point(parameters):
     model = create_model(6, parameters)
     aero = parameters.aero
