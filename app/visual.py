@@ -426,7 +426,8 @@ def reduced_scene_payload(vehicle_path: Path, data_path: Path, dof: int) -> Scen
             corners[corner] = {**names, "axle": "front" if corner.startswith("f") else "rear"}
     if corners:
         try:
-            config["tire_forces"] = {"corners": corners, "friction": axle_friction(vehicle_path)}
+            config["tire_forces"] = {"corners": corners, "friction": axle_friction(
+                vehicle_path, tire_snapshot_dir=vehicle_path.parent / "tires")}
         except (OSError, ValueError, KeyError):
             config["representation"] += " · Tire grip unavailable"
     with tempfile.TemporaryDirectory(prefix="bobsim-replay-") as directory:
