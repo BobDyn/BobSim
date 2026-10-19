@@ -973,6 +973,22 @@ for (const [value, scale, display, edited, expected] of [
     api=async()=>({log:'updated output'});
     elements['job-log'].scrollHeight=1000; elements['job-log'].scrollTop=100;
     await loadJobLog();assert.equal(elements['job-log'].scrollTop,100,'reading position survives refresh');
+    selectedWorkflow=()=>({id:'lap-qss',actions:[]});
+    canRunStandardWorkflow=()=>true;
+    saveSimulationEdits=async()=>{};
+    activeVehicleKey=()=>'vehicle';
+    state.dirtySimConfig=false;
+    state.status={jobs:[{id:'old',label:'Old run',status:'succeeded',argv:[]}]};
+    state.selectedJobId='old';
+    const newJob={id:'new-run',label:'QSS lap',status:'running',argv:[]};
+    api=async path=>path==='/api/status' ? {jobs:[newJob,...state.status.jobs]} : newJob;
+    Object.defineProperty(elements['run-log-menu'],'open',{
+      get:()=>true,set:()=>renderRunLog(),configurable:true,
+    });
+    renderStandard=()=>renderRunLog();
+    await startSelectedWorkflow();
+    assert.equal(state.selectedJobId,'new-run','opening the log follows the new job');
+    assert.equal(elements['job-log'].scrollTop,0,'new run resets the old reading position');
     const saves=[];
     state.simulationWorkspace={simulations:[{id:'sim',name:'Original'}]};
     simulationRequest=async(action,values)=>saves.push({action,...values});
