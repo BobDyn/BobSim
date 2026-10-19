@@ -126,6 +126,23 @@ def test_qss_profile_respects_gvv_acceleration_boundaries(
             assert ax >= limit - 1e-6
 
 
+def test_qss_lap_respects_negative_upper_acceleration_boundary(
+    circular_corridor: TrackCorridor,
+) -> None:
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    ggv = GGVMap.from_arrays(
+        [2.0, 10.0, 20.0], [0.0, 20.0],
+        [[2.0, 2.0], [0.0, 0.0], [-2.0, -2.0]],
+        [[-4.0, -4.0], [-4.0, -4.0], [-4.0, -4.0]],
+    )
+    lap = solve_qss_lap(line, ggv)
+
+    assert lap.converged
+    assert np.allclose(lap.speed_mps, 10.0, atol=1e-3)
+    for speed, ax, ay in zip(lap.speed_mps, lap.longitudinal_acceleration_mps2, lap.lateral_acceleration_mps2):
+        assert ax <= ggv.longitudinal_limit(float(speed), float(ay), "drive") + 1e-4
+
+
 def test_minimum_time_line_keeps_best_qss_candidate(
     circular_corridor: TrackCorridor,
     synthetic_ggv: GGVMap,
@@ -173,7 +190,15 @@ def test_forward_transient_executes_against_same_qss_reference(
     assert np.all(np.isfinite(result.lateral_error_m))
 
 
-def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
+@pytest.mark.parametrize("scenario", ("qss", "transient"))
+def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -> None:
+    from simulations.lap import lap_time_eval_sim as runner
+    original = runner.simulate_transient_lap
+
+    def short_lap(*args, **kwargs):
+        return original(*args, **kwargs, stop_time_s=0.1)
+
+    monkeypatch.setattr(runner, "simulate_transient_lap", short_lap)
     ggv_path = tmp_path / "ggv.csv"
     with ggv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -206,8 +231,11 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    summary = run_lap_time_evaluation(config_path, scenario="qss")
+    summary = run_lap_time_evaluation(config_path, scenario=scenario)
 
+    assert summary["ggv_speed_min_mps"] == 2.
+    assert summary["ggv_speed_max_mps"] == 30.
+    assert summary["ggv_range_limited"] == (summary["qss_max_speed_mps"] >= 30. - 1e-6)
     assert summary["model_dof"] == 3
     assert summary["effective_drive_power_limit_w"] == pytest.approx(32_000.0)
     assert summary["ggv_provenance"]["status"] == "supplied_unverified"
@@ -216,4 +244,11 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
     assert summary["optimized_qss_lap_time_s"] > 0.0
     assert (output_path / "qss_lap.csv").is_file()
     assert (output_path / "summary.json").is_file()
-    assert not (output_path / "transient_lap.csv").exists()
+    assert (output_path / "transient_lap.csv").exists() == (scenario == "transient")
+    if scenario == "transient":
+        from app.visual import reduced_scene_payload
+        from common.vehicle_io import repo_root
+        path = output_path / "transient_signals.csv"
+        assert path.is_file()
+        replay = reduced_scene_payload(repo_root() / "vehicle.yml", path, 3)
+        assert replay.header["frames"] > 1

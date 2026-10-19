@@ -176,7 +176,7 @@ def solve_qss_lap(
             ay = speed[index] ** 2 * abs(line.curvature_per_m[index])
             ax = ggv.longitudinal_limit(speed[index], ay, "drive")
             if np.isfinite(ax):
-                reachable = np.sqrt(max(speed[index] ** 2 + 2.0 * max(ax, 0.0) * line.segment_length_m[index], 0.0))
+                reachable = np.sqrt(max(speed[index] ** 2 + 2.0 * ax * line.segment_length_m[index], 0.0))
                 speed[next_index] = min(speed[next_index], reachable, speed_ceiling)
         for index in range(count - 1, -1, -1):
             next_index = (index + 1) % count

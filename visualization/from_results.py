@@ -376,6 +376,7 @@ def convert(
         signals[str(plot["y"])] = columns[str(plot["y"])]
 
     config = {
+        "representation": "BobLib · MBD · Captured linkage geometry",
         "style": STYLE,
         "geometry": {"points": points_cfg, "links": links_cfg, "tires": tires_cfg},
         "render": {"speed": 1.0},

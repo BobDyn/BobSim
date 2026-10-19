@@ -1098,6 +1098,7 @@ def _sync_actions_runtime() -> None:
     app_actions._modelica_build_missing_files = _modelica_build_missing_files
     app_actions._workflow_by_id = _workflow_by_id
     app_actions.capture_workflow_inputs = capture_workflow_inputs
+    app_actions.simulation_workspace = simulation_workspace
     app_actions.save_active_results = save_active_results
     app_actions._run_subprocess_action = (
         _DEFAULT_RUN_SUBPROCESS_ACTION
@@ -1153,6 +1154,10 @@ def start_job(*args: Any, **kwargs: Any) -> Any:
     return app_actions.start_job(*args, **kwargs)
 
 
+def simulation_workspace(*args: Any, **kwargs: Any) -> Any:
+    return _data_service_call("simulation_workspace", *args, **kwargs)
+
+
 def start_workflow(*args: Any, **kwargs: Any) -> Any:
     _sync_actions_runtime()
     return app_actions.start_workflow(*args, **kwargs)
@@ -1186,6 +1191,7 @@ def _sync_server_runtime() -> None:
     app_server.start_job = start_job
     app_server.save_openmodelica_toolchain_settings = save_openmodelica_toolchain_settings
     app_server.start_workflow = start_workflow
+    app_server.simulation_workspace = simulation_workspace
     app_server.save_raw_config = save_raw_config
     app_server.patch_config = patch_config
     app_server.apply_vehicle_template = apply_vehicle_template

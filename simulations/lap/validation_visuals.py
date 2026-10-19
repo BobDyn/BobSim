@@ -36,7 +36,6 @@ from simulations.envelope.ggv.ggv_generation import (
     plot_ggv_metrics,
     plot_ggv_surface,
     save_ggv_csv,
-    solve_lateral_limit,
 )
 from simulations.envelope.ymd.ymd_generation import (
     YMDConfig,
@@ -231,17 +230,7 @@ def _ggv_results(
 ) -> list[GGVEnvelope]:
     path = output / "ggv.csv"
     if path.exists() and not force:
-        cached = _load_ggv_envelopes(path)
-        if all(_ggv_has_closed_lateral_endpoints(envelope) for envelope in cached):
-            return cached
-        closed = _close_cached_ggv_endpoints(
-            cached,
-            projected_vehicle=vehicle,
-            model=model,
-            config=config,
-        )
-        save_ggv_csv(closed, path)
-        return closed
+        return _load_ggv_envelopes(path)
     generation = GGVConfig(
         speeds=tuple(float(value) for value in config.get("speeds_mps", (6, 12, 18))),
         model_dof=dof,
@@ -262,63 +251,6 @@ def _ggv_results(
     envelopes = generate_ggv(vehicle, generation, reduced_model=model)
     save_ggv_csv(envelopes, path)
     return envelopes
-
-
-def _ggv_has_closed_lateral_endpoints(envelope: GGVEnvelope) -> bool:
-    finite = np.isfinite(envelope.ax_accel) & np.isfinite(envelope.ax_brake)
-    if np.count_nonzero(finite) < 3:
-        return False
-    accel = envelope.ax_accel[finite]
-    brake = envelope.ax_brake[finite]
-    return bool(
-        np.isclose(accel[0], brake[0], atol=1e-8)
-        and np.isclose(accel[-1], brake[-1], atol=1e-8)
-    )
-
-
-def _close_cached_ggv_endpoints(
-    envelopes: list[GGVEnvelope],
-    *,
-    projected_vehicle: Any,
-    model: Any,
-    config: dict[str, Any],
-) -> list[GGVEnvelope]:
-    """Upgrade a zero-yaw cached sweep with its exact coast/lateral endpoints."""
-
-    closed: list[GGVEnvelope] = []
-    ay_upper = float(config.get("ay_max_g", 2.4)) * 9.80665
-    for envelope in envelopes:
-        lateral_limit, coast_ax = solve_lateral_limit(
-            projected_vehicle,
-            speed=envelope.speed,
-            ay_upper=ay_upper,
-            reduced_model=model,
-            max_abs_beta_rad=float(config.get("max_abs_beta_rad", 0.25)),
-            max_abs_steering_rad=float(config.get("max_abs_steering_rad", 0.5)),
-            binary_iterations=int(config.get("ax_binary_iterations", 8)),
-            enforce_tire_load_range=bool(
-                config.get("enforce_tire_load_range", True)
-            ),
-            trim_multistart=bool(config.get("trim_multistart", True)),
-        )
-        positive = (
-            (envelope.ay >= 0.0)
-            & (envelope.ay < lateral_limit - 1e-9)
-            & np.isfinite(envelope.ax_accel)
-            & np.isfinite(envelope.ax_brake)
-        )
-        ay = np.concatenate((envelope.ay[positive], [lateral_limit]))
-        accel = np.concatenate((envelope.ax_accel[positive], [coast_ax]))
-        brake = np.concatenate((envelope.ax_brake[positive], [coast_ax]))
-        closed.append(
-            GGVEnvelope(
-                speed=envelope.speed,
-                ay=np.concatenate((-ay[:0:-1], ay)),
-                ax_accel=np.concatenate((accel[:0:-1], accel)),
-                ax_brake=np.concatenate((brake[:0:-1], brake)),
-            )
-        )
-    return closed
 
 
 def _ymd_results(

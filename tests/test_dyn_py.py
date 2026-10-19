@@ -456,7 +456,7 @@ def test_qss_returns_infeasible_result_when_kinematic_steer_guess_exceeds_bound(
 
 @pytest.mark.parametrize("dof", (3, 6, 10, 14))
 @pytest.mark.parametrize("speed_mps", (6.0, 18.0))
-def test_ggv_lateral_trim_is_acceleration_not_implied_corner_radius(
+def test_default_body_acceleration_trim_does_not_imply_corner_radius(
     parameters,
     dof,
     speed_mps,
@@ -474,7 +474,9 @@ def test_ggv_lateral_trim_is_acceleration_not_implied_corner_radius(
     assert result.lateral_acceleration_mps2 == pytest.approx(8.0, abs=1e-6)
 
 
-def test_ggv_pure_lateral_endpoint_is_closed_at_coast(parameters):
+def test_ggv_lateral_endpoint_closes_path_acceleration(parameters):
+    from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit
+
     projection = project_vehicle_yaml(load_vehicle_yaml())
     ay, ax = solve_lateral_limit(
         projection.ggv,
@@ -484,18 +486,36 @@ def test_ggv_pure_lateral_endpoint_is_closed_at_coast(parameters):
         binary_iterations=4,
     )
 
-    # Check feasibility rather than baking in the old zero-ARB fallback's
-    # numerical limit: the active YAML now supplies nominal linkage/bar rates.
+    # The lateral endpoint can require a nonzero tangential acceleration.
     assert 0 < ay < 2.6 * G
     model = create_model(3, parameters)
+    boundary = _solve_envelope_limit(
+        projection.ggv, model, speed=12., ay=2.6 * 9.80665,
+        ax_bounds=(-3.2 * G, 2.8 * G), mode="lateral",
+        max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
+    )
+    assert boundary is not None
     trim = solve_acceleration_trim(model, speed_mps=12.0,
+                                  initial_unknowns=boundary.unknowns,
                                   longitudinal_acceleration_mps2=ax,
-                                  lateral_acceleration_mps2=ay)
+                                  lateral_acceleration_mps2=ay,
+                                  yaw_rate_radps=ay / 12.0, acceleration_frame="path")
     assert trim.success
     assert _trim_is_racing_feasible(trim, model=model, ay=ay,
                                    max_abs_beta_rad=0.25, max_abs_steering_rad=0.5)
-    assert ax < 0.0
-    assert abs(ax) < 1.0
+    assert trim.path_longitudinal_acceleration_mps2 == pytest.approx(ax, abs=1e-5)
+    assert trim.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
+    assert trim.yaw_rate_radps == pytest.approx(ay / 12.0)
+    from engines.dynpy.qss import _algebraic_residual
+
+    # Verify the coupled QSS root independently of static-start load iteration.
+    forward = model.evaluate(trim.state, trim.inputs, normal_loads_n=trim.output.normal_loads_n)
+    np.testing.assert_allclose(_algebraic_residual(model, trim.inputs, forward), 0., atol=1e-4)
+    np.testing.assert_allclose(forward.normal_loads_n, trim.output.normal_loads_n, atol=1e-5)
+    np.testing.assert_allclose(forward.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-5)
+    forward_trim = replace(trim, output=forward)
+    assert forward_trim.path_longitudinal_acceleration_mps2 == pytest.approx(ax, abs=1e-5)
+    assert forward_trim.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
 
 
 def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
@@ -520,7 +540,7 @@ def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
     invalid_output = replace(
         result.output,
         normal_loads_n=np.array(
-            [parameters.front_tire.fz_min_n - 1.0, 500.0, 500.0, 500.0]
+            [parameters.front_tire.fz_max_n + 1.0, 500.0, 500.0, 500.0]
         ),
     )
     invalid_trim = replace(result, output=invalid_output)
@@ -616,11 +636,16 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
         "instantLinkLateralRR",
         "tireFxFL",
         "tireFyFR",
+        "tireFzFL",
         "tireMxFL",
         "tireMyRL",
         "tireMzRR",
     ):
         assert signal in result.signals
+    for index, state in enumerate(result.state):
+        expected = model.evaluate(state, trim.inputs).normal_loads_n
+        assert np.allclose([result.signals[f"tireFz{corner}"][index]
+                            for corner in ("FL", "FR", "RL", "RR")], expected)
     metrics = compare_transient_signals(
         result.time_s,
         {"yawVel": result.signals["yawVel"]},

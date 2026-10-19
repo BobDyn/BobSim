@@ -20,8 +20,10 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 - Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
 **GGV behavior:**
+- Generated envelopes use nine speed slices through the vehicle's drivetrain limit and automatically expand acceleration search bounds. Linked and supplied envelopes retain their original range.
+- The lap summary and report show the GGV speed range and whether its upper edge limits the lap.
 - Cached GGV files are reused only when the model, settings, and physical inputs match. Otherwise they are regenerated.
-- With `generate_if_missing: false`, an existing CSV is used without verification. A missing CSV fails.
+- With `generate_if_missing: false`, an external CSV without provenance is explicitly unverified. Known older BobSim envelopes are rejected. A missing CSV fails.
 - High-slip roots (sideslip > `max_abs_beta_rad`, steer > `max_abs_steering_rad`) are rejected; use EnvelopeSim YMD workflow for deliberate high-beta states
 - Paths can contain `{model_dof}` placeholder to prevent silent reuse across fidelities
 - `summary.json` records the GGV provenance and cache status.
@@ -84,7 +86,9 @@ corner radius, acceleration zones, braking zones, or speed-dependent grip.
 At every path sample, curvature and the GGV lateral boundary set a local speed
 ceiling. Alternating closed-loop forward and backward passes then enforce the
 available combined acceleration and braking at each speed and lateral load.
-The final segment time uses the two endpoint speeds.
+The GGV uses path-tangent and path-normal acceleration. The forward pass retains
+negative upper acceleration limits, so a vehicle that cannot maintain speed
+slows down. The final segment time uses the two endpoint speeds.
 
 The output `qss_lap.csv` contains station, path geometry, speed, longitudinal
 and lateral acceleration, and segment time. It is an equilibrium envelope

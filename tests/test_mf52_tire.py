@@ -214,3 +214,24 @@ def test_algebraic_slip_brackets_from_zero_when_force_curve_reverses(coefficient
     np.testing.assert_allclose(tire.forces(load, alpha, slip, camber)[0], demand, atol=1e-7)
     assert slip[0] == 0.0
     assert np.all(np.abs(slip) < 0.01)
+
+
+def test_wrench_shares_force_evaluation_and_fades_low_load_once(coefficients, monkeypatch):
+    tire = MF52Tire({**coefficients, "QSY1": .012, "QSY2": .001, "QSY3": .002, "LMY": 1.})
+    loads = np.array([-10., 0., .001, 50., 100., 650.])
+    speed = np.array([-15., 0., 15., -15., 15., 0.])
+    expected_forces = tire.forces(loads, .15, .08, -.04)
+    expected_my = tire.rolling_moment(loads, expected_forces[0], speed)
+    original = MF52Tire.forces
+    calls = []
+
+    def counted(self, *args):
+        calls.append(args)
+        return original(self, *args)
+
+    monkeypatch.setattr(MF52Tire, 'forces', counted)
+    actual = tire.evaluate(loads, .15, .08, -.04, speed)
+    assert len(calls) == 1
+    np.testing.assert_allclose(actual[:2], expected_forces, rtol=1e-13, atol=1e-12)
+    np.testing.assert_allclose(actual[3], expected_my, rtol=1e-13, atol=1e-12)
+    np.testing.assert_array_equal(np.asarray(actual)[:, :3], 0.)

@@ -23,6 +23,8 @@ from simulations.response.mbd.four_post.four_post_eval_sim import (
     FOUR_POST_STOP_TIME_S,
     FourPostEvalSim,
     _normalize_four_post_report_config,
+    _static_balance_iterations,
+    _static_balance_convergence_n,
 )
 from simulations.response.mbd._modelica_runner import ModelicaRunner
 from simulations.response.mbd.ramp_steer.ramp_steer_eval_sim import RampSteerEvalSim
@@ -77,13 +79,19 @@ def _four_post_table(name: str) -> list[tuple[float, float]]:
 
 def test_standard_sim_configs_use_internal_numerical_jacobian() -> None:
     for rel_path in STANDARD_CONFIGS:
-        simulation = _load_yaml(rel_path)["simulation"]
+        config = _load_yaml(rel_path)
+        if rel_path.name == "four_post_eval_config.yml":
+            config = FourPostEvalSim(config).config
+        simulation = config["simulation"]
         assert "-jacobian=internalNumerical" in simulation.get("extra_args", []), rel_path
 
 
 def test_standard_sim_configs_use_boblib_entrypoints() -> None:
     for rel_path, exec_name in STANDARD_ENTRYPOINTS.items():
-        simulation = _load_yaml(rel_path)["simulation"]
+        config = _load_yaml(rel_path)
+        if rel_path.name == "four_post_eval_config.yml":
+            config = FourPostEvalSim(config).config
+        simulation = config["simulation"]
         assert simulation.get("exec_name") == exec_name, rel_path
 
 
@@ -350,11 +358,8 @@ def test_four_post_eval_passes_static_balanced_spring_free_lengths(
 
     overrides = FourPostEvalSim(config).build_model_setup_overrides()
 
-    suspension_cfg = config["model_overrides"]["suspension"]
-    assert suspension_cfg["static_balance_iterations"] == 4
-    assert suspension_cfg["static_balance_convergence_n"] == pytest.approx(0.01)
-    assert "motion_ratio" not in suspension_cfg["front"]
-    assert "motion_ratio" not in suspension_cfg["rear"]
+    assert _static_balance_iterations(config) == 4
+    assert _static_balance_convergence_n(config) == pytest.approx(0.01)
     assert overrides["pVehicle.pFrAxleDW.springFreeLength"] == pytest.approx(0.199700878416)
     assert overrides["pVehicle.pRrAxleDW.springFreeLength"] == pytest.approx(0.263423049137)
 
@@ -485,3 +490,18 @@ def test_steady_state_eval_uses_closed_loop_steady_mode() -> None:
         assert max(cases_by_velocity[test_vel]) <= cap
     assert len(cases) < len(config["sweep"]["testVels"]) * len(config["sweep"]["targetAys"])
     assert max(config["sweep"]["targetAys"]) >= 18.0
+
+
+def test_four_post_runtime_settings_are_internal() -> None:
+    config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
+    assert next(iter(config)) == "procedure"
+    assert "brand" not in config["report"]
+    assert not {"standard", "simulation", "execution", "model_overrides"}.intersection(config)
+    legacy = {**config, "simulation": {"solver": "euler", "stepSize": 10}, "execution": {"parallel": True}}
+    effective = FourPostEvalSim(legacy).config
+    assert effective["standard"] == "FourPostEval"
+    assert effective["report"]["brand"] == "BobSim"
+    assert effective["simulation"]["solver"] == "dassl"
+    assert effective["simulation"]["stepSize"] == 0.5
+    assert effective["execution"]["parallel"] is False
+    assert effective["procedure"] == config["procedure"]

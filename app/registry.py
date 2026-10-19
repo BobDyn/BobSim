@@ -126,7 +126,6 @@ COMMON_SIM_FIELDS = (
     _field("execution.stream_logs", "Stream logs", kind="boolean", group="Execution"),
     _field("execution.fail_fast", "Fail fast", kind="boolean", group="Execution"),
     _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
-    _field("report.brand", "Brand", kind="string", group="Report"),
     _field("report.title", "Title", kind="string", group="Report"),
     _field("report.subtitle", "Subtitle", kind="string", group="Report"),
     _field("report.output_path", "Report path", kind="string", group="Report"),
@@ -608,41 +607,13 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/response/mbd/four_post/four_post_eval_config.yml",
         workflow_id="four-post",
         relocatable=True,
-        fields=COMMON_SIM_FIELDS
-        + (
-            _field(
-                "model_overrides.suspension.front.spring_rate_n_per_m",
-                "Front spring rate",
-                kind="number",
-                group="Suspension",
-                unit="N/m",
-            ),
-            _field(
-                "model_overrides.suspension.front.stabar_rate_n_m_per_rad",
-                "Front stabar rate",
-                kind="number",
-                group="Suspension",
-                unit="N m/rad",
-            ),
-            _field(
-                "model_overrides.suspension.rear.spring_rate_n_per_m",
-                "Rear spring rate",
-                kind="number",
-                group="Suspension",
-                unit="N/m",
-            ),
-            _field(
-                "model_overrides.suspension.rear.stabar_rate_n_m_per_rad",
-                "Rear stabar rate",
-                kind="number",
-                group="Suspension",
-                unit="N m/rad",
-            ),
-            _field("procedure.steerMagnitude", "Steer magnitude", kind="number", group="Procedure", unit="rad"),
-            _field("procedure.heaveMagnitude", "Heave magnitude", kind="number", group="Procedure", unit="m"),
-            _field("procedure.rollMagnitude", "Roll magnitude", kind="number", group="Procedure", unit="rad"),
+        fields=(
+            _field("procedure.steerMagnitude", "Handwheel angle", kind="number", group="Procedure", unit="rad",
+                   help_text="The vehicle’s rack C-factor converts handwheel rotation into rack travel."),
+            _field("procedure.heaveMagnitude", "Heave", kind="number", group="Procedure", unit="m"),
+            _field("procedure.rollMagnitude", "Roll", kind="number", group="Procedure", unit="rad"),
             _field("procedure.forceMagnitude", "Force magnitude", kind="number", group="Procedure", unit="N"),
-        ),
+        ) + tuple(field for field in COMMON_SIM_FIELDS if field.group == "Report"),
     ),
     "mbd-step-steer": ConfigSpec(
         id="mbd-step-steer", group="response", label="Step steer",
@@ -668,8 +639,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("ramp_end_time_s", "Ramp end (then hold)", kind="number", group="Input", unit="s"),
             _field("stop_time_s", "Simulation end", kind="number", group="Run", unit="s"),
             _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
-            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
-                   choices=("lookup", "nonlinear")),
         ),
     ),
     "reduced-step-steer": ConfigSpec(
@@ -687,8 +656,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("rise_time_s", "Rise time", kind="number", group="Input", unit="s"),
             _field("stop_time_s", "Duration", kind="number", group="Run", unit="s"),
             _field("sample_period_s", "Sample period", kind="number", group="Run", unit="s"),
-            _field("kinematics_mode", "KinPy evaluation", kind="select", group="Model",
-                   choices=("lookup", "nonlinear")),
         ),
     ),
     **{
@@ -708,8 +675,7 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
                 _field("racing_line.mode", "Racing line", kind="select", group="Track",
                        choices=("centerline", "minimum_curvature", "minimum_time_qss")),
                 _field("event.drive_power_limit_w", "Power cap", kind="number", group="Run", unit="W"),
-                _field("qss.speeds_mps", "Envelope speeds", kind="list", group="Envelope", unit="m/s"),
-                _field("qss.ay_points", "Lateral points", kind="integer", group="Envelope"),
+                _field("qss.regenerate", "Rebuild GGV", kind="boolean", group="Envelope"),
                 *(
                     (
                         _field("transient.sample_period_s", "Sample period",
@@ -731,28 +697,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
             _field("generation.model_dof", "Model DOF", kind="select", group="Model",
                    choices=("3", "6", "10", "14"),
                    help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
-            _field("generation.speeds_mps", "Speeds", kind="list", group="Generation", unit="m/s"),
-            _field("generation.ay_max_g", "Max lateral acceleration", kind="number", group="Generation", unit="g"),
-            _field("generation.ay_points", "Lateral points", kind="integer", group="Generation"),
-            _field(
-                "generation.ax_search_min_g", "Min longitudinal search", kind="number", group="Generation", unit="g"
-            ),
-            _field(
-                "generation.ax_search_max_g", "Max longitudinal search", kind="number", group="Generation", unit="g"
-            ),
-            _field("generation.ax_search_points", "Longitudinal points", kind="integer", group="Generation"),
-            _field("generation.include_left_right", "Include left/right", kind="boolean", group="Generation"),
-            _field("report.enabled", "Report enabled", kind="boolean", group="Report"),
-            _field("report.title", "Title", kind="string", group="Report"),
-            _field("report.reference_speed_mps", "Reference speed", kind="number", group="Report", unit="m/s"),
-            _field(
-                "performance_index.track_profile.integration_step_m",
-                "Track integration step",
-                kind="number",
-                group="Track profile",
-                unit="m",
-            ),
-            _field("performance_index.track_profile.maneuvers", "Maneuvers", kind="json", group="Track profile"),
         ),
     ),
     "ymd": ConfigSpec(
@@ -785,7 +729,6 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         path="simulations/envelope/vehicle_review/vehicle_review_config.yml",
         workflow_id="vehicle-review",
         fields=(
-            _field("report.brand", "Brand", kind="string", group="Report"),
             _field("report.title", "Title", kind="string", group="Report"),
             _field("report.subtitle", "Subtitle", kind="string", group="Report"),
             _field("output.results_dir", "Results directory", kind="string", group="Output"),
@@ -1088,7 +1031,8 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                     OutputSpec("Report", f"simulations/lap/results/{name.removeprefix('lap-')}_report.pdf", "pdf"),
                     OutputSpec("QSS lap", "simulations/lap/results/qss_lap.csv", "csv"),
                     OutputSpec("Summary", "simulations/lap/results/summary.json", "json"),
-                    *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),)
+                    *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),
+                       OutputSpec("Signals", "simulations/lap/results/transient_signals.csv", "csv"))
                        if name == "lap-transient" else ()),
                 ),
             )
@@ -1166,4 +1110,3 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             outputs=(),
         ),
     )
-
