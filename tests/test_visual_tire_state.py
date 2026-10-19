@@ -116,3 +116,14 @@ def test_the_bundled_tire_file_gives_plausible_fsae_grip() -> None:
     mu_x, mu_y = peak_mu(np.array([400.0, 650.0, 1000.0]), 0.0, friction_coefficients(tir))
     assert np.all((mu_x > 1.0) & (mu_x < 4.0))
     assert np.all((mu_y > 1.0) & (mu_y < 4.0))
+
+
+def test_grip_has_no_friction_floor_and_keeps_lightly_loaded_contact():
+    coeffs = dict(COEFFS, LMUX=.001, LMUY=.001, FZMIN=100.)
+    mu = peak_mu(5., 0., coeffs)
+    np.testing.assert_allclose(mu, peak_mu(100., 0., coeffs))
+    assert 0. < mu[0] < .05
+    _, _, usage = grip_usage(np.array([mu[0]*5.]), np.zeros(1), np.array([5.]), 0., coeffs)
+    assert usage[0] == pytest.approx(1.)
+    _, _, zero = grip_usage(np.ones(1), np.ones(1), np.array([500.]), 0., dict(coeffs, LMUX=0.))
+    assert np.isnan(zero[0])
