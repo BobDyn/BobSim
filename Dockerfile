@@ -8,23 +8,11 @@ ENV PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /workspace
 
-# Add OpenModelica apt repository explicitly.
-# The base image has omc installed, but may not keep the apt source enabled,
-# which prevents installing optional packages like libomccpp.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The pinned base image supplies omc. No additional OpenModelica apt packages are needed.
+RUN rm /etc/apt/sources.list.d/openmodelica.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    gnupg \
-    && curl -fsSL https://build.openmodelica.org/apt/openmodelica.asc | \
-        gpg --dearmor -o /usr/share/keyrings/openmodelica-keyring.gpg \
-    && . /etc/os-release \
-    && OM_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME}}" \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openmodelica-keyring.gpg] https://build.openmodelica.org/apt ${OM_CODENAME} stable" \
-        > /etc/apt/sources.list.d/openmodelica.list \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     software-properties-common \
     tzdata \
@@ -45,7 +33,8 @@ RUN python3.11 -m venv "${VIRTUAL_ENV}" \
 # Pre-download the OpenModelica package index with a longer curl timeout.
 # This avoids relying on OpenModelica's shorter internal curl timeout.
 RUN mkdir -p /root/.openmodelica/libraries \
-    && curl -L \
+    && curl -fL \
+        --retry-connrefused \
         --retry 10 \
         --retry-delay 5 \
         --connect-timeout 60 \
