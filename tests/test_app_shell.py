@@ -1454,7 +1454,8 @@ def test_app_can_save_and_load_named_vehicle_configs(tmp_path: Path, monkeypatch
     assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "TemplateVehicle"
 
     app.load_vehicle_source("saved:my-saved-vehicle")
-    assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "ActiveVehicle"
+    assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "My Saved Vehicle"
+    assert app.vehicle_workspace_payload()["key"] == "my-saved-vehicle"
 
     library = app.delete_saved_vehicle("saved:my-saved-vehicle")
     assert not (tmp_path / app.SAVED_VEHICLE_ROOT / "my-saved-vehicle.yml").exists()
