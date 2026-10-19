@@ -37,7 +37,10 @@ def build_scene(
     if dof not in (3, 6, 10, 14):
         raise ValueError("Replay requires a 3, 6, 10 or 14 DOF model.")
     time = np.asarray(signals["time"], dtype=float)
-    required = ["x", "y", "yaw", "handwheelAngle"]
+    # Older reduced archives mislabeled nominal roadwheel steer as handwheelAngle.
+    if "roadwheelSteer" not in signals and "handwheelAngle" in signals:
+        signals = {**signals, "roadwheelSteer": signals["handwheelAngle"]}
+    required = ["x", "y", "yaw", "roadwheelSteer"]
     if dof >= 6:
         required += ["z", "roll", "pitch"]
     for corner in ("FL", "FR", "RL", "RR"):
@@ -63,7 +66,7 @@ def build_scene(
     tires: dict[str, Any] = {}
     links: dict[str, list[list[str]]] = {"body": [], "upper": [], "lower": [], "steering": [], "upright": []}
     kinematics = NonlinearDoubleWishboneKinematics(vehicle) if dof > 3 else None
-    rack = (np.array([kinematics.rack_from_steering(float(angle)) for angle in signals["handwheelAngle"]])
+    rack = (np.array([kinematics.rack_from_steering(float(angle)) for angle in signals["roadwheelSteer"]])
             if kinematics else zero)
     forces: dict[str, Any] = {}
     loads: dict[str, Any] = {}
