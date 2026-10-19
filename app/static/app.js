@@ -5135,9 +5135,9 @@ function simulationMethodGuide(workflowId) {
       "The recorded sweep supplies suspension geometry, force-transfer curves and setup metrics."
     ],
     "inputs": [
-      "Heave and roll amplitudes, pinion steering angle and applied contact-patch force.",
+      "Heave and roll amplitudes, handwheel angle and applied contact-patch force. The handwheel input drives the rack pinion through the vehicle C-factor.",
       "Vehicle hardpoints, masses, springs, anti-roll bars and tire vertical properties.",
-      "Spring and anti-roll-bar overrides, static-balance tolerances and contact-load validation."
+      "Spring and anti-roll-bar properties come from Setup. The runner handles static balancing and contact-load validation."
     ],
     "outputs": [
       "Camber, toe, caster, kingpin inclination, trail and scrub through heave and roll.",
@@ -5285,7 +5285,7 @@ function simulationMethodGuide(workflowId) {
       "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
       "Target speed, simulation duration and output sample interval.",
       "Roadwheel steering rate, ramp start and ramp end.",
-      "KinPy lookup or nonlinear kinematics."
+      "KinPy corner lookups generated automatically from the vehicle geometry."
     ],
     "outputs": [
       "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
@@ -5295,7 +5295,7 @@ function simulationMethodGuide(workflowId) {
     "limits": [
       "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
       "Speed control can deviate from its target when drive force or power limits are reached.",
-      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "Corner lookups interpolate KinPy poses using rack displacement and suspension travel. Their resolution and valid geometry range limit interpolation accuracy.",
       "The output sample interval controls saved points. The integrator takes its own adaptive steps."
     ],
     "sources": [
@@ -5317,7 +5317,7 @@ function simulationMethodGuide(workflowId) {
       "DynPy fidelity: 3, 6, 10 or 14 DOF, vehicle definition and independent front/rear tire models.",
       "Target speed, simulation duration and output sample interval.",
       "Roadwheel step angle, step time and rise duration.",
-      "KinPy lookup or nonlinear kinematics."
+      "KinPy corner lookups generated automatically from the vehicle geometry."
     ],
     "outputs": [
       "Steering input, actual and target speed, lateral acceleration, yaw rate, sideslip and available body motion.",
@@ -5327,7 +5327,7 @@ function simulationMethodGuide(workflowId) {
     "limits": [
       "3 DOF has planar body motion, 6 adds heave/roll/pitch, 10 adds wheel rotation and 14 adds unsprung vertical motion. Outputs reflect that choice.",
       "Speed control can deviate from its target when drive force or power limits are reached.",
-      "Lookup kinematics interpolate precomputed KinPy poses. Nonlinear mode evaluates the geometry directly.",
+      "Corner lookups interpolate KinPy poses using rack displacement and suspension travel. Their resolution and valid geometry range limit interpolation accuracy.",
       "The output sample interval controls saved points. The integrator takes its own adaptive steps."
     ],
     "sources": [
@@ -5342,7 +5342,7 @@ function simulationMethodGuide(workflowId) {
       "The selected DynPy model supplies algebraic vehicle equations across the vehicle speed range. Feasible solutions define longitudinal and lateral acceleration states.",
       "A constrained search identifies the lateral endpoint and the acceleration and braking boundaries at lower lateral demands. Constraints cover vehicle balance, tires, steering, torque and power.",
       "Neighboring solutions provide initial guesses. Independent tire inversion verifies force and torque closure at the solved wheel loads. Near tire peaks, a bracketed trim search can return a conservative endpoint.",
-      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint. The negative lateral branch mirrors the positive branch."
+      "Accepted points have valid drive and brake boundaries. Both branches close at the lateral endpoint. When both turn directions are enabled, DynPy solves them independently."
     ],
     "inputs": [
       "Vehicle geometry, mass, front and rear tire curves, suspension, aero and powertrain limits.",
@@ -5357,7 +5357,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "limits": [
       "Each point holds sideslip constant and uses heading rate equal to path-normal acceleration divided by speed. The retained body angular accelerations are constrained to zero. Wheel acceleration preserves local tire slip. This local QSS approximation does not predict corner-entry transients, roll buildup or wheel hop.",
-      "The left branch is mirrored from positive lateral demand when both directions are shown. Left and right cornering limits are not solved independently.",
+      "Left and right cornering branches are solved independently when both directions are enabled. Disabling that option produces only the positive lateral branch.",
       "This is a local constrained search, not a proof of the global boundary or dynamic stability. Search bounds, sampling, tire fits and convergence limit the recovered envelope. A missing point does not prove every nearby state is impossible.",
       "GGV track-profile scores describe the configured maneuver proxy. QSS Lap provides a boundary-defined racing line and lap-time estimate."
     ],
@@ -5370,14 +5370,14 @@ function simulationMethodGuide(workflowId) {
   },
   "ymd": {
     "method": [
-      "A sideslip and steering grid defines operating points at the selected speed and prescribed yaw rate.",
+      "A sideslip and nominal roadwheel-angle grid defines operating points at the selected speed and prescribed yaw rate. KinPy converts the steering command to rack displacement and individual wheel poses.",
       "Longitudinal and vertical equilibrium are solved at each point. Lateral acceleration and yaw moment remain outputs.",
       "Successful neighboring solutions provide initial guesses. Each point retains its convergence status.",
       "Interpolated zero-yaw-moment crossings form a continuous trim branch. An enabled speed sweep adds maps at the other requested speeds."
     ],
     "inputs": [
       "Vehicle definition and selected DynPy 3, 6, 10 or 14 DOF model, evaluated in Python.",
-      "Speed, sideslip and steering ranges, grid resolution and prescribed yaw rate.",
+      "Speed, sideslip and roadwheel-angle ranges, grid resolution and prescribed yaw rate.",
       "Solver iteration and tolerance settings, tire-load-range enforcement, and optional speed sweep.",
       "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
     ],
@@ -5409,18 +5409,18 @@ function simulationMethodGuide(workflowId) {
     "inputs": [
       "A generated racing-line result from the Track analysis.",
       "A GGV result generated for the current vehicle.",
-      "A GGV result or envelope-generation settings. A linked GGV supplies the model fidelity and must match the vehicle and power limit."
+      "Model fidelity and power limits are inherited from the linked GGV. Changed vehicle inputs require regenerated results before the lap can run."
     ],
     "outputs": [
       "Track position, station, curvature, speed, longitudinal and lateral acceleration, and segment travel time.",
-      "Lap time, line-optimizer and speed-profile convergence status, and envelope provenance.",
+      "Lap time, speed-profile convergence status and linked-input provenance.",
       "A static lap map that can be colored by a saved signal, plus plots and the lap report."
     ],
     "limits": [
       "This is a spatial speed-profile calculation. It does not integrate suspension, wheel or body states around the lap, even when its envelope comes from 14 DOF.",
       "The planar track has no elevation or banking. Signed lateral demand selects the corresponding left or right GGV branch.",
-      "Speed is capped by the highest GGV speed and any lower configured ceiling. Envelope and line resolution affect the result.",
-      "The constrained line optimizer is local and can reach its iteration limit. A minimum-time result is not a guarantee of the global fastest line."
+      "Speed is capped by the linked GGV range. Envelope and saved-line resolution affect the result.",
+      "The saved path is fixed. This workflow does not optimize the racing line or solve for minimum lap time over alternative paths."
     ],
     "sources": [
       "simulations/lap/lap_time_eval_sim.py",
@@ -5440,9 +5440,9 @@ function simulationMethodGuide(workflowId) {
       "DynPy integrates with RK45 for 3 DOF or Radau for 6, 10 and 14 DOF. Track progress identifies the first completed-lap crossing, with interpolation for lap time."
     ],
     "inputs": [
-      "The track, line-optimization and envelope inputs used by QSS Lap.",
+      "Track boundaries, edge clearance, centerline or minimum-curvature mode, and an event power cap for the generated reference envelope.",
       "DynPy 3, 6, 10 or 14 DOF, running in Python. Added DOFs release body heave, roll and pitch, then wheel rotation, then unsprung vertical motion.",
-      "Output sample period, driver preview distance and spacing between steering feedforward trims."
+      "Output sample period and driver preview distance. Steering feedforward trim spacing comes from the run configuration."
     ],
     "outputs": [
       "Time histories of position, speed, steering, yaw rate, acceleration and target speed.",
@@ -5481,6 +5481,14 @@ function simulationMathHtml(id) {
       {title: "2. Force and moment balance", equation: tex`\begin{aligned} \mathbf{R}\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right) &= a_t\mathbf{t}+a_n\mathbf{n} \\ \mathbf{I}\dot{\boldsymbol\omega} &= \mathbf{M}-\boldsymbol\omega\times(\mathbf{I}\boldsymbol\omega) \end{aligned}`, text: "The unknowns include sideslip, rack travel, wheel torque and the model's suspension and wheel states. The shared transient equations have zero yaw acceleration in 3 DOF and zero body angular acceleration in higher fidelities. This does not set yaw rate to zero. In the full inertia model, the gyroscopic term can require a nonzero net moment.", symbols: [[tex`F_{x,i},F_{y,i}`, "Tire force components resolved in body axes, at corner i"], [tex`a_t,\mathbf{t},\mathbf{n}`, "Tangential acceleration and horizontal path unit vectors"], [tex`\mathbf{R},\mathbf{v}^{B}`, "Body-to-world rotation and body-frame velocity"], [tex`\mathbf{I},\boldsymbol\omega,\mathbf{M}`, "Body-frame inertia, angular velocity and net moment"]]},
       {title: "3. Feasible acceleration boundary", equation: tex`a_t^{\mathrm{upper}}=\max_{\text{feasible states}}a_t,\qquad a_t^{\mathrm{lower}}=\min_{\text{feasible states}}a_t`, text: "Boundary optimization respects tire-fit, steering, sideslip, torque and power limits. Neighboring solutions provide initial guesses. The lateral endpoint maximizes normal acceleration with tangential acceleration free. Even the upper boundary can be negative when the vehicle cannot maintain speed.", symbols: []}
     ];
+  } else if (id === "racing-line") {
+    intro = "A periodic path passes through one movable point on each paired track gate. Minimum-curvature generation chooses those points without a tire model or speed profile.";
+    sections = [
+      {title: "1. Parameterized gates", equation: tex`\begin{aligned}\mathbf c_i&=\tfrac12(\mathbf b_{1,i}+\mathbf b_{2,i})\\w_i&=\|\mathbf b_{1,i}-\mathbf b_{2,i}\|,\qquad \mathbf e_i=\frac{\mathbf b_{1,i}-\mathbf b_{2,i}}{w_i}\\\mathbf p_i(d_i)&=\mathbf c_i+d_i\mathbf e_i\end{aligned}`, text: "CSV points define the boundary splines. Original row pairs preserve correspondence between the boundaries. Gates are sampled at equal arc-length intervals along their midpoint reference, targeting the nominal wheelbase. Spacing adjusts down to divide the closed circuit evenly. Each gate has one signed path offset in metres. Gate directions need not be normal to the path.", symbols: [[tex`\mathbf b_{1,i},\mathbf b_{2,i}`, "Resampled boundary points at gate i"], [tex`\mathbf c_i,w_i,\mathbf e_i`, "Gate midpoint, width and unit direction"], [tex`d_i,\mathbf p_i`, "Optimized offset and resulting path point"]]},
+      {title: "2. Vehicle clearance", equation: tex`|d_i|\le\frac{w_i-W}{2}-m`, text: "Nominal vehicle width is the larger axle span between the outside tire edges with the wheels straight ahead. Wheel-center positions and tire section widths come from Setup. Gates with no remaining space are rejected.", symbols: [[tex`W`, "Derived vehicle width (m)"], [tex`m`, "Additional edge clearance on each side (m)"]]},
+      {title: "3. Periodic path and curvature", equation: tex`\kappa(u)=\frac{x'(u)y''(u)-y'(u)x''(u)}{\left(x'(u)^2+y'(u)^2\right)^{3/2}}`, text: "A periodic cubic spline interpolates every path point and closes smoothly at the finish. Its parameter is fixed cumulative chord distance between the gate centers. Analytic spline derivatives give curvature. Saved output is sampled at approximately equal arc-length intervals.", symbols: [[tex`x(u),y(u)`, "Plan-view path coordinates"], [tex`\kappa`, "Signed path curvature (1/m)"]]},
+      {title: "4. Minimum-curvature objective", equation: tex`\begin{aligned}\min_{\{d_i\}}\quad &\int\kappa(u)^2\,\|\mathbf p'(u)\|\,du+\lambda\sum_i(d_{i+2}-2d_{i+1}+d_i)^2\\\text{subject to}\quad &|d_i|\le\frac{w_i-W}{2}-m\end{aligned}`, text: "The first term is integrated squared curvature. The second discourages abrupt changes in successive gate offsets, with cyclic indexing and weight 0.001 for metre-valued inputs. L-BFGS-B starts at zero offsets and uses an analytic gradient with sparse spline solves. Eight-point Gauss quadrature integrates each segment. A global optimum is not guaranteed. Centerline mode keeps all offsets at zero without optimization.", symbols: [[tex`u,\mathbf p(u)`, "Spline parameter and path position"], [tex`i,\lambda`, "Gate index and offset-smoothing weight"]]}
+    ];
   } else if (id === "lap-qss") {
     intro = "The racing line and path-frame GGV determine a speed profile. Curvature sets normal acceleration. The envelope supplies the remaining tangential acceleration and braking capacity.";
     sections = [
@@ -5491,8 +5499,8 @@ function simulationMathHtml(id) {
   } else if (id === "ymd") {
     intro = "A steering and body-sideslip grid maps each combination to lateral acceleration and yaw moment.";
     sections = [
-      {title: "1. Steering and sideslip grid", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Each pair has the selected speed and yaw rate, with longitudinal, vertical and wheel balance enforced.", symbols: [[tex`\delta`, "Steering angle"], [tex`\beta`, "Body sideslip angle"]]},
-      {title: "2. Lateral response and yaw moment", equation: tex`a_y=\left(\dot{\mathbf{v}}^{B}+\boldsymbol\omega\times\mathbf{v}^{B}\right)_y,\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "The map pairs body-frame lateral acceleration with yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`F_{y,i}`, "Lateral tire force resolved in body axes, at corner i"], [tex`\mathbf{v}^{B},\boldsymbol\omega`, "Body-frame linear and angular velocity"], [tex`M_z`, "Net external yaw moment"]]},
+      {title: "1. Steering and sideslip grid", equation: tex`\delta=\delta_i,\qquad\beta=\beta_j`, text: "Each pair has the selected speed and yaw rate, with longitudinal, vertical and wheel balance enforced.", symbols: [[tex`\delta`, "Nominal mean front roadwheel angle"], [tex`\beta`, "Body sideslip angle"]]},
+      {title: "2. Lateral response and yaw moment", equation: tex`a_y^{\mathrm{map}}=\dot v_y^{B}+\dot\psi\,v_x^{B},\qquad M_z=\left(\sum\mathbf{M}\right)_z`, text: "The map reports lateral acceleration using the body lateral-velocity derivative and the prescribed heading rate, paired with body-axis yaw moment. These are outputs, so most points do not have zero yaw moment.", symbols: [[tex`v_x^B,v_y^B`, "Body-frame longitudinal and lateral velocity"], [tex`\dot\psi`, "Prescribed heading rate"], [tex`M_z`, "Net external yaw moment about body z"]]},
       {title: "3. Zero-moment curve", equation: tex`M_z(\beta,\delta)=0`, text: "Crossings are interpolated between converged samples. This identifies balanced yaw conditions within the map. It is not a time-domain stability test.", symbols: []}
     ];
   } else if (id === "steady-state") {
@@ -5526,20 +5534,21 @@ function simulationMathHtml(id) {
     const waveform = {title: "Steering waveform", equation: tex`\delta(t)=A\,s(\max(0,t-t_0)),\qquad s(\tau)=\begin{cases}\min(1,\tau/T)&\text{ramp or finite-rise step}\\\sin(2\pi f\tau)&\text{sine}\end{cases}`, text: "Ramp and step inputs hold their final magnitude. A sine continues until simulation end. One sine run gives a response at one frequency, not a frequency sweep.", symbols: [[tex`A`, "Steering magnitude"], [tex`t_0`, "Input start time"], [tex`T`, "Ramp duration or step rise time"], [tex`f`, "Sine frequency"]]};
     sections = [maneuver ? waveform : isStep ? step : isRamp ? ramp : sine, reduced ? ode : dae];
     if (reduced) sections.push(speed);
+    if (maneuver) sections.push({title: "Model evaluation", text: reduced
+      ? "Straight-line trim initializes the released states. KinPy corner lookups are generated automatically and evaluated using rack displacement and suspension travel. RK45 integrates 3 and 6 DOF. Radau integrates 10 and 14 DOF. The output sample period controls saved signals, not the adaptive solver steps."
+      : "OpenModelica integrates the compiled BobLib vehicle and its joint constraints. The selected waveform drives the handwheel while the vehicle controller regulates speed. Vehicle edits must be included in the compiled model. A single sine run describes one frequency and amplitude, not a frequency sweep.", equation: "", symbols: []});
     intro += reduced ? " Steering is nominal mean front roadwheel angle." : " Steering is handwheel angle.";
   }
   const math = (value, displayMode = false) => katex.renderToString(value, {displayMode, throwOnError: true, trust: false});
-  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(["maneuver", "mbd-maneuver"].includes(id) ? "transient" : id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p><div class="simulation-equation">${math(section.equation, true)}</div>${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
+  return `<div class="simulation-math"><p class="simulation-math-intro">${escapeHtml(intro)}</p>${simulationDiagramHtml(id)}${sections.map(section => `<section><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p>${section.equation ? `<div class="simulation-equation">${math(section.equation, true)}</div>` : ""}${section.symbols.length ? `<dl class="simulation-symbols">${section.symbols.map(([symbol,meaning]) => `<dt>${math(symbol)}</dt><dd>${escapeHtml(meaning)}</dd>`).join("")}</dl>` : ""}</section>`).join("")}</div>`;
 }
 
 function simulationMethodHtml(workflow) {
   if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return simulationMathHtml(workflow.id);
-  if (workflow.id === "racing-line") return `<div class="simulation-math">
-    <section><h3>Track format</h3><p>CSV coordinates are in metres. Each row pairs two points across the track. Rows follow the circuit in order. Each boundary stays on the same side. The circuit closes automatically.</p>
-    <pre>x1,y1,x2,y2</pre>
-    <svg viewBox="0 0 520 180" class="track-format-diagram" role="img" aria-label="Paired boundary points define a track corridor"><path d="M40 140L180 140L350 105L480 60M40 70L180 70L330 35L450 10" fill="none" stroke="currentColor" stroke-width="3"/><path d="M180 70L180 140M330 35L350 105" stroke="var(--blue)" stroke-dasharray="5 4"/><circle cx="180" cy="70" r="5" fill="var(--blue)"/><circle cx="180" cy="140" r="5" fill="var(--blue)"/><text x="115" y="59">(x1, y1)</text><text x="110" y="159">(x2, y2)</text><text x="290" y="150">One row per paired gate</text></svg></section>
-    <section><h3>Vehicle clearance</h3><p>Nominal width is the larger axle span, measured between the outside tire edges with the wheels straight ahead. Wheel-center positions and tire section widths come from Setup. Edge clearance adds space on each side.</p></section>
-    <section><h3>Line generation</h3><p>Both boundaries are periodic cubic splines through every CSV point, with a smooth closure at the finish line.</p><p>Minimum-curvature generation minimizes integrated squared curvature, with a small smoothness penalty on gate offsets. The line stays within the vehicle-center bounds at the paired gates. These are sampled constraints, not a swept-body clearance check between gates.</p><p>The saved line is independent of GGV fidelity. A linked QSS lap uses its original samples without changing the line.</p></section></div>`;
+  if (workflow.id === "racing-line") return `${simulationMathHtml(workflow.id)}<div class="simulation-math">
+    <section><h3>Track format</h3><pre>x1,y1,x2,y2</pre><p>CSV coordinates are in metres. Each row pairs two points across the track. Rows follow the circuit in order, with each boundary on a consistent side. The circuit closes automatically. The boundaries interpolate every cone. Spline refinement prevents artificial narrowing or widening beyond the neighboring cone geometry, within 10 mm. Measured changes in width remain.</p></section>
+    <section><h3>Scope and limitations</h3><ul><li>Clearance is enforced at the resampled gates only. Spline segments between gates are not checked for boundary crossing or swept-body clearance.</li><li>The objective does not minimize lap time. Tire grip, speed and GGV fidelity do not enter the line solve.</li><li>A linked QSS lap reuses the saved line samples and solves the speed profile separately.</li></ul></section>
+    <details class="simulation-method-sources"><summary>Implementation sources</summary><ul>${["simulations/lap/core/track.py", "simulations/lap/core/racing_line.py"].map(path => `<li><a href="/files/${path}" target="_blank" rel="noopener">${path}</a></li>`).join("")}</ul></details></div>`;
   const guide = simulationMethodGuide(workflow.id);
   if (!guide) return "";
   const dynpy = guide.sources.includes("engines/dynpy/models.py");
@@ -5555,7 +5564,7 @@ function simulationMethodHtml(workflow) {
 function simWorkflowMeta(workflow) {
   if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return {
     title: "Maneuver", summary: "Vehicle response to ramp, step or sinusoidal steering.",
-    sequence: ["Initial trim", "Steering input and speed control", "Time integration"],
+    sequence: [workflow.id === "maneuver" ? "Initial straight-line trim" : "MBD initialization", "Steering input and speed control", "Time integration"],
     parameters: ["Model fidelity, steering waveform and timing"], outputs: ["Report and response signals"]};
   if (workflow?.id === "mbd-step-steer") return {
     title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
@@ -5580,7 +5589,7 @@ function simWorkflowMeta(workflow) {
       title: "GGV",
       summary: "Longitudinal and lateral acceleration limits across speed.",
       sequence: ["Quasi-steady trim points"],
-      parameters: ["Speed grid and acceleration bounds"],
+      parameters: ["Model fidelity. Speed coverage and acceleration searches are automatic"],
       outputs: ["Envelope CSV and PDF report"],
     },
     "ymd": {
@@ -5594,7 +5603,7 @@ function simWorkflowMeta(workflow) {
       title: "Step steer",
       summary: "Time response to a roadwheel steering step.",
       sequence: ["Initial trim", "Steering step with PI speed control"],
-      parameters: ["DOF, speed, steer step, timing and KinPy evaluation"],
+      parameters: ["DOF, speed, steer step and timing"],
       outputs: ["PDF report, signals CSV and summary"],
     },
     "racing-line": {title: "Racing line", summary: "A reusable path from track boundaries and vehicle clearance."},
@@ -5637,7 +5646,7 @@ function simWorkflowMeta(workflow) {
       title: "Four Post",
       summary: "Suspension response to heave, roll, and corner loads.",
       sequence: ["FourPostSim build", "Fixed contact heights", "Chassis heave and roll", "Contact-patch test forces", "Suspension metrics"],
-      parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Override rates and initial conditions", "Solver and output controls"],
+      parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Handwheel angle", "Report settings"],
       outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
     },
   }[workflow?.id] || fallback;

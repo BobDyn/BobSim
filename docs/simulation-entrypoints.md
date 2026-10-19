@@ -1,138 +1,83 @@
-# Simulation Entrypoints
+# Simulation entry points
 
-BobSim offers multiple simulation workflows, each with different fidelity levels and use cases. **When generating analysis results, always specify which workflow was used so readers understand whether results came from a high-fidelity MBD study or a fast quasi-steady envelope.**
+Each result identifies its analysis method, vehicle model and runtime.
+QSS is a method, not a model fidelity.
 
-## Engines and execution
+## Models
 
-| Engine | Fidelity | Runtime |
+| Engine | Representation | Runtime |
 | --- | --- | --- |
-| KinPy | Suspension geometry | Python |
-| DynPy | 3, 6, 10 or 14 DOF | Python |
-| BobLib | MBD | OpenModelica compiled executable |
+| KinPy | Suspension geometry and corner lookups | Python |
+| DynPy 3 DOF | Planar body motion, four tire contacts and algebraic load transfer | Python |
+| DynPy 6 DOF | Adds body heave, roll and pitch | Python |
+| DynPy 10 DOF | Adds four wheel rotations | Python |
+| DynPy 14 DOF | Adds four unsprung vertical motions | Python |
+| BobLib MBD | Multibody vehicle with joints and constraints | OpenModelica compiled executable |
 
-DynPy 3DOF models planar motion. 6DOF adds heave, roll and pitch. 10DOF adds
-four wheel rotations. 14DOF adds four unsprung vertical motions.
-Select `REDUCED_DOF` for reduced transients, `generation.model_dof` for envelopes,
-and `model_dof` or `LAP_DOF` for laps. QSS and transient are analysis methods.
-Runtime duration depends on the model, grid and hardware. Compilation is a
-separate cost for BobLib, and no fixed duration is promised here.
+DynPy uses KinPy corner geometry and independent front and rear MF5.2 tire
+models. App workflows generate corner lookups automatically. Runtime depends
+on the vehicle, sampling and convergence. BobLib compilation is a separate cost.
 
-## Workflows
+## App simulations
 
-### VehicleSim / FourPostSim (High Fidelity — MBD)
+| Simulation | Calculation | Inputs and results |
+| --- | --- | --- |
+| Four post | BobLib prescribes chassis roll about global x and heave along rotated local z. Contact-patch global heights remain fixed while other contact motions are free. | Vehicle suspension, heave, roll, handwheel input and test forces. Reports geometry, motion ratios, loads and stiffness metrics. |
+| Maneuver | DynPy or BobLib integrates a ramp-and-hold, finite-rise step or sine input with speed control. | Speed, waveform magnitude and timing. DynPy steering is nominal mean front roadwheel angle. BobLib steering is handwheel angle. Results include histories and a response report. |
+| Steady state | BobLib advances through time until speed, lateral acceleration and monitored handling signals settle. | Speed and lateral-acceleration targets. Reports settled steering, roll, sideslip and handling gradients. |
+| GGV | DynPy solves constrained algebraic operating points and searches acceleration boundaries across speed. | Vehicle definition and selected DOF. Speed coverage and acceleration searches are automatic. Results include path-tangential and path-normal acceleration envelopes. |
+| YMD | DynPy sweeps sideslip and nominal roadwheel steer at prescribed speed and yaw rate. Longitudinal, vertical and retained wheel states are equilibrated. | Steering and sideslip grids. Lateral acceleration and yaw moment remain outputs. Most points are not steady cornering equilibria. |
+| Racing line | Periodic boundary splines interpolate the cones. A bounded sparse optimization minimizes integrated squared path curvature. | Paired-boundary CSV and edge clearance. Vehicle width and wheelbase come from Setup. Results include the saved path, curvature and report. |
+| QSS lap | Forward acceleration and backward braking passes solve a closed-lap speed profile on the saved path. | Linked GGV and racing-line results. Fidelity and power limits come from the GGV. Results include lap time, speed and acceleration along the path. |
+| Transient lap | A feedback driver follows a generated QSS reference while DynPy integrates the vehicle states. | Model DOF, track, line mode, event power cap and driver settings. Reports tracking, lap completion and time histories. |
 
-Compiled Modelica executables built from BobLib's standard vehicle models. Used by the `StandardSim` Python layer for single-study runs.
+Four post uses zero world gravity and spring preload with scheduled test forces.
+It is a constrained rig, not a free-running vehicle. Its handwheel input acts
+on the rack pinion through the vehicle C-factor.
 
-| Property | Value |
+GGV points constrain angular acceleration without setting yaw rate to zero.
+Both turn directions are solved independently when enabled. QSS Lap does not
+integrate suspension transients or optimize the linked path. Racing-line
+clearance is enforced at gates, not over the complete swept vehicle between gates.
+
+Maneuver uses RK45 for DynPy 3/6 DOF and Radau for 10/14 DOF. Transient Lap uses
+RK45 for 3 DOF and Radau for 6/10/14 DOF. Output sampling is separate from the
+integrators' adaptive steps. A single sine maneuver represents one frequency
+and amplitude, not a frequency sweep.
+
+## CLI workflows
+
+`make help` lists the available targets. Source entry points live under
+`simulations/response`, `simulations/envelope` and `simulations/lap`.
+
+| Targets | Workflow |
 | --- | --- |
-| **Workflow** | `simulations/mbd` Python layer + `BobLib/Experiments/Standards/` |
-| **Model source** | BobLib high-fidelity Modelica equations |
-| **Time domain** | Transient time-series (direct integration) |
-| **Typical use** | Single ramp-steer, steady-state, or transient evaluation |
-| **Reported as** | "BobLib standard study" or "MBD simulation" |
+| `standard-eval-four-post` | BobLib four-post rig |
+| `standard-eval-ramp-steer` | BobLib continuous handwheel ramps across speeds |
+| `standard-eval-steady-state` | BobLib settled cornering cases |
+| `standard-eval-transient` | BobLib step and sine case suite |
+| `standard-eval-all` | All four standard studies |
+| `reduced-eval` | DynPy step response |
+| `envelope-ggv`, `envelope-ymd`, `envelope-all` | DynPy envelope workflows |
+| `lap-eval-qss`, `lap-eval-transient`, `lap-eval` | Standalone lap runner with optional envelope and line generation |
+| `lap-eval-all-dof` | Standalone laps across 3/6/10/14 DOF |
 
-**Executables:**
-- `VehicleSim`: runs `RampSteerEval`, `SteadyStateEval`, `TransientEval`
-- `FourPostSim`: runs `FourPostEval` (four-post rig path following)
+The standalone lap runner can generate its own inputs. App QSS Lap instead
+requires explicit links to completed GGV and racing-line results.
 
-**Entry point targets:**
-```bash
-make standard-eval-ramp-steer
-make standard-eval-steady-state
-make standard-eval-transient
-make standard-eval-four-post
-make standard-eval-all  # all four studies
-```
+Legacy output directories remain `simulations/mbd/generated_results` for
+standard reports and `simulations/reduced` for reduced response artifacts.
+Envelope maps and reports use `simulations/envelope/Build` and
+`simulations/envelope/results`. Standalone laps use `simulations/lap/results`.
+The app archives run inputs and results under its vehicle workspace.
 
-**Output:** `simulations/mbd/generated_results/*_report.pdf`, `*_report_metrics.csv`
+## Optimization and validation
 
----
+StandardSens sweeps BobLib standard studies. EnvelopeSens uses a separate
+legacy capacity model, not the DynPy DOF selected for GGV or YMD.
+[DOE workflows](doe-reverse-engineering.md) describes parameter sweeps, target
+solving and vehicle comparisons.
 
-### EnvelopeSim (DynPy QSS)
-
-Python layer that generates performance envelopes (grip-acceleration and yaw moment diagrams) using reduced-order dynamics from `engines/dynpy`. Fast map generation, explicitly correlated against BobLib but not time-domain integrated.
-
-| Property | Value |
-| --- | --- |
-| **Workflow** | `simulations/envelope` Python layer + `engines/dynpy` |
-| **Model source** | Reduced-order vehicle dynamics (3/6/10/14 DOF options) |
-| **Time domain** | Quasi-steady (no time integration; outputs steady-state or trim-based maps) |
-| **Typical use** | Performance envelope maps, lap-line optimization, sensitivity studies |
-| **Reported as** | "Envelope simulation" or "quasi-steady simulation" |
-
-**Envelope types:**
-- `GGV`: grip-acceleration envelope (Gg, forward acceleration × lateral acceleration space)
-- `YMD`: yaw moment diagram (understeer/oversteer balance)
-
-**Entry point targets:**
-```bash
-make envelope-ggv
-make envelope-ymd
-make envelope-all
-```
-
-**Output:** `simulations/envelope/Build/` (maps) and `simulations/envelope/results/` (reports)
-
----
-
-### Reduced-Order Transient (Medium Fidelity — Transient Reduced-Order)
-
-Uses the `dyn_py` models with full time-domain transient integration. Bridges envelope speed and MBD precision — good for repeated transient cycles (lap validation, sensitivity parameter sweeps).
-
-| Property | Value |
-| --- | --- |
-| **Workflow** | `simulations/reduced` (correlates envelope and MBD) or lap-time transient path following |
-| **Model source** | `engines/dynpy` reduced-order equations |
-| **Time domain** | Transient time-series (integrated, not quasi-steady) |
-| **Typical use** | Lap-time validation, transient sensitivities without MBD overhead |
-| **Reported as** | "Reduced-order transient simulation" or "14DOF transient" (specify DOF if relevant) |
-
-**Entry point targets:**
-```bash
-make lap-eval-transient       # lap path with transient integration
-make reduced-kinematics-benchmark  # kinematics fidelity check
-```
-
-**Output:** `simulations/lap/results/` (lap timings, transient traces)
-
----
-
-## Quick Reference: When to Use What
-
-| Goal | Workflow | Fidelity | Speed |
-| --- | --- | --- | --- |
-| Understand single maneuver (ramp steer, etc.) | `StandardSim` + VehicleSim | High (MBD) | Slow |
-| Performance envelope or lap line | `EnvelopeSim` | Low (QSS) | Very fast |
-| Lap sensitivity studies | `EnvelopeSim` GGV + `LapTimeEval` | Low-Medium | Fast |
-| Transient lap validation | `LapTimeEval` reduced transient | Medium | Medium |
-| Compare reduced vs. full model | `ReducedOrderEval` | Medium (reduced) | Medium |
-| Four-post rig evaluation | `StandardSim` + FourPostSim | High (MBD) | Slow |
-
----
-
-## In Reports and Analysis
-
-When publishing results, use the workflow name or fidelity level in figure captions and metric tables:
-
-**Good:**
-- "BobLib standard RampSteerEval: understeer gradient = 0.042 °/g"
-- "Envelope GGV-based lap time prediction: 1:42.3"
-- "14DOF transient lap simulation: peak yaw rate = 4.2 °/s"
-
-**Ambiguous (avoid):**
-- "Simulation shows…" ← Which one?
-- "Full model predicts…" ← VehicleSim (MBD) or reduced transient?
-
-**Avoid confusion by naming both the workflow and the model fidelity level, especially in comparison contexts.**
-
----
-
-## Sensitivity and DOE Workflows
-
-Sensitivity and design-of-experiments (DOE) runs sweep parameters across **any** of the above simulators:
-
-- `StandardSens`: sweeps StandardSim studies (VehicleSim/FourPostSim)
-- `EnvelopeSens`: sweeps the legacy capacity and yaw models. It does not use DynPy or the DOF selected for GGV/YMD.
-- `opt-standard`, `opt-envelope`, `opt-refined`: DOE targets using the sensitivity layer
-
-See [doe-reverse-engineering.md](doe-reverse-engineering.md) for details.
+Passing solver checks establishes internal consistency. Agreement with BobLib
+or measured vehicle data requires separate correlation. Local envelope and
+racing-line optimization do not establish a global optimum or dynamic stability.

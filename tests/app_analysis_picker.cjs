@@ -139,3 +139,19 @@ for (const id of ['maneuver','mbd-maneuver']) {
   assert.match(html,/simulation-diagram/);
   assert.doesNotMatch(html,/katex-error|undefined|NaN/);
 }
+
+const racingLine = vm.runInContext("simulationMethodHtml({id:'racing-line'})",ctx);
+assert.match(racingLine, /Parameterized gates/);
+assert.match(racingLine, /class="katex"/);
+assert.match(racingLine, /simulation-diagram-math/);
+assert.match(racingLine, /L-BFGS-B starts at zero offsets/);
+assert.match(racingLine, /resampled gates only/);
+assert.match(racingLine, /does not minimize lap time/);
+assert.doesNotMatch(racingLine, /katex-error|undefined|NaN/);
+
+const lapGuide = vm.runInContext("simulationMethodHtml({id:'lap-qss'})", ctx);
+assert.match(lapGuide, /inherited from the linked GGV/);
+assert.doesNotMatch(lapGuide, /envelope-generation settings|minimum-time result/);
+assert.match(vm.runInContext("simulationMethodHtml({id:'maneuver'})", ctx), /DynPy vehicle/);
+assert.match(vm.runInContext("simulationMethodHtml({id:'mbd-maneuver'})", ctx), /BobLib vehicle/);
+assert.match(vm.runInContext("simulationMethodHtml({id:'ymd'})", ctx), /nominal roadwheel-angle grid/);

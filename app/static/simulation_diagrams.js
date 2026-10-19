@@ -119,7 +119,7 @@ function simulationResponseDrawing(id, draw) {
     return {body, caption: "Schematic response. Feedback settles the monitored handling signals. The vehicle continues around the corner."};
   }
 
-  if (id === "transient") {
+  if (["transient", "maneuver", "mbd-maneuver"].includes(id)) {
     const body = [
       label(124, 30, "Steering cases"), label(374, 30, "Vehicle"), math(630, 30, String.raw`\mathbf x(t)` ),
       label(42, 69, "Step", "start"),
@@ -129,13 +129,15 @@ function simulationResponseDrawing(id, draw) {
       path("M42 211 C57 211 57 185 72 185 S87 237 102 237 S117 185 132 185 S147 237 162 237 S177 185 192 185 S207 211 222 211", "accent"),
       arrow(42, 246, 230, 246, "muted"),
       path("M235 107 H254 V207 H235", "muted"), arrow(254, 154, 282, 154, "force"),
-      rect(292, 117, 164, 74), label(374, 149, "BobLib vehicle"), label(374, 174, "Speed controlled"),
+      rect(292, 117, 164, 74), label(374, 149, id === "maneuver" ? "DynPy vehicle" : "BobLib vehicle"), label(374, 174, "Speed controlled"),
       arrow(464, 154, 506, 154, "motion"),
       arrow(518, 234, 734, 234, "muted"), arrow(518, 234, 518, 80, "muted"),
       path("M526 156 C548 156 548 120 568 120 S590 192 610 192 S632 120 652 120 S674 192 694 192 S716 156 724 156", "motion"),
       math(724, 267, "t"),
     ].join("");
-    return {body, caption: "Schematic response. Step cases measure timing and overshoot. Sine cases measure response gain and phase."};
+    return {body, caption: id === "transient"
+      ? "Schematic response. Step cases measure timing and overshoot. Sine cases measure response gain and phase."
+      : "Example steering inputs and response. Each maneuver runs one selected ramp, step or sine waveform with speed control."};
   }
 
   const reduced = id === "reduced-ramp-steer" || id === "reduced-step-steer";
@@ -180,6 +182,28 @@ function simulationResponseDrawing(id, draw) {
 function simulationLapDrawing(id, draw) {
   const {text, math, arrow, path, rect, circle} = draw;
   const centered = 'text-anchor="middle"';
+  if (id === 'racing-line') {
+    const body = [
+      path('M70 90Q380 30 690 90M70 230Q380 170 690 230', 'structure'),
+      `<g stroke-dasharray="5 5">${path('M140 78V218M380 60V200M620 78V218', 'muted')}</g>`,
+      path('M380 88V172', 'force'),
+      path('M70 153C95 152 115 151 140 148C220 140 300 112 380 112C460 112 540 140 620 148C645 151 665 152 690 153', 'accent'),
+      circle(140, 148, 4, 'accent'), circle(620, 148, 4, 'accent'),
+      circle(380, 60, 4), circle(380, 200, 4),
+      circle(380, 130, 4), circle(380, 112, 5, 'accent'),
+      math(380, 34, String.raw`\mathbf b_{1,i}`),
+      math(380, 226, String.raw`\mathbf b_{2,i}`),
+      math(333, 155, String.raw`\mathbf c_i`),
+      path('M347 145L376 132', 'muted'),
+      math(328, 92, String.raw`\mathbf p_i(d_i)`),
+      path('M350 101L375 110', 'muted'),
+      arrow(420, 130, 420, 112, 'motion'), math(450, 96, 'd_i'),
+      text(164, 270, 'Boundary', centered), path('M86 265H110', 'structure'),
+      text(375, 270, 'Allowed gate offsets', centered), path('M256 265H280', 'force'),
+      text(620, 270, 'Path spline', centered), path('M529 265H553', 'accent'),
+    ].join('');
+    return {body, caption: 'Each path point moves along its gate within the vehicle-clearance bounds. Schematic, not an optimized result.'};
+  }
   if (id === 'lap-qss') {
     const track = 'M54 30C84 2 131 12 153 32C169 47 199 28 216 48C244 83 200 112 173 91C151 74 125 80 97 97C58 120 17 90 30 62Z';
     const reference = 'M51.5 27.8L55.4 25.5L59.4 23.5L63.5 21.8L67.8 20.5L72.2 19.4L76.6 18.6L81.0 18.0L85.5 17.7L90.0 17.7L94.5 17.8L99.0 18.1L103.4 18.6L107.9 19.2L112.3 19.9L116.7 20.8L121.1 21.7L125.5 22.7L129.8 23.8L134.2 24.8L138.5 25.9L142.9 26.9L147.3 27.9L151.7 28.9L156.1 29.8L160.5 30.5L164.9 31.2L169.4 31.7L173.8 32.0L178.3 32.4L182.8 32.7L187.3 33.1L191.7 33.5L196.2 34.2L200.5 35.1L204.9 36.3L209.1 37.9L213.1 39.8L216.9 42.2L220.4 45.0L223.6 48.2L226.2 51.8L228.3 55.8L229.8 60.0L230.6 64.4L230.7 68.9L230.1 73.3L228.7 77.6L226.6 81.5L224.0 85.1L220.8 88.3L217.2 90.9L213.2 93.0L209.0 94.6L204.6 95.7L200.2 96.3L195.7 96.4L191.2 96.3L186.8 95.8L182.4 95.0L178.0 94.1L173.6 93.0L169.3 91.9L164.9 90.8L160.6 89.7L156.2 88.8L151.8 88.0L147.3 87.5L142.8 87.3L138.3 87.4L133.9 87.8L129.4 88.5L125.0 89.3L120.7 90.3L116.3 91.5L112.0 92.7L107.7 94.0L103.4 95.3L99.1 96.5L94.8 97.7L90.4 98.8L86.0 99.8L81.6 100.5L77.2 101.0L72.7 101.2L68.2 101.2L63.7 100.7L59.3 99.9L55.0 98.6L50.9 96.9L46.9 94.8L43.3 92.2L39.9 89.2L37.0 85.8L34.5 82.0L32.6 78.0L31.1 73.8L30.2 69.4L29.9 64.9L30.1 60.4L30.8 56.0L32.1 51.7L33.8 47.6L35.9 43.6L38.4 39.9L41.3 36.4L44.4 33.2L47.8 30.3Z';
