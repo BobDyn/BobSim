@@ -7198,19 +7198,29 @@ function trackPreviewSvg(payload) {
 }
 
 function renderTrackImport(form, busy) {
+  const workflowId = selectedWorkflow().id;
   const path = state.simConfigPayload.data.track.boundary_csv;
   const section = document.createElement("section");
   section.className = "track-import";
   section.innerHTML = `<div class="track-import-bar"><button type="button" class="ghost-button"${busy ? " disabled" : ""}>Import track</button><input type="file" accept=".csv" aria-label="Import track CSV" hidden><span class="track-name">${escapeHtml(path.split("/").pop())}</span></div><div class="track-preview-area"></div><p class="track-status" role="status"></p>`;
   form.prepend(section);
   section.querySelector("button").onclick = () => section.querySelector("input").click();
-  form.querySelectorAll('select option').forEach(option => {
-    option.textContent = option.value === "minimum_curvature" ? "Minimum curvature" : "Centerline";
+  const modePath = workflowId === "racing-line" ? '["mode"]' : '["racing_line","mode"]';
+  form.querySelectorAll(`select[data-config-path='${modePath}'] option`).forEach(option => {
+    option.textContent = {minimum_curvature: "Minimum curvature", centerline: "Centerline"}[option.value] || option.value;
   });
   const preview = payload => {
     if (!section.isConnected) return;
     section.querySelector(".track-preview-area").innerHTML = trackPreviewSvg(payload);
-    section.querySelector(".track-status").textContent = `Vehicle width: ${payload.vehicle_width_m.toFixed(3)} m (from Setup)`;
+    const clearance = form.querySelector(`[data-config-path='["track","safety_margin_m"]']`);
+    const updateStatus = () => {
+      const required = payload.vehicle_width_m + 2 * Number(clearance?.value || 0);
+      section.querySelector(".track-status").textContent = payload.minimum_gate_width_m <= required
+        ? `Track too narrow: ${payload.minimum_gate_width_m.toFixed(3)} m available, ${required.toFixed(3)} m required including edge clearance.`
+        : `Vehicle width: ${payload.vehicle_width_m.toFixed(3)} m (from Setup)`;
+    };
+    if (clearance) clearance.oninput = updateStatus;
+    updateStatus();
   };
   api("/api/tracks/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path})})
     .then(preview).catch(error => { section.querySelector(".track-status").textContent = error.message; });
@@ -7219,14 +7229,14 @@ function renderTrackImport(form, busy) {
     event.stopPropagation();
     const file = event.target.files[0];
     if (!file) return;
-    try {
-      if (state.dirtySimConfig && !await applySimConfigEdits()) return;
+    workspaceAction(async () => {
+      await saveSimulationEdits();
       const payload = await api("/api/tracks/import", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name:file.name,text:await file.text()})});
-      state.simConfigPayload = await api("/api/configs/racing-line", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({values:{'["track","boundary_csv"]':payload.path}})});
+      state.simConfigPayload = await api(`/api/configs/${workflowId}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({values:{'["track","boundary_csv"]':payload.path}})});
       await simulationRequest("save", {id: state.selectedSimulationId});
-      state.dirtySimConfig = false;
-      renderSimConfigForm();
-    } catch(error) { section.querySelector(".track-status").textContent = error.message; }
+      acceptCleanSimConfigPayload();
+      renderSimSetup();
+    });
   };
 }
 

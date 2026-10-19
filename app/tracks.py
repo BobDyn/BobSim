@@ -6,7 +6,7 @@ from typing import Any
 
 from common.vehicle_io import load_yaml
 from simulations.lap.core.track import TrackCorridor
-from simulations.lap.racing_line_sim import vehicle_width_m
+from simulations.lap.racing_line_sim import vehicle_width_m, vehicle_wheelbase_m
 
 
 def track_payload(root: Path, path: str) -> dict[str, Any]:
@@ -29,9 +29,12 @@ def track_payload(root: Path, path: str) -> dict[str, Any]:
         raise ValueError("Choose a track CSV in this workspace.")
     track = TrackCorridor.from_csv(source)
     left, right = track.interpolated_boundaries()
+    vehicle = load_yaml(root / "vehicle.yml")
+    gates = track.resampled_gates(vehicle_wheelbase_m(vehicle))
     return {"path": source.relative_to(root.resolve()).as_posix(), "left": left.tolist(),
             "right": right.tolist(),
-            "vehicle_width_m": vehicle_width_m(load_yaml(root / "vehicle.yml"), root)}
+            "minimum_gate_width_m": float(gates.gate_widths_m.min()),
+            "vehicle_width_m": vehicle_width_m(vehicle, root)}
 
 
 def import_track(root: Path, name: str, text: str) -> dict[str, Any]:
