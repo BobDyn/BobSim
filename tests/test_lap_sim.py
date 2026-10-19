@@ -302,3 +302,21 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -
         assert path.is_file()
         replay = reduced_scene_payload(repo_root() / "vehicle.yml", path, 3)
         assert replay.header["frames"] > 1
+
+
+def test_signed_csv_preserves_turn_capability_and_lap_direction(tmp_path, circular_corridor):
+    path = tmp_path / 'signed.csv'
+    path.write_text('speed_mps,ay_mps2,ax_accel_mps2,ax_brake_mps2\n'
+                    '10,-4,0,0\n10,0,4,-8\n10,8,0,0\n'
+                    '20,-4,0,0\n20,0,4,-8\n20,8,0,0\n')
+    ggv = GGVMap.from_csv(path)
+    assert ggv.lateral_limit(15.) == 8.
+    assert ggv.lateral_limit(15., direction=-1.) == 4.
+    assert np.isnan(ggv.longitudinal_limit(15., -5., 'drive'))
+    assert np.isfinite(ggv.longitudinal_limit(15., 5., 'drive'))
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    from dataclasses import replace
+    left = solve_qss_lap(line, ggv)
+    right = solve_qss_lap(replace(line, curvature_per_m=-line.curvature_per_m), ggv)
+    assert left.converged and right.converged
+    assert right.lap_time_s > left.lap_time_s
