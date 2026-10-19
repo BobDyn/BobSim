@@ -4,11 +4,8 @@
  * that app/visual.py builds. Plain WebGL2 and plain DOM, like the rest of
  * app/static: no framework, no build step, no dependency to vendor.
  *
- * The whole scene is two instanced draw programs. Segments cover links, the
- * ground grid, contact-patch trails and force arrows; discs cover tires, load
- * footprints and -- billboarded to face the camera -- joints. Adding a shader
- * per shape is how the VTK version grew to 1,300 lines of scene code, so
- * everything here is expressed as one of those two.
+ * Cylinders draw links and translucent tires. Segments draw the grid, paths
+ * and force arrows. Discs draw load footprints and camera-facing joints.
  *
  * The camera is a direct port of visualization/navigation.py, constants and
  * all. That arithmetic is what made the first attempt at these controls feel
@@ -297,6 +294,43 @@
     fragColor = vec4(vColor.rgb * shade, vColor.a);
   }`;
 
+  const CYLINDER_VS = `#version 300 es
+  precision highp float;
+  layout(location=0) in vec4 aVertex; // axial position, radial y/z, cap normal
+  layout(location=1) in vec3 aStart;
+  layout(location=2) in vec3 aEnd;
+  layout(location=3) in vec4 aColor;
+  layout(location=4) in float aRadius;
+  uniform mat4 uViewProj;
+  uniform vec3 uEye;
+  out vec4 vColor;
+  out vec3 vNormal;
+  out vec3 vEye;
+  void main() {
+    vec3 delta = aEnd - aStart;
+    vec3 axis = length(delta) > 1e-9 ? normalize(delta) : vec3(1, 0, 0);
+    vec3 ref = abs(axis.z) < 0.95 ? vec3(0, 0, 1) : vec3(0, 1, 0);
+    vec3 y = normalize(cross(ref, axis));
+    vec3 z = cross(axis, y);
+    vec3 radial = y*aVertex.y + z*aVertex.z;
+    vec3 pos = mix(aStart, aEnd, aVertex.x) + aRadius*radial;
+    vNormal = abs(aVertex.w) > 0.5 ? axis*aVertex.w : radial;
+    vEye = uEye - pos;
+    vColor = aColor;
+    gl_Position = uViewProj * vec4(pos, 1);
+  }`;
+
+  const CYLINDER_FS = `#version 300 es
+  precision highp float;
+  in vec4 vColor;
+  in vec3 vNormal;
+  in vec3 vEye;
+  out vec4 fragColor;
+  void main() {
+    float light = max(0.0, dot(normalize(vNormal), normalize(vEye)));
+    fragColor = vec4(vColor.rgb*(0.35 + 0.65*light), vColor.a);
+  }`;
+
   function compile(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source.trim());
@@ -326,10 +360,10 @@
    * ones changed.
    */
   class Batch {
-    constructor(gl, prog, baseGeometry, attributes, floatsPerInstance) {
+    constructor(gl, prog, baseGeometry, attributes, floatsPerInstance, vertexSize = 2) {
       this.gl = gl;
       this.prog = prog;
-      this.vertexCount = baseGeometry.length / 2;
+      this.vertexCount = baseGeometry.length / vertexSize;
       this.floatsPerInstance = floatsPerInstance;
       this.vao = gl.createVertexArray();
       gl.bindVertexArray(this.vao);
@@ -338,7 +372,7 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, base);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(baseGeometry), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(0, vertexSize, gl.FLOAT, false, 0, 0);
 
       this.instanceBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
@@ -402,6 +436,20 @@
     return verts;
   }
 
+  function cylinderGeometry(segments = 48) {
+    const vertices = [];
+    const point = (x, angle, cap = 0) => [x, Math.cos(angle), Math.sin(angle), cap];
+    for (let i = 0; i < segments; i++) {
+      const a = i * 2*Math.PI/segments;
+      const b = (i+1) * 2*Math.PI/segments;
+      vertices.push(...point(0,a), ...point(0,b), ...point(1,b),
+        ...point(0,a), ...point(1,b), ...point(1,a),
+        0,0,0,-1, ...point(0,b,-1), ...point(0,a,-1),
+        1,0,0,1, ...point(1,a,1), ...point(1,b,1));
+    }
+    return vertices;
+  }
+
   // ==========================================================================
   // Scene
   // ==========================================================================
@@ -422,10 +470,15 @@
       this.vectorStride = this.frames ? layout.vectors.count / this.frames / 3 : 0;
       this.duration = header.duration || 0;
 
-      for (const group of header.links) group.rgb = hexToRgb(group.color);
+      const linkColors = {
+        upper: "#111111", lower: "#111111", tie: "#111111", steering: "#111111",
+        upright: "#444444", body: "#888888", chassis: "#888888",
+        pushrod: "#2ca02c", bellcrank: "#ff7f0e", shock: "#d62728", arb: "#9467bd",
+      };
+      for (const group of header.links) group.rgb = hexToRgb(linkColors[group.group] || group.color);
       for (const arrow of header.arrows) arrow.rgb = hexToRgb(arrow.color);
       for (const corner of header.tracks.corners) corner.rgb = hexToRgb(corner.color);
-      this.jointRgb = hexToRgb(header.joints.color);
+      this.jointRgb = hexToRgb("#d62728");
     }
 
     block(entry) {
@@ -530,11 +583,17 @@
       this.segments = new Batch(gl, program(gl, SEGMENT_VS, SEGMENT_FS), QUAD, [3, 3, 3, 1], 10);
       this.discs = new Batch(gl, program(gl, DISC_VS, DISC_FS), circleGeometry(36), [3, 3, 3, 4], 13);
 
+      const cylinderProgram = program(gl, CYLINDER_VS, CYLINDER_FS);
+      const cylinder = cylinderGeometry();
+      this.links = new Batch(gl, cylinderProgram, cylinder, [3, 3, 4, 1], 11, 4);
+      this.tires = new Batch(gl, cylinderProgram, cylinder, [3, 3, 4, 1], 11, 4);
+      this.rims = new Batch(gl, cylinderProgram, cylinder, [3, 3, 4, 1], 11, 4);
+
       this.scene = null;
       this.pose = null;
       this.playing = true;
       this.simTime = 0;
-      this.layers = { links: true, joints: true, tires: true, loads: false, tracks: false, arrows: false, grid: true };
+      this.layers = { links: true, joints: true, tires: true, loads: false, tracks: false, arrows: false, grid: false };
       // The car drives away from wherever the view was framed, so by default
       // the camera rides with it. Following moves the whole pose by the car's
       // own delta, which keeps whatever orbit, pan and zoom the user chose.
@@ -739,6 +798,11 @@
       d[i + 9] = radius;
     }
 
+    cylinder(batch, start, end, rgb, radius, alpha = 1) {
+      const i = batch.slot();
+      batch.scratch.set([...start, ...end, ...rgb, alpha, radius], i);
+    }
+
     disc(center, axisX, axisY, rgb, alpha) {
       const s = this.discs;
       const i = s.slot();
@@ -809,6 +873,9 @@
 
       this.segments.begin();
       this.discs.begin();
+      this.links.begin();
+      this.tires.begin();
+      this.rims.begin();
 
       if (this.layers.grid) this.buildGrid(scene.extent(0), anchor);
 
@@ -842,16 +909,9 @@
           const axle = unit(vb, [0, 1, 0]);
           const ez = unit(cross(ex, axle), [0, 0, 1]);
           const faces = [-1, 1].map(sign => add(pa, scale(axle, sign * tire.width / 2)));
-          for (const center of faces) {
-            this.disc(center, scale(ex, tire.radius), scale(ez, tire.radius), [0.13, 0.15, 0.18], 1);
-            this.disc(add(center, scale(axle, dot(sub(center, pa), axle) > 0 ? 0.001 : -0.001)),
-              scale(ex, tire.radius*0.48), scale(ez, tire.radius*0.48), [0.42, 0.47, 0.54], 1);
-          }
-          for (let i = 0; i < 32; i++) {
-            const angle = i * Math.PI / 16;
-            const edge = add(scale(ex, tire.radius*Math.cos(angle)), scale(ez, tire.radius*Math.sin(angle)));
-            this.segment(add(faces[0], edge), add(faces[1], edge), [0.19, 0.21, 0.24], tire.radius*0.10);
-          }
+          this.cylinder(this.tires, faces[0], faces[1], [0.1, 0.1, 0.1], tire.radius, 0.6);
+          this.cylinder(this.rims, add(pa, scale(axle, -tire.width*0.45)),
+            add(pa, scale(axle, tire.width*0.45)), [0.8, 0.8, 0.8], tire.radius*0.6, 0.6);
           if (Number.isInteger(tire.spin_slot)) {
             const angle = scene.scalar(tire.spin_slot, f);
             for (let spokeIndex = 0; spokeIndex < 3; spokeIndex++) {
@@ -904,26 +964,24 @@
       const proj = orthographic(halfHeight(this.pose), this.aspect(), 0.02, 5000);
       const viewProj = multiply(proj, view);
       const uniforms = { uViewProj: viewProj, uEye: this.pose.position };
+      this.links.draw(uniforms);
       this.segments.draw(uniforms);
       this.discs.draw(uniforms);
+      // Transparent wheel shells must not hide the suspension behind them.
+      gl.depthMask(false);
+      gl.enable(gl.CULL_FACE);
+      this.rims.draw(uniforms);
+      this.tires.draw(uniforms);
+      gl.disable(gl.CULL_FACE);
+      gl.depthMask(true);
     }
 
-    /** The app's own surface colour, re-read only when the theme changes. */
     backdrop() {
-      const theme = document.body.className;
-      if (this._theme !== theme) {
-        const raw = getComputedStyle(document.body).getPropertyValue("--surface-2").trim();
-        this._backdrop = raw ? hexToRgb(raw) : [0.94, 0.96, 0.97];
-        this._theme = theme;
-      }
-      return this._backdrop;
+      return [1, 1, 1];
     }
 
-    /** Grid ink that stays legible on either theme. */
     gridInk() {
-      const [r, g, b] = this.backdrop();
-      const dark = r + g + b < 1.2;
-      return dark ? [[0.29, 0.34, 0.39], [0.36, 0.42, 0.48]] : [[0.82, 0.84, 0.87], [0.72, 0.75, 0.79]];
+      return [[0.86, 0.86, 0.86], [0.73, 0.73, 0.73]];
     }
 
     tick(wallMs) {
