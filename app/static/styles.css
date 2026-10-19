@@ -5109,3 +5109,16 @@ summary:focus-visible {
 .track-name, .track-status { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .track-format-diagram { display: block; width: min(100%, 640px); }
 .track-format-diagram text { fill: currentColor; font-size: 14px; }
+
+.maneuver-preview { margin: 16px 0; }
+.maneuver-preview svg { width: 100%; max-height: 320px; }
+.maneuver-preview text { fill: var(--muted); font-size: 13px; }
+.maneuver-preview polyline { fill: none; stroke: var(--blue); stroke-width: 2.5; }
+.maneuver-axis { fill: none; stroke: var(--line); }
+.maneuver-form .form-field[hidden] { display: none !important; }
+.maneuver-form .simulation-input-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.maneuver-form .field-subsection { min-width: 0; margin-top: 0; }
+.maneuver-form .maneuver-preview svg { max-height: 230px; }
+@media (max-width: 850px) {
+  .maneuver-form .simulation-input-fields { grid-template-columns: 1fr; }
+}

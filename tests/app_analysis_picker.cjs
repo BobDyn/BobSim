@@ -25,7 +25,7 @@ vm.runInContext(`
   state.simModalOpen = false;
   standardWorkflows = () => [
     {id:'four-post'}, {id:'ggv'}, {id:'lap-qss'}, {id:'ramp-steer'},
-    {id:'reduced-ramp-steer',model:{model_dofs:[6]}}, {id:'lap-transient'},
+    {id:'reduced-ramp-steer',model:{model_dofs:[6]}}, {id:'maneuver',model:{model_dofs:[6]}}, {id:'mbd-maneuver'}, {id:'lap-transient'},
   ];
   workflowCard = workflow => '<article data-workflow="'+workflow.id+'"></article>';
   wireSimulationCatalog();
@@ -34,7 +34,8 @@ vm.runInContext(`
   assert.equal(state.selectedSimulationId, 'existing');
   assert.equal(state.selectedVisualizationId, 'existing-plot');
   assert.equal(state.view, 'studies');
-  assert.match(element('workflow-grid').innerHTML, /ramp-steer/);
+  assert.match(element('workflow-grid').innerHTML, /maneuver/);
+  assert.doesNotMatch(element('workflow-grid').innerHTML, /ramp-steer|step-steer/);
   assert.match(element('workflow-grid').innerHTML, /lap-transient/);
   assert.doesNotMatch(element('workflow-grid').innerHTML, /lap-qss|four-post|simulation-categories/);
   closeSimulationCatalog();
@@ -56,24 +57,24 @@ vm.runInContext(`
   const calls = [];
   api = async (url, options) => { calls.push([url,JSON.parse(options.body)]); return {}; };
   let selected;
-  const model = {value:'reduced-ramp-steer:14',dataset:{responseModel:'ramp-steer'},
+  const model = {value:'maneuver:14',dataset:{responseModel:'maneuver'},
     addEventListener(type, callback){selected=callback;}};
   element('workflow-grid').querySelectorAll = selector => selector === '[data-response-model]' ? [model] : [];
   renderWorkflows();
   selected();
   assert.equal(calls.length, 0, 'model previews must not mutate active config');
   assert.equal(state.selectedSimulationId, 'existing');
-  assert.equal(responseModelDofs['ramp-steer'],14);
+  assert.equal(responseModelDofs['maneuver'],14);
   simulationRequest = async (action, values) => {
     calls.push([action,values]);return {simulation:{id:'new-sim'}};
   };
   let overview;
   openSimulationOverview = async id => {overview=id;};
-  await configureSimulationWorkflow('reduced-ramp-steer');
-  assert.equal(calls[0][0],'/api/configs/reduced-ramp-steer');
+  await configureSimulationWorkflow('maneuver');
+  assert.equal(calls[0][0],'/api/configs/maneuver');
   assert.equal(calls[0][1].values['["model_dof"]'],14);
   assert.equal(calls[1][0],'create');
-  assert.equal(calls[1][1].workflow_id,'reduced-ramp-steer');
+  assert.equal(calls[1][1].workflow_id,'maneuver');
   assert.equal(overview,'new-sim');
   assert.equal(element('simulation-catalog').open,false);
   console.log('Analysis picker checks passed');
@@ -130,3 +131,11 @@ assert.match(vm.runInContext("simulationDiagramHtml('ggv')", ctx), /V.*tangent|t
 assert.match(vm.runInContext("simulationDiagramHtml('four-post')", ctx), /Contact height is fixed/);
 assert.match(vm.runInContext("simulationDiagramHtml('reduced-ramp-steer')", ctx), /t_\{\\mathrm\{end\}\}/);
 assert.doesNotMatch(vm.runInContext("simulationDiagramHtml('ramp-steer')", ctx), />Hold</);
+
+for (const id of ['maneuver','mbd-maneuver']) {
+  const html = vm.runInContext(`simulationMethodHtml({id:${JSON.stringify(id)}})`,ctx);
+  assert.match(html,/Steering waveform/);
+  assert.match(html,/class="katex"/);
+  assert.match(html,/simulation-diagram/);
+  assert.doesNotMatch(html,/katex-error|undefined|NaN/);
+}

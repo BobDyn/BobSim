@@ -7,7 +7,7 @@ import argparse
 import time
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import numpy as np
 import pandas as pd
@@ -38,6 +38,7 @@ def run_step_steer(
     vehicle_path: str | Path | None = None,
     kinematics_mode: KinematicsMode = "lookup",
     kinematics_sample_count: int = 49,
+    steering_input: Callable[[float], float] | None = None,
 ) -> TransientResult:
     """## Step Steer
 
@@ -66,6 +67,9 @@ def run_step_steer(
         KinPy lookup or nonlinear evaluation.
     kinematics_sample_count : int
         Number of samples for the kinematics lookup.
+
+    steering_input : callable, optional
+        Steering command in radians as a function of time.
 
     Returns
     -------
@@ -113,7 +117,7 @@ def run_step_steer(
         distribution = np.array([front, front, 1.0 - front, 1.0 - front]) / 2.0
         torques = force * distribution * radii
         return ModelInputs(
-            steering_rad=float(fraction * target_steer),
+            steering_rad=float(steering_input(time_s) if steering_input else fraction * target_steer),
             wheel_torques_nm=tuple(torques),
         )
 
