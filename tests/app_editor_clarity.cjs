@@ -609,10 +609,10 @@ vm.runInContext(`
     document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source, simulationContext);
   await vm.runInContext(`(async () => {
-    for (const [id, group] of [['four-post','kinematic'], ['steady-state','steady-state'],
-      ['ggv','steady-state'], ['ymd','steady-state'], ['lap-qss','steady-state'],
+    for (const [id, group] of [['four-post','kinematic'], ['steady-state','transient'],
+      ['ggv','steady-state'], ['ymd','steady-state'], ['lap-qss','lap'],
       ['reduced-ramp-steer','transient'], ['mbd-step-steer','transient'],
-      ['transient','transient'], ['lap-transient','transient']]) {
+      ['transient','transient'], ['lap-transient','lap']]) {
       assert.equal(simulationAnalysisGroup({id}), group);
     }
     const configRequests=[];
@@ -709,13 +709,13 @@ vm.runInContext(`
     assert.ok(html.indexOf('data-simulation-toggle="results:step"') < html.indexOf('data-simulation-visualization="plot"'));
     assert.match(html,/ggv-link-empty/);
     assert.ok(html.includes('>Link GGV</span>'));
-    assert.match(group('steady-state'),/data-simulation-branch="lap"/);
+    assert.match(group('lap'),/data-simulation-branch="lap"/);
     assert.doesNotMatch(group('steady-state'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-branch="step"/);
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
     assert.match(group('kinematic'),/data-simulation-branch="rig"/);
     assert.doesNotMatch(html,/data-analysis-overview/);
-    assert.ok(html.includes('<span class="simulation-tree-item simulation-analysis-label">Steady state</span>'));
+    assert.ok(html.includes('<span class="simulation-tree-item simulation-analysis-label">Performance envelopes</span>'));
     assert.doesNotMatch(html,/data-simulation-add-child/);
     assert.match(html,/data-simulation-results="ggv"/);
     assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
@@ -879,7 +879,26 @@ vm.runInContext(`
     assert.match(panel.innerHTML,/Envelope &lt;A&gt;/);
     assert.doesNotMatch(panel.innerHTML,/2026-10-15|<dt>Results<|<dt>Model</);
     assert.match(panel.innerHTML,/simulation-diagram/);
-    assert.doesNotMatch(panel.innerHTML, /<button|data-overview-setup|data-overview-view/);
+    assert.match(panel.innerHTML, /data-overview-setup/);
+    assert.match(panel.innerHTML, /simulation-method-disclosure/);
+    const lap={id:'lap',workflow_id:'lap-qss',name:'Lap'};
+    canRunStandardWorkflow=()=>false;
+    standardWorkflowLockedMessage=()=> 'Linked results required';
+    let dependency=simulationDependencyHtml(lap,{id:'lap-qss'});
+    assert.match(dependency,/data-overview-input="ggv"/);
+    assert.match(dependency,/data-overview-input="racing-line"/);
+    assert.match(dependency,/data-overview-run disabled/);
+    assert.match(dependency,/data-overview-results="" disabled/);
+    lap.ggv_source_id='ggv';
+    lap.ggv_input={status:'Ready',name:'Envelope <A>',model_dof:14,power_limit_w:32000};
+    lap.racing_line_source_id='line';
+    lap.racing_line_input={status:'Ready',name:'Track'};
+    canRunStandardWorkflow=()=>true;
+    dependency=simulationDependencyHtml(lap,{id:'lap-qss'});
+    assert.match(dependency,/data-overview-source="ggv"/);
+    assert.match(dependency,/Envelope &lt;A&gt;/);
+    assert.match(dependency,/14 DOF · linked GGV/);
+    assert.doesNotMatch(dependency,/data-overview-run disabled/);
     state.simModalOpen=true;
     assert.equal(renderSimulationOverview(),false);
     assert.equal(panel.hidden,true);

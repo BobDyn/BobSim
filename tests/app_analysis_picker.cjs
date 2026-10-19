@@ -36,7 +36,11 @@ vm.runInContext(`
   assert.equal(state.view, 'studies');
   assert.match(element('workflow-grid').innerHTML, /maneuver/);
   assert.doesNotMatch(element('workflow-grid').innerHTML, /ramp-steer|step-steer/);
+  assert.doesNotMatch(element('workflow-grid').innerHTML, /lap-transient/);
+  await showSimulationCatalog('lap');
   assert.match(element('workflow-grid').innerHTML, /lap-transient/);
+  assert.match(element('workflow-grid').innerHTML, /lap-qss/);
+  await showSimulationCatalog('transient');
   assert.doesNotMatch(element('workflow-grid').innerHTML, /lap-qss|four-post|simulation-categories/);
   closeSimulationCatalog();
   assert.equal(element('simulation-catalog').open, false);

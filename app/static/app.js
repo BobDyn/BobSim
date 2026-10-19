@@ -4235,8 +4235,33 @@ function renderSimulationOverview() {
   const meta = simWorkflowMeta(workflow);
   if (document.activeElement?.id === "simulation-instance-name" && document.activeElement.dataset.simulationId === simulation.id) return true;
   const busy = (state.status?.jobs || []).some(job => ["queued", "running"].includes(job.status));
+  const methodOpen = panel.querySelector(".simulation-method-disclosure")?.open;
   panel.innerHTML = `<header><h2><input id="simulation-instance-name" data-simulation-id="${escapeHtml(simulation.id)}" aria-label="Simulation name" maxlength="120" value="${escapeHtml(simulation.name)}"${busy ? ' disabled title="Simulation names are locked while a job runs."' : ''}></h2><p>${escapeHtml(meta.summary)}</p></header>
-    ${simulationMethodHtml(workflow)}`;
+    ${simulationDependencyHtml(simulation, workflow)}
+    <details class="simulation-method-disclosure"${methodOpen ? " open" : ""}><summary>Method</summary>${simulationMethodHtml(workflow)}</details>`;
+  panel.querySelectorAll("[data-overview-input]").forEach(button => {
+    button.onclick = () => workspaceAction(() => showSimulationInputPicker(simulation.id, button.dataset.overviewInput));
+  });
+  panel.querySelectorAll("[data-overview-source]").forEach(button => {
+    button.onclick = () => workspaceAction(() => openSimulationOverview(button.dataset.overviewSource));
+  });
+  panel.querySelector("[data-overview-setup]").onclick = () => workspaceAction(() => openSimulation(simulation.id));
+  const vehicleButton = panel.querySelector("[data-overview-vehicle]");
+  if (vehicleButton) vehicleButton.onclick = () => setView("setup");
+  panel.querySelector("[data-overview-run]").onclick = () => workspaceAction(async () => {
+    await openSimulation(simulation.id);
+    await startSelectedWorkflow();
+    state.simModalOpen = false;
+    state.simulationOverview = {id: simulation.id};
+    renderStandard();
+  });
+  panel.querySelector("[data-overview-results]").onclick = () => workspaceAction(async () => {
+    await saveSimulationEdits();
+    state.selectedResultId = panel.querySelector("[data-overview-results]").dataset.overviewResults;
+    state.selectedVisualizationId = null;
+    state.simModalOpen = false;
+    setView("studies");
+  });
   const name = document.getElementById("simulation-instance-name");
   name.onchange = () => {
     name.value = name.value.trim() || simulation.name;
@@ -4247,6 +4272,77 @@ function renderSimulationOverview() {
     if (event.key === "Enter") name.blur();
   };
   return true;
+}
+
+function simulationDependencyHtml(simulation, workflow) {
+  const busy = (state.status?.jobs || []).find(job => ["queued", "running"].includes(job.status));
+  const ready = !busy && canRunStandardWorkflow(workflow);
+  const reason = busy ? `${busy.label} is ${busy.status}.` : standardWorkflowLockedMessage(workflow);
+  const result = savedResults().find(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === simulation.id);
+  const linked = workflow.id === "lap-qss";
+  const inputs = linked ? [["ggv", "GGV", simulation.ggv_source_id, simulation.ggv_input],
+    ["racing-line", "Racing line", simulation.racing_line_source_id, simulation.racing_line_input]].map(([kind, label, source, input]) => {
+      const status = source ? input?.status || "Unavailable" : "Not linked";
+      const detail = input?.status === "Ready" && kind === "ggv" ? `Ready · ${input.model_dof} DOF · ${formatPlotTick(input.power_limit_w / 1000)} kW` : status;
+      return `<div class="simulation-input-tile ${source ? "" : "missing"} ${source && status !== "Ready" ? "needs-update" : ""}">
+        <button type="button" ${source ? `data-overview-source="${escapeHtml(source)}"` : `data-overview-input="${kind}"`} title="${escapeHtml(input?.message || `Connect a ${label} analysis`)}"><span class="context-label">${label}</span><strong>${escapeHtml(source ? input?.name || label : `+ ${label}`)}</strong><small>${escapeHtml(detail)}</small></button>
+        ${source ? `<button type="button" class="simulation-input-change" data-overview-input="${kind}" aria-label="Change ${label} connection" title="Change connection">${simulationTreeIcon("link")}</button>` : ""}
+      </div>`;
+    }).join("") : `<div class="simulation-input-tile"><button type="button" data-overview-vehicle><span class="context-label">Vehicle</span><strong>${escapeHtml(activeVehicleName())}</strong><small>${state.dirtyVehicle ? "Unsaved changes" : "Setup"}</small></button></div>`;
+  const context = linked ? (simulation.ggv_input?.status === "Ready" ? `${simulation.ggv_input.model_dof} DOF · linked GGV` : "Model from linked GGV")
+    : workflow.id === "racing-line" ? "Track boundaries · vehicle clearance"
+    : workflow.id === "lap-transient" ? "Generated QSS reference · feedback driver"
+    : simulation.model ? `${simulation.model.engine} · ${simulation.model.fidelity}` : workflowModelLabel(workflow);
+  return `<div class="simulation-dependencies" aria-label="Simulation inputs and results">
+    <div class="simulation-dependency-inputs ${linked ? "paired" : ""}">${inputs}</div>
+    <div class="simulation-dependency-analysis"><span class="context-label">${escapeHtml(simWorkflowMeta(workflow).title)}</span><strong>${escapeHtml(context)}</strong>
+      <div class="simulation-overview-actions"><button type="button" class="ghost-button" data-overview-setup>Setup</button><button type="button" class="run-button" data-overview-run${ready ? "" : " disabled"} title="${escapeHtml(reason)}">${busy?.simulation?.id === simulation.id ? "Running" : "Run"}</button></div>
+      ${!ready && reason ? `<small class="simulation-dependency-status">${escapeHtml(reason)}</small>` : ""}
+    </div>
+    <button type="button" class="simulation-dependency-results" data-overview-results="${escapeHtml(result?.id || "")}"${result ? "" : ' disabled title="Available after a successful run"'}>${simulationTreeIcon("report")}<strong>Results</strong><small>${result ? (linked && [simulation.ggv_input, simulation.racing_line_input].some(input => input?.status !== "Ready") ? "Saved run · inputs need update" : "Latest saved run") : "Not run"}</small></button>
+  </div>`;
+}
+
+async function showSimulationInputPicker(id, kind) {
+  await saveSimulationEdits();
+  const label = kind === "ggv" ? "GGV" : "Racing line";
+  const simulation = state.simulationWorkspace.simulations.find(item => item.id === id);
+  const sourceId = kind === "ggv" ? simulation.ggv_source_id : simulation.racing_line_source_id;
+  const candidates = state.simulationWorkspace.simulations.filter(item => item.workflow_id === kind);
+  const dialog = document.createElement("dialog");
+  dialog.className = "simulation-picker simulation-input-picker";
+  dialog.setAttribute("aria-label", `${label} connection`);
+  dialog.innerHTML = `<header class="simulation-picker-header"><h2>${label}</h2><button type="button" class="ghost-button" data-close aria-label="Close">×</button></header>
+    <div class="simulation-input-options">${candidates.map(item => {
+      const hasRun = savedResults().some(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id);
+      return `<button type="button" data-connect="${escapeHtml(item.id)}" aria-pressed="${item.id === sourceId}"><strong>${escapeHtml(item.name)}</strong><small>${item.id === sourceId ? "Connected" : hasRun ? "Saved result" : "Not run"}</small></button>`;
+    }).join("")}<button type="button" data-create>+ New ${label}</button></div>
+    ${sourceId ? '<button type="button" class="ghost-button" data-disconnect>Disconnect</button>' : ""}<p role="status"></p>`;
+  document.body.append(dialog);
+  dialog.onclose = () => dialog.remove();
+  dialog.querySelector("[data-close]").onclick = () => dialog.close();
+  const action = kind === "ggv" ? "set-ggv" : "set-racing-line";
+  const perform = async callback => {
+    dialog.querySelectorAll("button").forEach(button => { button.disabled = true; });
+    try { await callback(); dialog.close(); }
+    catch (error) { dialog.querySelector('[role="status"]').textContent = error.message; dialog.querySelectorAll("button").forEach(button => { button.disabled = false; }); }
+  };
+  dialog.querySelectorAll("[data-connect]").forEach(button => {
+    button.onclick = () => perform(async () => {
+      await simulationRequest(action, {id, source_id: button.dataset.connect});
+      await openSimulationOverview(id);
+    });
+  });
+  dialog.querySelector("[data-disconnect]")?.addEventListener("click", () => perform(async () => {
+    await simulationRequest(action, {id, source_id: null});
+    await openSimulationOverview(id);
+  }));
+  dialog.querySelector("[data-create]").onclick = () => perform(async () => {
+    const created = await configureSimulationWorkflow(kind);
+    await simulationRequest(action, {id, source_id: created});
+    await openSimulationOverview(created);
+  });
+  dialog.showModal();
 }
 
 async function renameSimulation(id, name) {
@@ -4616,6 +4712,10 @@ async function addSimulationVisualization(id, kind) {
 
 function mountSimulationWorkspace() {
   let overviewClickTimer;
+  document.getElementById("simulation-empty").addEventListener("click", event => {
+    const button = event.target.closest("[data-analysis-guide]");
+    if (button) workspaceAction(() => showSimulationCatalog(button.dataset.analysisGuide));
+  });
   wireSimulationCatalog();
   wireSimulationSplitter();
   wireSimulationGgvDrag();
@@ -4798,8 +4898,8 @@ function renderSimulationWorkspace() {
   }
   const overviewVisible = renderSimulationOverview();
   const empty = document.getElementById("simulation-empty");
-  empty.querySelector("h3").textContent = simulations?.length ? "Simulation workspace" : "No simulations";
-  empty.querySelector("p").hidden = Boolean(simulations?.length);
+  empty.querySelector("h3").textContent = "Simulation workspace";
+  empty.querySelector("p").textContent = "Analyses for the active vehicle.";
   document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationGgvEditor;
   renderSimulationCatalog();
   document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
@@ -4839,7 +4939,7 @@ function responseFamily(workflow) {
 }
 
 function simulationCards() {
-  const workflows = standardWorkflows().filter(w => !["ramp-steer", "reduced-ramp-steer", "reduced-step-steer", "mbd-step-steer", "transient"].includes(w.id));
+  const workflows = standardWorkflows().filter(w => !["ramp-steer", "reduced-ramp-steer", "reduced-step-steer", "mbd-step-steer", "transient", "steady-state"].includes(w.id));
   const emitted = new Set();
   return workflows.flatMap((workflow) => {
     const family = responseFamily(workflow);
@@ -4868,16 +4968,18 @@ function responseModelPicker(workflow) {
 
 let activeSimulationGroup = "transient";
 const SIMULATION_GROUPS = [
+  {id: "kinematic", label: "Kinematics", description: "Suspension motion and loads."},
+  {id: "steady-state", label: "Performance envelopes", description: "Acceleration limits and yaw balance."},
+  {id: "transient", label: "Vehicle response", description: "Response to steering maneuvers."},
   {id: "track", label: "Track", description: "Track boundaries and reusable racing lines."},
-  {id: "kinematic", label: "Kinematic", description: "Suspension motion and loads."},
-  {id: "steady-state", label: "Steady state", description: "Choose equilibrium, an envelope or a quasi-steady lap."},
-  {id: "transient", label: "Transient", description: "Choose a maneuver or a driver-controlled lap."},
+  {id: "lap", label: "Laptime", description: "Speed profiles and driver-controlled laps."},
 ];
 
 function simulationAnalysisGroup(workflow) {
   if (workflow.id === "racing-line") return "track";
   if (workflow.id === "four-post") return "kinematic";
-  if (["steady-state", "ggv", "ymd", "lap-qss"].includes(workflow.id)) return "steady-state";
+  if (["ggv", "ymd"].includes(workflow.id)) return "steady-state";
+  if (["lap-qss", "lap-transient"].includes(workflow.id)) return "lap";
   return "transient";
 }
 
@@ -4949,6 +5051,7 @@ async function configureSimulationWorkflow(workflowId) {
   state.collapsedSimulations.delete(`group:${simulationAnalysisGroup(workflow)}`);
   closeSimulationCatalog();
   await openSimulationOverview(payload.simulation.id);
+  return payload.simulation.id;
 }
 
 async function removeSimulation(id = state.selectedSimulationId) {
