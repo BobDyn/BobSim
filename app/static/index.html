@@ -252,7 +252,17 @@
               tabindex="0" title="Drag to resize"></div>
             <div id="simulation-detail" class="simulation-detail">
             <section id="simulation-overview" hidden></section>
-            <div id="simulation-empty" class="empty-state"><h3>Add a simulation</h3><p>Choose an analysis for this vehicle.</p></div>
+            <section id="simulation-empty" class="simulation-home" aria-label="Analysis guide">
+              <h3>Simulation workspace</h3><p>Analyses for the active vehicle.</p>
+              <div class="simulation-goals">
+                <button type="button" data-analysis-guide="kinematic"><span><strong>Suspension motion</strong><small>Four post: camber, toe, motion ratios and stiffness through heave and roll.</small></span><span class="simulation-goal-category">Kinematics <span aria-hidden="true">→</span></span></button>
+                <button type="button" data-analysis-guide="steady-state"><span><strong>Grip and balance</strong><small>GGV for acceleration and braking limits. YMD for yaw moment across steering and sideslip.</small></span><span class="simulation-goal-category">Performance envelopes <span aria-hidden="true">→</span></span></button>
+                <button type="button" data-analysis-guide="transient"><span><strong>Steering response</strong><small>Ramp, step or sine maneuvers with a selected vehicle model.</small></span><span class="simulation-goal-category">Vehicle response <span aria-hidden="true">→</span></span></button>
+                <button type="button" data-analysis-guide="track"><span><strong>Track geometry</strong><small>A reusable racing line from boundary cones and vehicle clearance.</small></span><span class="simulation-goal-category">Track <span aria-hidden="true">→</span></span></button>
+                <button type="button" data-analysis-guide="lap"><span><strong>Lap performance</strong><small>QSS for a speed profile on a fixed line. Transient for the driver-controlled response.</small></span><span class="simulation-goal-category">Laptime <span aria-hidden="true">→</span></span></button>
+              </div>
+              <div class="simulation-home-flow" aria-label="QSS lap dependencies"><span>GGV + Racing line</span><span aria-hidden="true">→</span><span>QSS lap</span><span aria-hidden="true">→</span><span>Results</span></div>
+            </section>
             <dialog id="simulation-catalog" class="simulation-picker simulation-catalog" aria-labelledby="simulation-catalog-title">
               <header class="simulation-picker-header"><div><span id="simulation-catalog-group" class="context-label"></span><h2 id="simulation-catalog-title">Add simulation</h2></div><button type="button" class="ghost-button" data-close-simulation-catalog aria-label="Close">×</button></header>
               <details class="model-guide">

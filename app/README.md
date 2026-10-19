@@ -45,6 +45,12 @@ The app defaults to dark mode. The theme toggle saves `bobsim-theme` in
 `localStorage`. Colors are defined in `static/styles.css` and `canvasPalette()`
 in `static/app.js`.
 
+The outline groups simulations under Kinematics, Performance envelopes, Vehicle
+response, Track and Laptime. Each overview shows inputs and results, with the
+method in a disclosure. QSS Lap connects to reusable GGV and racing-line analyses.
+Its Run action is available when both linked results are valid. Existing BobLib
+steady-state studies remain accessible under Vehicle response.
+
 Named simulations are stored in `workspaces/vehicles/<vehicle>/simulations.json`.
 Completed runs retain the simulation name, vehicle and config used at run time.
 Removing a simulation keeps its saved runs.
