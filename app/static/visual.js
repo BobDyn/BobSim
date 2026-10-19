@@ -87,6 +87,15 @@
     return { forward, right, up: cross(right, forward) };
   }
 
+  function worldAxes(pose) {
+    const {right, up} = cameraBasis(pose);
+    return [
+      {name: "X", color: [0.8,0.1,0.1]},
+      {name: "Y", color: [0.1,0.55,0.2]},
+      {name: "Z", color: [0.15,0.3,0.9]},
+    ].map((axis, i) => ({...axis, x: right[i], y: up[i]}));
+  }
+
   /** Half the visible height of the focal plane, in world units. */
   function halfHeight(pose) {
     const distance = norm(sub(pose.focal, pose.position));
@@ -471,7 +480,7 @@
       this.duration = header.duration || 0;
 
       const linkColors = {
-        upper: "#111111", lower: "#111111", tie: "#111111", steering: "#111111",
+        upper: "#000000", lower: "#000000", tie: "#000000", steering: "#000000",
         upright: "#444444", body: "#888888", chassis: "#888888",
         pushrod: "#2ca02c", bellcrank: "#ff7f0e", shock: "#d62728", arb: "#9467bd",
       };
@@ -881,10 +890,13 @@
 
       if (this.layers.links) {
         for (const group of header.links) {
+          if (group.group === "body") continue;
           for (const [a, b] of group.segments) {
+            const bar = group.group === "chassis" && [a,b].every(i => header.points[i].endsWith("BarEnd"));
+            if (group.group === "chassis" && !bar) continue;
             scene.point(a, f, pa);
             scene.point(b, f, pb);
-            this.segment(pa, pb, group.rgb.map(value => Math.max(value, 0.34)), group.radius);
+            this.cylinder(this.links, pa, pb, bar ? hexToRgb("#9467bd") : group.rgb, bar ? 0.006 : group.radius);
           }
         }
       }
@@ -895,6 +907,7 @@
         const ax = scale(right, r);
         const ay = scale(up, r);
         for (const i of header.joints.indices || Array.from({length: scene.pointCount}, (_, index) => index)) {
+          if (["body", "body_forward", "front_axle", "rear_axle"].includes(header.points[i])) continue;
           scene.point(i, f, pa);
           this.disc(pa, ax, ay, scene.jointRgb, 1);
         }
@@ -974,6 +987,32 @@
       this.tires.draw(uniforms);
       gl.disable(gl.CULL_FACE);
       gl.depthMask(true);
+      this.drawWorldAxes();
+    }
+
+    drawWorldAxes() {
+      const gl = this.gl;
+      const size = Math.min(104 * Math.min(window.devicePixelRatio || 1, 2), this.canvas.width, this.canvas.height);
+      const glyphs = {
+        X: [[-1,-1,1,1], [-1,1,1,-1]],
+        Y: [[-1,1,0,0], [1,1,0,0], [0,0,0,-1]],
+        Z: [[-1,1,1,1], [1,1,-1,-1], [-1,-1,1,-1]],
+      };
+      this.segments.begin();
+      for (const axis of worldAxes(this.pose)) {
+        const tip = [axis.x*0.65, axis.y*0.65, 0];
+        this.segment([0,0,0], tip, axis.color, 0.018);
+        const endOn = Math.hypot(axis.x, axis.y) < 0.2;
+        const x = axis.x*0.82 - (endOn ? 0.14 : 0), y = axis.y*0.82 - (endOn ? 0.14 : 0);
+        for (const [x0,y0,x1,y1] of glyphs[axis.name]) {
+          this.segment([x+x0*0.09,y+y0*0.09,0], [x+x1*0.09,y+y1*0.09,0], axis.color, 0.014);
+        }
+      }
+      gl.viewport(0, 0, size, size);
+      gl.disable(gl.DEPTH_TEST);
+      this.segments.draw({uViewProj: [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1], uEye: [0,0,5]});
+      gl.enable(gl.DEPTH_TEST);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     }
 
     backdrop() {

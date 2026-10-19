@@ -33,3 +33,25 @@ assert(counts[0]>0 && counts[0]===counts[2] && counts[1]===2*counts[0]);
 """, str(source)],
         check=True,
     )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Axis check requires Node.js")
+def test_world_axes_follow_camera_orientation_only():
+    source = Path(__file__).resolve().parents[1] / "app/static/visual.js"
+    subprocess.run(
+        ["node", "-e", r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const source = fs.readFileSync(process.argv[1], 'utf8').replace(
+  'window.BobVis = { Viewer,', 'window.BobVis = { worldAxes, Viewer,');
+const ctx = vm.createContext({window:{}});
+vm.runInContext(source, ctx);
+const axes = (position, focal=[0,0,0]) => JSON.parse(JSON.stringify(
+  ctx.window.BobVis.worldAxes({position,focal,up:[0,0,1]})));
+const front = axes([5,0,0]);
+assert.deepEqual(front.map(a=>[a.x,a.y]), [[0,0],[1,0],[0,1]]);
+assert.deepEqual(axes([15,20,30],[10,20,30]), front);
+const side = axes([0,5,0]);
+assert.deepEqual(side.map(a=>[a.x,a.y]), [[-1,0],[0,0],[0,1]]);
+""", str(source)],
+        check=True,
+    )
