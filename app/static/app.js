@@ -2106,7 +2106,8 @@ function syncTireLoadCamberFromPayload() {
 }
 
 function fieldGroupSections(fields, areaId = "") {
-  const grouped = groupFields(fields);
+  const grouped = groupFields(["sim-config", "study-config"].includes(areaId)
+    ? fields.map(field => ({...field, coordinate: false})) : fields);
   if (areaId === "suspension") {
     return suspensionFieldSections(grouped);
   }
@@ -2936,7 +2937,7 @@ function arrayFieldControl(field, label) {
 
 function vectorControl(field) {
   const values = Array.isArray(field.value) ? field.value : [];
-  const coordinate = isNumericArrayKind(field.array_element_kind) && values.length === 3;
+  const coordinate = field.coordinate !== false && isNumericArrayKind(field.array_element_kind) && values.length === 3;
   const displayValues = values.length ? values : Array.from({ length: isNumericArrayKind(field.array_element_kind) ? 3 : 0 }, () => "");
   const cells = displayValues.map((value, index) => vectorCell(field, value, index, coordinate)).join("");
   const variableQueue = vectorSupportsQueueControls(field, coordinate);
@@ -4312,6 +4313,7 @@ async function openSimulation(id) {
   state.simulationGgvEditor = false;
   await saveSimulationEdits();
   const payload = await simulationRequest("load", {id});
+  document.getElementById("run-log-menu").open = false;
   state.selectedSimulationId = id;
   state.selectedWorkflowId = payload.simulation.workflow_id;
   state.simConfigPayload = payload.config;
@@ -4382,39 +4384,8 @@ function openSimulationVisualization(child) {
   }
 }
 
-async function openSimulationGgv(id, kind = "ggv") {
+async function openSimulationGgv(id) {
   await openSimulation(id);
-  state.simModalOpen = false;
-  state.simulationGgvEditor = kind;
-  renderSimulationWorkspace();
-}
-
-function renderSimulationGgv() {
-  const simulation = selectedSimulation();
-  const panel = document.getElementById("simulation-ggv-editor");
-  if (!panel) return;
-  panel.hidden = state.view !== "standard" || !state.simulationGgvEditor;
-  if (panel.hidden) return;
-  const isLine = state.simulationGgvEditor === "racing-line";
-  const kind = isLine ? "racing-line" : "ggv";
-  const label = isLine ? "Racing line" : "GGV";
-  const sourceId = isLine ? simulation.racing_line_source_id : simulation.ggv_source_id;
-  const input = isLine ? simulation.racing_line_input : simulation.ggv_input;
-  panel.querySelector("h2").textContent = `${label} input`;
-  const source = document.getElementById("simulation-ggv-source");
-  source.innerHTML = '<option value="">Not connected</option>' + (state.simulationWorkspace?.simulations || [])
-    .filter(item => item.workflow_id === kind).map(item => `<option value="${escapeHtml(item.id)}"${item.id === sourceId ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
-  document.getElementById("simulation-ggv-status").textContent = `${input?.status || "Unavailable"}: ${input?.message || `Connect a ${label.toLowerCase()} result.`}`;
-  const open = document.getElementById("simulation-ggv-open");
-  open.textContent = `Open ${label.toLowerCase()} analysis`;
-  open.disabled = !sourceId || !(state.simulationWorkspace?.simulations || []).some(item => item.id === sourceId);
-  open.title = open.disabled ? "No available analysis is connected." : "";
-  open.onclick = () => workspaceAction(() => openSimulation(sourceId));
-  source.onchange = () => workspaceAction(async () => {
-    await simulationRequest(isLine ? "set-racing-line" : "set-ggv", {id: simulation.id, source_id: source.value || null});
-    renderSimulationWorkspace();
-    renderJobs();
-  });
 }
 
 function drawSimulationGgvConnections() {
@@ -4452,6 +4423,30 @@ function wireSimulationGgvDrag() {
     return sourceId && state.simulationWorkspace?.simulations?.some(item =>
       item.id === branch?.dataset.simulationBranch && item.workflow_id === "lap-qss") ? branch : null;
   };
+  const connect = id => {
+    const source = state.simulationWorkspace.simulations.find(item => item.id === sourceId);
+    sourceId = null;
+    clear();
+    return workspaceAction(async () => {
+      await saveSimulationEdits();
+      await simulationRequest(source.workflow_id === "racing-line" ? "set-racing-line" : "set-ggv", {id, source_id: source.id});
+      await openSimulationGgv(id);
+    });
+  };
+  tree.addEventListener("keydown", event => {
+    if (event.key === "Escape") { sourceId = null; clear(); return; }
+    const source = event.target.closest("[data-ggv-source]");
+    if (event.key === " " && source) {
+      event.preventDefault();
+      clear();
+      sourceId = source.dataset.ggvSource;
+      const kind = state.simulationWorkspace.simulations.find(item => item.id === sourceId)?.workflow_id;
+      tree.querySelectorAll(`[data-input-kind="${kind}"]`).forEach(node => node.classList.add("ggv-drop-target"));
+    } else if (event.key === "Enter" && event.target.closest("[data-input-kind]") && targetFor(event)) {
+      event.preventDefault();
+      connect(targetFor(event).dataset.simulationBranch);
+    }
+  });
   tree.addEventListener("dragstart", event => {
     sourceId = event.target.closest("[data-ggv-source]")?.dataset.ggvSource || null;
     if (!sourceId) return;
@@ -4472,18 +4467,9 @@ function wireSimulationGgvDrag() {
   tree.addEventListener("dragend", () => { sourceId = null; clear(); });
   tree.addEventListener("drop", event => {
     const target = targetFor(event);
-    const source = sourceId;
-    sourceId = null;
-    clear();
     if (!target) return;
     event.preventDefault();
-    const id = target.dataset.simulationBranch;
-    workspaceAction(async () => {
-      await saveSimulationEdits();
-      const kind = state.simulationWorkspace.simulations.find(item => item.id === source)?.workflow_id;
-      await simulationRequest(kind === "racing-line" ? "set-racing-line" : "set-ggv", {id, source_id: source});
-      await openSimulationGgv(id, kind);
-    });
+    connect(target.dataset.simulationBranch);
   });
 }
 
@@ -4532,6 +4518,8 @@ function wireSimulationSplitter() {
 function wireSimulationContextMenu() {
   const tree = document.getElementById("simulation-tree");
   const menu = document.getElementById("simulation-context-menu");
+  const pane = document.querySelector(".simulation-tree-pane");
+  let menuScrollTop = 0;
   let target = null;
   let trigger = null;
   const close = (restoreFocus = false) => {
@@ -4541,6 +4529,7 @@ function wireSimulationContextMenu() {
   };
   const open = (id, x, y, element, scope = "simulation") => {
     target = id;
+    menuScrollTop = pane.scrollTop;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
@@ -4558,7 +4547,7 @@ function wireSimulationContextMenu() {
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
     menu.style.top = `${clamp(y, 8, window.innerHeight - menu.offsetHeight - 8)}px`;
     trigger?.setAttribute("aria-expanded", "true");
-    menu.querySelector("button:not([hidden]):not([disabled])").focus();
+    menu.querySelector("button:not([hidden]):not([disabled])").focus({preventScroll: true});
   };
   tree.addEventListener("contextmenu", event => {
     const results = event.target.closest("[data-simulation-results]");
@@ -4601,14 +4590,16 @@ function wireSimulationContextMenu() {
       event.preventDefault();
       const buttons = [...menu.querySelectorAll("button")].filter(button => !button.hidden && !button.disabled);
       const index = buttons.indexOf(document.activeElement);
-      buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+      buttons[(index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus({preventScroll: true});
     }
   });
   document.addEventListener("pointerdown", event => {
     if (!menu.contains(event.target) && !event.target.closest("[data-simulation-menu]")) close();
   });
   window.addEventListener("resize", () => close());
-  document.querySelector(".simulation-tree-pane").addEventListener("scroll", () => close());
+  pane.addEventListener("scroll", () => {
+    if (pane.scrollTop !== menuScrollTop) close();
+  });
 }
 
 async function addSimulationVisualization(id, kind) {
@@ -4629,7 +4620,6 @@ function mountSimulationWorkspace() {
   wireSimulationSplitter();
   wireSimulationGgvDrag();
   new ResizeObserver(drawSimulationGgvConnections).observe(document.getElementById("simulation-tree"));
-  document.getElementById("simulation-ggv-close").onclick = () => workspaceAction(() => openSimulation(state.selectedSimulationId));
   wireSimulationContextMenu();
   new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
   const detail = document.getElementById("simulation-detail");
@@ -4686,10 +4676,13 @@ function mountSimulationWorkspace() {
         await simulationRequest("delete-visualization", {id: remove.dataset.owner, child_id: remove.dataset.removeVisualization});
         if (state.selectedVisualizationId === remove.dataset.removeVisualization) {
           state.selectedVisualizationId = null;
-          if (state.view === "replay") {
-            delete document.getElementById("replay-view").dataset.capture;
-            setView("replay");
-          }
+          const result = savedResults().find(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === remove.dataset.owner);
+          state.selectedSimulationId = remove.dataset.owner;
+          if (result) {
+            state.selectedResultId = result.id;
+            state.simModalOpen = false;
+            setView("studies");
+          } else await openSimulationOverview(remove.dataset.owner);
         }
         renderSimulationWorkspace();
       });
@@ -4781,10 +4774,10 @@ function renderSimulationWorkspace() {
       </div>
       <div class="simulation-tree-runs"${expanded ? "" : " hidden"}>
         <button type="button" class="simulation-tree-run ${selected && !state.simulationGgvEditor ? "active" : ""}" data-simulation-id="${escapeHtml(item.id)}">${simulationTreeIcon("response")}<span>Setup</span></button>
-        ${item.workflow_id === "lap-qss" ? [["ggv", "GGV", item.ggv_source_id, item.ggv_input], ["racing-line", "Racing line", item.racing_line_source_id, item.racing_line_input]].map(([kind, label, source, input]) => `<button type="button" class="simulation-tree-run ${source ? "ggv-link-supplied" : "ggv-link-empty"}" data-simulation-ggv="${escapeHtml(item.id)}" data-input-kind="${kind}"${source ? ` data-ggv-linked="${escapeHtml(source)}"` : ""} title="${escapeHtml(input?.message || `Drag a ${label.toLowerCase()} result here, or click to choose.`)}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${source ? `${label} → ${escapeHtml(input?.name || "Unavailable")}` : `Link ${label}`}</span><span class="simulation-tree-model">${escapeHtml(input?.status || "Unavailable")}</span></button>`).join("") : ""}
+        ${item.workflow_id === "lap-qss" ? [["ggv", "GGV", item.ggv_source_id, item.ggv_input], ["racing-line", "Racing line", item.racing_line_source_id, item.racing_line_input]].map(([kind, label, source, input]) => `<button type="button" class="simulation-tree-run ${source ? "ggv-link-supplied" : "ggv-link-empty"}" data-simulation-ggv="${escapeHtml(item.id)}" data-input-kind="${kind}"${source ? ` data-ggv-linked="${escapeHtml(source)}"` : ""} title="${escapeHtml(input?.message || `Drag a ${label.toLowerCase()} Results here to link them.`)}">${simulationTreeIcon("link")}<span class="simulation-tree-label">${source ? `${label} → ${escapeHtml(input?.name || "Unavailable")}` : `Link ${label}`}</span><span class="simulation-tree-model">${escapeHtml(input?.status || "Unavailable")}</span></button>`).join("") : ""}
         <div class="simulation-tree-row simulation-results-row" data-simulation-results="${escapeHtml(item.id)}">
           ${children.length ? `<button type="button" class="simulation-tree-toggle" data-simulation-toggle="results:${escapeHtml(item.id)}" aria-expanded="${!state.collapsedSimulations.has(`results:${item.id}`)}" aria-label="Toggle results for ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>` : ""}
-          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? "Plots and report. Drag onto QSS Lap to connect." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && ["ggv", "racing-line"].includes(item.workflow_id) ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
+          <button type="button" class="simulation-tree-run ${state.view === "studies" && !state.selectedVisualizationId && state.selectedSimulationId === item.id ? "active" : ""}" data-simulation-run="${escapeHtml(runs[0]?.id || "")}" data-owner="${escapeHtml(item.id)}" aria-haspopup="menu"${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? ` draggable="true" data-ggv-source="${escapeHtml(item.id)}"` : "") : " disabled"} title="${runs.length ? (["ggv", "racing-line"].includes(item.workflow_id) ? "Drag onto QSS Lap to connect, or press Space here and Enter on its input. Escape cancels." : "Plots and report from the latest successful run.") : "Results are available after a successful run."}">${simulationTreeIcon("report")}<span class="simulation-tree-label">Results</span>${runs.length && ["ggv", "racing-line"].includes(item.workflow_id) ? `<span class="simulation-drag-grip">${simulationTreeIcon("grip")}</span>` : ""}</button>
         </div>
         <div class="simulation-tree-children simulation-result-children"${state.collapsedSimulations.has(`results:${item.id}`) ? " hidden" : ""}>
           ${children.map(child => `<div class="simulation-tree-row"><button type="button" class="simulation-tree-run ${["studies", "replay"].includes(state.view) && child.id === state.selectedVisualizationId ? "active" : ""}" data-simulation-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}"${runs.length ? "" : " disabled"} title="${runs.length ? escapeHtml(child.name) : "Results are available after a successful run."}">${simulationTreeIcon(child.kind === "replay" ? "scene" : "envelope")}<span class="simulation-tree-label">${escapeHtml(child.name)}</span></button><button type="button" class="simulation-tree-remove" data-remove-visualization="${escapeHtml(child.id)}" data-owner="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(child.name)}">×</button></div>`).join("")}
@@ -4803,7 +4796,6 @@ function renderSimulationWorkspace() {
     button.classList.toggle("active", selected);
     button.setAttribute("aria-pressed", String(selected));
   }
-  renderSimulationGgv();
   const overviewVisible = renderSimulationOverview();
   const empty = document.getElementById("simulation-empty");
   empty.querySelector("h3").textContent = simulations?.length ? "Simulation workspace" : "No simulations";
@@ -6020,7 +6012,9 @@ function renderResultSaveControls() {
     const status = state.resultsStatusMessage ? ` | ${state.resultsStatusMessage}` : "";
     const count = savedResults().length;
     const packageLabel = count === 1 ? "1 local run" : `${count} local runs`;
-    context.textContent = `Local simulation archive | ${packageLabel}${status}`;
+    context.textContent = state.selectedSimulationId
+      ? `${selectedSimulation()?.name || "Simulation"} · Results${status}`
+      : `Local simulation archive | ${packageLabel}${status}`;
   }
   const saveButton = document.getElementById("run-study-btn");
   if (saveButton) {
@@ -7106,7 +7100,7 @@ function renderSimConfigForm() {
   const fields = (state.simConfigPayload.fields || []).filter(field => {
     if (["maneuver", "mbd-maneuver"].includes(selectedWorkflow()?.id) && field.path?.[0] === "model_dof") return false;
     if (selectedWorkflow()?.id === "lap-qss") return false;
-    if (selectedWorkflow()?.id === "racing-line" && field.path?.join(".") === "track.boundary_csv") return false;
+    if (["racing-line", "lap-transient"].includes(selectedWorkflow()?.id) && field.path?.join(".") === "track.boundary_csv") return false;
     return !(selectedSimulation()?.ggv_source_id && (field.group === "Envelope" || field.path?.[0] === "model_dof"));
   });
   const advancedGroups = new Set(["Numerics", "Execution", "Closed loop", "Fit"]);
@@ -7118,9 +7112,20 @@ function renderSimConfigForm() {
     ${advanced.length ? `<details class="component-details"><summary>Advanced</summary>${fieldGroupSections(advanced, "sim-config")}</details>` : ""}
   </fieldset>`;
   if (selectedWorkflow()?.id === "lap-qss") {
-    form.innerHTML = `<div class="simulation-inputs-summary">${[["GGV", selectedSimulation()?.ggv_input], ["Racing line", selectedSimulation()?.racing_line_input]].map(([label, input]) => `<section><h3>${label}</h3><p>${escapeHtml(input?.name || "Not connected")}</p><p class="muted">${escapeHtml(input?.message || "Connection available in the outline.")}</p></section>`).join("")}</div>`;
+    const simulation = selectedSimulation();
+    form.innerHTML = `<div class="simulation-inputs-summary">${[["GGV", "ggv", simulation?.ggv_source_id, simulation?.ggv_input], ["Racing line", "racing-line", simulation?.racing_line_source_id, simulation?.racing_line_input]].map(([label, kind, source, input]) => `<section><h3>${label} <small>${escapeHtml(input?.status || "Unavailable")}</small></h3>${source ? `<button type="button" class="ghost-button" data-input-source="${escapeHtml(source)}">${escapeHtml(input?.name || label)}</button><button type="button" class="ghost-button" data-unlink-input="${kind}" aria-label="Unlink ${label}">×</button>` : ""}<p class="muted">${escapeHtml(source ? input?.message || "Linked result unavailable." : `A completed ${label} is required. Drag its Results onto this lap in the outline.`)}</p>${kind === "ggv" && input?.status === "Ready" ? `<p class="muted">${input.model_dof} DOF · ${formatPlotTick(input.power_limit_w / 1000)} kW. Vehicle, tires and power limit come from the GGV.</p>` : ""}</section>`).join("")}</div>`;
+    form.querySelectorAll("[data-input-source]").forEach(button => {
+      button.onclick = () => workspaceAction(() => openSimulation(button.dataset.inputSource));
+    });
+    form.querySelectorAll("[data-unlink-input]").forEach(button => {
+      button.disabled = busy;
+      button.onclick = () => workspaceAction(async () => {
+        await simulationRequest(button.dataset.unlinkInput === "ggv" ? "set-ggv" : "set-racing-line", {id: simulation.id, source_id: null});
+        await openSimulation(simulation.id);
+      });
+    });
   }
-  if (selectedWorkflow()?.id === "racing-line") renderTrackImport(form, busy);
+  if (["racing-line", "lap-transient"].includes(selectedWorkflow()?.id)) renderTrackImport(form, busy);
   if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
     control.title = "Simulation settings are locked while a run is active.";
   });
@@ -7396,13 +7401,10 @@ function renderJobs() {
   const canRun = !busy && Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
   const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
-  runButton.textContent = busy ? "Running" : !canRun
-    ? "Simulation locked"
-    : workflow
-    ? runVerb
-    : "No Workflow";
+  runButton.textContent = busy?.simulation?.id === state.selectedSimulationId ? "Running" : runVerb;
   runButton.title = busy ? "A simulation is running." : !state.selectedSimulationId ? "No simulation is selected." : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
+  readiness.hidden = workflow?.id === "lap-qss" && !busy;
   readiness.textContent = busy ? `${busy.label}. Settings are locked while it runs.` : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const prepare = document.getElementById("sim-prepare-mbd");
   prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
@@ -12530,6 +12532,10 @@ function plotDomain(values, { includeZero = false, padFraction = 0.08 } = {}) {
   return [min - pad, max + pad];
 }
 
+function formatPlotTick(value) {
+  return Number(value.toPrecision(6)).toString();
+}
+
 function drawPlotGrid(ctx, chart) {
   const palette = canvasPalette();
   const { plot } = chart;
@@ -12547,7 +12553,7 @@ function drawPlotGrid(ctx, chart) {
     ctx.moveTo(px, plot.y);
     ctx.lineTo(px, plot.y + plot.height);
     ctx.stroke();
-    drawCanvasText(ctx, formatNumber(tick), px, plot.y + plot.height + 13, {
+    drawCanvasText(ctx, formatPlotTick(tick), px, plot.y + plot.height + 13, {
       size: 9,
       weight: 650,
       align: "center",
@@ -12561,7 +12567,7 @@ function drawPlotGrid(ctx, chart) {
     ctx.moveTo(plot.x, py);
     ctx.lineTo(plot.x + plot.width, py);
     ctx.stroke();
-    drawCanvasText(ctx, formatNumber(tick), plot.x - 7, py, {
+    drawCanvasText(ctx, formatPlotTick(tick), plot.x - 7, py, {
       size: 9,
       weight: 650,
       align: "right",

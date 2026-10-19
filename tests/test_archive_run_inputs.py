@@ -651,3 +651,41 @@ def test_maneuver_model_change_persists_without_losing_waveform(archive_workspac
         assert data['amplitude_deg'] == 4.
         if model != 'mbd':
             assert data['model_dof'] == int(model)
+
+
+def test_linked_lap_power_belongs_to_archived_ggv(linked_ggv_workspace):
+    root, _, lap, archive = linked_ggv_workspace
+    saved = archive()
+    assert saved['ggv_parameters'] == {'model_dof': 14, 'power_limit_w': 80000.}
+    app.simulation_workspace('load', {'id': lap['id']})
+    config = yaml.safe_load((root / 'lap.yml').read_text())
+    config['event'] = {'drive_power_limit_w': 32000.}
+    (root / 'lap.yml').write_text(yaml.safe_dump(config))
+    app.simulation_workspace('save', {'id': lap['id']})
+    app.simulation_workspace('prepare-run', {'id': lap['id']})
+    prepared = yaml.safe_load((root / 'lap.yml').read_text())
+    assert prepared['event']['drive_power_limit_w'] is None
+    assert prepared['qss']['linked_ggv']['power_limit_w'] == 80000.
+
+
+def test_qss_setup_has_no_independent_vehicle_or_envelope_settings():
+    from app.registry import BASE_CONFIG_SPECS
+
+    assert BASE_CONFIG_SPECS['lap-qss'].fields == ()
+    assert any(field.path == ('event', 'drive_power_limit_w')
+               for field in BASE_CONFIG_SPECS['lap-transient'].fields)
+
+
+@pytest.mark.parametrize('parameters,status', [
+    (None, 'Stale'), ({'model_dof': 3, 'power_limit_w': 80000.}, 'Incompatible'),
+])
+def test_linked_ggv_requires_recorded_parameters(linked_ggv_workspace, monkeypatch, parameters, status):
+    from app import data_services
+
+    _, source, lap, archive = linked_ggv_workspace
+    saved = archive()
+    saved['ggv_parameters'] = parameters
+    monkeypatch.setattr(data_services, 'saved_results_payload', lambda _: {'results': [saved]})
+    workspace = app.simulation_workspace('list')
+    dependency = next(item['ggv_input'] for item in workspace['simulations'] if item['id'] == lap['id'])
+    assert dependency['status'] == status

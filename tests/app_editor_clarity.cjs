@@ -1055,3 +1055,36 @@ vm.runInContext(`
   assert.equal(maneuverSteering(1.375,{...data,maneuver:'sine'}),-6);
 }
 `,ctx);
+
+vm.runInContext(`
+const sequenceField = {key:'frequencies',value:[0.5,0.75,1],array_shape:[3],array_element_kind:'number',coordinate:false};
+assert.ok(vectorControl(sequenceField).includes('data-array-action="add-item"'));
+assert.ok(!vectorControl(sequenceField).includes('coordinate-cell'));
+assert.notEqual(formatPlotTick(0.0005),formatPlotTick(0.001));
+assert.equal(formatPlotTick(0), '0');
+`,ctx);
+
+{
+  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,menuContext);
+  vm.runInContext(`
+    const handlers={}, pane={scrollTop:240,addEventListener:(name,fn)=>{handlers[name]=fn;}};
+    const trigger={dataset:{simulationMenu:'test'},setAttribute(){},getBoundingClientRect:()=>({left:20,bottom:100})};
+    const button={dataset:{action:'delete'},focus(){}};
+    const menu={hidden:true,style:{},offsetWidth:100,offsetHeight:80,
+      querySelectorAll:()=>[button],querySelector:()=>button,addEventListener(){}};
+    const tree={addEventListener:(name,fn)=>{handlers['tree:'+name]=fn;}};
+    document={getElementById:id=>id==='simulation-tree'?tree:menu,
+      querySelector:()=>pane,addEventListener(){}};
+    window={innerWidth:1000,innerHeight:800,addEventListener(){}};
+    state.simulationWorkspace={simulations:[{id:'test',workflow_id:'maneuver'}]};
+    wireSimulationContextMenu();
+    handlers['tree:click']({target:{closest:()=>trigger}});
+    assert.equal(menu.hidden,false);
+    handlers.scroll();
+    assert.equal(menu.hidden,false,'pending scroll from revealing the row must not close its menu');
+    pane.scrollTop=250; handlers.scroll();
+    assert.equal(menu.hidden,true,'subsequent scrolling closes the menu');
+  `,menuContext);
+}

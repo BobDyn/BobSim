@@ -1218,15 +1218,12 @@ def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key
         if run.get("input_capture_phase") != "job_start" or not run.get("ggv_signature") \
                 or run["ggv_signature"] != _ggv_link_signature():
             return {**result, "status": "Stale", "message": "Rerun the GGV for the current vehicle, tires and solver."}
-        from simulations.envelope.vehicle_yaml import project_vehicle_yaml
-
-        vehicle_data = _load_vehicle_yaml_file(_safe_repo_path("vehicle.yml"))
-        available_power = project_vehicle_yaml(vehicle_data).ggv.max_drive_power
-        power_limit = lap_config.get("event", {}).get("drive_power_limit_w")
-        lap_power = min(available_power, float(power_limit) if power_limit is not None else available_power)
-        if not math.isclose(lap_power, available_power):
+        parameters = run.get("ggv_parameters")
+        if not parameters:
+            return {**result, "status": "Stale", "message": "Rerun the GGV to record its model and power limit."}
+        if parameters.get("model_dof") != int(source_config.get("generation", {}).get("model_dof", 3)):
             return {**result, "status": "Incompatible",
-                    "message": "Power limits differ. Generate for this lap or match the GGV power limit."}
+                    "message": "The saved GGV model differs from its settings. Rerun it."}
         file = next((file for file in run.get("files", []) if file.get("label") == "Raw CSV"), None)
         if not file or not _safe_repo_path(file["path"]).is_file():
             return {**result, "message": "The connected GGV has no saved envelope CSV. Rerun it."}
@@ -1240,7 +1237,7 @@ def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key
             previous = lap_snapshot.get("qss", {}).get("linked_ggv", {})
         return {**result, "status": "Ready", "message": "Uses the latest successful GGV run.",
                 "path": file["path"], "signature": run["ggv_signature"], "csv_sha256": csv_digest,
-                "model_dof": int(lap_config.get("model_dof", 3)), "power_limit_w": lap_power,
+                "model_dof": parameters["model_dof"], "power_limit_w": parameters["power_limit_w"],
                 "needs_rerun": previous.get("run_id") != run["id"]}
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         return {**result, "message": "GGV inputs are unavailable. Rerun the source or choose another analysis."}
@@ -2153,8 +2150,18 @@ def capture_workflow_inputs(workflow_id: str) -> dict[str, Any]:
         tire_root = Path(vehicle_data.get("paths", {}).get("tire_templates", "common/tire_templates"))
         tire_path = ROOT / tire_root / f"{name}.tir"
         tire_texts[axle] = tire_path.read_text(encoding="utf-8")
+    ggv_parameters = None
+    if workflow_id == "ggv" and vehicle_text and config_path and config_path.is_file():
+        from simulations.envelope.vehicle_yaml import project_vehicle_yaml
+
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        ggv_parameters = {
+            "model_dof": int(config.get("generation", {}).get("model_dof", 3)),
+            "power_limit_w": project_vehicle_yaml(vehicle_data).ggv.max_drive_power,
+        }
     return {
         "tire_texts": tire_texts,
+        "ggv_parameters": ggv_parameters,
         "model": workflow_model(workflow, root=ROOT),
         "vehicle_text": vehicle_text,
         "config_text": config_path.read_text(encoding="utf-8") if config_path and config_path.is_file() else None,
@@ -2263,6 +2270,7 @@ def save_active_results(
         "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
         "ggv_signature": inputs.get("ggv_signature"),
+        "ggv_parameters": inputs.get("ggv_parameters"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),
@@ -2298,6 +2306,7 @@ def save_active_results(
         "simulation": inputs.get("simulation"),
         "action_wall_time_s": inputs.get("action_wall_time_s"),
         "ggv_signature": inputs.get("ggv_signature"),
+        "ggv_parameters": inputs.get("ggv_parameters"),
         "inputs_captured_at": inputs.get("captured_at"),
         "input_capture_phase": "job_start" if input_snapshot is not None else "archive",
         "config_source": inputs.get("config_source"),

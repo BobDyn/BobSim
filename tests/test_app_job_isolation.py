@@ -78,9 +78,10 @@ def test_input_edit_is_rejected_while_job_owns_workspace():
         handler.do_POST()
         assert responses[0][0] == HTTPStatus.CONFLICT
         assert not handled
-        handler.path = '/api/results/series'
-        handler.do_POST()
-        assert handled == [True]
+        for path in ('/api/results/series', '/api/tracks/preview'):
+            handler.path = path
+            handler.do_POST()
+        assert handled == [True, True]
     finally:
         execution.LOCK.release()
 
