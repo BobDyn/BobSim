@@ -52,7 +52,10 @@ def test_independent_inverse_accepts_coupled_root_despite_static_start_saturatio
     np.testing.assert_allclose(inverse.slip_ratios, trim.output.slip_ratios, atol=1e-10)
     np.testing.assert_allclose(_algebraic_residual(model, trim.inputs, inverse), 0., atol=1e-7)
     static_start = model.evaluate(trim.state, trim.inputs)
-    assert np.linalg.norm(static_start.normal_loads_n - trim.output.normal_loads_n) > 5.
+    np.testing.assert_allclose(static_start.normal_loads_n, trim.output.normal_loads_n, atol=1e-6)
+    np.testing.assert_allclose(static_start.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-7)
+    np.testing.assert_allclose(_algebraic_residual(model, trim.inputs, static_start), 0., atol=1e-7)
+    np.testing.assert_allclose(model.derivative(0., trim.state, trim.inputs), trim.output.derivative, atol=1e-7)
     monkeypatch.setattr(ggv, 'solve_acceleration_trim', lambda *args, **kwargs: trim)
     assert racing_check(model, trim) is trim
 

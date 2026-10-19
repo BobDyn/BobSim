@@ -1025,3 +1025,74 @@ def test_controller_integral_is_integrated_without_changing_vehicle_state(parame
     assert result.state_names == model.state_names
     # The final calls reconstruct the sampled outputs from the integrated state.
     np.testing.assert_allclose([integral for _, integral in observed[-5:]], 0.5 * result.time_s**2, atol=1e-10)
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+@pytest.mark.parametrize("iterations", [0, 30])
+def test_transient_evaluation_reproduces_qss_acceleration_trim(parameters, monkeypatch, dof, iterations):
+    model = create_model(dof, parameters)
+    trim = solve_acceleration_trim(
+        model, speed_mps=12., yaw_rate_radps=.25,
+        longitudinal_acceleration_mps2=1., lateral_acceleration_mps2=3.,
+        acceleration_frame="path",
+    )
+    assert trim.success, trim.message
+    monkeypatch.setattr(model, "_force_path_iterations", iterations)
+    actual = model.evaluate(trim.state, trim.inputs)
+    np.testing.assert_allclose(actual.normal_loads_n, trim.output.normal_loads_n, atol=1e-4)
+    np.testing.assert_allclose(actual.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-5)
+    np.testing.assert_allclose(model.algebraic_residual(trim.inputs, actual), 0., atol=1e-4)
+
+
+def test_unclosed_load_iteration_fails_explicitly(parameters, monkeypatch):
+    model = create_model(10, parameters)
+    monkeypatch.setattr(model, "_closed_normal_loads", lambda loads, *args: loads + 100.)
+    with pytest.raises(RuntimeError, match="algebraic tire/load balance did not converge"):
+        model.evaluate(model.initial_state(12.))
+
+
+@pytest.mark.parametrize("dof", [3, 6])
+def test_unattainable_massless_wheel_torque_fails_explicitly(parameters, dof):
+    model = create_model(dof, parameters)
+    with pytest.raises(RuntimeError, match="massless-wheel model's capacity"):
+        model.evaluate(model.initial_state(12.), ModelInputs(wheel_torques_nm=(1e6,) * 4))
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_nominal_evaluation_keeps_fast_force_iteration(parameters, monkeypatch, dof):
+    model = create_model(dof, parameters)
+
+    def unexpected_fallback(*args):
+        pytest.fail("Nominal force balance should converge without a coupled solve.")
+
+    monkeypatch.setattr(model, "_solve_algebraic_forces", unexpected_fallback)
+    model.evaluate(model.initial_state(12.))
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_transient_holds_a_steady_turn(parameters, dof):
+    model = create_model(dof, parameters)
+    trim = solve_steady_state(model, speed_mps=12., yaw_rate_radps=.2)
+    assert trim.success, trim.message
+    result = simulate_transient(
+        model, initial_state=trim.state, controls=trim.inputs,
+        time_s=np.linspace(0., .1, 6), rtol=1e-9, atol=1e-11,
+    )
+    assert result.success, result.message
+    np.testing.assert_allclose(
+        result.state[:, dof:], np.broadcast_to(trim.state[dof:], result.state[:, dof:].shape),
+        atol=1e-5,
+    )
+
+
+@pytest.mark.parametrize("dof", [3, 6])
+def test_coupled_load_closure_preserves_explicit_slip_constraints(parameters, monkeypatch, dof):
+    model = create_model(dof, parameters)
+    monkeypatch.setattr(model, "_force_path_iterations", 0)
+    slips = np.full(4, .02)
+    controls = ModelInputs()
+    output = model.evaluate(model.initial_state(12.), controls, algebraic_slips=slips)
+    np.testing.assert_array_equal(output.slip_ratios, slips)
+    balance = model.algebraic_residual(controls, output)
+    np.testing.assert_allclose(balance[:4], 0., atol=1e-5)
+    assert np.linalg.norm(balance[4:]) > 1.
