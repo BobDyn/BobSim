@@ -1118,6 +1118,51 @@ def _ggv_link_signature() -> str:
     )["fingerprint"])
 
 
+def _simulation_line_input(item: dict[str, Any], items: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    """## Racing-Line Connection
+
+    Parameters
+    ----------
+    item : dict
+        Lap analysis with a source ID.
+    items : list of dict
+        Analyses in this vehicle workspace.
+    key : str
+        Workspace key.
+
+    Returns
+    -------
+    dict
+        Latest result and its compatibility with current track and vehicle width.
+    """
+    source_id = item.get("racing_line_source_id")
+    result: dict[str, Any] = {"source_id": source_id, "status": "Unavailable"}
+    source = next((entry for entry in items
+                   if entry["id"] == source_id and entry["workflow_id"] == "racing-line"), None)
+    if source is None:
+        return {**result, "message": "Connect a racing-line result from this vehicle."}
+    result["name"] = source["name"]
+    try:
+        from simulations.lap.racing_line_sim import line_signature
+        run = next((run for run in saved_results_payload(key)["results"]
+                    if (run.get("simulation") or {}).get("id") == source_id), None)
+        if run is None:
+            return {**result, "message": "Run the connected racing-line analysis first."}
+        file = next((file for file in run["files"] if file["label"] == "Racing line"), None)
+        if file is None:
+            return {**result, "message": "The saved racing line is missing. Rerun its analysis."}
+        path = _safe_repo_path(file["path"])
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        saved = json.loads(path.read_text())
+        config = yaml.safe_load(source["config_text"])
+        if file.get("sha256") != digest or saved.get("signature") != line_signature(config, ROOT):
+            return {**result, "status": "Stale", "message": "Track, width or clearance changed. Rerun the racing line."}
+        return {**result, "status": "Ready", "message": "Uses the latest successful racing line.",
+                "path": file["path"], "sha256": digest, "run_id": run["id"], "track": config["track"]}
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+        return {**result, "message": str(exc)}
+
+
 def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key: str) -> dict[str, Any]:
     """## GGV Connection
 
@@ -1137,7 +1182,7 @@ def _simulation_ggv_input(item: dict[str, Any], items: list[dict[str, Any]], key
     """
     source_id = item.get("ggv_source_id")
     if not source_id:
-        return {"mode": "generate", "status": "Local", "message": "Generate with this lap's envelope settings."}
+        return {"mode": "linked", "status": "Unavailable", "message": "Connect a GGV result from this vehicle."}
     result: dict[str, Any] = {"mode": "linked", "source_id": source_id, "status": "Unavailable"}
     try:
         source = next((entry for entry in items if entry["id"] == source_id and entry["workflow_id"] == "ggv"), None)
@@ -1207,6 +1252,7 @@ def _inherit_ggv_fidelity(items: list[dict[str, Any]]) -> None:
         dof = int(yaml.safe_load(source["config_text"]).get("generation", {}).get("model_dof", 3))
         config = yaml.safe_load(lap["config_text"])
         config["model_dof"] = dof
+        config.setdefault("event", {})["drive_power_limit_w"] = None
         lap["config_text"] = yaml.safe_dump(config, sort_keys=False)
         lap["model"] = {**lap.get("model", {}), "model_dofs": [dof], "fidelity": f"{dof} DOF QSS"}
 
@@ -1302,6 +1348,8 @@ def simulation_workspace(action: str = "list", payload: dict[str, Any] | None = 
 
 
 def _simulation_analysis_group(workflow_id: str) -> str:
+    if workflow_id == "racing-line":
+        return "track"
     if workflow_id == "four-post":
         return "kinematic"
     if workflow_id in {"steady-state", "ggv", "ymd", "lap-qss"}:
@@ -1330,7 +1378,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                         number += 1
                     child["name"] = f"Signal Explorer {number}"
     groups_path = path.with_name("analysis_groups.json")
-    group_order = ("kinematic", "steady-state", "transient")
+    group_order = ("track", "kinematic", "steady-state", "transient")
     saved_groups = json.loads(groups_path.read_text(encoding="utf-8")) if groups_path.is_file() else []
     groups = {group for group in saved_groups if isinstance(group, str) and group in group_order}
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
@@ -1340,7 +1388,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     if action in {"add-analysis", "remove-analysis"}:
         group = payload.get("group")
         if group not in group_order:
-            raise ValueError("Choose Kinematic, Steady state or Transient.")
+            raise ValueError("Choose Track, Kinematic, Steady state or Transient.")
         if action == "remove-analysis":
             if any(_simulation_analysis_group(entry["workflow_id"]) == group for entry in items):
                 raise ValueError("Remove the simulations in this analysis first.")
@@ -1349,7 +1397,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             groups.add(group)
     elif action == "create":
         workflow = _workflow_by_id(str(payload.get("workflow_id", "")))
-        if workflow.group not in {"standard", "response", "envelope", "lap"}:
+        if workflow.group not in {"standard", "response", "envelope", "lap", "track"}:
             raise ValueError("Choose a simulation workflow.")
         spec = _sim_config_spec(workflow.id)
         item = {"id": uuid4().hex, "workflow_id": workflow.id,
@@ -1383,6 +1431,13 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
         item["name"] = str(payload.get("name") or item["name"]).strip()[:120] or item["name"]
+    elif action == "set-racing-line":
+        if item is None or item["workflow_id"] != "lap-qss":
+            raise ValueError("Racing-line connections require a QSS lap.")
+        source_id = payload.get("source_id") or None
+        if source_id and not any(entry["id"] == source_id and entry["workflow_id"] == "racing-line" for entry in items):
+            raise ValueError("Choose a racing-line analysis from this vehicle.")
+        item["racing_line_source_id"] = source_id
     elif action == "set-ggv":
         if item is None or item["workflow_id"] != "lap-qss":
             raise ValueError("GGV connections require a QSS lap analysis.")
@@ -1390,6 +1445,10 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         if source_id and not any(entry["id"] == source_id and entry["workflow_id"] == "ggv" for entry in items):
             raise ValueError("Choose a GGV analysis from this vehicle.")
         item["ggv_source_id"] = source_id
+        if source_id:
+            data = yaml.safe_load(item["config_text"])
+            data.setdefault("event", {})["drive_power_limit_w"] = None
+            item["config_text"] = yaml.safe_dump(data, sort_keys=False)
         if source_id is None:
             data = yaml.safe_load(item["config_text"])
             data.setdefault("qss", {})["generate_if_missing"] = True
@@ -1464,6 +1523,16 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         spec = _sim_config_spec(item["workflow_id"])
         if action in {"load", "prepare-run"}:
             config_text = item["config_text"]
+            if action == "prepare-run" and item["workflow_id"] == "lap-qss":
+                if not item.get("ggv_source_id"):
+                    raise ValueError("Connect a GGV result before running this lap.")
+                line_input = _simulation_line_input(item, items, key)
+                if line_input["status"] != "Ready":
+                    raise ValueError(line_input["message"])
+                data = yaml.safe_load(config_text)
+                data["linked_racing_line"] = {key: line_input[key] for key in ("path", "sha256", "source_id", "run_id")}
+                data["track"] = line_input["track"]
+                config_text = yaml.safe_dump(data, sort_keys=False)
             if action == "prepare-run" and item.get("ggv_source_id"):
                 dependency = _simulation_ggv_input(item, items, key)
                 if dependency["status"] != "Ready":
@@ -1483,6 +1552,9 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             item["model"] = workflow_model(_workflow_by_id(item["workflow_id"]), root=ROOT)
             config_text = _config_file_path(spec).read_text(encoding="utf-8")
             data = yaml.safe_load(config_text)
+            if data.pop("linked_racing_line", None):
+                data["track"] = yaml.safe_load(item["config_text"])["track"]
+                config_text = yaml.safe_dump(data, sort_keys=False)
             if data.get("qss", {}).pop("linked_ggv", None):
                 original = yaml.safe_load(item["config_text"]).get("qss", {})
                 for name in ("ggv_csv", "generate_if_missing"):
@@ -1501,7 +1573,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
     if action in {"add-analysis", "remove-analysis", "create", "save", "rename", "delete", "duplicate", "set-baseline",
-                  "set-ggv", "add-visualization", "delete-visualization",
+                  "set-ggv", "set-racing-line", "add-visualization", "delete-visualization",
                   "update-visualization", "rename-visualization"}:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(items, indent=2), encoding="utf-8")
@@ -1513,6 +1585,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     for summary, entry in zip(summaries, items):
         if entry["workflow_id"] == "lap-qss":
             summary["ggv_input"] = _simulation_ggv_input(entry, items, key)
+            summary["racing_line_input"] = _simulation_line_input(entry, items, key)
     if any(summary.get("visualizations") for summary in summaries):
         runs = saved_results_payload(key)["results"]
         captures = app_visual.available_runs(ROOT) if any(
@@ -2119,7 +2192,8 @@ def save_active_results(
                 "kind": output.kind,
                 "source_path": output.path,
                 "path": target.relative_to(ROOT).as_posix(),
-                "sha256": hashlib.sha256(target.read_bytes()).hexdigest() if workflow_id == "ggv" else None,
+                "sha256": (hashlib.sha256(target.read_bytes()).hexdigest()
+                           if workflow_id in {"ggv", "racing-line"} else None),
             }
         )
 

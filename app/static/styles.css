@@ -5101,3 +5101,11 @@ summary:focus-visible {
 
 #signal-explorer .multiple-unit-plots { overflow-y: auto; }
 #signal-explorer .multiple-unit-plots canvas { width: 100%; height: 330px; min-height: 330px; flex: 0 0 330px; }
+
+.track-import { display: grid; gap: 12px; }
+.track-import-bar { display: flex; gap: 12px; align-items: center; }
+.track-preview { display: block; width: 100%; height: min(38vh, 340px); }
+.track-preview polyline { fill: none; stroke: var(--blue); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.track-name, .track-status { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.track-format-diagram { display: block; width: min(100%, 640px); }
+.track-format-diagram text { fill: currentColor; font-size: 14px; }

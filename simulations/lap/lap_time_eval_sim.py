@@ -85,23 +85,37 @@ def run_lap_time_evaluation(
         qss_config=qss_config,
         effective_power_limit_w=vehicle.parameters.peak_drive_power_w,
     )
-    corridor = TrackCorridor.from_csv(track_path)
-    line_mode = cast(LineMode, str(line_config.get("mode", "minimum_time_qss")))
-    optimized = optimize_racing_line(
-        corridor,
-        ggv,
-        mode=line_mode,
-        vehicle_width_m=float(track_config.get("vehicle_width_m", 1.35)),
-        safety_margin_m=float(track_config.get("safety_margin_m", 0.1)),
-        sample_step_m=float(track_config.get("sample_step_m", 1.0)),
-        curvature_max_iterations=int(line_config.get("curvature_max_iterations", 30)),
-        lap_time_max_iterations=int(line_config.get("lap_time_max_iterations", 25)),
-        max_speed_mps=(
-            float(qss_config["max_speed_mps"])
-            if qss_config.get("max_speed_mps") is not None
-            else None
-        ),
-    )
+    from simulations.lap.racing_line_sim import load_line, vehicle_width_m
+    if config.get("linked_racing_line"):
+        from simulations.lap.core.qss import solve_qss_lap
+        from simulations.lap.core.racing_line import LineOptimizationResult
+        link = config["linked_racing_line"]
+        line_path = _root_path(root, link["path"])
+        if hashlib.sha256(line_path.read_bytes()).hexdigest() != link["sha256"]:
+            raise ValueError("Linked racing-line file changed. Reconnect the generated result.")
+        line = load_line(line_path)
+        lap = solve_qss_lap(line, ggv, max_speed_mps=qss_config.get("max_speed_mps"))
+        line_mode = "linked"
+        optimized = LineOptimizationResult("minimum_curvature", line, lap, lap.lap_time_s,
+                                           lap.lap_time_s, True, "Saved racing line", 0)
+    else:
+        corridor = TrackCorridor.from_csv(track_path)
+        line_mode = cast(LineMode, str(line_config.get("mode", "minimum_time_qss")))
+        optimized = optimize_racing_line(
+            corridor,
+            ggv,
+            mode=line_mode,
+            vehicle_width_m=vehicle_width_m(load_yaml(vehicle_path), root),
+            safety_margin_m=float(track_config.get("safety_margin_m", 0.1)),
+            sample_step_m=float(track_config.get("sample_step_m", 1.0)),
+            curvature_max_iterations=int(line_config.get("curvature_max_iterations", 30)),
+            lap_time_max_iterations=int(line_config.get("lap_time_max_iterations", 25)),
+            max_speed_mps=(
+                float(qss_config["max_speed_mps"])
+                if qss_config.get("max_speed_mps") is not None
+                else None
+            ),
+        )
     write_qss_lap_csv(output_directory / "qss_lap.csv", optimized.qss_lap)
     summary: dict[str, Any] = {
         "scenario": scenario,
@@ -120,9 +134,11 @@ def run_lap_time_evaluation(
             and np.max(optimized.qss_lap.speed_mps) >= ggv.max_speed_mps - 1e-6
         ),
         "line_mode": line_mode,
+        "racing_line_source": config.get("linked_racing_line"),
         "track_length_m": optimized.line.track_length_m,
-        "centerline_qss_lap_time_s": optimized.centerline_lap_time_s,
-        "minimum_curvature_qss_lap_time_s": optimized.minimum_curvature_lap_time_s,
+        "centerline_qss_lap_time_s": None if config.get("linked_racing_line") else optimized.centerline_lap_time_s,
+        "minimum_curvature_qss_lap_time_s": (None if config.get("linked_racing_line")
+                                             else optimized.minimum_curvature_lap_time_s),
         "optimized_qss_lap_time_s": optimized.qss_lap.lap_time_s,
         "qss_converged": optimized.qss_lap.converged,
         "line_optimizer_converged": optimized.success,

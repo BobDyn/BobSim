@@ -34,6 +34,7 @@ APP_SEED_RUNTIME_PATHS = (
     "simulations/response/reduced/reduced_order_eval_config.yml",
     "simulations/response/reduced/ramp_steer_config.yml",
     "simulations/lap/lap_time_eval_config.yml",
+    "simulations/lap/racing_line_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",
     "simulations/envelope/ggv/ggv_config.yml",

@@ -55,15 +55,29 @@ make lap-validation-visuals              # resume from cached work
 
 ## Track format and racing line
 
+Boundary previews and saved racing-line reports use periodic cubic splines through every boundary point. The optimizer constrains vehicle clearance at the paired gates.
+
 **Track input:** closed sequence of paired gates with left/right boundaries (metres):
 ```csv
-left_x_m,left_y_m,right_x_m,right_y_m
+x1,y1,x2,y2
 ...
 ```
 
-Legal vehicle-center interval = gate midline ± (half vehicle width + safety margin).
+Vehicle width comes from the widest axle spacing plus its tire section width.
+The vehicle-center offset is bounded by half the gate width minus half the
+vehicle width and the requested edge clearance.
 
-Periodic cubic splines → arc-length-sampled line with heading, curvature, segment length.
+Each row pairs two boundary points across the track. Rows follow the circuit
+in order and each boundary stays on the same side. The track closes automatically.
+Legacy `left_x_m,left_y_m,right_x_m,right_y_m` headers are also accepted.
+
+The app has a Track analysis for importing the CSV and generating a racing line.
+QSS Lap requires linked GGV and racing-line results. It uses the saved line
+without re-optimization. Track, clearance or derived-width changes invalidate
+the line connection until it is regenerated. Results include the boundaries,
+line and curvature.
+
+Periodic cubic splines give the sampled line, heading, curvature and segment length.
 
 **Default track:** `simulations/lap/tracks/endurance_michigan_2019.csv` (2019 FSAE Michigan; metres, provenance in `tracks/README.md`).
 

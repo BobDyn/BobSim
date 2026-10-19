@@ -303,11 +303,12 @@ def _write_lap_figures(output: Path, corridor: TrackCorridor, qss: Any, transien
     finish = np.flatnonzero(transient.unwrapped_progress_m >= qss.line.track_length_m)
     count = int(finish[0] + 1) if finish.size else transient.transient.time_s.size
     state = transient.transient.signals
+    left, right = corridor.interpolated_boundaries()
     series: dict[str, Any] = {
-        "left_x": np.append(corridor.left_boundary_m[:, 0], corridor.left_boundary_m[0, 0]),
-        "left_y": np.append(corridor.left_boundary_m[:, 1], corridor.left_boundary_m[0, 1]),
-        "right_x": np.append(corridor.right_boundary_m[:, 0], corridor.right_boundary_m[0, 0]),
-        "right_y": np.append(corridor.right_boundary_m[:, 1], corridor.right_boundary_m[0, 1]),
+        "left_x": left[:, 0],
+        "left_y": left[:, 1],
+        "right_x": right[:, 0],
+        "right_y": right[:, 1],
         "qss_x": np.append(qss.line.x_m, qss.line.x_m[0]),
         "qss_y": np.append(qss.line.y_m, qss.line.y_m[0]),
         "transient_x": transient.transient.state[:count, 0],
@@ -643,18 +644,11 @@ def _write_reference_track_figures(
     for name, raw_path in tracks.items():
         corridor = TrackCorridor.from_csv(_root_path(root, raw_path))
         prefix = str(name)
-        series[f"{prefix}_left_x"] = np.append(
-            corridor.left_boundary_m[:, 0], corridor.left_boundary_m[0, 0]
-        )
-        series[f"{prefix}_left_y"] = np.append(
-            corridor.left_boundary_m[:, 1], corridor.left_boundary_m[0, 1]
-        )
-        series[f"{prefix}_right_x"] = np.append(
-            corridor.right_boundary_m[:, 0], corridor.right_boundary_m[0, 0]
-        )
-        series[f"{prefix}_right_y"] = np.append(
-            corridor.right_boundary_m[:, 1], corridor.right_boundary_m[0, 1]
-        )
+        left, right = corridor.interpolated_boundaries()
+        series[f"{prefix}_left_x"] = left[:, 0]
+        series[f"{prefix}_left_y"] = left[:, 1]
+        series[f"{prefix}_right_x"] = right[:, 0]
+        series[f"{prefix}_right_y"] = right[:, 1]
         plots[prefix] = {
             "layout": "single",
             "title": f"Reference track: {str(name).replace('_', ' ')}",
