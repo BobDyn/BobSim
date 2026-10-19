@@ -592,7 +592,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     package_workflow.write_text("procedure:\n  rollMagnitude: 0.02181661564992912\n", encoding="utf-8")
     runtime_workflow.write_text("procedure:\n  rollMagnitude: 0.035\n", encoding="utf-8")
     package_tire.write_text("[MDI_HEADER]\nFILE = stock\n", encoding="utf-8")
-    runtime_tire.write_text("[MDI_HEADER]\nFILE = stale-stock\n", encoding="utf-8")
+    runtime_tire.write_text("[MDI_HEADER]\nFILE = edited-stock\n", encoding="utf-8")
     runtime_custom_tire.write_text("[MDI_HEADER]\nFILE = custom\n", encoding="utf-8")
     runtime_build.write_text("stale build\n", encoding="utf-8")
     runtime_archive.write_text("stale archive\n", encoding="utf-8")
@@ -608,7 +608,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     # refreshes the shipped study config beside it and leaves this alone.
     assert runtime_active.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.05\n"
     assert runtime_workflow.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.02181661564992912\n"
-    assert runtime_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = stock\n"
+    assert runtime_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = edited-stock\n"
     assert runtime_custom_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = custom\n"
     assert not runtime_build.exists()
     assert not runtime_archive.exists()

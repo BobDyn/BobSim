@@ -139,6 +139,18 @@ def _copy_runtime_file(source: Path, target: Path) -> bool:
 
 
 def _copy_runtime_tree(source: Path, target: Path, *, merge: bool = False) -> bool:
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = _runtime_copy_ignore(directory, names)
+        if merge:
+            for name in names:
+                original = Path(directory) / name
+                existing = target / original.relative_to(source)
+                if existing.exists() or existing.is_symlink():
+                    if (not original.is_dir() or not existing.is_dir()
+                            or original.is_symlink() or existing.is_symlink()):
+                        ignored.add(name)
+        return ignored
+
     target.parent.mkdir(parents=True, exist_ok=True)
     return _retry_runtime_io(
         f"Copy {source} to {target}",
@@ -146,7 +158,7 @@ def _copy_runtime_tree(source: Path, target: Path, *, merge: bool = False) -> bo
             source,
             target,
             symlinks=True,
-            ignore=_runtime_copy_ignore,
+            ignore=ignore,
             dirs_exist_ok=merge,
         ),
     )
@@ -277,6 +289,8 @@ def _seed_runtime_root(
         refresh = rel_path in APP_REFRESH_RUNTIME_PATHS
         merge = rel_path in APP_MERGE_RUNTIME_DIRS
         current = _source_path_current(source, target)
+        if merge and (target.is_symlink() or (target.exists() and not target.is_dir())):
+            continue
         if source.is_dir():
             if target.exists() and not target.is_dir():
                 if not remove_runtime_path(target):
