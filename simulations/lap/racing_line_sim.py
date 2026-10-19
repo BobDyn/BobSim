@@ -83,7 +83,7 @@ def line_signature(config: dict[str, Any], root: Path) -> str:
     """
     track = config["track"]
     vehicle = load_yaml(root / "vehicle.yml")
-    values = {"method": "width-constrained-gates-v2", "gate_spacing": vehicle_wheelbase_m(vehicle),
+    values = {"method": "sparse-curvature-width-gates-v3", "gate_spacing": vehicle_wheelbase_m(vehicle),
               "width": vehicle_width_m(vehicle, root),
               "track": hashlib.sha256((root / track["boundary_csv"]).read_bytes()).hexdigest(),
               "clearance": float(track.get("safety_margin_m", .15)),
