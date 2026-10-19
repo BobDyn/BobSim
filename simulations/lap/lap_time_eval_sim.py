@@ -118,7 +118,7 @@ def run_lap_time_evaluation(
             vehicle_width_m=vehicle_width_m(load_yaml(vehicle_path), root),
             safety_margin_m=float(track_config.get("safety_margin_m", 0.1)),
             sample_step_m=float(track_config.get("sample_step_m", 1.0)),
-            curvature_max_iterations=int(line_config.get("curvature_max_iterations", 30)),
+            curvature_max_iterations=int(line_config.get("curvature_max_iterations", 10000)),
             lap_time_max_iterations=int(line_config.get("lap_time_max_iterations", 25)),
             max_speed_mps=(
                 float(qss_config["max_speed_mps"])

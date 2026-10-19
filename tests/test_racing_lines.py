@@ -206,3 +206,44 @@ def test_boundary_width_constraint_is_independent_of_coordinate_frame():
     moved = TrackCorridor(track.left_boundary_m @ rotation + shift, track.right_boundary_m @ rotation + shift)
     for reference, transformed in zip(track.interpolated_boundaries(.5), moved.interpolated_boundaries(.5)):
         np.testing.assert_allclose(transformed, reference @ rotation + shift, atol=1e-9)
+
+
+def test_curvature_gradient_matches_finite_differences_and_saved_path():
+    from simulations.lap.core.racing_line import _curvature_objective
+
+    angles = 2. * np.pi * np.linspace(0., 1., 12, endpoint=False) ** 1.2
+    directions = np.column_stack((np.cos(angles), np.sin(angles)))
+    track = TrackCorridor(directions * [20., 15.], directions * [25., 20.])
+    offsets = np.linspace(-.2, .2, track.gate_count)
+    objective = _curvature_objective(track)
+    value, gradient = objective(offsets)
+    finite_difference = []
+    for index in range(track.gate_count):
+        perturbation = np.zeros(track.gate_count)
+        perturbation[index] = 1e-5
+        finite_difference.append((objective(offsets + perturbation)[0]
+                                  - objective(offsets - perturbation)[0]) / 2e-5)
+    np.testing.assert_allclose(gradient, finite_difference, atol=1e-8, rtol=1e-6)
+    line = track.line_from_offsets(offsets, sample_step_m=.02)
+    roughness = np.diff(offsets, n=2, append=offsets[:2])
+    sampled_energy = np.sum(line.curvature_per_m ** 2 * line.segment_length_m) + .001 * np.sum(roughness ** 2)
+    assert value == pytest.approx(sampled_energy, rel=.001)
+
+
+def test_michigan_minimum_curvature_converges_with_gate_clearance():
+    from common.vehicle_io import repo_root
+    from simulations.lap.core.racing_line import _curvature_objective, minimize_curvature
+
+    track = TrackCorridor.from_csv(repo_root() / 'simulations/lap/tracks/endurance_michigan_2019.csv')
+    gates = track.resampled_gates(1.5494)
+    lower, upper = gates.offset_bounds(vehicle_width_m=1.40272, safety_margin_m=.15)
+    result = minimize_curvature(gates, vehicle_width_m=1.40272, safety_margin_m=.15)
+    assert result.success, result.message
+    assert result.nfev < 10000
+    assert np.all(result.x >= lower) and np.all(result.x <= upper)
+    initial = _curvature_objective(gates)(np.zeros(gates.gate_count))[0]
+    assert result.fun < .2 * initial
+    line = gates.line_from_offsets(result.x, sample_step_m=.25)
+    roughness = np.diff(result.x, n=2, append=result.x[:2])
+    sampled_energy = np.sum(line.curvature_per_m ** 2 * line.segment_length_m) + .001 * np.sum(roughness ** 2)
+    assert result.fun == pytest.approx(sampled_energy, rel=.002)

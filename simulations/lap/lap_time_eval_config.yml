@@ -15,7 +15,7 @@ track:
 
 racing_line:
   mode: minimum_curvature  # centerline, minimum_curvature, minimum_time_qss
-  curvature_max_iterations: 200
+  curvature_max_iterations: 10000
   lap_time_max_iterations: 15
 
 qss:

@@ -376,7 +376,11 @@ class TrackCorridor:
         gate_chords = np.linalg.norm(np.diff(closed_points, axis=0), axis=1)
         if np.any(gate_chords <= 1e-6):
             raise ValueError("Racing-line gate points must remain distinct.")
-        parameter = np.concatenate(([0.0], np.cumsum(gate_chords)))
+        centers = self.center_points_m
+        reference_chords = np.linalg.norm(np.roll(centers, -1, axis=0) - centers, axis=1)
+        if np.any(reference_chords <= 1e-6):
+            raise ValueError("Track gate centers must remain distinct.")
+        parameter = np.concatenate(([0.0], np.cumsum(reference_chords)))
         x_spline = CubicSpline(parameter, closed_points[:, 0], bc_type="periodic")
         y_spline = CubicSpline(parameter, closed_points[:, 1], bc_type="periodic")
 
