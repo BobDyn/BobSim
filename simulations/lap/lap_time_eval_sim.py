@@ -59,11 +59,26 @@ def run_lap_time_evaluation(
     model_dof = cast(DOFModel, model_dof_value)
     format_values = {"model_dof": model_dof_value}
     vehicle_path = _root_path(root, config.get("vehicle", "vehicle.yml"))
+    from simulations.lap.racing_line_sim import load_line, vehicle_wheelbase_m, vehicle_width_m
+
+    track_path = _root_path(root, track_config["boundary_csv"])
+    vehicle_data = load_yaml(vehicle_path)
+    corridor = None
+    line = None
+    if config.get("linked_racing_line"):
+        link = config["linked_racing_line"]
+        line_path = _root_path(root, link["path"])
+        if hashlib.sha256(line_path.read_bytes()).hexdigest() != link["sha256"]:
+            raise ValueError("Linked racing-line file changed. Reconnect the generated result.")
+        line = load_line(line_path)
+    else:
+        corridor = TrackCorridor.from_csv(track_path).resampled_gates(vehicle_wheelbase_m(vehicle_data))
+        corridor.offset_bounds(vehicle_width_m=vehicle_width_m(vehicle_data, root),
+                               safety_margin_m=float(track_config.get("safety_margin_m", 0.1)))
     vehicle = Vehicle.from_yaml(vehicle_path)
     configured_power_limit = event_config.get("drive_power_limit_w")
     if configured_power_limit is not None:
         vehicle = vehicle.with_power_limit(float(configured_power_limit))
-    track_path = _root_path(root, track_config["boundary_csv"])
     ggv_path = _root_path(
         root,
         str(qss_config["ggv_csv"]).format_map(format_values),
@@ -85,22 +100,17 @@ def run_lap_time_evaluation(
         qss_config=qss_config,
         effective_power_limit_w=vehicle.parameters.peak_drive_power_w,
     )
-    from simulations.lap.racing_line_sim import load_line, vehicle_width_m
     if config.get("linked_racing_line"):
         from simulations.lap.core.qss import solve_qss_lap
         from simulations.lap.core.racing_line import LineOptimizationResult
-        link = config["linked_racing_line"]
-        line_path = _root_path(root, link["path"])
-        if hashlib.sha256(line_path.read_bytes()).hexdigest() != link["sha256"]:
-            raise ValueError("Linked racing-line file changed. Reconnect the generated result.")
-        line = load_line(line_path)
+        assert line is not None
         lap = solve_qss_lap(line, ggv, max_speed_mps=qss_config.get("max_speed_mps"))
         line_mode = "linked"
         optimized = LineOptimizationResult("minimum_curvature", line, lap, lap.lap_time_s,
                                            lap.lap_time_s, True, "Saved racing line", 0)
     else:
-        corridor = TrackCorridor.from_csv(track_path)
-        line_mode = cast(LineMode, str(line_config.get("mode", "minimum_time_qss")))
+        assert corridor is not None
+        line_mode = cast(LineMode, str(line_config.get("mode", "minimum_curvature")))
         optimized = optimize_racing_line(
             corridor,
             ggv,

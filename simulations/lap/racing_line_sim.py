@@ -44,6 +44,28 @@ def vehicle_width_m(vehicle: dict[str, Any], root: Path) -> float:
     return max(widths)
 
 
+def vehicle_wheelbase_m(vehicle: dict[str, Any]) -> float:
+    """## Nominal Wheelbase
+
+    Parameters
+    ----------
+    vehicle : dict
+        Vehicle geometry with mirrored left-side wheel centers.
+
+    Returns
+    -------
+    float
+        Longitudinal axle separation in metres, used for gate spacing.
+    """
+    positions = [float(vehicle[axle]["suspension"]["wheel_center_m"][0])
+                 for axle in ("front", "rear")]
+    wheelbase = abs(positions[0] - positions[1])
+    if not np.isfinite(wheelbase) or wheelbase <= 0.:
+        raise ValueError("Wheelbase must be positive and finite.")
+    return wheelbase
+
+
+
 def line_signature(config: dict[str, Any], root: Path) -> str:
     """## Racing-Line Input Signature
 
@@ -60,7 +82,9 @@ def line_signature(config: dict[str, Any], root: Path) -> str:
         Digest of the track, derived width, clearance and generation method.
     """
     track = config["track"]
-    values = {"width": vehicle_width_m(load_yaml(root / "vehicle.yml"), root),
+    vehicle = load_yaml(root / "vehicle.yml")
+    values = {"method": "width-constrained-gates-v2", "gate_spacing": vehicle_wheelbase_m(vehicle),
+              "width": vehicle_width_m(vehicle, root),
               "track": hashlib.sha256((root / track["boundary_csv"]).read_bytes()).hexdigest(),
               "clearance": float(track.get("safety_margin_m", .15)),
               "mode": config.get("mode", "minimum_curvature")}
@@ -86,7 +110,11 @@ def run(config: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     signature = line_signature(config, root)
     track = config["track"]
     corridor = TrackCorridor.from_csv(root / track["boundary_csv"])
-    width = vehicle_width_m(load_yaml(root / "vehicle.yml"), root)
+    vehicle = load_yaml(root / "vehicle.yml")
+    width = vehicle_width_m(vehicle, root)
+    spacing = vehicle_wheelbase_m(vehicle)
+    left, right = corridor.interpolated_boundaries()
+    corridor = corridor.resampled_gates(spacing)
     margin = float(track.get("safety_margin_m", .15))
     corridor.offset_bounds(vehicle_width_m=width, safety_margin_m=margin)
     mode = config.get("mode", "minimum_curvature")
@@ -99,9 +127,9 @@ def run(config: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
             raise ValueError(f"Racing line did not converge: {solution.message}")
         offsets = solution.x
     line = corridor.line_from_offsets(offsets)
-    left, right = corridor.interpolated_boundaries()
     result = {"schema": "bobsim.racing-line.v1", "signature": signature,
               "vehicle_width_m": width, "clearance_m": margin, "mode": mode,
+              "gate_spacing_target_m": spacing, "gate_count": corridor.gate_count,
               "track": track["boundary_csv"], "length_m": line.track_length_m,
               "left": left.tolist(), "right": right.tolist(),
               "line": {key: value.tolist() if isinstance(value, np.ndarray) else value

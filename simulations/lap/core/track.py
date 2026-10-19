@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, PPoly
 
 
 FloatArray = NDArray[np.float64]
@@ -185,10 +185,70 @@ class TrackCorridor:
             if np.any(valid & (first > 1e-8) & (first < 1. - 1e-8) & (second > 1e-8) & (second < 1. - 1e-8)):
                 raise ValueError("Track boundaries cross. Check the CSV row order and boundary pairing.")
 
+    def _boundary_splines(self) -> tuple[FloatArray, list[FloatArray], list[CubicSpline]]:
+        """## Width-Constrained Boundary Interpolation
+
+        Returns
+        -------
+        tuple
+            Shared row coordinates, boundary chord parameters and periodic splines.
+            Refinement bounds width by the cone segments and adjacent pairs, within 10 mm.
+        """
+        original_rows = np.arange(self.gate_count + 1, dtype=float)
+        originals = [np.vstack((points, points[0]))
+                     for points in (self.left_boundary_m, self.right_boundary_m)]
+        if any(np.any(np.linalg.norm(np.diff(points, axis=0), axis=1) <= 1e-6) for points in originals):
+            raise ValueError("Consecutive boundary points must be distinct.")
+        rows = original_rows.copy()
+        width_tolerance_m = .01
+        for _ in range(16):
+            points = [np.column_stack([np.interp(rows, original_rows, boundary[:, axis]) for axis in (0, 1)])
+                      for boundary in originals]
+            parameters = [np.r_[0., np.cumsum(np.linalg.norm(np.diff(boundary, axis=0), axis=1))]
+                          for boundary in points]
+            splines = [CubicSpline(parameter, boundary, bc_type="periodic")
+                       for parameter, boundary in zip(parameters, points)]
+            intervals = np.diff(rows)
+            # Both boundaries use the same row coordinate when comparing their cubic coefficients.
+            coefficients = [spline.c * (np.diff(parameter) / intervals)[None, :, None]
+                            ** np.arange(3, -1, -1)[:, None, None]
+                            for spline, parameter in zip(splines, parameters)]
+            separation = (coefficients[0] - coefficients[1])[::-1]
+            squared = np.zeros((7, len(intervals)))
+            for i in range(4):
+                for j in range(4):
+                    squared[i + j] += np.sum(separation[i] * separation[j], axis=1)
+            gates = points[0] - points[1]
+            upper = -squared.copy()
+            maximum_width = np.maximum(np.linalg.norm(gates[:-1], axis=1),
+                                       np.linalg.norm(gates[1:], axis=1))
+            upper[0] += (maximum_width + width_tolerance_m) ** 2
+            delta = np.diff(gates, axis=0)
+            slope = delta / intervals[:, None]
+            squared[0] -= np.sum(gates[:-1] ** 2, axis=1)
+            squared[1] -= 2. * np.sum(gates[:-1] * slope, axis=1)
+            squared[2] -= np.sum(slope ** 2, axis=1)
+            fraction = np.clip(-np.sum(gates[:-1] * delta, axis=1)
+                               / np.maximum(np.sum(delta ** 2, axis=1), 1e-30), 0., 1.)
+            minimum_width = np.linalg.norm(gates[:-1] + fraction[:, None] * delta, axis=1)
+            squared[0] += np.maximum(0., 2. * width_tolerance_m * minimum_width - width_tolerance_m ** 2)
+            violations = []
+            for polynomial in (squared, upper):
+                constraint = PPoly(polynomial[::-1], rows)
+                extrema = constraint.derivative().roots(extrapolate=False)
+                extrema = extrema[np.isfinite(extrema)]
+                violations.append(extrema[constraint(extrema) < -1e-9])
+            bad_rows = np.concatenate(violations)
+            if not len(bad_rows):
+                return rows, parameters, splines
+            bad = np.unique(np.clip(np.searchsorted(rows, bad_rows, side="right") - 1, 0, len(intervals) - 1))
+            rows = np.sort(np.r_[rows, .5 * (rows[bad] + rows[bad + 1])])
+        raise ValueError("Track boundary interpolation could not preserve the cone-defined width.")
+
     def interpolated_boundaries(self, sample_step_m: float = 1.0) -> tuple[FloatArray, FloatArray]:
         """## Boundary Splines
 
-        Interpolate every paired gate with closed, periodic cubic splines.
+        Interpolate every cone pair with closed, width-constrained cubic splines.
 
         Parameters
         ----------
@@ -204,19 +264,55 @@ class TrackCorridor:
             raise NotImplementedError("Boundary splines require a closed track.")
         if not np.isfinite(sample_step_m) or sample_step_m <= 0.:
             raise ValueError("Boundary sample spacing must be positive and finite.")
-        boundaries = []
-        for points in (self.left_boundary_m, self.right_boundary_m):
-            chords = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
-            if np.any(chords <= 1e-6):
-                raise ValueError("Consecutive boundary points must be distinct.")
-            parameter = np.concatenate(([0.], np.cumsum(chords)))
-            spline = CubicSpline(parameter, np.vstack((points, points[0])), bc_type="periodic")
-            samples = np.concatenate([
-                np.linspace(start, end, max(2, int(np.ceil((end - start) / sample_step_m)) + 1))[:-1]
-                for start, end in zip(parameter[:-1], parameter[1:])
-            ] + [parameter[-1:]])
-            boundaries.append(np.asarray(spline(samples), dtype=float))
+        rows, parameters, splines = self._boundary_splines()
+        longest = np.maximum(np.diff(parameters[0]), np.diff(parameters[1]))
+        samples = np.concatenate([
+            np.linspace(start, end, max(2, int(np.ceil(length / sample_step_m)) + 1))[:-1]
+            for start, end, length in zip(rows[:-1], rows[1:], longest)
+        ] + [rows[-1:]])
+        boundaries = [np.asarray(spline(np.interp(samples, rows, parameter)), dtype=float)
+                      for spline, parameter in zip(splines, parameters)]
         return boundaries[0], boundaries[1]
+
+    def resampled_gates(self, spacing_m: float) -> TrackCorridor:
+        """## Uniform Optimization Gates
+
+        Sample paired boundary splines at equal midpoint arc-length intervals.
+        Original row pairs preserve correspondence between the two boundaries.
+
+        Parameters
+        ----------
+        spacing_m : float
+            Target gate spacing in metres, adjusted down to close the circuit.
+
+        Returns
+        -------
+        TrackCorridor
+            Optimization gates independent of the original CSV point density.
+        """
+        if not self.closed:
+            raise NotImplementedError("Gate resampling requires a closed track.")
+        if not np.isfinite(spacing_m) or spacing_m <= 0.:
+            raise ValueError("Gate spacing must be positive and finite.")
+        rows, parameters, splines = self._boundary_splines()
+        longest = np.maximum(np.diff(parameters[0]), np.diff(parameters[1]))
+        dense_rows = np.concatenate([
+            np.linspace(start, end, max(20, int(np.ceil(length / (spacing_m / 20.)))))[:-1]
+            for start, end, length in zip(rows[:-1], rows[1:], longest)
+        ] + [rows[-1:]])
+        boundaries = [spline(np.interp(dense_rows, rows, parameter))
+                      for spline, parameter in zip(splines, parameters)]
+        centers = .5 * (boundaries[0] + boundaries[1])
+        station = np.r_[0., np.cumsum(np.linalg.norm(np.diff(centers, axis=0), axis=1))]
+        if np.any(np.diff(station) <= 1e-10):
+            raise ValueError("Track midpoint reference must advance along the circuit.")
+        count = max(5, int(np.ceil(station[-1] / spacing_m)))
+        gate_rows = np.interp(np.linspace(0., station[-1], count, endpoint=False), station, dense_rows)
+        gates = [spline(np.interp(gate_rows, rows, parameter))
+                 for spline, parameter in zip(splines, parameters)]
+        corridor = TrackCorridor(gates[0], gates[1])
+        corridor.validate_order()
+        return corridor
 
     @property
     def gate_count(self) -> int:
@@ -250,7 +346,11 @@ class TrackCorridor:
         clearance = 0.5 * float(vehicle_width_m) + float(safety_margin_m)
         half_available = 0.5 * self.gate_widths_m - clearance
         if np.any(half_available <= 0.0):
-            raise ValueError("Vehicle width plus safety margins do not fit through every gate.")
+            index = int(np.argmin(half_available))
+            raise ValueError(
+                f"Track gate {index + 1} is {self.gate_widths_m[index]:.3f} m wide. "
+                f"Vehicle width plus safety margins require {2 * clearance:.3f} m."
+            )
         return -half_available, half_available
 
     def line_from_offsets(
