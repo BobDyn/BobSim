@@ -220,6 +220,15 @@
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
   }
 
+  /** Hides frame connectors but keeps stabilizer bars and the 3 DOF axle frame, which has no other links. */
+  function linkStyle(group, a, b) {
+    if (group.group === "chassis") {
+      return a.endsWith("BarEnd") && b.endsWith("BarEnd") ? { rgb: hexToRgb("#9467bd"), radius: 0.006 } : null;
+    }
+    if (group.group === "body" && !a.endsWith("_axle") && !b.endsWith("_axle")) return null;
+    return { rgb: group.rgb, radius: group.radius };
+  }
+
   const COOLWARM = [
     [0.23, 0.299, 0.754],
     [0.865, 0.865, 0.865],
@@ -890,13 +899,12 @@
 
       if (this.layers.links) {
         for (const group of header.links) {
-          if (group.group === "body") continue;
           for (const [a, b] of group.segments) {
-            const bar = group.group === "chassis" && [a,b].every(i => header.points[i].endsWith("BarEnd"));
-            if (group.group === "chassis" && !bar) continue;
+            const style = linkStyle(group, header.points[a], header.points[b]);
+            if (!style) continue;
             scene.point(a, f, pa);
             scene.point(b, f, pb);
-            this.cylinder(this.links, pa, pb, bar ? hexToRgb("#9467bd") : group.rgb, bar ? 0.006 : group.radius);
+            this.cylinder(this.links, pa, pb, style.rgb, style.radius);
           }
         }
       }

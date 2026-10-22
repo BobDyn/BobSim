@@ -55,3 +55,25 @@ assert.deepEqual(side.map(a=>[a.x,a.y]), [[-1,0],[0,0],[0,1]]);
 """, str(source)],
         check=True,
     )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Link check requires Node.js")
+def test_link_filter_keeps_bars_and_3dof_axle_frame():
+    source = Path(__file__).resolve().parents[1] / "app/static/visual.js"
+    subprocess.run(
+        ["node", "-e", r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const source = fs.readFileSync(process.argv[1], 'utf8').replace(
+  'window.BobVis = { Viewer,', 'window.BobVis = { linkStyle, Viewer,');
+const ctx = vm.createContext({window:{}});
+vm.runInContext(source, ctx);
+const visible = (group, a, b) => ctx.window.BobVis.linkStyle({group, rgb:[0,0,0], radius:0.01}, a, b) !== null;
+assert(visible("body", "fl", "front_axle"));
+assert(visible("body", "front_axle", "rear_axle"));
+assert(!visible("body", "fl_upper_fore_i", "fr_upper_fore_i"));
+assert(visible("chassis", "frLeftBarEnd", "frRightBarEnd"));
+assert(!visible("chassis", "frLeftBarEnd", "frLowerFore"));
+assert(visible("upper", "fl_upper_fore_i", "fl_upper_o"));
+""", str(source)],
+        check=True,
+    )
