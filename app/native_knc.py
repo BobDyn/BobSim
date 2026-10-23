@@ -92,6 +92,41 @@ def roll_axis_reaction(pulse: dict, tail: dict, lateral_load: float) -> tuple:
     return loaded, unloaded, delta, delta / lateral_load if abs(lateral_load) >= 1e-3 else None
 
 
+def force_rc_height(pulse: dict, tail: dict, side: str) -> float | None:
+    """Return the total rig reaction's equivalent height above the contact plane.
+
+    The equivalent lateral force acts on the world centreline (y=0). Its
+    world-X moment is -z*Fy. Include the separately grounded front steering
+    support in the moment balance, then shift from world origin to the mean
+    unloaded contact plane. This is specific to the rig's applied force split;
+    it does not locate a unique three-dimensional roll centre.
+
+    Parameters
+    ----------
+    pulse, tail : dict
+        Loaded and unloaded native samples at the same prescribed pose.
+    side : str
+        Axle name; the front requires the separate steering support torque.
+
+    Returns
+    -------
+    float or None
+        Equivalent height in millimetres, or missing for invalid contact,
+        negligible excitation, or unavailable measurements.
+    """
+    try:
+        fy = pulse["knc.fy"] - tail["knc.fy"]
+        if abs(fy) < 1e-3 or min(pulse["knc.leftFz"], pulse["knc.rightFz"]) <= 0:
+            return None
+        moment = -(pulse["chassisActuator.rollDOF.tau"] - tail["chassisActuator.rollDOF.tau"])
+        if side == "front":
+            moment += pulse["steerPosition.flange.tau"] - tail["steerPosition.flange.tau"]
+        ground = sum(tail[f"axle.{wheel}CP.r_0[3]"] for wheel in ("left", "right")) / 2
+        return 1000 * (-moment / fy - ground)
+    except KeyError:
+        return None
+
+
 def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -> dict:
     """Sample unloaded geometry and subtract same-pose tails from force pulses."""
     times = np.array([row["time"] for row in rows])
@@ -134,12 +169,8 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -
             delta = -(pulse["knc.jackingForce"] - tail["knc.jackingForce"])
             jack.append(delta)
             ratio.append(delta / amplitude)
-            if vehicle:
-                track = 2 * abs(vehicle[side]["suspension"]["wheel_center_m"][1])
-                dfz = ((pulse["knc.rightFz"] - tail["knc.rightFz"])
-                       - (pulse["knc.leftFz"] - tail["knc.leftFz"]))
-                force_rc.append(1000 * track / 2 * dfz / amplitude
-                                if min(pulse["knc.leftFz"], pulse["knc.rightFz"]) > 0 else None)
+            if phase == "roll":
+                force_rc.append(force_rc_height(pulse, tail, side))
         result["curves"][phase + "_jacking_n"] = jack
         result["curves"][phase + "_jacking_ratio"] = ratio
         if phase == "roll":

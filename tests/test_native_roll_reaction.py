@@ -42,6 +42,12 @@ def test_native_roll_reaction_balances_contact_and_steering_moments(side):
             assert measured == pytest.approx(contact_delta - steer_delta, abs=1e-6)
             assert curves["roll_reaction_nm"][index] == pytest.approx(-loaded["chassisActuator.rollDOF.tau"])
             assert curves["roll_unloaded_reaction_nm"][index] == pytest.approx(-unloaded["chassisActuator.rollDOF.tau"])
+            fy = loaded["knc.fy"] - unloaded["knc.fy"]
+            ground = sum(unloaded[f"axle.{wheel}CP.r_0[3]"] for wheel in ("left", "right")) / 2
+            # Independent check using actual contact positions/forces, with no
+            # actuator torque or nominal track in the expected value.
+            expected_height = 1000 * (-contact_delta / fy - ground)
+            assert curves["roll_force_rc_height_mm"][index] == pytest.approx(expected_height, abs=1e-6)
         normalized = curves["roll_reaction_per_fy_m"]
         if reference is None:
             reference = normalized

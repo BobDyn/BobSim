@@ -202,7 +202,7 @@ def test_knc_steering_and_load_pulse_metrics_use_the_correct_protocol_samples():
     assert result["curves"]["bump_anti_dive_pct"] == pytest.approx([-120] * 11)
     assert result["curves"]["roll_load_reaction_nm"] == pytest.approx([-40] * 11)
     assert result["curves"]["roll_reaction_per_fy_m"] == pytest.approx([-.4] * 11)
-    assert result["curves"]["roll_force_rc_height_mm"] == pytest.approx([400] * 11)
+    assert result["curves"]["roll_force_rc_height_mm"] == [None] * 11  # Missing reference geometry.
     assert result["curves"]["roll_anti_roll_pct"] == [None] * 11  # No geometry was supplied.
 
 
@@ -249,7 +249,7 @@ def test_negative_geometric_anti_roll_does_not_disappear_when_net_jacking_is_zer
     assert result["roll_jacking_n"] == pytest.approx([0] * 11)
     assert result["roll_rc_height_mm"] == pytest.approx([-100] * 11)
     assert result["roll_anti_roll_pct"] == pytest.approx([-20] * 11)
-    assert result["roll_force_rc_height_mm"] == pytest.approx([-200] * 11)
+    assert result["roll_force_rc_height_mm"] == [None] * 11  # Missing native reaction.
 
 
 def test_roll_axis_reaction_sign_baseline_and_missing_excitation():
@@ -260,3 +260,24 @@ def test_roll_axis_reaction_sign_baseline_and_missing_excitation():
     assert roll_axis_reaction({signal: 125}, {signal: 100}, -500) == (-125, -100, -25, .05)
     assert roll_axis_reaction({signal: 100}, {signal: 100}, 0) == (-100, -100, 0, None)
     assert roll_axis_reaction({}, {}, 1000) == (None, None, None, None)
+
+
+@pytest.mark.parametrize("load", [1000, 500, -1000])
+@pytest.mark.parametrize("ground", [0, -.3, .25])
+def test_force_rc_height_reference_shift_and_separate_steering_support(load, ground):
+    from app.native_knc import force_rc_height
+    # A resultant at 80 mm above the plane, with a separate steering support.
+    tail = {"knc.fy": 0, "knc.leftFz": 2000, "knc.rightFz": 2000,
+            "chassisActuator.rollDOF.tau": 70, "steerPosition.flange.tau": 12,
+            "axle.leftCP.r_0[3]": ground, "axle.rightCP.r_0[3]": ground}
+    pulse = dict(tail)
+    pulse.update({"knc.fy": load, "chassisActuator.rollDOF.tau": 70 + (ground + .08) * load + .02 * load,
+                  "steerPosition.flange.tau": 12 + .02 * load})
+    assert force_rc_height(pulse, tail, "front") == pytest.approx(80)
+    assert force_rc_height(tail, tail, "front") is None
+    del pulse["steerPosition.flange.tau"]
+    assert force_rc_height(pulse, tail, "front") is None
+    pulse["chassisActuator.rollDOF.tau"] = 70 + (ground + .08) * load
+    assert force_rc_height(pulse, tail, "rear") == pytest.approx(80)
+    pulse["knc.leftFz"] = 0
+    assert force_rc_height(pulse, tail, "rear") is None
