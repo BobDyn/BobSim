@@ -162,7 +162,8 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                 result = run(vehicle, "knc-" + side, {"kinematics_only": True})
                 curves = result["curves"]
                 payload["x_axes"].update(curves["x_axes"])
-                payload["axles"][side] = {"ok": True, "curves": curves["curves"], "points": [],
+                payload["axles"][side] = {"ok": True, "curves": curves["curves"],
+                                           "x_axes": curves["x_axes"], "points": [],
                                            "solved_count": 11, "roll_solved_count": 11, "steer_solved_count": 0,
                                            "steer_x_deg": [], "warnings": []}
             except (ValueError, RuntimeError, OSError) as exc:

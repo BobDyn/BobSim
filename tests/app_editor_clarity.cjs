@@ -1107,3 +1107,24 @@ assert.equal(formatPlotTick(0), '0');
     assert.equal(menu.hidden,true,'subsequent scrolling closes the menu');
   `,menuContext);
 }
+
+vm.runInContext(`
+{
+  const previous = state.kinematicsPayload;
+  state.kinematicsPayload = {
+    curve_meta:[{id:'bump_camber_deg',label:'Camber',unit:'deg',x_id:'jounce_mm',x_label:'Wheel jounce',x_unit:'mm'},
+                {id:'roll_toe_deg',label:'Toe',unit:'deg',x_id:'roll_deg',x_label:'Axle roll',x_unit:'deg'}],
+    x_axes:{jounce_mm:[-10,0,10],roll_deg:[-1,0,1]},
+    axles:{front:{x_axes:{jounce_mm:[-12,0,12],roll_deg:[-2,0,2]},curves:{bump_camber_deg:[1,2,3]}},
+           rear:{x_axes:{jounce_mm:[-8,0,8],roll_deg:[-1,0,1]},curves:{roll_toe_deg:[4,5,6]}}},
+  };
+  assert.deepEqual(geometryXAxisOptions().map(x=>x.id),['jounce_mm','roll_deg']);
+  assert.equal(geometryXAxisOption('jounce_mm').label,'Wheel jounce');
+  assert.equal(geometryXAxisOption('roll_deg').unit,'deg');
+  assert.equal(geometryPlotDescriptorMap().size,2,'native results must not inherit unavailable KinPy curves');
+  assert.deepEqual(kinematicChartXValues(state.kinematicsPayload,{x_id:'jounce_mm'},'front'),[-12,0,12]);
+  assert.deepEqual(kinematicChartXValues(state.kinematicsPayload,{x_id:'jounce_mm'},'rear'),[-8,0,8]);
+  assert.deepEqual(kinematicChartXValues(state.kinematicsPayload,{x_id:'rack_mm'},'front'),[]);
+  state.kinematicsPayload = previous;
+}
+`,ctx);

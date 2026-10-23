@@ -9186,8 +9186,7 @@ function pointerCanvasPointFor(event, canvas) {
 }
 
 function geometryPlotDescriptorMap() {
-  const descriptors = new Map(DEFAULT_KINEMATIC_CURVES.map((item) => [item.id, item]));
-  kinematicCurveDescriptors(state.kinematicsPayload).forEach((item) => descriptors.set(item.id, item));
+  const descriptors = new Map(kinematicCurveDescriptors(state.kinematicsPayload).map((item) => [item.id, item]));
   return new Map([...descriptors].filter(([id]) =>
     /^(bump|roll|steer)_(camber_deg|toe_deg|caster_deg|kpi_deg|mech_trail_mm|scrub_mm|rc_height_mm)$/.test(id)));
 }
@@ -9198,16 +9197,12 @@ function descriptorXAxisId(descriptor) {
 }
 
 function geometryXAxisOptions(payload = state.kinematicsPayload) {
-  const axisIds = new Set();
-  Object.keys(payload?.x_axes || {}).forEach((key) => axisIds.add(key));
-  DEFAULT_KINEMATIC_CURVES.forEach((item) => axisIds.add(item.x_id || "jounce_mm"));
-  return [...axisIds]
-    .filter(Boolean)
-    .map((id) => ({
-      id,
-      label: id === "roll_deg" ? "Roll" : id === "jounce_mm" ? "Jounce" : id === "rack_mm" ? "Rack displacement" : humanizeToken(id),
-      unit: id === "roll_deg" ? "deg" : (id === "jounce_mm" || id === "rack_mm") ? "mm" : "",
-    }))
+  const axes = new Map();
+  kinematicCurveDescriptors(payload).forEach((item) => {
+    const id = descriptorXAxisId(item);
+    axes.set(id, { id, label: item.x_label || humanizeToken(id), unit: item.x_unit ?? "" });
+  });
+  return [...axes.values()]
     .sort((left, right) => (left.id === "jounce_mm" ? -1 : right.id === "jounce_mm" ? 1 : left.label.localeCompare(right.label)));
 }
 
@@ -12430,7 +12425,7 @@ function kinematicCurveDescriptors(payload) {
       y_label: humanizeKinematicCurve(id),
     });
   });
-  return (descriptors.length ? descriptors : DEFAULT_KINEMATIC_CURVES).map((item) => ({
+  return (payload ? descriptors : DEFAULT_KINEMATIC_CURVES).map((item) => ({
     ...item,
     label: item.label.replace(/^(Bump|Roll|Steer) /, ""),
   }));
@@ -12462,7 +12457,6 @@ function drawKinematicChart(
   const yKey = descriptor.y_id || descriptor.id;
   const title = descriptor.label || humanizeKinematicCurve(key);
   const unit = descriptor.y_unit || descriptor.unit || inferCurveUnit(yKey);
-  const xValues = kinematicChartXValues(payload, descriptor);
   const visibleAxles = new Set(Array.isArray(axles) && axles.length ? axles : ["front", "rear"]);
   const series = [
     { axle: "front", label: "Front", shortLabel: "F", color: palette.blue, values: payload.axles?.front?.curves?.[yKey] || [] },
@@ -12473,7 +12467,7 @@ function drawKinematicChart(
       .map((value, index) => ({
         index,
         sampleKey: String(index),
-        xValue: xValues[index],
+        xValue: kinematicChartXValues(payload, descriptor, item.axle)[index],
         yValue: value == null ? NaN : Number(value),
       }))
       .filter((point) => Number.isFinite(point.xValue) && Number.isFinite(point.yValue)),
@@ -12526,16 +12520,17 @@ function drawKinematicChart(
   return chart;
 }
 
-function kinematicChartXValues(payload, descriptor) {
+function kinematicChartXValues(payload, descriptor, axle = null) {
   const xId = descriptor?.x_id || "jounce_mm";
-  const axisValues = payload?.x_axes?.[xId];
-  if (Array.isArray(axisValues) && axisValues.length) {
-    return axisValues.map(Number);
+  const axes = payload?.axles?.[axle]?.x_axes ?? payload?.x_axes;
+  if (axes) {
+    // An explicitly missing axis must not silently become a jounce sweep.
+    return Array.isArray(axes[xId]) ? axes[xId].map(value => value == null ? NaN : Number(value)) : [];
   }
   if (xId === "roll_deg" && Array.isArray(payload?.roll_deg)) {
     return payload.roll_deg.map(Number);
   }
-  return (payload?.sweep_m || []).map((value) => Number(value) * 1000);
+  return xId === "jounce_mm" ? (payload?.sweep_m || []).map((value) => Number(value) * 1000) : [];
 }
 
 function drawPlotSeries(ctx, item, plot) {

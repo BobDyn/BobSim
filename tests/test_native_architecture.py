@@ -137,3 +137,17 @@ def test_server_connects_native_jobs_to_the_shared_job_store(monkeypatch):
     assert result["id"] == "native-build"
     assert observed[0][0][0].requires_external_toolchain
     assert "common.native_artifacts" in observed[0][3]
+
+
+def test_native_plot_payload_preserves_each_axles_parametric_axes(monkeypatch):
+    from app import native_runs
+
+    def result(_vehicle, kind, _settings):
+        amplitude = 12 if kind == "knc-front" else 8
+        return {"curves": {"curves": {"bump_camber_deg": [1, 2, 3]},
+                           "x_axes": {"jounce_mm": [-amplitude, 0, amplitude], "roll_deg": [-1, 0, 1]}}}
+
+    monkeypatch.setattr(native_runs, "run", result)
+    payload = native_runs.kinematic_curves_payload({})
+    assert payload["axles"]["front"]["x_axes"]["jounce_mm"] == [-12, 0, 12]
+    assert payload["axles"]["rear"]["x_axes"]["jounce_mm"] == [-8, 0, 8]
