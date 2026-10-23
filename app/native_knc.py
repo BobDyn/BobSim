@@ -31,7 +31,11 @@ def metadata() -> list[dict]:
                                 anti_lift_pct=("Rear anti-lift under braking (axle-normalized)", "%"))
         if phase == "roll":
             measurements.update(anti_roll_pct=("Geometric anti-roll (axle-normalized)", "%"),
-                                force_rc_height_mm=("Force-based equivalent RC height", "mm"))
+                                force_rc_height_mm=("Force-based equivalent RC height", "mm"),
+                                reaction_nm=("Roll-axis reaction (loaded)", "N m"),
+                                unloaded_reaction_nm=("Roll-axis reaction (unloaded)", "N m"),
+                                load_reaction_nm=("Load-induced roll-axis reaction", "N m"),
+                                reaction_per_fy_m=("Roll-axis reaction / lateral load", "m"))
         for key, (title, y_unit) in measurements.items():
             result.append({"id": phase + "_" + key, "label": title, "unit": y_unit,
                            "x_id": axis, "x_label": label, "x_unit": unit, "y_label": title})
@@ -73,6 +77,21 @@ def geometric_rc(row: dict) -> tuple[float | None, float | None]:
         return None, None
 
 
+def roll_axis_reaction(pulse: dict, tail: dict, lateral_load: float) -> tuple:
+    """Return loaded, unloaded, incremental and load-normalized rig reactions.
+
+    Positive moment is the suspension's reaction onto the rig about world +X
+    through the origin. It is the negative of the torque applied by the exact
+    roll actuator. The normalized value is a signed moment arm, not an RC height.
+    """
+    signal = "chassisActuator.rollDOF.tau"
+    if signal not in pulse or signal not in tail:
+        return None, None, None, None
+    loaded, unloaded = -pulse[signal], -tail[signal]
+    delta = loaded - unloaded
+    return loaded, unloaded, delta, delta / lateral_load if abs(lateral_load) >= 1e-3 else None
+
+
 def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -> dict:
     """Sample unloaded geometry and subtract same-pose tails from force pulses."""
     times = np.array([row["time"] for row in rows])
@@ -101,9 +120,12 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -
         jack: list[float | None] = []
         ratio: list[float | None] = []
         force_rc: list[float | None] = []
+        reactions: list[tuple] = []
         for tail in sampled:
             pulse = at(tail["time"] - 2)
             amplitude = pulse.get(force, 0) - tail.get(force, 0)
+            if phase == "roll":
+                reactions.append(roll_axis_reaction(pulse, tail, amplitude))
             if abs(amplitude) < 1e-3 or "knc.jackingForce" not in pulse:
                 jack.append(None)
                 ratio.append(None)
@@ -120,6 +142,10 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -
                                 if min(pulse["knc.leftFz"], pulse["knc.rightFz"]) > 0 else None)
         result["curves"][phase + "_jacking_n"] = jack
         result["curves"][phase + "_jacking_ratio"] = ratio
+        if phase == "roll":
+            for index, name in enumerate(("reaction_nm", "unloaded_reaction_nm", "load_reaction_nm",
+                                          "reaction_per_fy_m")):
+                result["curves"]["roll_" + name] = [values[index] for values in reactions]
         if vehicle:
             masses = [vehicle[key] for key in ("sprung_mass", "driver_mass")]
             total_mass = sum(m["mass_kg"] for m in masses)

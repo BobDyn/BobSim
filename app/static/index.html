@@ -136,6 +136,10 @@
                     Geometric anti-roll is RC height / reference sprung CG height above the same contact plane;
                     negative values mean a below-ground RC. Net jacking can be zero while the roll moment is nonzero.
                     These are axle metrics, not whole-car brake/drive distribution or total roll resistance.
+                    Roll-axis reaction is the suspension load onto the rig about world +X through the origin,
+                    opposite the actuator holding torque. Its load-induced curve subtracts the same-pose unloaded
+                    reaction; dividing by lateral load gives a signed moment arm, not an RC height.
+                    The front rig also carries the steering-actuator support reaction.
                     Rear braking anti-lift is shown; acceleration anti-squat needs a drive-load test.</p>
                 </details>
                 <div class="geometry-plots">

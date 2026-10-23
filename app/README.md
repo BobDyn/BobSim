@@ -158,3 +158,14 @@ runs an exact native solve and prepares trajectories for the new combination.
 This interpolation is only a visual preview; plots and saved calibration use
 native results. While a trajectory is preparing or unavailable, the view falls
 back to coalesced native solves with animated transitions.
+
+Roll plots also expose the loaded and unloaded roll-axis reaction, their
+same-pose difference, and that difference per unit lateral load. These use
+`-chassisActuator.rollDOF.tau`: positive is the suspension reaction onto the rig
+about world +X through the origin, opposite the actuator holding torque.
+The normalized response has units of metres and is not an RC height without
+accounting for the reference axis and all external reaction paths; the front
+rig includes the grounded steering actuator support reaction. Native integration
+checks close the moment balance against contact forces and that steering reaction,
+and repeat with halved and reversed lateral loads. The existing
+compiled binaries expose this signal, so no BobLib rebuild is required.

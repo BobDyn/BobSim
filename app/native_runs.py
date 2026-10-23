@@ -48,7 +48,8 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
                           "stabilizerRate": rate if include_bar and not kinematics_only else 0.0})
         stop = 832.0 if kind == "knc-front" else 118.0
         step = 0.1
-        signals = ("time|knc.*|inputs.steer|axle.(left|right)CP.r_0.*|"
+        signals = ("time|knc.*|inputs.steer|steerPosition.flange.tau|chassisActuator.rollDOF.tau|"
+                   "leftLoad.worldForce.force.*|rightLoad.worldForce.force.*|axle.(left|right)CP.r_0.*|"
                    "axle.(left|right)WishboneUprightLoop.(upper|lower)Frame_(i|o).r_0.*")
     else:
         stop = float(settings.pop("duration", 10.0))
