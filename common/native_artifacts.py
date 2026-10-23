@@ -164,7 +164,8 @@ def parameter_contract(xml: Path) -> dict:
     for variable in ET.parse(xml).getroot().findall("./ModelVariables/ScalarVariable"):
         name = variable.get("name", "")
         if not (name.startswith(("pVehicle.", "pInitialization.", "driver.")) or "." not in name
-                or name in {"inputs.heaveSource.offset[1]", "inputs.rollSource.offset[1]"}):
+                or name in {"inputs.heaveSource.offset[1]", "inputs.rollSource.offset[1]",
+                            "inputs.heaveSource.startTime", "inputs.rollSource.startTime"}):
             continue
         scalar = next(iter(variable))
         meta = {**variable.attrib, **scalar.attrib, "type": scalar.tag}

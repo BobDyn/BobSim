@@ -147,7 +147,10 @@ is about +X. Travel never writes setup coordinates; hardpoint dragging is disabl
 until travel is closed. Missing binaries can be built in Architecture. Requests
 are coalesced while dragging and successful poses are cached in memory.
 
-During dragging, the canvas interpolates between native poses at display refresh
-rate. This is visual interpolation only; releasing settles on the exact native
-solution. Native requests are throttled and coalesced, not delayed until dragging
-stops. Plots and saved calibration never use interpolated coordinates.
+Native heave, roll and steering trajectories are sampled in the background for
+the current values of the other two inputs. Once ready, slider input interpolates
+those samples locally in the same render cycle, with no network wait. Releasing
+runs an exact native solve and prepares trajectories for the new combination.
+This interpolation is only a visual preview; plots and saved calibration use
+native results. While a trajectory is preparing or unavailable, the view falls
+back to coalesced native solves with animated transitions.

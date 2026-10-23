@@ -3,17 +3,20 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
 const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert,
-  performance:{now:()=>0}, requestAnimationFrame:()=>1, cancelAnimationFrame:()=>{},
+  clearTimeout:()=>{}, performance:{now:()=>0}, requestAnimationFrame:()=>1, cancelAnimationFrame:()=>{},
   document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}},getElementById:()=>null}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
 (async () => {
   activeParameterArea = () => ({id:'hardpoints'});
   drawVehicleFromForm = () => {};
+  prepareTravelPaths = async () => {};
   const midpoint=interpolateTravelPoints({a:[0,0,0]},{a:[2,4,6]},.5);
   assert.equal(JSON.stringify(midpoint.a),JSON.stringify([1,2,3]));
   assert.equal(JSON.stringify(interpolateTravelPoints({a:[0,0,0]},{a:[2,4,6]},1).a),JSON.stringify([2,4,6]));
   state.travelActive = true;
+  const path={axles:{front:[{value:-1,points:{a:[0,0,0]}},{value:1,points:{a:[2,4,6]}}]}};
+  assert.equal(JSON.stringify(sampleTravelPath(path,0)),JSON.stringify({a:[1,2,3]}));
   const vehicle = {architecture:{front:'direct'}};
   const requests = [];
   api = (path, options) => new Promise(resolve => requests.push({body:JSON.parse(options.body), resolve}));
@@ -53,6 +56,20 @@ vm.runInContext(`
   requests[2].resolve({pose:{heave_mm:4},points:{}});
   await closing;
   assert.equal(state.travelResult,null,'late responses must not re-enable travel');
+  state.travelActive=true;
+  state.travelInFlight=null;
+  const pose={heave_mm:0,roll_deg:0,steer_deg:0};
+  const elements=Object.fromEntries(Object.entries(pose).flatMap(([name,value])=>[
+    ["travel-"+name,{value}],["travel-"+name+"-value",{textContent:""}]
+  ]));
+  document.getElementById=id=>elements[id] || null;
+  currentVehicleFormData=()=>vehicle;
+  state.travelPaths=new Map([[travelPathKey(vehicle,pose,"heave_mm"),path]]);
+  const count=requests.length;
+  queueTravelPose({target:{id:"travel-heave_mm"}});
+  assert.equal(requests.length,count,"cached dragging must not wait on network");
+  assert.equal(JSON.stringify(state.travelDisplayPoints),JSON.stringify({a:[1,2,3]}));
+  assert.equal(state.travelPending.pose.heave_mm,0,"release retains the exact solve request");
   console.log('Travel request coalescing and immutable geometry checks passed');
 })().catch(error=>{ console.error(error); throw error; });
 `,ctx);

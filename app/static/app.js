@@ -7754,7 +7754,7 @@ function travelStatus(message) {
   if (element) element.textContent = message;
 }
 
-function queueTravelPose() {
+function queueTravelPose(event = null) {
   if (!travelEnabled()) return;
   const vehicle = currentVehicleFormData();
   if (!vehicle) return;
@@ -7766,6 +7766,24 @@ function queueTravelPose() {
   const key = JSON.stringify({ vehicle, pose });
   state.travelDesiredKey = key;
   state.travelPending = { key, vehicle, pose };
+  const axis = event?.target?.id?.replace("travel-", "");
+  if (["heave_mm", "roll_deg", "steer_deg"].includes(axis)) {
+    state.travelDragging = true;
+    const path = state.travelPaths?.get(travelPathKey(vehicle, pose, axis));
+    if (path) {
+      if (state.travelAnimationFrame) cancelAnimationFrame(state.travelAnimationFrame);
+      state.travelAnimationFrame = null;
+      state.travelDisplayPoints = sampleTravelPath(path, pose[axis]);
+      state.travelVehicleKey = JSON.stringify(vehicle);
+      state.travelPreviewKey = key;
+      clearTimeout(state.travelTimer);
+      state.travelTimer = null;
+      travelStatus("Live preview · interpolated native samples");
+      drawVehicleFromForm();
+      return;
+    }
+    prepareTravelPaths(vehicle, pose, [axis]);
+  }
   travelStatus(state.travelResult ? "Updating… last solved pose shown" : "Solving travel… setup geometry shown");
   // Throttle requests while dragging; debouncing would wait for dragging to stop.
   if (!state.travelTimer) state.travelTimer = setTimeout(() => {
@@ -7777,7 +7795,8 @@ function queueTravelPose() {
 async function refreshTravelPose() {
   if (state.travelInFlight) return state.travelInFlight;
   state.travelInFlight = (async () => {
-    while (state.travelPending && state.travelActive) {
+    while (state.travelPending && state.travelActive
+        && !(state.travelDragging && state.travelPreviewKey === state.travelDesiredKey)) {
       const request = state.travelPending;
       state.travelPending = null;
       try {
@@ -7787,12 +7806,18 @@ async function refreshTravelPose() {
         });
         if (!state.travelActive || !state.travelDesiredKey
             || JSON.stringify(JSON.parse(state.travelDesiredKey).vehicle) !== JSON.stringify(request.vehicle)) continue;
-        animateTravelPose(payload.points);
+        if (state.travelDragging && state.travelPreviewKey === state.travelDesiredKey) continue;
+        if (state.travelPreviewKey === request.key) {
+          // A live preview only needs its small exact correction on release.
+          stopTravelAnimation();
+          state.travelDisplayPoints = payload.points;
+        } else animateTravelPose(payload.points);
         state.travelResult = payload;
         state.travelVehicleKey = JSON.stringify(request.vehicle);
         const p = payload.pose;
         travelStatus(state.travelDesiredKey !== request.key ? "Following slider… interpolated preview"
           : `Solved: ${p.heave_mm} mm heave · ${p.roll_deg}° roll · ${p.steer_deg}° pinion`);
+        if (state.travelDesiredKey === request.key && !state.travelDragging) prepareTravelPaths(request.vehicle, p);
       } catch (error) {
         if (!state.travelActive || state.travelDesiredKey !== request.key) continue;
         stopTravelAnimation();
@@ -7803,6 +7828,46 @@ async function refreshTravelPose() {
     }
   })();
   try { await state.travelInFlight; } finally { state.travelInFlight = null; }
+}
+
+function travelPathKey(vehicle, pose, axis) {
+  return JSON.stringify([vehicle, axis, Object.fromEntries(
+    ["heave_mm", "roll_deg", "steer_deg"].filter(name => name !== axis).map(name => [name, pose[name]])
+  )]);
+}
+
+async function prepareTravelPaths(vehicle, pose, axes = ["heave_mm", "roll_deg", "steer_deg"]) {
+  if (!state.travelPaths) state.travelPaths = new Map();
+  if (!state.travelPathRequests) state.travelPathRequests = new Map();
+  await Promise.all(axes.map(async axis => {
+    const key = travelPathKey(vehicle, pose, axis);
+    if (state.travelPaths.has(key) || state.travelPathRequests.has(key)) return;
+    state.travelPathRequests.set(key, true);
+    try {
+      const path = await api("/api/kinematics/travel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicle, pose, axis }),
+      });
+      state.travelPaths.set(key, path);
+      if (state.travelPaths.size > 24) state.travelPaths.delete(state.travelPaths.keys().next().value);
+    } catch (error) {
+      // Exact native poses remain available if a full travel range is infeasible.
+      console.debug("Travel sampling unavailable", axis, error.message);
+    } finally { state.travelPathRequests.delete(key); }
+  }));
+}
+
+function sampleTravelPath(path, value) {
+  const positions = {};
+  for (const samples of Object.values(path.axles)) {
+    let upper = samples.findIndex(sample => sample.value >= value);
+    if (upper < 0) upper = samples.length - 1;
+    const lower = Math.max(0, upper - 1);
+    const a = samples[lower], b = samples[upper];
+    const fraction = a.value === b.value ? 0 : Math.max(0, Math.min(1, (value - a.value) / (b.value - a.value)));
+    Object.assign(positions, interpolateTravelPoints(a.points, b.points, fraction));
+  }
+  return positions;
 }
 
 function stopTravelAnimation() {
@@ -7869,6 +7934,8 @@ function posedVehicleGeometry(model, data) {
 
 function wireTravelControls() {
   document.getElementById("travel-toggle").addEventListener("click", () => {
+    state.travelDragging = false;
+    state.travelPreviewKey = null;
     state.travelActive = !state.travelActive;
     stopTravelAnimation();
     state.travelResult = null;
@@ -7880,7 +7947,14 @@ function wireTravelControls() {
     drawVehicleFromForm();
   });
   for (const name of ["heave_mm", "roll_deg", "steer_deg"]) {
-    document.getElementById(`travel-${name}`).addEventListener("input", queueTravelPose);
+    const slider = document.getElementById(`travel-${name}`);
+    slider.addEventListener("input", queueTravelPose);
+    slider.addEventListener("change", () => {
+      state.travelDragging = false;
+      clearTimeout(state.travelTimer);
+      state.travelTimer = null;
+      refreshTravelPose();
+    });
   }
   document.getElementById("travel-reset").addEventListener("click", () => {
     for (const name of ["heave_mm", "roll_deg", "steer_deg"]) document.getElementById(`travel-${name}`).value = 0;

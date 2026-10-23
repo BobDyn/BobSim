@@ -325,7 +325,7 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(payload)
             elif parsed.path == "/api/kinematics/travel":
-                self._send_json(travel_payload(body.get("vehicle"), body.get("pose")))
+                self._send_json(travel_payload(body.get("vehicle"), body.get("pose"), axis=body.get("axis")))
             elif parsed.path == "/api/kinematics/curves":
                 vehicle = body.get("vehicle")
                 if vehicle is None:

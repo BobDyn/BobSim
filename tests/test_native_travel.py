@@ -61,3 +61,19 @@ def test_travel_editor_request_lifecycle():
     if not node:
         pytest.skip("Node is required for editor behavior checks")
     subprocess.run([node, "tests/app_travel.cjs"], cwd=ROOT, check=True, timeout=20)
+
+
+@pytest.mark.skipif(os.environ.get("BOBSIM_NATIVE_INTEGRATION") != "1", reason="Requires cached native binaries")
+def test_native_sampled_travel_matches_exact_poses():
+    vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text())
+    pose = dict(heave_mm=20, roll_deg=.6, steer_deg=30)
+    for axis in ("heave_mm", "roll_deg", "steer_deg"):
+        path = travel_payload(vehicle, pose, axis)
+        samples = path["axles"]["front"]
+        a, b = samples[len(samples) // 2:len(samples) // 2 + 2]
+        value = (a["value"] + b["value"]) / 2
+        exact = travel_payload(vehicle, {**pose, axis: value})["points"]
+        for key in a["points"]:
+            interpolated = [(x + y) / 2 for x, y in zip(a["points"][key], b["points"][key])]
+            assert math.dist(exact[key], interpolated) < .0005  # display-only, under 0.5 mm
+        assert samples[0]["value"] < 0 < samples[-1]["value"]
