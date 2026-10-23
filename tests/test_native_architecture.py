@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -60,8 +61,8 @@ def test_knc_samples_unloaded_plateaus_and_converts_units():
             row["knc." + signal] = t / 1000
         rows.append(row)
     result = knc_curves(rows)
-    assert result["x_axes"]["jounce_mm"] == [-float(t) for t in range(55, 4, -5)]
-    assert result["curves"]["bump_scrub_mm"] == [float(t) for t in range(55, 4, -5)]
+    assert result["x_axes"]["heave_mm"] == [float(t) for t in range(5, 56, 5)]
+    assert result["curves"]["bump_scrub_mm"] == [float(t) for t in range(5, 56, 5)]
     assert len(result["curves"]["roll_camber_deg"]) == 11
 
 
@@ -151,3 +152,66 @@ def test_native_plot_payload_preserves_each_axles_parametric_axes(monkeypatch):
     payload = native_runs.kinematic_curves_payload({})
     assert payload["axles"]["front"]["x_axes"]["jounce_mm"] == [-12, 0, 12]
     assert payload["axles"]["rear"]["x_axes"]["jounce_mm"] == [-8, 0, 8]
+
+
+def test_projected_rc_height_uses_native_positions_and_contact_datum():
+    from app.native_knc import geometric_rc
+    row = {}
+    for side, sign in (("left", 1), ("right", -1)):
+        points = {"upperFrame_i": (.2, .3), "upperFrame_o": (.6, .7),
+                  "lowerFrame_i": (.2, .2), "lowerFrame_o": (.6, .4)}
+        for name, (y, z) in points.items():
+            prefix = f"axle.{side}WishboneUprightLoop.{name}.r_0"
+            row[prefix + "[2]"] = sign * y
+            row[prefix + "[3]"] = z + .25
+        row[f"axle.{side}CP.r_0[2]"] = sign
+        row[f"axle.{side}CP.r_0[3]"] = .25
+    height, lateral = geometric_rc(row)
+    assert height == pytest.approx(100)
+    assert lateral == pytest.approx(0, abs=1e-9)
+    assert geometric_rc({}) == (None, None)
+
+
+def test_knc_steering_and_load_pulse_metrics_use_the_correct_protocol_samples():
+    from app.native_knc import curves, MEASUREMENTS
+    rows = []
+    for t in range(833):
+        cycle, local = divmod(t, 119)
+        pose = (local - 2) // 5
+        longitudinal = local in range(3, 54, 5)
+        lateral = local in range(64, 115, 5)
+        loaded = longitudinal or lateral
+        baseline = 100 + pose * 7
+        row = {"time": t, "inputs.steer": (cycle - 3) * math.pi / 6,
+               "knc.heave": pose / 1000, "knc.roll": pose / 1000,
+               "knc.fx": 100 if longitudinal else 0, "knc.fy": 100 if lateral else 0,
+               "knc.jackingForce": -(baseline + (20 if loaded else 0)),
+               "knc.leftFz": 100, "knc.rightFz": 140 if loaded else 100}
+        for signal, _, _, _ in MEASUREMENTS.values():
+            row["knc." + signal] = cycle * .001
+        rows.append(row)
+    vehicle = {"sprung_mass": {"mass_kg": 200, "cg_m": [0, 0, .5]},
+               "driver_mass": {"mass_kg": 80, "cg_m": [0, 0, .5]},
+               "front": {"suspension": {"wheel_center_m": [0, 1, 0]}},
+               "rear": {"suspension": {"wheel_center_m": [-3, 1, 0]}}}
+    result = curves(rows, vehicle)
+    assert result["x_axes"]["pinion_deg"] == pytest.approx([-90, -60, -30, 0, 30, 60, 90])
+    assert result["curves"]["bump_camber_deg"] == pytest.approx([.003 * 180 / math.pi] * 11)
+    assert result["curves"]["bump_jacking_n"] == pytest.approx([20] * 11)
+    assert result["curves"]["bump_anti_dive_pct"] == pytest.approx([-120] * 11)
+    assert result["curves"]["roll_force_rc_height_mm"] == pytest.approx([400] * 11)
+    assert result["curves"]["roll_anti_roll_pct"] == pytest.approx([80] * 11)
+
+
+def test_knc_zero_force_does_not_fabricate_jacking_coefficients():
+    from app.native_knc import curves, MEASUREMENTS
+    rows = []
+    for t in range(119):
+        row = {"time": t, "knc.heave": 0, "knc.roll": 0, "knc.fx": 0,
+               "knc.fy": 0, "knc.jackingForce": 50}
+        row.update({"knc." + signal: 0 for signal, _, _, _ in MEASUREMENTS.values()})
+        rows.append(row)
+    result = curves(rows)
+    assert result["curves"]["bump_jacking_ratio"] == [None] * 11
+    assert result["curves"]["roll_jacking_ratio"] == [None] * 11
+    assert "pinion_deg" not in result["x_axes"]

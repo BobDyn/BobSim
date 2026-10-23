@@ -1128,3 +1128,38 @@ vm.runInContext(`
   state.kinematicsPayload = previous;
 }
 `,ctx);
+
+// Keep one request in flight and skip superseded intermediate setups.
+vm.runInContext(`
+(async () => {
+  const originalApi = api;
+  const originalArea = isKinematicPlotArea;
+  const originalDocument = document;
+  const calls = [];
+  const releases = [];
+  document = {getElementById:()=>null};
+  isKinematicPlotArea = () => false;
+  api = (_path, options) => new Promise(resolve => {
+    calls.push(JSON.parse(options.body).vehicle.revision);
+    releases.push(resolve);
+  });
+  state.kinematicsLoadedKey = null;
+  state.kinematicsInFlight = null;
+  const first = refreshKinematicsPayload({revision:1});
+  const second = refreshKinematicsPayload({revision:2});
+  const third = refreshKinematicsPayload({revision:3});
+  assert.deepEqual(calls,[1]);
+  releases.shift()({available:true,revision:1});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(calls,[1,3]);
+  releases.shift()({available:true,revision:3});
+  await Promise.all([first,second,third]);
+  assert.equal(state.kinematicsPayload.revision,3);
+  await refreshKinematicsPayload({revision:3});
+  assert.deepEqual(calls,[1,3], 'unchanged setup reuses the visible result');
+  api = originalApi;
+  isKinematicPlotArea = originalArea;
+  document = originalDocument;
+})()
+`, ctx).catch(error => { console.error(error); process.exitCode = 1; });

@@ -5206,3 +5206,6 @@ summary:focus-visible {
 #setup-view.architecture-view > .parameter-tabs { display:none; }
 #standard-view { grid-template-rows:auto auto minmax(0, 1fr); }
 #native-artifacts { min-height:0; max-height:36vh; overflow:auto; }
+
+.geometry-plot-notes { padding:8px 12px; font-size:11px; color:var(--muted); }
+.geometry-plot-notes p { margin:8px 0; }

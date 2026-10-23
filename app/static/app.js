@@ -59,7 +59,9 @@ const state = {
   tireStatusMessage: "",
   kinematicsPayload: null,
   kinematicsStatus: "idle",
-  kinematicsRequestId: 0,
+  kinematicsInFlight: null,
+  kinematicsPending: null,
+  kinematicsLoadedKey: null,
   kinematicsRefreshTimer: null,
   tirePayloadRequestId: 0,
   tirePayloadRefreshTimer: null,
@@ -485,29 +487,47 @@ function queueTirePayloadRefresh() {
 }
 
 async function refreshKinematicsPayload(vehicle = state.vehiclePayload?.data || {}) {
-  const requestId = state.kinematicsRequestId + 1;
-  state.kinematicsRequestId = requestId;
-  state.kinematicsStatus = state.kinematicsPayload ? "refreshing" : "loading";
-  try {
-    const payload = await api("/api/kinematics/curves", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vehicle }),
-    });
-    if (requestId !== state.kinematicsRequestId) return;
-    state.kinematicsPayload = payload;
+  const key = JSON.stringify(vehicle);
+  if (!state.kinematicsInFlight && key === state.kinematicsLoadedKey
+      && state.kinematicsPayload?.available && !state.kinematicsPayload.warnings?.length) {
     state.kinematicsStatus = "ready";
-  } catch (error) {
-    if (requestId !== state.kinematicsRequestId) return;
-    state.kinematicsPayload = {
-      model: error.message,
-      available: false,
-      sweep_m: [],
-      axles: {},
-      warnings: [error.message],
-    };
-    state.kinematicsStatus = "error";
+    return;
   }
+  state.kinematicsPending = { key, vehicle: JSON.parse(key) };
+  if (state.kinematicsInFlight) return state.kinematicsInFlight;
+  state.kinematicsInFlight = (async () => {
+    while (state.kinematicsPending) {
+      const request = state.kinematicsPending;
+      state.kinematicsPending = null;
+      if (request.key === state.kinematicsLoadedKey && state.kinematicsPayload?.available && !state.kinematicsPayload.warnings?.length) continue;
+      state.kinematicsStatus = state.kinematicsPayload ? "refreshing" : "loading";
+      const status = document.getElementById("geometry-plot-status");
+      if (status) status.textContent = " · Updating…";
+      try {
+        const payload = await api("/api/kinematics/curves", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vehicle: request.vehicle }),
+        });
+        if (state.kinematicsPending && state.kinematicsPending.key !== request.key) continue;
+        state.kinematicsPayload = payload;
+        state.kinematicsLoadedKey = request.key;
+        state.kinematicsStatus = "ready";
+      } catch (error) {
+        if (state.kinematicsPending && state.kinematicsPending.key !== request.key) continue;
+        state.kinematicsPayload = { model: error.message, available: false, sweep_m: [], axles: {}, warnings: [error.message] };
+        state.kinematicsStatus = "error";
+      }
+      if (status) status.textContent = state.kinematicsPayload?.warnings?.length
+        ? ` · ${state.kinematicsPayload.warnings.join("; ")}` : " · Ready";
+      // Paint as soon as KnC finishes, independently of slower tire diagnostics.
+      if (isKinematicPlotArea()) {
+        renderGeometryPlotControls();
+        drawGeometryPlotPanel();
+      }
+    }
+  })();
+  try { await state.kinematicsInFlight; }
+  finally { state.kinematicsInFlight = null; }
 }
 
 function queueKinematicsRefresh({ force = false } = {}) {
@@ -9187,6 +9207,7 @@ function pointerCanvasPointFor(event, canvas) {
 
 function geometryPlotDescriptorMap() {
   const descriptors = new Map(kinematicCurveDescriptors(state.kinematicsPayload).map((item) => [item.id, item]));
+  if (state.kinematicsPayload?.model === "BobLib native KnC") return descriptors;
   return new Map([...descriptors].filter(([id]) =>
     /^(bump|roll|steer)_(camber_deg|toe_deg|caster_deg|kpi_deg|mech_trail_mm|scrub_mm|rc_height_mm)$/.test(id)));
 }

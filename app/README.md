@@ -105,8 +105,19 @@ halfshaft inertia is a separate physical calibration (initial reference: 0.02
 kg m²); the old equivalent damping inertia is not imported. Retired clutch and
 shaft damping fields are hidden; differential choice belongs to Architecture.
 
-The geometry plot uses native zero-load KnC heave/roll plateaus, with the bar
-removed, rather than KinPy. Simulation runs the complete KnC protocol with an
+The plot picker exposes native heave, roll, and front steering sweeps. Heave is
+positive chassis-up displacement; steering is pinion angle, not rack travel or
+road-wheel angle. Heave/roll curves use zero steering. Geometry is sampled from
+unloaded plateaus with the bar removed. Geometric RC height uses front-view
+wishbone midpoint/outer-joint projections from native positions, relative to the
+mean contact plane; singular projections remain missing. A separate force-based
+RC equivalent height uses differential contact-load response. Jacking subtracts
+the unloaded same-pose response from each 1000 N pulse. Anti percentages use
+axle force and sprung CG height; they are not whole-car anti percentages. The
+braked rig reports front anti-dive and rear braking anti-lift; acceleration
+anti-squat requires a drive-load test. Front/rear runs execute concurrently,
+repeated setups reuse results, and the UI coalesces edits and redraws without
+waiting for tire diagnostics. Simulation runs the complete KnC protocol with an
 explicit load amplitude and optional configured stabilizer. Front runs include
 steering sweeps. Maneuvers currently run the standard ramp-steer experiment and
 report its termination reason. CSV signals and input provenance are retained in

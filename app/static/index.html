@@ -124,6 +124,17 @@
                     <button id="geometry-add-plot-btn" class="ghost-button" type="button">Add</button>
                   </div>
                 </div>
+                <details class="geometry-plot-notes">
+                  <summary>Plot definitions <span id="geometry-plot-status" role="status"></span></summary>
+                  <p>Heave is chassis displacement, positive upward. Heave and roll use zero steering;
+                    steering uses seven front pinion angles at neutral heave and roll. The rear rack is locked.
+                    Alignment, trail, and scrub curves refer to the left wheel.</p>
+                  <p>Geometric RC is the front-view projection of the native wishbone positions, measured above
+                    the contact plane. Force-based RC is a separate equivalent height from load transfer.</p>
+                  <p>Jacking subtracts the unloaded response from a 1000 N contact-force pulse, with the stabilizer removed.
+                    Anti percentages are normalized by axle force and sprung CG height, not whole-car brake or drive distribution.
+                    Rear braking anti-lift is shown; acceleration anti-squat needs a drive-load test.</p>
+                </details>
                 <div class="geometry-plots">
                   <canvas id="geometry-plot-canvas"></canvas>
                   <div id="geometry-plot-close-buttons"></div>

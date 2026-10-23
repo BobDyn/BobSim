@@ -10,13 +10,13 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.native_calibration import vehicle_overrides
+from app.native_knc import curves as knc_curves, metadata as knc_metadata
 from common import native_artifacts as artifacts
 
-_LOCK = threading.Lock()
 
 
 def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
@@ -37,20 +37,19 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
     if kind.startswith("knc-"):
         if settings.keys() - {"forceMagnitude", "include_stabilizer"}:
             raise ValueError("Unknown KnC setting")
-        if kind == "knc-front" and kinematics_only:
-            overrides.update({"angleCount": 1, "steeringAngles[1]": 0.0})
-        # The editor curve view requests unloaded kinematics; simulation runs use
-        # the complete load/steering protocol and an explicit bar selection.
+        # Geometry comes from unloaded plateaus; jacking uses the intervening
+        # load pulses at the same poses. The editor keeps the stabilizer removed.
         side = kind.removeprefix("knc-")
         include_bar = settings.get("include_stabilizer", False)
         if not isinstance(include_bar, bool):
             raise ValueError("include_stabilizer must be a boolean")
         rate = vehicle[side]["actuation"].get("stabar", {}).get("rate_n_m_per_rad", 0)
-        overrides.update({"forceMagnitude": 0.0 if kinematics_only else settings.get("forceMagnitude", 1000.0),
+        overrides.update({"forceMagnitude": settings.get("forceMagnitude", 1000.0),
                           "stabilizerRate": rate if include_bar and not kinematics_only else 0.0})
-        stop = 832.0 if kind == "knc-front" and not kinematics_only else 118.0
+        stop = 832.0 if kind == "knc-front" else 118.0
         step = 0.1
-        signals = "time|knc.*|inputs.steer"
+        signals = ("time|knc.*|inputs.steer|axle.(left|right)CP.r_0.*|"
+                   "axle.(left|right)WishboneUprightLoop.(upper|lower)Frame_(i|o).r_0.*")
     else:
         stop = float(settings.pop("duration", 10.0))
         step = 0.002
@@ -63,7 +62,12 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
         raise ValueError("Duration must be between 0 and 120 seconds")
     encoded = artifacts.validate_overrides(manifest, overrides)
     request = {"identity": manifest["identity"], "overrides": overrides, "settings": settings,
-               "stop": stop, "adapter": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+               "stop": stop, "adapter": hashlib.sha256(Path(__file__).read_bytes()
+                   + Path(__file__).with_name("native_knc.py").read_bytes()).hexdigest(),
+               "plot_reference": {
+                   "masses": [vehicle.get(key) for key in ("sprung_mass", "driver_mass")],
+                   "wheel_centers": [vehicle[key]["suspension"]["wheel_center_m"] for key in ("front", "rear")],
+               } if kinematics_only else None}
     key = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     results = artifacts.ROOT / "app/user_data/results/native"
     result_dir = results / key
@@ -110,7 +114,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
                   "log": (result_dir / "run.log").relative_to(artifacts.ROOT).as_posix(),
                   "overrides": overrides}
         if kinematics_only:
-            result["curves"] = knc_curves(rows)
+            result["curves"] = knc_curves(rows, vehicle, kind.removeprefix("knc-"))
         (work / "request.json").write_text(json.dumps(request, indent=2))
         (work / "vehicle.json").write_text(json.dumps(vehicle, indent=2))
         (work / "result.json").write_text(json.dumps(result, indent=2))
@@ -121,56 +125,33 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
     return result
 
 
-_MEASUREMENTS = {"camber_deg": ("leftGamma", 180 / math.pi, "Camber", "deg"),
-                 "toe_deg": ("leftToe", 180 / math.pi, "Toe", "deg"),
-                 "caster_deg": ("leftCaster", 180 / math.pi, "Caster", "deg"),
-                 "kpi_deg": ("leftKpi", 180 / math.pi, "KPI", "deg"),
-                 "mech_trail_mm": ("leftMechTrail", 1000, "Mechanical trail", "mm"),
-                 "scrub_mm": ("leftMechScrub", 1000, "Scrub radius", "mm")}
-
-
-def knc_curves(rows: list[dict]) -> dict:
-    """Sample the zero-load plateaus of BobLib's heave and roll protocol."""
-    result: dict[str, Any] = {"curves": {}, "x_axes": {}}
-    for phase, times, x_signal, x_scale, x_id in (
-        ("bump", range(5, 56, 5), "knc.heave", -1000, "jounce_mm"),
-        ("roll", range(66, 117, 5), "knc.roll", 180 / math.pi, "roll_deg"),
-    ):
-        sampled = [min(rows, key=lambda row: abs(row["time"] - t)) for t in times]
-        sampled.sort(key=lambda row: x_scale * row[x_signal])
-        result["x_axes"][x_id] = [row[x_signal] * x_scale for row in sampled]
-        for key, (signal, scale, _, _) in _MEASUREMENTS.items():
-            result["curves"][phase + "_" + key] = [row["knc." + signal] * scale for row in sampled]
-    return result
-
-
 def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
     """Serve geometry plots from the same native KnC artifacts as simulations."""
     if sweep_m is not None:
         raise ValueError("Native KnC uses the rig's documented heave/roll protocol")
-    payload: dict[str, Any] = {"model": "BobLib native KnC", "basis": "Zero-load heave and roll plateaus",
+    payload: dict[str, Any] = {"model": "BobLib native KnC",
+               "basis": "Unloaded heave/roll/steer geometry; 1000 N force pulses; stabilizer removed",
                "available": True, "axles": {}, "warnings": [], "curve_meta": [], "x_axes": {},
                "sweep_m": [], "roll_deg": [], "steer_m": []}
-    for phase, x_id, x_label, x_unit in (("bump", "jounce_mm", "Jounce", "mm"), ("roll", "roll_deg", "Roll", "deg")):
-        for key, (_, _, label, unit) in _MEASUREMENTS.items():
-            payload["curve_meta"].append({"id": phase + "_" + key, "label": phase.title() + " " + label,
-                                          "unit": unit, "x_id": x_id, "x_label": x_label,
-                                          "x_unit": x_unit, "y_label": label})
-    with _LOCK:
-        for side in ("front", "rear"):
+    payload["curve_meta"] = knc_metadata()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = {side: executor.submit(run, vehicle, "knc-" + side, {"kinematics_only": True})
+                   for side in ("front", "rear")}
+        for side, future in pending.items():
             try:
-                result = run(vehicle, "knc-" + side, {"kinematics_only": True})
+                result = future.result()
                 curves = result["curves"]
                 payload["x_axes"].update(curves["x_axes"])
                 payload["axles"][side] = {"ok": True, "curves": curves["curves"],
                                            "x_axes": curves["x_axes"], "points": [],
-                                           "solved_count": 11, "roll_solved_count": 11, "steer_solved_count": 0,
-                                           "steer_x_deg": [], "warnings": []}
+                                           "solved_count": 11, "roll_solved_count": 11,
+                                           "steer_solved_count": 7 if side == "front" else 0,
+                                           "steer_x_deg": curves["x_axes"].get("pinion_deg", []), "warnings": []}
             except (ValueError, RuntimeError, OSError) as exc:
-                payload["available"] = False
                 payload["warnings"].append(str(exc))
                 payload["axles"][side] = {"ok": False, "curves": {}, "points": [], "warnings": [str(exc)]}
-    payload["sweep_m"] = [x / 1000 for x in payload["x_axes"].get("jounce_mm", [])]
+    payload["available"] = any(axle["ok"] for axle in payload["axles"].values())
+    payload["sweep_m"] = [x / 1000 for x in payload["x_axes"].get("heave_mm", [])]
     payload["roll_deg"] = payload["x_axes"].get("roll_deg", [])
     return payload
 
