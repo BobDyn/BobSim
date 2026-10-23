@@ -87,8 +87,11 @@ Removing a simulation keeps its saved runs.
 
 This integration branch pins BobLib PR #58 (`f35fa2f`) before merge. Select front
 and rear suspension, differential, brake placement, and spatial rotor mechanics
-in Architecture. Each supported combination has separate front KnC, rear KnC,
-and maneuver executables. Other included components are listed in that view.
+in Architecture. Each supported combination has separate front KnC, rear braking KnC, rear traction,
+and maneuver executables. Rear traction uses the existing static differential-input
+shaft/housing reaction path, independent of rear brake placement. It applies
+equal contact forces and equal shaft torques; differential slip/locking dynamics,
+CV-joint force distribution and shaft bending are outside this geometry test. Other included components are listed in that view.
 
 Choose **Build locally** for a missing executable. This requires OpenModelica,
 Modelica 4.1.0, and VehicleInterfaces 2.0.2. Builds run as cancellable app jobs.
@@ -116,13 +119,22 @@ grounded front steering support reaction. The equivalent force acts at world
 y=0; its height is shifted from the world origin to the mean unloaded contact
 plane. This includes actual force lever arms rather than nominal track. The
 test still uses equal left/right lateral force pulses. Geometric anti-roll is RC height
-divided by reference sprung CG height above the same contact plane; it can be
+divided by posed sprung CG height above the same contact plane; it can be
 negative even when net jacking is zero. It is a geometric proxy, not a whole-car
 roll-resistance percentage. Jacking subtracts
-the unloaded same-pose response from each 1000 N pulse. Anti percentages use
-axle force and sprung CG height; they are not whole-car anti percentages. The
-braked rig reports front anti-dive and rear braking anti-lift; acceleration
-anti-squat requires a drive-load test. Front/rear runs execute concurrently,
+the unloaded same-pose response from each 1000 N pulse. Processed longitudinal
+outputs are front anti-dive and rear anti-squat. Both remain axle-normalized:
+`100 * (signed jacking / axle Fx) * reference wheelbase / posed CG height`,
+with a negative sign for front anti-dive and positive for rear anti-squat.
+Brake bias and drive-force split are deliberately excluded. The sprung-plus-driver
+CG is mass-weighted, translated with imposed heave, rotated with roll, then
+referenced to the mean unloaded contact plane at each pose; missing/invalid
+references and unloaded tire contacts remain missing. Front braking uses the selected brake reaction path;
+rear anti-squat uses the separate shaft traction run. Rear longitudinal jacking
+plots also use traction, matching the processed percentage. Rear braking CSVs
+remain available from Simulation. Missing traction binaries leave anti-squat
+unavailable with a build message rather than substituting braking results.
+The front, rear braking, and rear traction runs execute concurrently,
 repeated setups reuse results, and the UI coalesces edits and redraws without
 waiting for tire diagnostics. Simulation runs the complete KnC protocol with an
 explicit load amplitude and optional configured stabilizer. Front runs include

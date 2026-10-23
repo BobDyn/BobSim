@@ -20,7 +20,8 @@ from common.vehicle_io import repo_root
 ROOT = repo_root()
 BOBLIB = ROOT / "engines/boblib"
 CACHE = ROOT / "app/user_data/cache/native"
-KINDS = {"knc-front": "Front KnC", "knc-rear": "Rear KnC", "maneuver": "Maneuvers"}
+KINDS = {"knc-front": "Front KnC", "knc-rear": "Rear KnC",
+         "knc-rear-traction": "Rear traction", "maneuver": "Maneuvers"}
 MANEUVER_SETTERS = {
     "pVehicle.controller.tau_max": "nativeDriveTorqueLimit",
     "pVehicle.controller.mechanicalBrakeTorqueLimit": "nativeBrakeTorqueLimit",
@@ -129,9 +130,12 @@ def wrapper(selection: dict, kind: str) -> tuple[str, str]:
                                 "transmission(gearRatio=nativeTransmissionRatio), "
                                 "driveline(inputRatio=nativeDifferentialInputRatio), ")
         return name, source
-    if kind not in ("knc-front", "knc-rear"):
+    if kind not in ("knc-front", "knc-rear", "knc-rear-traction"):
         raise ValueError("Unknown native experiment")
-    axle = kind.removeprefix("knc-")
+    axle = kind.split("-")[1]
+    # Signed static differential-input torque drives through the shafts and
+    # closes its housing reaction on the sprung frame, independent of brakes.
+    placement = "DifferentialInput" if kind.endswith("-traction") else selection[axle + "_brakes"]
     tag_front, _ = exp.AXLES[selection["front"]]
     tag_rear, _ = exp.AXLES[selection["rear"]]
     _, axle_model = exp.AXLES[selection[axle]]
@@ -149,7 +153,7 @@ def wrapper(selection: dict, kind: str) -> tuple[str, str]:
     final headless=true,
     final useRearAxle={str(axle == 'rear').lower()},
     axle(pAxle(actuation=pVehicle.chassis.{axle}Axle.actuation)),
-    final brakePlacement=BobLib.Brakes.Types.Placement.{selection[axle + '_brakes']},
+    final brakePlacement=BobLib.Brakes.Types.Placement.{placement},
     redeclare record VehicleRecord = {record},
     redeclare model AxleModel = BobLib.Chassis.Suspension.{axle_model}{axle_binding},
     pVehicle({calibration});

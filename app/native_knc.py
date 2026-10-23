@@ -28,7 +28,7 @@ def metadata() -> list[dict]:
                                 jacking_ratio=("Jacking / applied force", "N/N"))
         if phase == "bump":
             measurements.update(anti_dive_pct=("Front anti-dive (axle-normalized)", "%"),
-                                anti_lift_pct=("Rear anti-lift under braking (axle-normalized)", "%"))
+                                anti_squat_pct=("Rear anti-squat (axle-normalized)", "%"))
         if phase == "roll":
             measurements.update(anti_roll_pct=("Geometric anti-roll (axle-normalized)", "%"),
                                 force_rc_height_mm=("Force-based equivalent RC height", "mm"),
@@ -127,7 +127,37 @@ def force_rc_height(pulse: dict, tail: dict, side: str) -> float | None:
         return None
 
 
-def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -> dict:
+def sprung_cg_height(row: dict, vehicle: dict) -> float | None:
+    """Transform the reference sprung CG into the prescribed rig pose.
+
+    Parameters
+    ----------
+    row : dict
+        Native unloaded pose, with heave, roll and world contact positions.
+    vehicle : dict
+        Sprung and driver masses and CGs in the chassis reference coordinates.
+
+    Returns
+    -------
+    float or None
+        CG height above the mean contact plane in metres; invalid references
+        remain missing. The rig translates along chassis Z then rotates about X.
+    """
+    try:
+        masses = [vehicle[key] for key in ("sprung_mass", "driver_mass")]
+        mass = sum(m["mass_kg"] for m in masses)
+        if mass <= 0:
+            return None
+        y, z = [sum(m["mass_kg"] * m["cg_m"][i] for m in masses) / mass for i in (1, 2)]
+        roll, heave = row["knc.roll"], row["knc.heave"]
+        ground = sum(row[f"axle.{wheel}CP.r_0[3]"] for wheel in ("left", "right")) / 2
+        height = y * math.sin(roll) + (z + heave) * math.cos(roll) - ground
+        return height if math.isfinite(height) and height > 1e-9 else None
+    except KeyError:
+        return None
+
+
+def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front", *, traction: bool = False) -> dict:
     """Sample unloaded geometry and subtract same-pose tails from force pulses."""
     times = np.array([row["time"] for row in rows])
 
@@ -178,29 +208,31 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -
                                           "reaction_per_fy_m")):
                 result["curves"]["roll_" + name] = [values[index] for values in reactions]
         if vehicle:
-            masses = [vehicle[key] for key in ("sprung_mass", "driver_mass")]
-            total_mass = sum(m["mass_kg"] for m in masses)
-            h = sum(m["mass_kg"] * m["cg_m"][2] for m in masses) / total_mass if total_mass > 0 else 0
             front, rear = [vehicle[key]["suspension"]["wheel_center_m"] for key in ("front", "rear")]
             length = abs(front[0] - rear[0])
             # These are axle-force-normalized geometric measures, not whole-car
             # anti percentages (which also need brake/drive force distribution).
             sign = -1 if phase == "bump" and side == "front" else 1
-            key = "anti_roll_pct" if phase == "roll" else "anti_dive_pct" if side == "front" else "anti_lift_pct"
+            key = "anti_roll_pct" if phase == "roll" else "anti_dive_pct" if side == "front" else "anti_squat_pct"
             if phase == "roll":
                 # Net jacking is the SUM of vertical reactions. It can vanish
                 # while their roll moment is nonzero, so it cannot define anti-roll.
-                # This geometric proxy is RC height / reference sprung CG height,
+                # This geometric proxy is RC height / posed sprung CG height,
                 # with both heights measured from the same contact plane.
-                heights = [h - (row["axle.leftCP.r_0[3]"] + row["axle.rightCP.r_0[3]"]) / 2
-                           if "axle.leftCP.r_0[3]" in row and "axle.rightCP.r_0[3]" in row else None
-                           for row in sampled]
+                heights = [sprung_cg_height(row, vehicle) for row in sampled]
                 result["curves"]["roll_anti_roll_pct"] = [
                     100 * rc_height / (1000 * cg_height)
                     if rc_height is not None and cg_height is not None and cg_height > 1e-9 else None
                     for (rc_height, _), cg_height in zip(rc, heights)]
                 result["curves"]["roll_force_rc_height_mm"] = force_rc
-            else:
-                result["curves"][phase + "_" + key] = [
-                    sign * 100 * r * length / h if r is not None and h > 1e-9 else None for r in ratio]
+            elif side == "front" or traction:
+                values = []
+                for r, tail in zip(ratio, sampled):
+                    h = sprung_cg_height(tail, vehicle)
+                    pulse = at(tail["time"] - 2)
+                    contact = all(row.get(f"knc.{wheel}Fz", 0) > 0
+                                  for row in (pulse, tail) for wheel in ("left", "right"))
+                    values.append(sign * 100 * r * length / h
+                                  if r is not None and h is not None and contact else None)
+                result["curves"][phase + "_" + key] = values
     return result

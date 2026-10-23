@@ -14806,7 +14806,7 @@ async function renderNativeExperiments() {
     const payload = await api("/api/native/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData()})});
     panel.innerHTML = `<h3>Native vehicle experiments</h3><p>Use the selected architecture and current setup.</p>
       <div class="native-experiment-actions">${payload.artifacts.map((item) => `<button type="button" class="ghost-button" data-native-run="${item.kind}" ${item.ready ? "" : "disabled"}>${escapeHtml(item.label)}${item.ready ? "" : " · build required"}</button>`).join("")}</div>
-      <p>KnC runs the full heave, roll and contact-load protocol, including steering sweeps at the front. Maneuvers use the standard ramp-steer protocol.</p><p>Maneuvers inherit the reference starting pose; changed setups are not automatically re-equilibrated.</p>
+      <p>KnC runs heave, roll and contact-load sweeps, including front steering. Rear traction applies drive torque through the shafts for anti-squat; rear KnC retains the braking test. Maneuvers use the standard ramp-steer protocol.</p><p>Maneuvers inherit the reference starting pose; changed setups are not automatically re-equilibrated.</p>
       <label class="form-field"><span>KnC applied load (N)</span><input id="native-force" type="number" min="0" value="1000"></label>
       <label><input id="native-stabilizer" type="checkbox"> Include the configured stabilizer in KnC</label>
       <pre class="code-view" id="native-run-log" hidden></pre>`;

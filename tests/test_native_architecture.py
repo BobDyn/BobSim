@@ -145,7 +145,9 @@ def test_native_plot_payload_preserves_each_axles_parametric_axes(monkeypatch):
 
     def result(_vehicle, kind, _settings):
         amplitude = 12 if kind == "knc-front" else 8
-        return {"curves": {"curves": {"bump_camber_deg": [1, 2, 3]},
+        return {"csv": "traction.csv", "curves": {"curves": {"bump_camber_deg": [1, 2, 3],
+                    "bump_anti_squat_pct": [10, 20, 30], "bump_jacking_n": [1, 2, 3],
+                    "bump_jacking_ratio": [.01, .02, .03]},
                            "x_axes": {"jounce_mm": [-amplitude, 0, amplitude], "roll_deg": [-1, 0, 1]}}}
 
     monkeypatch.setattr(native_runs, "run", result)
@@ -199,7 +201,7 @@ def test_knc_steering_and_load_pulse_metrics_use_the_correct_protocol_samples():
     assert result["x_axes"]["pinion_deg"] == pytest.approx([-90, -60, -30, 0, 30, 60, 90])
     assert result["curves"]["bump_camber_deg"] == pytest.approx([.003 * 180 / math.pi] * 11)
     assert result["curves"]["bump_jacking_n"] == pytest.approx([20] * 11)
-    assert result["curves"]["bump_anti_dive_pct"] == pytest.approx([-120] * 11)
+    assert result["curves"]["bump_anti_dive_pct"] == [None] * 11  # No contact datum.
     assert result["curves"]["roll_load_reaction_nm"] == pytest.approx([-40] * 11)
     assert result["curves"]["roll_reaction_per_fy_m"] == pytest.approx([-.4] * 11)
     assert result["curves"]["roll_force_rc_height_mm"] == [None] * 11  # Missing reference geometry.
@@ -281,3 +283,50 @@ def test_force_rc_height_reference_shift_and_separate_steering_support(load, gro
     assert force_rc_height(pulse, tail, "rear") == pytest.approx(80)
     pulse["knc.leftFz"] = 0
     assert force_rc_height(pulse, tail, "rear") is None
+
+
+def test_sprung_cg_height_follows_heave_roll_mass_weighting_and_contact_datum():
+    from app.native_knc import sprung_cg_height
+    vehicle = {"sprung_mass": {"mass_kg": 200, "cg_m": [0, .1, .4]},
+               "driver_mass": {"mass_kg": 100, "cg_m": [0, -.2, .7]}}
+    row = {"knc.heave": .1, "knc.roll": 0,
+           "axle.leftCP.r_0[3]": .03, "axle.rightCP.r_0[3]": .01}
+    assert sprung_cg_height(row, vehicle) == pytest.approx(.58)
+    row["knc.roll"] = math.pi / 3
+    assert sprung_cg_height(row, vehicle) == pytest.approx(.28)
+    row["knc.roll"] = 0
+    row["knc.heave"] = -.1
+    assert sprung_cg_height(row, vehicle) == pytest.approx(.38)
+    # Translating the coordinate datum must not alter the physical height.
+    for body in vehicle.values():
+        body["cg_m"][2] += .25
+    for wheel in ("left", "right"):
+        row[f"axle.{wheel}CP.r_0[3]"] += .25
+    assert sprung_cg_height(row, vehicle) == pytest.approx(.38)
+    assert sprung_cg_height({}, vehicle) is None
+    row["knc.heave"] = -2
+    assert sprung_cg_height(row, vehicle) is None
+
+
+def test_rear_traction_wrapper_uses_shaft_housing_path_independent_of_brakes():
+    selected = native.architecture({"architecture": {"front": "direct", "rear": "bellcrank_stabar"}})
+    for placement in ("Outboard", "Inboard", "DifferentialInput"):
+        selected["rear_brakes"] = placement
+        _, source = native.wrapper(selected, "knc-rear-traction")
+        assert "final brakePlacement=BobLib.Brakes.Types.Placement.DifferentialInput" in source
+        assert "final useRearAxle=true" in source
+        assert "KnCLocked" in source
+
+
+def test_missing_traction_binary_does_not_relabel_braking_as_anti_squat(monkeypatch):
+    from app import native_runs
+    def run(_vehicle, kind, _settings):
+        if kind.endswith("-traction"):
+            raise ValueError("Build Rear traction in Architecture first")
+        return {"curves": {"curves": {}, "x_axes": {}}}
+    monkeypatch.setattr(native_runs, "run", run)
+    payload = native_runs.kinematic_curves_payload({})
+    assert payload["available"]
+    assert "bump_anti_squat_pct" not in payload["axles"]["rear"]["curves"]
+    assert "bump_jacking_ratio" not in payload["axles"]["rear"]["curves"]
+    assert "Rear anti-squat unavailable" in payload["warnings"][0]

@@ -39,7 +39,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
             raise ValueError("Unknown KnC setting")
         # Geometry comes from unloaded plateaus; jacking uses the intervening
         # load pulses at the same poses. The editor keeps the stabilizer removed.
-        side = kind.removeprefix("knc-")
+        side = kind.split("-")[1]
         include_bar = settings.get("include_stabilizer", False)
         if not isinstance(include_bar, bool):
             raise ValueError("include_stabilizer must be a boolean")
@@ -50,6 +50,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
         step = 0.1
         signals = ("time|knc.*|inputs.steer|steerPosition.flange.tau|chassisActuator.rollDOF.tau|"
                    "leftLoad.worldForce.force.*|rightLoad.worldForce.force.*|axle.(left|right)CP.r_0.*|"
+                   "brakes.*|chassisActuator.chassisFrame.r_0.*|"
                    "axle.(left|right)WishboneUprightLoop.(upper|lower)Frame_(i|o).r_0.*")
     else:
         stop = float(settings.pop("duration", 10.0))
@@ -68,7 +69,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
                "plot_reference": {
                    "masses": [vehicle.get(key) for key in ("sprung_mass", "driver_mass")],
                    "wheel_centers": [vehicle[key]["suspension"]["wheel_center_m"] for key in ("front", "rear")],
-               } if kinematics_only else None}
+               } if kind.startswith("knc-") else None}
     key = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
     results = artifacts.ROOT / "app/user_data/results/native"
     result_dir = results / key
@@ -114,8 +115,8 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
                   "csv": (result_dir / "signals.csv").relative_to(artifacts.ROOT).as_posix(),
                   "log": (result_dir / "run.log").relative_to(artifacts.ROOT).as_posix(),
                   "overrides": overrides}
-        if kinematics_only:
-            result["curves"] = knc_curves(rows, vehicle, kind.removeprefix("knc-"))
+        if kind.startswith("knc-"):
+            result["curves"] = knc_curves(rows, vehicle, side, traction=kind.endswith("-traction"))
         (work / "request.json").write_text(json.dumps(request, indent=2))
         (work / "vehicle.json").write_text(json.dumps(vehicle, indent=2))
         (work / "result.json").write_text(json.dumps(result, indent=2))
@@ -131,13 +132,15 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
     if sweep_m is not None:
         raise ValueError("Native KnC uses the rig's documented heave/roll protocol")
     payload: dict[str, Any] = {"model": "BobLib native KnC",
-               "basis": "Unloaded heave/roll/steer geometry; 1000 N force pulses; stabilizer removed",
+               "basis": ("Unloaded heave/roll/steer geometry; 1000 N force pulses; "
+                         "rear longitudinal response uses shaft traction; stabilizer removed"),
                "available": True, "axles": {}, "warnings": [], "curve_meta": [], "x_axes": {},
                "sweep_m": [], "roll_deg": [], "steer_m": []}
     payload["curve_meta"] = knc_metadata()
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         pending = {side: executor.submit(run, vehicle, "knc-" + side, {"kinematics_only": True})
                    for side in ("front", "rear")}
+        traction = executor.submit(run, vehicle, "knc-rear-traction", {"kinematics_only": True})
         for side, future in pending.items():
             try:
                 result = future.result()
@@ -148,9 +151,27 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                                            "solved_count": 11, "roll_solved_count": 11,
                                            "steer_solved_count": 7 if side == "front" else 0,
                                            "steer_x_deg": curves["x_axes"].get("pinion_deg", []), "warnings": []}
+                if side == "rear":
+                    for key in ("bump_jacking_n", "bump_jacking_ratio"):
+                        payload["axles"][side]["curves"].pop(key, None)
             except (ValueError, RuntimeError, OSError) as exc:
                 payload["warnings"].append(str(exc))
                 payload["axles"][side] = {"ok": False, "curves": {}, "points": [], "warnings": [str(exc)]}
+        try:
+            traction_result = traction.result()
+            rear = payload["axles"]["rear"]
+            if rear["ok"]:
+                drive_curves = traction_result["curves"]["curves"]
+                rear["curves"]["bump_anti_squat_pct"] = drive_curves["bump_anti_squat_pct"]
+                # Match the longitudinal raw jacking plots to the traction-based
+                # processed rear output, retaining braking CSVs in native results.
+                for key in ("bump_jacking_n", "bump_jacking_ratio"):
+                    rear["curves"][key] = drive_curves[key]
+                rear["traction_csv"] = traction_result["csv"]
+        except (ValueError, RuntimeError, OSError) as exc:
+            message = "Rear anti-squat unavailable: " + str(exc)
+            payload["warnings"].append(message)
+            payload["axles"]["rear"]["warnings"].append(message)
     payload["available"] = any(axle["ok"] for axle in payload["axles"].values())
     payload["sweep_m"] = [x / 1000 for x in payload["x_axes"].get("heave_mm", [])]
     payload["roll_deg"] = payload["x_axes"].get("roll_deg", [])

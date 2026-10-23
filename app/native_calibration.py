@@ -40,7 +40,7 @@ def vehicle_overrides(vehicle: dict, manifest: dict, root: Path) -> dict:
     kind = manifest["identity"]["kind"]
     requested = {}
     for side in ("front", "rear"):
-        if kind.startswith("knc-") and kind != "knc-" + side:
+        if kind.startswith("knc-") and kind.split("-")[1] != side:
             continue
         data = vehicle[side]
         prefix = f"pVehicle.chassis.{side}Axle"
