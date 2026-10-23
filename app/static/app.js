@@ -12749,7 +12749,7 @@ function drawKinematicChart(
     yLabel: descriptor.y_label || title,
     yUnit: unit,
     series,
-    includeZeroY: true,
+    includeZeroY: !/_anti_(dive|squat|roll|lift)_pct$/.test(yKey),
     margins: focused
       ? { left: 62, right: 18, top: 48, bottom: 44 }
       : { left: 50, right: 14, top: 36, bottom: 36 },
