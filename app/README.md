@@ -14,8 +14,9 @@ Open `http://127.0.0.1:8765`.
 
 | View | Contents |
 | --- | --- |
-| Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
-| Simulation | Named simulations with setup, run history, reports, signal explorers and 3D replay |
+| Architecture | Suspension, differential, brake placement, rotor mechanics, and reusable native binaries |
+| Setup | Calibration, geometry preview, and saved vehicles |
+| Simulation | Native KnC and maneuver runs, plus existing named studies and results |
 
 Setup uses the architecture templates in `common/vehicle_templates`, including
 direct, bellcrank, and bellcrank-stabar suspension. The preview shows hardpoints,
@@ -81,3 +82,47 @@ Removing a simulation keeps its saved runs.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
 - `desktop.py`: desktop/webview wrapper for packaged builds.
 - `static/`: `index.html`, `app.js`, `styles.css`, and the vendored Inter font.
+
+## Native architecture workflow
+
+This integration branch pins BobLib PR #58 (`f35fa2f`) before merge. Select front
+and rear suspension, differential, brake placement, and spatial rotor mechanics
+in Architecture. Each supported combination has separate front KnC, rear KnC,
+and maneuver executables. Other included components are listed in that view.
+
+Choose **Build locally** for a missing executable. This requires OpenModelica,
+Modelica 4.1.0, and VehicleInterfaces 2.0.2. Builds run as cancellable app jobs.
+Successful bundles are cached in `app/user_data/cache/native`; subsequent runs
+reuse them. Architecture, BobLib source, wrapper, or host-platform changes select
+a different cache entry. Bundle checksums detect missing or changed files.
+Executables still depend on the compatible local OpenModelica runtime libraries;
+this is a local cache, not a portable artifact distribution service.
+
+Setup values are validated against the compiled parameter contract and applied
+in a fresh process. Unknown, structural, and dependent parameters are rejected.
+Spring/damper tables support 64 points and aero maps 16 points per axis. Native
+halfshaft inertia is a separate physical calibration (initial reference: 0.02
+kg m²); the old equivalent damping inertia is not imported. Retired clutch and
+shaft damping fields are hidden; differential choice belongs to Architecture.
+
+The geometry plot uses native zero-load KnC heave/roll plateaus, with the bar
+removed, rather than KinPy. Simulation runs the complete KnC protocol with an
+explicit load amplitude and optional configured stabilizer. Front runs include
+steering sweeps. Maneuvers currently run the standard ramp-steer experiment and
+report its termination reason. CSV signals and input provenance are retained in
+`app/user_data/results/native`; failed runs retain diagnostics. A model limit is
+not reported as solver failure. Maneuvers use DASSL with an internal numerical
+Jacobian, matching BobLib's simulation settings.
+
+Maneuvers currently inherit BobLib's saved starting pose. Changed setups are not
+automatically re-equilibrated; do not interpret their initial transient as a
+settled-state comparison. KnC and maneuver runtime validation does not certify
+all catalog combinations. KinPy remains a dependency of the reduced DynPy
+workflows. The legacy generated-record/DOE workflows still require migration to
+the new BobLib record layout; their regression gate is separate from native runs.
+The legacy record writer is blocked on this revision to prevent overwriting the
+new architecture models with incompatible generated files.
+
+Ownership: `common/native_artifacts.py` builds and verifies bundles;
+`native_calibration.py` translates setup inputs; `native_runs.py` executes and
+converts results; `native_service.py` exposes them as app jobs.

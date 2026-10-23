@@ -58,13 +58,13 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def _four_post_model_text() -> str:
     return (
-        ROOT / "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
+        ROOT / "engines/boblib/BobLib/Experiments/Standards/BaseClasses/KnCInputs.mo"
     ).read_text(encoding="utf-8")
 
 
 def _four_post_table(name: str) -> list[tuple[float, float]]:
     match = re.search(
-        rf"final parameter Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
+        rf"constant Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
         _four_post_model_text(),
         flags=re.S,
     )
@@ -227,7 +227,9 @@ def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:
 def test_four_post_model_tables_match_report_sampling_schedule() -> None:
     text = _four_post_model_text()
     assert "heaveCommandTable" not in text
-    assert "heaveSource(table = heaveTable)" in text
+    rig = (ROOT / "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialFourPostRig.mo").read_text()
+    assert "heaveTable[:, 2] = KnCInputs.heaveTable" in rig
+    assert re.search(r"heaveSource\(\s*table = heaveTable,", rig)
 
     heave_table = dict(_four_post_table("heaveTable"))
     roll_table = dict(_four_post_table("rollTable"))

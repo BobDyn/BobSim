@@ -937,7 +937,8 @@ def test_app_vehicle_setup_exposes_vehicle_parameters_without_repo_paths() -> No
     assert payload["data"]["powertrain"]["implementation"] == "EVBatInvMotDiff"
     assert fields_by_path[("powertrain", "pBattery", "Ns")]["value"] == 140
     assert fields_by_path[("powertrain", "pMotor", "P_mech_peak")]["unit"] == "W"
-    assert fields_by_path[("powertrain", "pDriveline", "diff_use_lsd")]["kind"] == "boolean"
+    assert ("powertrain", "pDriveline", "diff_use_lsd") not in field_paths
+    assert fields_by_path[("architecture", "differential")]["value"] == "ClutchLSD"
 
 
 def test_frontend_renders_aero_maps_as_interactive_3d_surfaces() -> None:
@@ -1141,7 +1142,10 @@ def test_app_can_switch_direct_vehicle_to_bellcrank_actuation_defaults(
     saved = yaml.safe_load(active.read_text(encoding="utf-8"))
     front_actuation = saved["front"]["actuation"]
     rear_actuation = saved["rear"]["actuation"]
-    assert saved["architecture"] == {"front": "bellcrank_stabar", "rear": "direct"}
+    assert saved["architecture"] == {
+        "front": "bellcrank_stabar", "rear": "direct", "differential": "ClutchLSD",
+        "front_brakes": "Outboard", "rear_brakes": "Outboard", "rotor_effects": False,
+    }
     assert front_actuation["bellcrank"]["pickups_m"]["stabar"]
     assert front_actuation["stabar"]["arm_end_m"]
     assert front_actuation["bellcrank"]["order"] == ["stabar", "rod", "shock"]
@@ -1334,16 +1338,20 @@ def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
 def test_app_generates_live_kinematic_curves_for_active_vehicle() -> None:
     payload = app.kinematic_curves_from_active_vehicle()
 
-    assert payload["model"] == "KinPy QuarterCar kinematics"
+    assert payload["model"] == "BobLib native KnC"
     if not payload["available"]:
-        pytest.skip(payload["warnings"][0])
+        from common import native_artifacts
+        vehicle = app.config_payload("vehicle")["data"]
+        if not all(item["ready"] for item in native_artifacts.status(vehicle)["artifacts"][:2]):
+            pytest.skip("Build native KnC artifacts to exercise the live geometry integration")
+        pytest.fail(str(payload["warnings"]))
     assert payload["axles"]["front"]["ok"] is True
     assert payload["axles"]["rear"]["ok"] is True
-    assert len(payload["sweep_m"]) == 21
-    assert len(payload["roll_deg"]) == 21
-    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 21
-    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 21
-    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 21
+    assert len(payload["sweep_m"]) == 11
+    assert len(payload["roll_deg"]) == 11
+    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 11
+    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 11
+    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 11
     assert payload["warnings"] == []
 
 

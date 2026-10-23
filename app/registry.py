@@ -138,6 +138,17 @@ VEHICLE_FIELDS: tuple[FieldSpec, ...] = (
         "architecture.front", "Front architecture", kind="select", group="Architecture", choices=ARCHITECTURE_CHOICES
     ),
     _field("architecture.rear", "Rear architecture", kind="select", group="Architecture", choices=ARCHITECTURE_CHOICES),
+    _field("architecture.differential", "Differential", kind="select", group="Architecture",
+           choices=("ClutchLSD", "Open", "TorqueBiasing", "Locked")),
+    _field("architecture.front_brakes", "Front brake placement", kind="select", group="Architecture",
+           choices=("Outboard", "Inboard")),
+    _field("architecture.rear_brakes", "Rear brake placement", kind="select", group="Architecture",
+           choices=("Outboard", "Inboard", "DifferentialInput")),
+    _field("architecture.rotor_effects", "Spatial rotor mechanics", kind="boolean", group="Architecture"),
+    _field("native.halfshaft_inertia_kg_m2", "Halfshaft rotating inertia", kind="number",
+           group="Native driveline", unit="kg m²",
+           help_text="Real rotating inertia per shaft. Starts at the BobLib reference value; "
+                     "the former equivalent damping inertia is not imported."),
     _field("sprung_mass.mass_kg", "Sprung mass", kind="number", group="Mass", unit="kg"),
     _field("sprung_mass.cg_m", "Sprung CG", kind="list", group="Mass", unit="m"),
     _field("driver_mass.mass_kg", "Driver mass", kind="number", group="Mass", unit="kg"),

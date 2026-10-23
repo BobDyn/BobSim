@@ -13,7 +13,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 from app.http_utils import parse_byte_range as _parse_byte_range
 from app import visual as app_visual
 from app import execution as workspace_execution
-from engines.kinpy import kinematic_curves_payload
+from app.native_runs import kinematic_curves_payload
+from common import native_artifacts
+from app import native_service
 
 
 ROOT = Path.cwd()
@@ -206,8 +208,10 @@ class BobSimHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "API requests require application/json")
             return
         path = urlparse(self.path).path
-        launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
-        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval", "/api/tracks/preview"}
+        launches_job = path in {"/api/jobs", "/api/native/build", "/api/native/run"} or (
+            path.startswith("/api/workflows/") and path.endswith("/run"))
+        read_only = path in {"/api/native/status", "/api/results/series", "/api/kinematics/curves",
+                             "/api/tires/eval", "/api/tracks/preview"}
         cancels_job = path.startswith("/api/jobs/") and path.endswith("/cancel")
         if launches_job or cancels_job or read_only or path == "/api/simulations/visualization-settings":
             self._handle_post()
@@ -227,7 +231,16 @@ class BobSimHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         try:
             body = self._read_json_body()
-            if parsed.path == "/api/jobs":
+            if parsed.path == "/api/native/status":
+                self._send_json(native_artifacts.status(body.get("vehicle", {})))
+            elif parsed.path == "/api/native/run":
+                self._send_json(native_service.start_run(
+                    body.get("vehicle", {}), str(body.get("kind", "")), body.get("settings", {})),
+                                status=HTTPStatus.CREATED)
+            elif parsed.path == "/api/native/build":
+                self._send_json(native_service.start_build(body.get("vehicle", {}), str(body.get("kind", ""))),
+                                status=HTTPStatus.CREATED)
+            elif parsed.path == "/api/jobs":
                 job = start_job(str(body.get("action_id", "")))
                 self._send_json(job, status=HTTPStatus.CREATED)
             elif parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):

@@ -17,13 +17,14 @@
           </div>
         </div>
         <nav class="rail-stack" aria-label="Main navigation">
-          <button class="rail-item active" data-view="setup" type="button">Setup</button>
+          <button class="rail-item active" data-view="architecture" type="button">Architecture</button>
+          <button class="rail-item" data-view="setup" type="button">Setup</button>
           <button class="rail-item" data-view="standard" type="button">Simulation</button>
         </nav>
         <details class="model-menu settings-menu">
           <summary>Settings</summary>
           <div class="model-menu-body">
-            <h3>MBD status</h3>
+            <h3>Legacy MBD workflow status</h3><p>Native binary availability is shown in Architecture.</p>
             <div id="modelica-stack-panel" class="modelica-stack-panel" aria-label="Modelica stack status">
               <div id="boblib-initialized-step" class="modelica-stack-step">
                 <span class="status-dot"></span>
@@ -65,7 +66,7 @@
               <details class="model-menu">
                 <summary>Files</summary>
                 <div class="model-menu-body">
-                  <button id="rail-secondary-btn" class="ghost-button" type="button">Write to MBD</button>
+                  <button id="rail-secondary-btn" class="ghost-button" type="button">Simulation binaries</button>
                   <button id="open-vehicle-start-btn" class="run-button menu-primary" type="button">Open / Create Vehicle</button>
                   <div class="vehicle-source">
                     <select id="vehicle-library-picker" class="config-picker"></select>
@@ -92,6 +93,7 @@
           </div>
 
           <div id="parameter-tabs" class="parameter-tabs"></div>
+          <section id="native-artifacts" aria-label="Architecture binaries" hidden></section>
 
           <div class="setup-workspace">
             <aside class="editor-pane">
@@ -209,6 +211,7 @@
         </section>
 
         <section id="standard-view" class="screen">
+          <section id="native-experiments" class="native-experiments"></section>
           <div class="screen-head">
             <div>
               <h2>Simulation</h2>

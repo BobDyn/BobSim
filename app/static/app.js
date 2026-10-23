@@ -63,7 +63,7 @@ const state = {
   kinematicsRefreshTimer: null,
   tirePayloadRequestId: 0,
   tirePayloadRefreshTimer: null,
-  view: "setup",
+  view: "architecture",
   selectedVehicleSource: "active",
   selectedWorkflowId: null,
   simulationWorkspace: null,
@@ -1174,6 +1174,8 @@ function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
 }
 
 function renderMode() {
+  document.getElementById("native-artifacts").hidden = state.view !== "architecture";
+  document.getElementById("setup-view").classList.toggle("architecture-view", state.view === "architecture");
   renderSimulationWorkspace();
   document.querySelectorAll(".rail-item").forEach((button) => {
     const active = button.dataset.view === state.view || (button.dataset.view === "standard" && ["replay", "studies"].includes(state.view));
@@ -1182,7 +1184,7 @@ function renderMode() {
     else button.removeAttribute("aria-current");
   });
   document.querySelectorAll(".screen").forEach((screen) => {
-    screen.classList.toggle("active", screen.id === `${state.view}-view` || (screen.id === "standard-view" && ["replay", "studies"].includes(state.view)));
+    screen.classList.toggle("active", screen.id === `${state.view}-view` || (screen.id === "setup-view" && state.view === "architecture") || (screen.id === "standard-view" && ["replay", "studies"].includes(state.view)));
   });
   document.dispatchEvent(new Event("bobsim-view-change"));
 }
@@ -1190,7 +1192,7 @@ function renderMode() {
 function renderRailActions() {
   const primary = document.getElementById("rail-primary-btn");
   const secondary = document.getElementById("rail-secondary-btn");
-  if (state.view === "setup") {
+  if (["architecture", "setup"].includes(state.view)) {
     secondary.classList.add("ghost-button");
     secondary.classList.remove("run-button");
     const needsVehicleConfig = !activeVehicleConfigReady();
@@ -1210,11 +1212,10 @@ function renderRailActions() {
         : "Vehicle has no unsaved edits",
     });
     setActionButton(secondary, {
-      label: "Write to MBD",
-      busy: state.modelicaWriting && actionBusy("rail-write-mbd"),
-      busyLabel: "Writing",
-      disabled: !canWriteMbd() || state.vehicleSaving,
-      title: state.vehicleSaving ? "Vehicle save in progress." : mbdWriteDisabledReason(),
+      label: "Simulation binaries",
+      busy: false,
+      disabled: !state.vehiclePayload,
+      title: "Select an architecture and build or reuse its native binaries",
     });
     return;
   }
@@ -1314,7 +1315,9 @@ function renderVehicleEditor() {
   const areaIds = areas.map((area) => area.id);
   if (!areaIds.includes(state.activeParamGroup)) state.activeParamGroup = areaIds[0] || null;
   renderSetupFocus();
-  renderParameterTabs(areas);
+  if (state.view === "architecture") state.activeParamGroup = "vehicle";
+  else if (state.activeParamGroup === "vehicle") state.activeParamGroup = "hardpoints";
+  renderParameterTabs(areas.filter((area) => state.view === "architecture" ? area.id === "vehicle" : area.id !== "vehicle"));
   form.innerHTML = areas.map((area) => `
     <section class="config-section ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}">
       ${parameterAreaFields(area)}
@@ -1340,6 +1343,7 @@ function renderVehicleEditor() {
   };
   form.onclick = handleArrayEditorClick;
   wireArchitectureTools();
+  refreshNativeArtifacts();
   wireTireTabs();
   wireSuspensionSelection();
   wireTireAssignments();
@@ -1379,6 +1383,7 @@ function setupGuide(areaId = state.activeParamGroup) {
 
 function renderSetupFocus() {
   const guide = setupGuide();
+  document.getElementById("setup-focus").textContent = state.view === "architecture" ? "Vehicle architecture" : "Vehicle setup";
   const nameInput = document.getElementById("vehicle-name-input");
   if (nameInput && document.activeElement !== nameInput) nameInput.value = activeVehicleName();
   document.getElementById("vehicle-preview-title").textContent = guide.figure.replace(/\.$/, "");
@@ -1387,7 +1392,8 @@ function renderSetupFocus() {
 }
 
 function setupAreas() {
-  return state.vehiclePayload?.fields ? buildParameterAreas(state.vehiclePayload.fields) : PARAMETER_AREAS;
+  const areas = state.vehiclePayload?.fields ? buildParameterAreas(state.vehiclePayload.fields) : PARAMETER_AREAS;
+  return areas.filter((area) => state.view === "architecture" ? area.id === "vehicle" : area.id !== "vehicle");
 }
 
 function activeParameterIndex(areas = setupAreas()) {
@@ -1562,7 +1568,7 @@ function redoVehicleEdit() {
 function handleUndoShortcut(event) {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== "z") return;
   if (shouldUseNativeUndo(event)) return;
-  if (state.view !== "setup" || document.querySelector('[role="dialog"]:not([hidden]), dialog[open]')) return;
+  if (!["architecture", "setup"].includes(state.view) || document.querySelector('[role="dialog"]:not([hidden]), dialog[open]')) return;
   event.preventDefault();
   if (event.shiftKey) redoVehicleEdit();
   else undoVehicleEdit();
@@ -1576,6 +1582,7 @@ function markVehicleDirty(target = null) {
   syncArchitectureDependentControls();
   renderArchitectureTemplateMatches();
   renderArchitectureConnectionModal();
+  if (configPathFromTarget(target)?.[0] === "architecture") refreshNativeArtifacts();
   drawVehicleFromForm();
   renderParameterTabCanvases();
   if (!isTireSetupFieldTarget(target)) queueKinematicsRefresh();
@@ -1633,6 +1640,8 @@ function parameterAreaForField(field) {
   const path = fieldPathString(field);
   const group = String(field.group || "").toLowerCase();
   const label = String(field.label || "").toLowerCase();
+  if (path.startsWith("native.")) return "powertrain";
+  if (path.startsWith("architecture.")) return "vehicle";
   if (path.startsWith("aero.")) return "aero";
   if (path === "body.torsional_stiff_n_m_per_rad") return "suspension";
   if (path.startsWith("brake.")) return "powertrain";
@@ -1732,7 +1741,7 @@ function parameterAreaFields(area) {
       + (chassis.length ? `<details class="component-details"><summary>Chassis</summary>${chassis.map(fieldControl).join("")}</details>` : "");
   }
   if (area.id === "tires") return tireSectionHtml(area);
-  if (area.id === "powertrain") return powertrainSectionHtml(area);
+  if (area.id === "powertrain") return fieldGroupSections(area.fields.filter((field) => field.path?.[0] === "native"), area.id) + powertrainSectionHtml(area);
   if (area.id === "aero") return aeroSectionHtml(area);
   const extra = area.id === "tires"
     ? tireToolsHtml()
@@ -2242,6 +2251,7 @@ function architectureToolsHtml(fields) {
       <div class="architecture-control-grid">
         ${architectureSelectHtml(frontField, "architecture-front-select", "Front")}
         ${architectureSelectHtml(rearField, "architecture-rear-select", "Rear")}
+        ${fields.filter((field) => isArchitectureField(field) && !["architecture.front", "architecture.rear"].includes(fieldPathString(field))).map(fieldControl).join("")}
         ${powertrains.length > 1 ? `<label class="form-field compact-field">
           <span>Powertrain</span>
           <select id="architecture-powertrain-select" data-config-path="${escapeHtml(JSON.stringify(["powertrain", "implementation"]))}" data-kind="select">
@@ -2252,10 +2262,11 @@ function architectureToolsHtml(fields) {
         </label>` : `<div class="vehicle-model-label"><span>Powertrain</span><strong>Electric drivetrain</strong></div>`}
       </div>
       <div class="architecture-match-head">
-        <span>Templates</span>
+        <span>Starting configurations</span>
         <strong id="architecture-match-count"></strong>
       </div>
       <div id="architecture-template-list" class="architecture-template-list"></div>
+
     </div>
     ${hiddenOrderFields}
   `;
@@ -2738,6 +2749,7 @@ function fieldDisplayGroup(field) {
 
 function renderParameterTabs(areas) {
   const tabs = document.getElementById("parameter-tabs");
+  tabs.hidden = state.view === "architecture";
   tabs.innerHTML = areas.map((area) => `
     <button class="parameter-tab ${area.id === state.activeParamGroup ? "active" : ""}" data-param-group="${escapeHtml(area.id)}" type="button" title="${escapeHtml(setupGuide(area.id).focus)}">
       <span class="step-name">${escapeHtml(setupGuide(area.id).title)}</span>
@@ -5256,7 +5268,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/four_post/four_post_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo",
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialDoubleWishboneFourPost.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ChassisActuator.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ContactPatchFixture.mo"
     ]
@@ -5286,8 +5298,8 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/steady_state/steady_state_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialVehicleSim.mo",
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "ramp-steer": {
@@ -5315,8 +5327,8 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/ramp_steer/ramp_steer_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialVehicleSim.mo",
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "mbd-step-steer": {
@@ -5345,7 +5357,7 @@ function simulationMethodGuide(workflowId) {
     "sources": [
       "simulations/response/mbd/transient/transient_eval_sim.py",
       "simulations/response/mbd/transient/step_steer_config.yml",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "transient": {
@@ -5373,7 +5385,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/transient/transient_eval_sim.py",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "reduced-ramp-steer": {
@@ -7675,12 +7687,16 @@ async function startSelectedStudyWorkflow() {
 }
 
 function setView(view) {
+  const edited = currentVehicleFormData();
+  if (edited) applyVehicleDataToPayload(edited);
   state.view = view;
+  if (view === "architecture") state.activeParamGroup = "vehicle";
+  if (view === "setup" && (!state.activeParamGroup || state.activeParamGroup === "vehicle")) state.activeParamGroup = "hardpoints";
   renderMode();
   renderRailActions();
-  if (view === "standard") renderStandard();
+  if (view === "standard") { renderStandard(); renderNativeExperiments(); }
   if (view === "studies") renderStudies();
-  if (view === "setup") renderSetup();
+  if (["architecture", "setup"].includes(view)) renderSetup();
 }
 
 function toggleTheme() {
@@ -14409,7 +14425,7 @@ function wireEvents() {
   document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
   document.getElementById("geometry-expand-btn").addEventListener("click", toggleGeometryExpanded);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
-    if (state.view === "setup") await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
+    if (["architecture", "setup"].includes(state.view)) await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
     else if (state.view === "studies") {
       state.resultsStatusMessage = "Refreshing archive";
       renderStudies();
@@ -14421,7 +14437,7 @@ function wireEvents() {
     else showSimulationCatalog();
   });
   document.getElementById("rail-secondary-btn").addEventListener("click", async () => {
-    if (state.view === "setup") await generateModelicaFromVehicle({ actionKey: "rail-write-mbd" });
+    if (["architecture", "setup"].includes(state.view)) setView("architecture");
     else setView("setup");
   });
   document.querySelectorAll(".rail-item").forEach((button) => {
@@ -14483,3 +14499,100 @@ setInterval(async () => {
     else if (state.view === "standard") renderStandard();
   }
 }, 2000);
+
+
+let nativeArtifactRequest = 0;
+async function refreshNativeArtifacts() {
+  const panel = document.getElementById("native-artifacts");
+  if (!panel || !state.vehiclePayload) return;
+  const request = ++nativeArtifactRequest;
+  try {
+    const payload = await api("/api/native/status", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({vehicle: currentVehicleFormData()}),
+    });
+    if (request !== nativeArtifactRequest || !panel.isConnected) return;
+    panel.innerHTML = `<div class="native-artifacts-head"><h3>Simulation binaries</h3><span>Build once, reuse with each setup.</span></div><div class="native-artifact-grid">
+      ${payload.artifacts.map((item) => `<div class="native-artifact-row"><div><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.message)}</small></div>
+        <button class="ghost-button" type="button" data-native-build="${item.kind}" ${item.ready ? "disabled" : ""}>${item.ready ? "Ready" : "Build locally"}</button></div>`).join("")}</div>
+      <details><summary>Included components</summary><p>Electric battery–inverter–motor powertrain; double-wishbone suspension; MF52 tires; flat road; constant atmosphere; rigid powertrain mounts.</p></details>
+      <pre id="native-build-log" class="code-view" hidden></pre>`;
+    panel.querySelectorAll("[data-native-build]").forEach((button) => {
+      button.onclick = async () => {
+        const log = panel.querySelector("#native-build-log");
+        panel.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        log.hidden = false;
+        log.textContent = "Starting build…";
+        try {
+          const job = await api("/api/native/build", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({vehicle: currentVehicleFormData(), kind: button.dataset.nativeBuild}),
+          });
+          state.selectedJobId = job.id;
+          let latest = job;
+          while (["queued", "running"].includes(latest.status)) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            latest = await api(`/api/jobs/${job.id}`);
+            if (panel.isConnected) log.textContent = latest.log || "Compiling…";
+          }
+          if (latest.returncode !== 0) throw new Error(latest.log || "Build failed");
+          await refreshNativeArtifacts();
+        } catch (error) {
+          log.textContent = error.message;
+          panel.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+        }
+      };
+    });
+  } catch (error) {
+    panel.textContent = error.message;
+  }
+}
+
+
+async function renderNativeExperiments() {
+  const panel = document.getElementById("native-experiments");
+  if (!panel || !state.vehiclePayload) return;
+  try {
+    const payload = await api("/api/native/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData()})});
+    panel.innerHTML = `<h3>Native vehicle experiments</h3><p>Use the selected architecture and current setup.</p>
+      <div class="native-experiment-actions">${payload.artifacts.map((item) => `<button type="button" class="ghost-button" data-native-run="${item.kind}" ${item.ready ? "" : "disabled"}>${escapeHtml(item.label)}${item.ready ? "" : " · build required"}</button>`).join("")}</div>
+      <p>KnC runs the full heave, roll and contact-load protocol, including steering sweeps at the front. Maneuvers use the standard ramp-steer protocol.</p><p>Maneuvers inherit the reference starting pose; changed setups are not automatically re-equilibrated.</p>
+      <label class="form-field"><span>KnC applied load (N)</span><input id="native-force" type="number" min="0" value="1000"></label>
+      <label><input id="native-stabilizer" type="checkbox"> Include the configured stabilizer in KnC</label>
+      <pre class="code-view" id="native-run-log" hidden></pre>`;
+    panel.querySelectorAll("[data-native-run]").forEach((button) => {
+      button.onclick = async () => {
+        const log = panel.querySelector("#native-run-log");
+        log.hidden = false;
+        log.textContent = "Starting experiment…";
+        button.disabled = true;
+        try {
+          const job = await api("/api/native/run", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData(),kind:button.dataset.nativeRun,settings:button.dataset.nativeRun.startsWith("knc-") ? {forceMagnitude:Number(document.getElementById("native-force").value),include_stabilizer:document.getElementById("native-stabilizer").checked} : {}})});
+          state.selectedJobId = job.id;
+          let latest = job;
+          while (["queued","running"].includes(latest.status)) {
+            await new Promise((resolve) => setTimeout(resolve,1000));
+            latest = await api(`/api/jobs/${job.id}`);
+            log.textContent = latest.log || "Running…";
+          }
+          if (latest.returncode !== 0) throw new Error(latest.log || "Experiment failed");
+          const marker = latest.log.split("\n").find((line) => line.startsWith("BOBSIM_NATIVE_RESULT="));
+          if (marker) {
+            const result = JSON.parse(marker.slice("BOBSIM_NATIVE_RESULT=".length));
+            const outcomes = ["Duration reached", "Settled", "Linearity limit", "Settling timeout", "Tire-load limit", "Sideslip limit"];
+            const summary = document.createElement("p");
+            summary.textContent = result.kind.startsWith("knc-") ? "KnC protocol completed. " : `${outcomes[result.termination_status] || "Unknown outcome"}. `;
+            const link = document.createElement("a");
+            link.href = `/files/${result.csv.split("/").map(encodeURIComponent).join("/")}`;
+            link.textContent = "Download signals";
+            link.setAttribute("download", "signals.csv");
+            summary.append(link);
+            log.before(summary);
+            log.hidden = true;
+          }
+        } catch (error) { log.textContent = error.message; }
+        finally { button.disabled = false; }
+      };
+    });
+  } catch (error) { panel.textContent = error.message; }
+}

@@ -363,6 +363,10 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
     record_text = _vehicle_record_text(data, tire_root, vehicle_name, record_name, front_arch, rear_arch)
     initialization_error = None
     try:
+        if (boblib_root / "Experiments/Standards/VehicleFMI.mo").is_file():
+            raise ValueError("This BobLib revision uses native architecture records. "
+                             "Build its binaries in Architecture; the legacy record writer is incompatible. "
+                             "No Modelica files were written.")
         initialization = _preserved_initialization(record_path, record_text, data)
         if (initialization is None and data.get("modelica_initialization") != "legacy"
                 and vehicle_entry_path.is_file()

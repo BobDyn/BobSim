@@ -683,6 +683,12 @@ def _vehicle_with_architecture_defaults(data: Any, *, prune_inactive: bool = Fal
     rear = str(architecture.get("rear") or "direct")
     architecture["front"] = front
     architecture["rear"] = rear
+    lsd = data.get("powertrain", {}).get("pDriveline", {}).get("diff_use_lsd", True)
+    architecture.setdefault("differential", "ClutchLSD" if lsd else "Open")
+    architecture.setdefault("front_brakes", "Outboard")
+    architecture.setdefault("rear_brakes", "Outboard")
+    architecture.setdefault("rotor_effects", False)
+    data.setdefault("native", {}).setdefault("halfshaft_inertia_kg_m2", 0.02)
 
     templates = _vehicle_template_data()
     combined_defaults = _vehicle_template_for_architecture(front, rear, templates)
@@ -872,7 +878,13 @@ def _vehicle_config_fields(data: Any) -> list[dict[str, Any]]:
     overrides = {_field_key(field.path): field for field in VEHICLE_FIELDS}
     fields: list[FieldSpec] = []
     seen: set[str] = set()
+    retired_driveline_fields = {
+        "diff_use_lsd", "diff_T_capacity_max", "diff_clutchEffectiveRadius", "diff_w_transition", "diff_c_viscous",
+        "halfshaftLeftJEquivalent", "halfshaftRightJEquivalent", "halfshaftLeftD", "halfshaftRightD",
+    }
     for field in _discover_fields(data):
+        if field.path[:2] == ("powertrain", "pDriveline") and field.path[-1] in retired_driveline_fields:
+            continue
         if not field.path or field.path[0] in {"schema", "paths"}:
             continue
         key = _field_key(field.path)

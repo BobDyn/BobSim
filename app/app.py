@@ -32,7 +32,7 @@ from app.registry import (
     build_modelica_build_targets,
     build_workflows,
 )
-from engines.kinpy import kinematic_curves_payload
+from app.native_runs import kinematic_curves_payload
 from app.modelica_generator import modelica_stack_status_payload
 
 OutputSpec = app_contracts.OutputSpec
@@ -1166,6 +1166,7 @@ def start_workflow(*args: Any, **kwargs: Any) -> Any:
 
 
 def _sync_server_runtime() -> None:
+    _sync_actions_runtime()
     app_server.ROOT = ROOT
     app_server.STATIC_ROOT = STATIC_ROOT
     app_server.JOBS = JOBS

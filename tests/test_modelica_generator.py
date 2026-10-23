@@ -171,13 +171,13 @@ def test_modelica_generator_cli_reports_then_writes(tmp_path: Path, capsys) -> N
 
 def test_calibrated_initialization_survives_generation_and_rejects_changed_inputs(tmp_path):
     import pytest
-    from app.modelica_generator import plan_modelica_stack, _record_parameters
+    from app.modelica_generator import plan_modelica_stack
     root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(root, tmp_path)
     result = generate_modelica_stack(vehicle_path, root=tmp_path)
     record = result.files[0].path
-    pinned = root / 'engines/boblib/BobLib/Records/VehicleDefn' / record.name
-    calibration = _record_parameters(pinned.read_text())["pQSSInitialization"]
+    # Exercise legacy preservation independently of the current BobLib layout.
+    calibration = "parameter QSSInitializationRecord pQSSInitialization(referenceVelocity=15);"
     record.write_text(record.read_text().replace('  annotation(', calibration + '\n  annotation(', 1))
     generate_modelica_stack(vehicle_path, root=tmp_path)
     assert calibration in record.read_text()
@@ -203,5 +203,5 @@ def test_current_pinned_calibration_cannot_be_silently_transplanted():
     from app.modelica_generator import plan_modelica_stack
     root = Path(__file__).resolve().parents[1]
     plan = plan_modelica_stack(root / 'vehicle.yml', root=root)
-    # The current YAML aero and VCU inputs differ from the solved BobLib car.
-    assert plan.initialization_error is not None
+    assert "native architecture records" in plan.initialization_error
+    assert "No Modelica files were written" in plan.initialization_error
