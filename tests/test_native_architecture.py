@@ -200,7 +200,7 @@ def test_knc_steering_and_load_pulse_metrics_use_the_correct_protocol_samples():
     assert result["curves"]["bump_jacking_n"] == pytest.approx([20] * 11)
     assert result["curves"]["bump_anti_dive_pct"] == pytest.approx([-120] * 11)
     assert result["curves"]["roll_force_rc_height_mm"] == pytest.approx([400] * 11)
-    assert result["curves"]["roll_anti_roll_pct"] == pytest.approx([80] * 11)
+    assert result["curves"]["roll_anti_roll_pct"] == [None] * 11  # No geometry was supplied.
 
 
 def test_knc_zero_force_does_not_fabricate_jacking_coefficients():
@@ -215,3 +215,35 @@ def test_knc_zero_force_does_not_fabricate_jacking_coefficients():
     assert result["curves"]["bump_jacking_ratio"] == [None] * 11
     assert result["curves"]["roll_jacking_ratio"] == [None] * 11
     assert "pinion_deg" not in result["x_axes"]
+
+
+def test_negative_geometric_anti_roll_does_not_disappear_when_net_jacking_is_zero():
+    from app.native_knc import curves, MEASUREMENTS
+
+    rows = []
+    for t in range(119):
+        loaded = t in range(64, 115, 5)
+        row = {"time": t, "knc.heave": 0, "knc.roll": 0, "knc.fx": 0,
+               "knc.fy": 100 if loaded else 0, "knc.jackingForce": 0,
+               "knc.leftFz": 110 if loaded else 100, "knc.rightFz": 90 if loaded else 100}
+        row.update({"knc." + signal: 0 for signal, _, _, _ in MEASUREMENTS.values()})
+        for side, sign in (("left", 1), ("right", -1)):
+            # Both ICs and the symmetric RC are 100 mm below a contact plane
+            # at z=250 mm. The sprung CG is 500 mm above that plane.
+            for name, (y, z) in {"upperFrame_i": (.2, .1), "upperFrame_o": (.6, .5),
+                                 "lowerFrame_i": (.2, 0), "lowerFrame_o": (.6, .2)}.items():
+                prefix = f"axle.{side}WishboneUprightLoop.{name}.r_0"
+                row[prefix + "[2]"] = sign * y
+                row[prefix + "[3]"] = z + .25
+            row[f"axle.{side}CP.r_0[2]"] = sign
+            row[f"axle.{side}CP.r_0[3]"] = .25
+        rows.append(row)
+    vehicle = {"sprung_mass": {"mass_kg": 200, "cg_m": [0, 0, .75]},
+               "driver_mass": {"mass_kg": 80, "cg_m": [0, 0, .75]},
+               "front": {"suspension": {"wheel_center_m": [0, 1, 0]}},
+               "rear": {"suspension": {"wheel_center_m": [-3, 1, 0]}}}
+    result = curves(rows, vehicle)["curves"]
+    assert result["roll_jacking_n"] == pytest.approx([0] * 11)
+    assert result["roll_rc_height_mm"] == pytest.approx([-100] * 11)
+    assert result["roll_anti_roll_pct"] == pytest.approx([-20] * 11)
+    assert result["roll_force_rc_height_mm"] == pytest.approx([-200] * 11)

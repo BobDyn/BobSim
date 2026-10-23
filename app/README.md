@@ -111,7 +111,11 @@ road-wheel angle. Heave/roll curves use zero steering. Geometry is sampled from
 unloaded plateaus with the bar removed. Geometric RC height uses front-view
 wishbone midpoint/outer-joint projections from native positions, relative to the
 mean contact plane; singular projections remain missing. A separate force-based
-RC equivalent height uses differential contact-load response. Jacking subtracts
+RC equivalent height uses differential contact-load response with nominal track
+and equal left/right lateral force pulses. Geometric anti-roll is RC height
+divided by reference sprung CG height above the same contact plane; it can be
+negative even when net jacking is zero. It is a geometric proxy, not a whole-car
+roll-resistance percentage. Jacking subtracts
 the unloaded same-pose response from each 1000 N pulse. Anti percentages use
 axle force and sprung CG height; they are not whole-car anti percentages. The
 braked rig reports front anti-dive and rear braking anti-lift; acceleration

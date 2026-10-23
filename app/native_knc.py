@@ -125,13 +125,25 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front") -
             total_mass = sum(m["mass_kg"] for m in masses)
             h = sum(m["mass_kg"] * m["cg_m"][2] for m in masses) / total_mass if total_mass > 0 else 0
             front, rear = [vehicle[key]["suspension"]["wheel_center_m"] for key in ("front", "rear")]
-            length = abs(front[0] - rear[0]) if phase == "bump" else abs(front[1]) + abs(rear[1])
+            length = abs(front[0] - rear[0])
             # These are axle-force-normalized geometric measures, not whole-car
             # anti percentages (which also need brake/drive force distribution).
             sign = -1 if phase == "bump" and side == "front" else 1
             key = "anti_roll_pct" if phase == "roll" else "anti_dive_pct" if side == "front" else "anti_lift_pct"
-            result["curves"][phase + "_" + key] = [
-                sign * 100 * r * length / h if r is not None and h > 1e-9 else None for r in ratio]
             if phase == "roll":
+                # Net jacking is the SUM of vertical reactions. It can vanish
+                # while their roll moment is nonzero, so it cannot define anti-roll.
+                # This geometric proxy is RC height / reference sprung CG height,
+                # with both heights measured from the same contact plane.
+                heights = [h - (row["axle.leftCP.r_0[3]"] + row["axle.rightCP.r_0[3]"]) / 2
+                           if "axle.leftCP.r_0[3]" in row and "axle.rightCP.r_0[3]" in row else None
+                           for row in sampled]
+                result["curves"]["roll_anti_roll_pct"] = [
+                    100 * rc_height / (1000 * cg_height)
+                    if rc_height is not None and cg_height is not None and cg_height > 1e-9 else None
+                    for (rc_height, _), cg_height in zip(rc, heights)]
                 result["curves"]["roll_force_rc_height_mm"] = force_rc
+            else:
+                result["curves"][phase + "_" + key] = [
+                    sign * 100 * r * length / h if r is not None and h > 1e-9 else None for r in ratio]
     return result

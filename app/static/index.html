@@ -130,9 +130,12 @@
                     steering uses seven front pinion angles at neutral heave and roll. The rear rack is locked.
                     Alignment, trail, and scrub curves refer to the left wheel.</p>
                   <p>Geometric RC is the front-view projection of the native wishbone positions, measured above
-                    the contact plane. Force-based RC is a separate equivalent height from load transfer.</p>
+                    the contact plane. Force-based RC is an equivalent height from differential load response,
+                    using nominal track and equal left/right lateral forces.</p>
                   <p>Jacking subtracts the unloaded response from a 1000 N contact-force pulse, with the stabilizer removed.
-                    Anti percentages are normalized by axle force and sprung CG height, not whole-car brake or drive distribution.
+                    Geometric anti-roll is RC height / reference sprung CG height above the same contact plane;
+                    negative values mean a below-ground RC. Net jacking can be zero while the roll moment is nonzero.
+                    These are axle metrics, not whole-car brake/drive distribution or total roll resistance.
                     Rear braking anti-lift is shown; acceleration anti-squat needs a drive-load test.</p>
                 </details>
                 <div class="geometry-plots">
