@@ -1276,6 +1276,7 @@ function renderSetup() {
   renderVehicleEditor();
   renderModelicaStack();
   renderVehiclePreview(state.vehiclePayload?.data || {});
+  if (state.view === "setup" && isKinematicPlotArea()) queueKinematicsRefresh();
 }
 
 function renderVehicleLibrary() {
@@ -9425,6 +9426,7 @@ function pointerCanvasPointFor(event, canvas) {
 }
 
 function geometryPlotDescriptorMap() {
+  if (!state.kinematicsPayload?.curve_meta?.length) return new Map();
   const descriptors = new Map(kinematicCurveDescriptors(state.kinematicsPayload).map((item) => [item.id, item]));
   if (state.kinematicsPayload?.model === "BobLib native KnC") return descriptors;
   return new Map([...descriptors].filter(([id]) =>
@@ -9437,6 +9439,7 @@ function descriptorXAxisId(descriptor) {
 }
 
 function geometryXAxisOptions(payload = state.kinematicsPayload) {
+  if (!payload?.curve_meta?.length) return [];
   const axes = new Map();
   kinematicCurveDescriptors(payload).forEach((item) => {
     const id = descriptorXAxisId(item);
@@ -9471,6 +9474,7 @@ function normalizeGeometryPlotSelection(selection, descriptorMap) {
 
 function cleanGeometryPlotSelections() {
   const descriptorMap = geometryPlotDescriptorMap();
+  if (!descriptorMap.size) return descriptorMap; // Preserve saved choices while metadata loads.
   const seen = new Set();
   const selected = [];
   state.geometryPlotSelections.forEach((selection) => {
@@ -9531,7 +9535,9 @@ function renderGeometryPlotControls() {
     xSelect.innerHTML = xChoices.map((item) => (
       `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.unit ? ` (${escapeHtml(item.unit)})` : ""}</option>`
     )).join("");
-    xSelect.value = state.geometryPlotDraftX;
+    if (!xChoices.length) xSelect.innerHTML = '<option value="">Loading native axes…</option>';
+    else xSelect.value = state.geometryPlotDraftX;
+    xSelect.disabled = !xChoices.length;
   }
   if (ySelect) {
     ySelect.innerHTML = yChoices.length
@@ -14699,6 +14705,7 @@ function wireEvents() {
   document.querySelectorAll("[data-geometry-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeGeometryTab = button.dataset.geometryTab;
+      if (state.activeGeometryTab === "kinematics") queueKinematicsRefresh();
       drawVehicleFromForm();
     });
   });

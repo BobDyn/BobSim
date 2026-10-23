@@ -336,6 +336,12 @@ vm.runInContext(`
   localStorage = {setItem(){}};
   drawGeometryPlotPanel = () => {};
   state.kinematicsPayload = null;
+  state.geometryPlotSelections = [{x:"roll_deg",y:"roll_load_reaction_nm"}];
+  assert.equal(geometryPlotDescriptorMap().size,0,"startup must not show legacy fallback signals");
+  assert.equal(geometryXAxisOptions().length,0,"startup must not show legacy jounce axes");
+  cleanGeometryPlotSelections();
+  assert.equal(state.geometryPlotSelections.length,1,"pending metadata must not erase saved native plots");
+  state.kinematicsPayload = {curve_meta:kinematicCurveDescriptors(null)};
   state.geometryPlotSelections = [];
   const choices = [...geometryPlotDescriptorMap().values()];
   assert.equal(choices.length,21);
@@ -1163,3 +1169,26 @@ vm.runInContext(`
   document = originalDocument;
 })()
 `, ctx).catch(error => { console.error(error); process.exitCode = 1; });
+
+// Ordinary Architecture -> Setup navigation must request native metadata without
+// a preview launcher explicitly activating the Geometry group or fetching curves.
+{
+  const startupContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,startupContext);
+  vm.runInContext(`
+    currentVehicleFormData=()=>({});
+    applyVehicleDataToPayload=()=>{};
+    renderMode=()=>{}; renderRailActions=()=>{};
+    renderVehicleLibrary=()=>{}; renderVehicleEditor=()=>{};
+    renderModelicaStack=()=>{}; renderVehiclePreview=()=>{};
+    isKinematicPlotArea=()=>state.activeParamGroup==='hardpoints';
+    let nativeRequests=0;
+    queueKinematicsRefresh=()=>{nativeRequests++;};
+    state.activeParamGroup='vehicle';
+    setView('setup');
+    assert.equal(nativeRequests,1,'entering Setup must load native plot definitions');
+    setView('architecture');
+    assert.equal(nativeRequests,1,'Architecture must not start a geometry solve');
+  `,startupContext);
+}
