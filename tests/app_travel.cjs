@@ -1,0 +1,58 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert,
+  performance:{now:()=>0}, requestAnimationFrame:()=>1, cancelAnimationFrame:()=>{},
+  document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}},getElementById:()=>null}});
+vm.runInContext(source, ctx);
+vm.runInContext(`
+(async () => {
+  activeParameterArea = () => ({id:'hardpoints'});
+  drawVehicleFromForm = () => {};
+  const midpoint=interpolateTravelPoints({a:[0,0,0]},{a:[2,4,6]},.5);
+  assert.equal(JSON.stringify(midpoint.a),JSON.stringify([1,2,3]));
+  assert.equal(JSON.stringify(interpolateTravelPoints({a:[0,0,0]},{a:[2,4,6]},1).a),JSON.stringify([2,4,6]));
+  state.travelActive = true;
+  const vehicle = {architecture:{front:'direct'}};
+  const requests = [];
+  api = (path, options) => new Promise(resolve => requests.push({body:JSON.parse(options.body), resolve}));
+  const key = pose => JSON.stringify({vehicle,pose});
+  state.travelDesiredKey = key({heave_mm:1});
+  state.travelPending = {key:key({heave_mm:1}),vehicle,pose:{heave_mm:1}};
+  const running = refreshTravelPose();
+  assert.equal(requests.length,1);
+  state.travelDesiredKey = key({heave_mm:2});
+  state.travelPending = {key:key({heave_mm:2}),vehicle,pose:{heave_mm:2}};
+  refreshTravelPose();
+  state.travelDesiredKey = key({heave_mm:3});
+  state.travelPending = {key:key({heave_mm:3}),vehicle,pose:{heave_mm:3}};
+  requests[0].resolve({pose:{heave_mm:1},points:{}});
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(requests.length,2);
+  assert.equal(requests[1].body.pose.heave_mm,3);
+  assert.equal(state.travelResult.pose.heave_mm,1,'intermediate solved poses animate while dragging');
+  requests[1].resolve({pose:{heave_mm:3,roll_deg:0,steer_deg:0},points:{a:[1,2,3],b:[4,5,6]}});
+  await running;
+  const model={points:[{id:'a',x:0,y:0,z:0,sourcePath:['calibration']},{id:'b',x:0,y:1,z:0}],links:[{from:'a',to:'b',role:'lower'}]};
+  const original=JSON.stringify(model);
+  state.travelDisplayPoints=state.travelResult.points;
+  const posed=posedVehicleGeometry(model,vehicle);
+  assert.equal(posed.points[0].x,1);
+  assert.equal(posed.points[0].sourcePath,null);
+  assert.equal(editableGeometryPoint(posed.points[0]),false);
+  assert.equal(JSON.stringify(model),original);
+  state.travelActive=false;
+  assert.equal(posedVehicleGeometry(model,vehicle),model,'exit restores setup geometry');
+  state.travelActive=true;
+  state.travelDesiredKey='closed';
+  state.travelPending={key:'closed',vehicle,pose:{heave_mm:4}};
+  const closing=refreshTravelPose();
+  state.travelActive=false;
+  state.travelResult=null;
+  requests[2].resolve({pose:{heave_mm:4},points:{}});
+  await closing;
+  assert.equal(state.travelResult,null,'late responses must not re-enable travel');
+  console.log('Travel request coalescing and immutable geometry checks passed');
+})().catch(error=>{ console.error(error); throw error; });
+`,ctx);

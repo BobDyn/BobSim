@@ -137,3 +137,17 @@ new architecture models with incompatible generated files.
 Ownership: `common/native_artifacts.py` builds and verifies bundles;
 `native_calibration.py` translates setup inputs; `native_runs.py` executes and
 converts results; `native_service.py` exposes them as app jobs.
+
+Geometry's **Travel** button opens heave, roll and front pinion sliders. They
+impose simultaneous displacements on the cached native KnC axle binaries through
+`native_travel.py`, using an unloaded initialization solve rather than the full
+plot protocol. Positions come from solved multibody frames; rear steering stays
+locked and stabilizer rate is zero. Positive heave raises the chassis, and roll
+is about +X. Travel never writes setup coordinates; hardpoint dragging is disabled
+until travel is closed. Missing binaries can be built in Architecture. Requests
+are coalesced while dragging and successful poses are cached in memory.
+
+During dragging, the canvas interpolates between native poses at display refresh
+rate. This is visual interpolation only; releasing settles on the exact native
+solution. Native requests are throttled and coalesced, not delayed until dragging
+stops. Plots and saved calibration never use interpolated coordinates.

@@ -7745,6 +7745,149 @@ function currentVehicleFormData() {
   }
 }
 
+function travelEnabled() {
+  return Boolean(state.travelActive && activeParameterArea().id === "hardpoints");
+}
+
+function travelStatus(message) {
+  const element = document.getElementById("travel-status");
+  if (element) element.textContent = message;
+}
+
+function queueTravelPose() {
+  if (!travelEnabled()) return;
+  const vehicle = currentVehicleFormData();
+  if (!vehicle) return;
+  const pose = Object.fromEntries(["heave_mm", "roll_deg", "steer_deg"].map(name => {
+    const value = Number(document.getElementById(`travel-${name}`).value);
+    document.getElementById(`travel-${name}-value`).textContent = `${value.toFixed(name === "roll_deg" ? 2 : 1)}${name === "heave_mm" ? " mm" : "°"}`;
+    return [name, value];
+  }));
+  const key = JSON.stringify({ vehicle, pose });
+  state.travelDesiredKey = key;
+  state.travelPending = { key, vehicle, pose };
+  travelStatus(state.travelResult ? "Updating… last solved pose shown" : "Solving travel… setup geometry shown");
+  // Throttle requests while dragging; debouncing would wait for dragging to stop.
+  if (!state.travelTimer) state.travelTimer = setTimeout(() => {
+    state.travelTimer = null;
+    refreshTravelPose();
+  }, 80);
+}
+
+async function refreshTravelPose() {
+  if (state.travelInFlight) return state.travelInFlight;
+  state.travelInFlight = (async () => {
+    while (state.travelPending && state.travelActive) {
+      const request = state.travelPending;
+      state.travelPending = null;
+      try {
+        const payload = await api("/api/kinematics/travel", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vehicle: request.vehicle, pose: request.pose }),
+        });
+        if (!state.travelActive || !state.travelDesiredKey
+            || JSON.stringify(JSON.parse(state.travelDesiredKey).vehicle) !== JSON.stringify(request.vehicle)) continue;
+        animateTravelPose(payload.points);
+        state.travelResult = payload;
+        state.travelVehicleKey = JSON.stringify(request.vehicle);
+        const p = payload.pose;
+        travelStatus(state.travelDesiredKey !== request.key ? "Following slider… interpolated preview"
+          : `Solved: ${p.heave_mm} mm heave · ${p.roll_deg}° roll · ${p.steer_deg}° pinion`);
+      } catch (error) {
+        if (!state.travelActive || state.travelDesiredKey !== request.key) continue;
+        stopTravelAnimation();
+        state.travelResult = null;
+        travelStatus(`Setup geometry shown. ${error.message}`);
+      }
+      drawVehicleFromForm();
+    }
+  })();
+  try { await state.travelInFlight; } finally { state.travelInFlight = null; }
+}
+
+function stopTravelAnimation() {
+  if (state.travelAnimationFrame) cancelAnimationFrame(state.travelAnimationFrame);
+  state.travelAnimationFrame = null;
+  state.travelDisplayPoints = null;
+}
+
+function animateTravelPose(target) {
+  if (state.travelAnimationFrame) cancelAnimationFrame(state.travelAnimationFrame);
+  const origin = state.travelDisplayPoints || state.travelResult?.points;
+  if (!origin) {
+    state.travelDisplayPoints = target;
+    return;
+  }
+  const start = performance.now();
+  const duration = 350;
+  const frame = now => {
+    if (!travelEnabled()) { stopTravelAnimation(); return; }
+    const progress = Math.min(1, Math.max(0, (now - start) / duration));
+    // Interpolation is display-only; setup and plot values stay native results.
+    const fraction = progress * progress * (3 - 2 * progress);
+    state.travelDisplayPoints = interpolateTravelPoints(origin, target, fraction);
+    drawVehicleFromForm();
+    state.travelAnimationFrame = progress < 1 ? requestAnimationFrame(frame) : null;
+  };
+  state.travelAnimationFrame = requestAnimationFrame(frame);
+}
+
+function interpolateTravelPoints(origin, target, fraction) {
+  return Object.fromEntries(Object.entries(target).map(([key, point]) => [key,
+    point.map((value, index) => {
+      const from = origin[key]?.[index] ?? value;
+      return from + (value - from) * fraction;
+    }),
+  ]));
+}
+
+function posedVehicleGeometry(model, data) {
+  if (!travelEnabled()) return model;
+  if (state.travelVehicleKey !== JSON.stringify(data)) {
+    stopTravelAnimation();
+    state.travelResult = null;
+    if (state.travelVehicleKey !== JSON.stringify(data) && state.travelDesiredKey
+        && JSON.stringify(JSON.parse(state.travelDesiredKey).vehicle) !== JSON.stringify(data)) queueTravelPose();
+    return model;
+  }
+  const positions = state.travelDisplayPoints || state.travelResult?.points;
+  if (!positions) return model;
+  // Keep native connector roles explicit; posed points never become calibration.
+  const points = model.points.filter(point => positions[point.id]).map(point => {
+    const [x, y, z] = positions[point.id];
+    return { ...point, x, y, z, sourcePath: null };
+  });
+  const ids = new Set(points.map(point => point.id));
+  const links = model.links.filter(link => ids.has(link.from) && ids.has(link.to)).map(link => {
+    if (link.role === "pushrod" && link.to.includes("bellcrank-")) return { ...link, to: link.to.replace(/bellcrank-.*/, "bellcrank-rod") };
+    if (link.role === "shock" && link.to.includes("bellcrank-")) return { ...link, to: link.to.replace(/bellcrank-.*/, "bellcrank-shock") };
+    if (link.role === "stabar" && link.to.includes("bellcrank-")) return { ...link, to: link.to.replace(/bellcrank-.*/, "bellcrank-stabar") };
+    return link;
+  });
+  return { ...model, points, links };
+}
+
+function wireTravelControls() {
+  document.getElementById("travel-toggle").addEventListener("click", () => {
+    state.travelActive = !state.travelActive;
+    stopTravelAnimation();
+    state.travelResult = null;
+    state.travelDesiredKey = null;
+    state.travelPending = null;
+    state.geometrySelectedPointId = null;
+    state.geometryHoverPointId = null;
+    if (state.travelActive) queueTravelPose();
+    drawVehicleFromForm();
+  });
+  for (const name of ["heave_mm", "roll_deg", "steer_deg"]) {
+    document.getElementById(`travel-${name}`).addEventListener("input", queueTravelPose);
+  }
+  document.getElementById("travel-reset").addEventListener("click", () => {
+    for (const name of ["heave_mm", "roll_deg", "steer_deg"]) document.getElementById(`travel-${name}`).value = 0;
+    queueTravelPose();
+  });
+}
+
 function drawVehicleFromForm() {
   const data = currentVehicleFormData();
   if (data) {
@@ -7836,7 +7979,7 @@ function drawVehiclePreview(data) {
 
   clearArchitectureInteractionScene();
   clearMassInteractionScene();
-  const fullModel = buildVehicleGeometry(data);
+  const fullModel = posedVehicleGeometry(buildVehicleGeometry(data), data);
   let model = filterVehicleModel(fullModel, sectionFocus(area.id));
   if (area.id === "hardpoints") model = filterGeometryAxles(model);
   if (!model.points.length) {
@@ -8480,6 +8623,7 @@ function setPrimitiveConfigValue(path, value) {
 }
 
 function editableGeometryPoint(point) {
+  if (travelEnabled()) return false;
   return Array.isArray(point?.sourcePath) && point.sourcePath.length > 0;
 }
 
@@ -8746,6 +8890,7 @@ function geometryAxisScreenVector(point, axis) {
 }
 
 function startGeometryDrag(event, point) {
+  if (travelEnabled()) return;
   const canvas = document.getElementById("vehicle-canvas");
   const values = geometrySourceValues(point);
   if (!canvas || !values) return;
@@ -9471,6 +9616,13 @@ function toggleGeometryExpanded() {
 }
 
 function syncPreviewModeControls(area = activeParameterArea()) {
+  const travelButton = document.getElementById("travel-toggle");
+  if (travelButton) {
+    travelButton.hidden = area.id !== "hardpoints";
+    travelButton.setAttribute("aria-expanded", String(Boolean(state.travelActive)));
+    travelButton.textContent = state.travelActive ? "Exit travel" : "Travel";
+    document.getElementById("travel-controls").hidden = !travelEnabled();
+  }
   const controls = document.querySelector(".preview-controls");
   const geometryToggles = document.getElementById("geometry-axle-toggles");
   const geometryPlotPanel = document.getElementById("geometry-plot-panel");
@@ -14439,6 +14591,7 @@ function wireEvents() {
     updateGeometryAxleVisibility("rear", event.target.checked);
   });
   document.getElementById("camera-home-btn").addEventListener("click", resetPreviewCamera);
+  wireTravelControls();
   document.getElementById("geometry-expand-btn").addEventListener("click", toggleGeometryExpanded);
   document.getElementById("rail-primary-btn").addEventListener("click", async () => {
     if (["architecture", "setup"].includes(state.view)) await saveVehicleAs({ useNameInput: false, actionKey: "rail-save-vehicle" });
