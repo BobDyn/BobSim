@@ -35,7 +35,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
     if not isinstance(kinematics_only, bool):
         raise ValueError("kinematics_only must be a boolean")
     if kind.startswith("knc-"):
-        if settings.keys() - {"forceMagnitude", "include_stabilizer"}:
+        if settings.keys() - {"forceMagnitude", "include_stabilizer", "lateralLeftShare"}:
             raise ValueError("Unknown KnC setting")
         # Geometry comes from unloaded plateaus; jacking uses the intervening
         # load pulses at the same poses. The editor keeps the stabilizer removed.
@@ -45,7 +45,8 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
             raise ValueError("include_stabilizer must be a boolean")
         rate = vehicle[side]["actuation"].get("stabar", {}).get("rate_n_m_per_rad", 0)
         overrides.update({"forceMagnitude": settings.get("forceMagnitude", 1000.0),
-                          "stabilizerRate": rate if include_bar and not kinematics_only else 0.0})
+                          "stabilizerRate": rate if include_bar and not kinematics_only else 0.0,
+                          "lateralLeftShare": settings.get("lateralLeftShare", .5)})
         stop = 832.0 if kind == "knc-front" else 118.0
         step = 0.1
         signals = ("time|knc.*|inputs.steer|steerPosition.flange.tau|chassisActuator.rollDOF.tau|"
@@ -141,6 +142,9 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
         pending = {side: executor.submit(run, vehicle, "knc-" + side, {"kinematics_only": True})
                    for side in ("front", "rear")}
         traction = executor.submit(run, vehicle, "knc-rear-traction", {"kinematics_only": True})
+        independent = {(side, wheel): executor.submit(
+            run, vehicle, "knc-" + side, {"kinematics_only": True, "lateralLeftShare": share})
+            for side in ("front", "rear") for wheel, share in (("left", 1.0), ("right", 0.0))}
         for side, future in pending.items():
             try:
                 result = future.result()
@@ -151,6 +155,12 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                                            "solved_count": 11, "roll_solved_count": 11,
                                            "steer_solved_count": 7 if side == "front" else 0,
                                            "steer_x_deg": curves["x_axes"].get("pinion_deg", []), "warnings": []}
+                payload["axles"][side]["load_split"] = {
+                    "heave_mm": curves["x_axes"].get("heave_mm", []),
+                    "roll_deg": curves["x_axes"].get("roll_deg", []),
+                    "brake_anti_pct": curves["curves"].get(
+                        "bump_anti_dive_pct" if side == "front" else "bump_anti_lift_pct", []),
+                }
                 if side == "rear":
                     for key in ("bump_jacking_n", "bump_jacking_ratio"):
                         payload["axles"][side]["curves"].pop(key, None)
@@ -168,10 +178,21 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                 for key in ("bump_jacking_n", "bump_jacking_ratio"):
                     rear["curves"][key] = drive_curves[key]
                 rear["traction_csv"] = traction_result["csv"]
+                rear["load_split"]["drive_anti_pct"] = drive_curves["bump_anti_squat_pct"]
         except (ValueError, RuntimeError, OSError) as exc:
             message = "Rear anti-squat unavailable: " + str(exc)
             payload["warnings"].append(message)
             payload["axles"]["rear"]["warnings"].append(message)
+        for (side, wheel), future in independent.items():
+            try:
+                response = future.result()
+                if payload["axles"][side]["ok"]:
+                    payload["axles"][side]["load_split"]["rc_" + wheel + "_mm"] = (
+                        response["curves"]["curves"]["roll_force_rc_height_mm"])
+            except (ValueError, RuntimeError, OSError) as exc:
+                payload["warnings"].append(f"{side.title()} {wheel}-load response unavailable: {exc}")
+    payload["x_axes"].update(front_brake_share_pct=list(range(0, 101, 5)),
+                             rear_drive_share_pct=[100], left_lateral_share_pct=list(range(0, 101, 5)))
     payload["available"] = any(axle["ok"] for axle in payload["axles"].values())
     payload["sweep_m"] = [x / 1000 for x in payload["x_axes"].get("heave_mm", [])]
     payload["roll_deg"] = payload["x_axes"].get("roll_deg", [])

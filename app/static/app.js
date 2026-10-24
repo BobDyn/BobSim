@@ -166,6 +166,8 @@ const state = {
   geometryPlotSelections: savedGeometryPlotSelections,
   geometryPlotDraftX: "jounce_mm",
   geometryPlotDraftY: "",
+  geometrySplitHeaveMm: 0,
+  geometrySplitRollDeg: 0,
   geometryPlotScene: null,
   geometryPlotHover: null,
   massScene: null,
@@ -9515,6 +9517,7 @@ function geometryPlotDescriptors() {
 function renderGeometryPlotControls() {
   const panel = document.getElementById("geometry-plot-panel");
   if (!panel || panel.hidden) return;
+  renderGeometrySplitPoseControls();
   const descriptorMap = cleanGeometryPlotSelections();
   const descriptors = [...descriptorMap.values()];
   const selected = new Set(state.geometryPlotSelections.map(geometryPlotKey));
@@ -12653,7 +12656,7 @@ function kinematicCurveDescriptors(payload) {
   meta.forEach((item) => {
     const id = String(item?.id || "");
     if (!id || seen.has(id)) return;
-    if (curveKeys.size && !curveKeys.has(id)) return;
+    if (payload?.model !== "BobLib native KnC" && curveKeys.size && !curveKeys.has(id)) return;
     seen.add(id);
     descriptors.push({
       id,
@@ -12666,6 +12669,7 @@ function kinematicCurveDescriptors(payload) {
     });
   });
   [...curveKeys].sort().forEach((id) => {
+    if (payload?.model === "BobLib native KnC") return;
     if (seen.has(id)) return;
     const rollCurve = id.startsWith("roll_");
     descriptors.push({
@@ -12695,6 +12699,58 @@ function inferCurveUnit(id) {
   return "";
 }
 
+function splitPoseValue(axis, values, pose) {
+  if (!axis?.length || !values?.length || pose < axis[0] || pose > axis[axis.length - 1]) return null;
+  const exact = axis.findIndex((x) => Math.abs(x - pose) < 1e-8);
+  if (exact >= 0) return Number.isFinite(values[exact]) ? values[exact] : null;
+  const upper = axis.findIndex((x) => x > pose);
+  if (upper <= 0 || !Number.isFinite(values[upper - 1]) || !Number.isFinite(values[upper])) return null;
+  const t = (pose - axis[upper - 1]) / (axis[upper] - axis[upper - 1]);
+  return values[upper - 1] * (1 - t) + values[upper] * t;
+}
+
+function kinematicPlotValues(payload, axle, key) {
+  const response = payload.axles?.[axle]?.load_split;
+  if (!key.startsWith("split_")) return payload.axles?.[axle]?.curves?.[key] || [];
+  if (!response) return [];
+  if (key === "split_brake_anti_pct") {
+    const anti = splitPoseValue(response.heave_mm, response.brake_anti_pct, state.geometrySplitHeaveMm);
+    return (payload.x_axes.front_brake_share_pct || []).map((share) =>
+      anti == null ? null : anti * (axle === "front" ? share : 100 - share) / 100);
+  }
+  if (key === "split_drive_anti_pct") {
+    if (axle !== "rear") return [];
+    return [splitPoseValue(response.heave_mm, response.drive_anti_pct, state.geometrySplitHeaveMm)];
+  }
+  const left = splitPoseValue(response.roll_deg, response.rc_left_mm, state.geometrySplitRollDeg);
+  const right = splitPoseValue(response.roll_deg, response.rc_right_mm, state.geometrySplitRollDeg);
+  return (payload.x_axes.left_lateral_share_pct || []).map((share) =>
+    left == null || right == null ? null : (share * left + (100 - share) * right) / 100);
+}
+
+function renderGeometrySplitPoseControls() {
+  const controls = document.getElementById("geometry-split-pose");
+  if (!controls) return;
+  const axes = new Set([state.geometryPlotDraftX, ...state.geometryPlotSelections.map((plot) => plot.x)]);
+  const heave = axes.has("front_brake_share_pct") || axes.has("rear_drive_share_pct");
+  const roll = axes.has("left_lateral_share_pct");
+  controls.hidden = !heave && !roll;
+  for (const [key, shown, axis, value] of [
+    ["heave", heave, "heave_mm", state.geometrySplitHeaveMm],
+    ["roll", roll, "roll_deg", state.geometrySplitRollDeg],
+  ]) {
+    const label = document.getElementById(`geometry-split-${key}-control`);
+    const slider = document.getElementById(`geometry-split-${key}`);
+    const output = document.getElementById(`geometry-split-${key}-value`);
+    label.hidden = !shown;
+    const samples = state.kinematicsPayload?.x_axes?.[axis] || [];
+    slider.min = samples[0] ?? 0;
+    slider.max = samples[samples.length - 1] ?? 0;
+    slider.value = value;
+    output.textContent = `${value.toFixed(2)} ${key === "heave" ? "mm" : "deg"}`;
+  }
+}
+
 function drawKinematicChart(
   ctx,
   x,
@@ -12708,12 +12764,15 @@ function drawKinematicChart(
   const palette = canvasPalette();
   const key = descriptor.id;
   const yKey = descriptor.y_id || descriptor.id;
-  const title = descriptor.label || humanizeKinematicCurve(key);
+  const baseTitle = descriptor.label || humanizeKinematicCurve(key);
+  const title = yKey.startsWith("split_")
+    ? `${baseTitle} · ${yKey === "split_force_rc_height_mm" ? state.geometrySplitRollDeg.toFixed(2) + "° roll" : state.geometrySplitHeaveMm.toFixed(1) + " mm heave"}`
+    : baseTitle;
   const unit = descriptor.y_unit || descriptor.unit || inferCurveUnit(yKey);
   const visibleAxles = new Set(Array.isArray(axles) && axles.length ? axles : ["front", "rear"]);
   const series = [
-    { axle: "front", label: "Front", shortLabel: "F", color: palette.blue, values: payload.axles?.front?.curves?.[yKey] || [] },
-    { axle: "rear", label: "Rear", shortLabel: "R", color: palette.green, values: payload.axles?.rear?.curves?.[yKey] || [] },
+    { axle: "front", label: "Front", shortLabel: "F", color: palette.blue, values: kinematicPlotValues(payload, "front", yKey) },
+    { axle: "rear", label: "Rear", shortLabel: "R", color: palette.green, values: kinematicPlotValues(payload, "rear", yKey) },
   ].filter((item) => visibleAxles.has(item.axle)).map((item) => ({
     ...item,
     points: item.values
@@ -12750,8 +12809,10 @@ function drawKinematicChart(
     yUnit: unit,
     series,
     // Preserve the commanded sweep even where contact loss invalidates Y.
-    xValues: [...visibleAxles].flatMap((axle) => kinematicChartXValues(payload, descriptor, axle)),
-    includeZeroY: !/_anti_(dive|squat|roll|lift)_pct$/.test(yKey),
+    xValues: yKey.startsWith("split_") ? [0, 100]
+      : [...visibleAxles].flatMap((axle) => kinematicChartXValues(payload, descriptor, axle)),
+    allowSinglePoint: yKey === "split_drive_anti_pct",
+    includeZeroY: !(/_anti_(dive|squat|roll|lift)_pct$/.test(yKey) || yKey.startsWith("split_")),
     margins: focused
       ? { left: 62, right: 18, top: 48, bottom: 44 }
       : { left: 50, right: 14, top: 36, bottom: 36 },
@@ -12777,7 +12838,7 @@ function drawKinematicChart(
 
 function kinematicChartXValues(payload, descriptor, axle = null) {
   const xId = descriptor?.x_id || "jounce_mm";
-  const axes = payload?.axles?.[axle]?.x_axes ?? payload?.x_axes;
+  const axes = xId.endsWith("_share_pct") ? payload?.x_axes : (payload?.axles?.[axle]?.x_axes ?? payload?.x_axes);
   if (axes) {
     // An explicitly missing axis must not silently become a jounce sweep.
     return Array.isArray(axes[xId]) ? axes[xId].map(value => value == null ? NaN : Number(value)) : [];
@@ -12840,6 +12901,7 @@ function createPlotChart({
   series,
   includeZeroY = false,
   xValues = null,
+  allowSinglePoint = false,
   margins = { left: 52, right: 16, top: 38, bottom: 38 },
 }) {
   const validSeries = series
@@ -12851,7 +12913,7 @@ function createPlotChart({
     }))
     .filter((item) => item.points.length);
   const allPoints = validSeries.flatMap((item) => item.points);
-  if (allPoints.length < 2) return null;
+  if (allPoints.length < (allowSinglePoint ? 1 : 2)) return null;
   const [minX, maxX] = plotDomain(xValues || allPoints.map((point) => point.xValue), { padFraction: 0.02 });
   const [minY, maxY] = plotDomain(allPoints.map((point) => point.yValue), { includeZero: includeZeroY, padFraction: 0.12 });
   const plot = {
@@ -14578,6 +14640,16 @@ function wireEvents() {
     state.suspensionPlotModalHover = null;
     drawSuspensionPlotModal();
   });
+  for (const key of ["heave", "roll"]) {
+    document.getElementById(`geometry-split-${key}`)?.addEventListener("input", (event) => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value)) return;
+      state[key === "heave" ? "geometrySplitHeaveMm" : "geometrySplitRollDeg"] = value;
+      renderGeometrySplitPoseControls();
+      drawGeometryPlotPanel();
+      drawSuspensionPlotModal();
+    });
+  }
   document.getElementById("geometry-add-plot-btn").addEventListener("click", addGeometryPlotSelection);
   document.getElementById("geometry-plot-x-axis").addEventListener("change", (event) => {
     state.geometryPlotDraftX = event.target.value;

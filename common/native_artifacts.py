@@ -149,7 +149,10 @@ def wrapper(selection: dict, kind: str) -> tuple[str, str]:
         axle_binding = f"(pAxle(stabilizer(leftArmEnd={base}.leftArmEnd, leftBarEnd={base}.leftBarEnd)))"
     return name, f'''model {name}
   constant {record} defaultVehicle;
+  parameter Real lateralLeftShare(min=0, max=1)=0.5 annotation(Evaluate=false);
   extends BobLib.Experiments.Standards.{rig}(
+    leftLoad(leftFyGain(k=forceMagnitude*lateralLeftShare)),
+    rightLoad(leftFyGain(k=forceMagnitude*(1-lateralLeftShare))),
     final headless=true,
     final useRearAxle={str(axle == 'rear').lower()},
     axle(pAxle(actuation=pVehicle.chassis.{axle}Axle.actuation)),

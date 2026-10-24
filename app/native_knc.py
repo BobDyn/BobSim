@@ -39,6 +39,15 @@ def metadata() -> list[dict]:
         for key, (title, y_unit) in measurements.items():
             result.append({"id": phase + "_" + key, "label": title, "unit": y_unit,
                            "x_id": axis, "x_label": label, "x_unit": unit, "y_label": title})
+    for key, title, axis, axis_label in (
+        ("split_brake_anti_pct", "Braking anti-dive / anti-lift", "front_brake_share_pct", "Front brake-force share"),
+        ("split_drive_anti_pct", "Rear anti-squat (RWD)", "rear_drive_share_pct", "Rear drive-force share"),
+        ("split_force_rc_height_mm", "Force-based equivalent RC height",
+         "left_lateral_share_pct", "Left lateral-force share"),
+    ):
+        unit = "mm" if key.endswith("_mm") else "%"
+        result.append({"id": key, "label": title, "unit": unit, "x_id": axis,
+                       "x_label": axis_label, "x_unit": "%", "y_label": title})
     return result
 
 
@@ -213,7 +222,8 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front", *
             # These are axle-force-normalized geometric measures, not whole-car
             # anti percentages (which also need brake/drive force distribution).
             sign = -1 if phase == "bump" and side == "front" else 1
-            key = "anti_roll_pct" if phase == "roll" else "anti_dive_pct" if side == "front" else "anti_squat_pct"
+            key = ("anti_roll_pct" if phase == "roll" else "anti_dive_pct" if side == "front"
+                   else "anti_squat_pct" if traction else "anti_lift_pct")
             if phase == "roll":
                 # Net jacking is the SUM of vertical reactions. It can vanish
                 # while their roll moment is nonzero, so it cannot define anti-roll.
@@ -225,7 +235,7 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front", *
                     if rc_height is not None and cg_height is not None and cg_height > 1e-9 else None
                     for (rc_height, _), cg_height in zip(rc, heights)]
                 result["curves"]["roll_force_rc_height_mm"] = force_rc
-            elif side == "front" or traction:
+            else:
                 values = []
                 for r, tail in zip(ratio, sampled):
                     h = sprung_cg_height(tail, vehicle)

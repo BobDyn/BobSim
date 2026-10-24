@@ -147,7 +147,7 @@ def test_native_plot_payload_preserves_each_axles_parametric_axes(monkeypatch):
         amplitude = 12 if kind == "knc-front" else 8
         return {"csv": "traction.csv", "curves": {"curves": {"bump_camber_deg": [1, 2, 3],
                     "bump_anti_squat_pct": [10, 20, 30], "bump_jacking_n": [1, 2, 3],
-                    "bump_jacking_ratio": [.01, .02, .03]},
+                    "bump_jacking_ratio": [.01, .02, .03], "roll_force_rc_height_mm": [-20, -20, -20]},
                            "x_axes": {"jounce_mm": [-amplitude, 0, amplitude], "roll_deg": [-1, 0, 1]}}}
 
     monkeypatch.setattr(native_runs, "run", result)
@@ -323,7 +323,7 @@ def test_missing_traction_binary_does_not_relabel_braking_as_anti_squat(monkeypa
     def run(_vehicle, kind, _settings):
         if kind.endswith("-traction"):
             raise ValueError("Build Rear traction in Architecture first")
-        return {"curves": {"curves": {}, "x_axes": {}}}
+        return {"curves": {"curves": {"roll_force_rc_height_mm": []}, "x_axes": {}}}
     monkeypatch.setattr(native_runs, "run", run)
     payload = native_runs.kinematic_curves_payload({})
     assert payload["available"]
