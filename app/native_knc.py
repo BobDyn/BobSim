@@ -24,8 +24,7 @@ def metadata() -> list[dict]:
         measurements = {key: (title, y_unit) for key, (_, _, title, y_unit) in MEASUREMENTS.items()}
         measurements.update(rc_height_mm=("Geometric RC height", "mm"), rc_y_mm=("Geometric RC lateral position", "mm"))
         if phase != "steer":
-            measurements.update(jacking_n=("Load-induced jacking", "N"),
-                                jacking_ratio=("Jacking / applied force", "N/N"))
+            measurements.update(jacking_ratio=("Jacking / applied force", "N/N"))
         if phase == "bump":
             measurements.update(anti_dive_pct=("Front anti-dive", "%"),
                                 anti_lift_pct=("Rear anti-lift", "%"),
@@ -33,10 +32,7 @@ def metadata() -> list[dict]:
         if phase == "roll":
             measurements.update(anti_roll_pct=("Geometric anti-roll (axle-normalized)", "%"),
                                 force_rc_height_mm=("Force-based equivalent RC height", "mm"),
-                                reaction_nm=("Roll-axis reaction (loaded)", "N m"),
-                                unloaded_reaction_nm=("Roll-axis reaction (unloaded)", "N m"),
-                                load_reaction_nm=("Load-induced roll-axis reaction", "N m"),
-                                reaction_per_fy_m=("Roll-axis reaction / lateral load", "m"))
+                                reaction_per_fy_m=("Moment / applied force", "m"))
         for key, (title, y_unit) in measurements.items():
             result.append({"id": phase + "_" + key, "label": title, "unit": y_unit,
                            "x_id": axis, "x_label": label, "x_unit": unit, "y_label": title})
