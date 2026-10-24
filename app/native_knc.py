@@ -27,8 +27,9 @@ def metadata() -> list[dict]:
             measurements.update(jacking_n=("Load-induced jacking", "N"),
                                 jacking_ratio=("Jacking / applied force", "N/N"))
         if phase == "bump":
-            measurements.update(anti_dive_pct=("Front anti-dive (axle-normalized)", "%"),
-                                anti_squat_pct=("Rear anti-squat (axle-normalized)", "%"))
+            measurements.update(anti_dive_pct=("Front anti-dive", "%"),
+                                anti_lift_pct=("Rear anti-lift", "%"),
+                                anti_squat_pct=("Rear anti-squat (RWD)", "%"))
         if phase == "roll":
             measurements.update(anti_roll_pct=("Geometric anti-roll (axle-normalized)", "%"),
                                 force_rc_height_mm=("Force-based equivalent RC height", "mm"),
@@ -39,15 +40,6 @@ def metadata() -> list[dict]:
         for key, (title, y_unit) in measurements.items():
             result.append({"id": phase + "_" + key, "label": title, "unit": y_unit,
                            "x_id": axis, "x_label": label, "x_unit": unit, "y_label": title})
-    for key, title, axis, axis_label in (
-        ("split_brake_anti_pct", "Braking anti-dive / anti-lift", "front_brake_share_pct", "Front brake-force share"),
-        ("split_drive_anti_pct", "Rear anti-squat (RWD)", "rear_drive_share_pct", "Rear drive-force share"),
-        ("split_force_rc_height_mm", "Force-based equivalent RC height",
-         "left_lateral_share_pct", "Left lateral-force share"),
-    ):
-        unit = "mm" if key.endswith("_mm") else "%"
-        result.append({"id": key, "label": title, "unit": unit, "x_id": axis,
-                       "x_label": axis_label, "x_unit": "%", "y_label": title})
     return result
 
 

@@ -1195,43 +1195,31 @@ vm.runInContext(`
 
 vm.runInContext(`
 {
-  const payload={x_axes:{front_brake_share_pct:[0,50,100],rear_drive_share_pct:[100],left_lateral_share_pct:[0,50,100]},axles:{
-    front:{load_split:{heave_mm:[-10,0,10],brake_anti_pct:[20,30,40],roll_deg:[-1,0,1],rc_left_mm:[-30,-20,-10],rc_right_mm:[-10,-20,-30]}},
-    rear:{load_split:{heave_mm:[-10,0,10],brake_anti_pct:[10,20,30],drive_anti_pct:[30,40,50]}},
+  const payload={axles:{
+    front:{x_axes:{heave_mm:[-10,0,10],roll_deg:[-1,0,1]},load_split:{brake_anti_pct:[20,30,null],rc_left_mm:[-30,-20,-10],rc_right_mm:[-10,-20,-30]}},
+    rear:{x_axes:{heave_mm:[-10,0,10]},load_split:{brake_anti_pct:[10,20,30],drive_anti_pct:[30,40,50]}},
   }};
-  state.geometryPlotPoses={split_force_rc_height_mm:1};
-  assert.deepEqual(kinematicPlotValues(payload,'front','split_brake_anti_pct'),[0,15,30]);
-  assert.deepEqual(kinematicPlotValues(payload,'rear','split_brake_anti_pct'),[20,10,0]);
-  assert.deepEqual(kinematicPlotValues(payload,'rear','split_drive_anti_pct'),[40]);
-  assert.deepEqual(kinematicPlotValues(payload,'front','split_drive_anti_pct'),[]);
-  assert.deepEqual(kinematicPlotValues(payload,'front','split_force_rc_height_mm'),[-30,-20,-10]);
-  state.geometryPlotPoses.split_drive_anti_pct=5;
-  assert.deepEqual(kinematicPlotValues(payload,'rear','split_drive_anti_pct'),[45]);
-  assert.deepEqual(kinematicPlotValues(payload,'front','split_brake_anti_pct'),[0,15,30], 'drive pose must not change brake plot');
-  assert.equal(splitPoseValue([-10,0,10],[10,null,30],5),null,'do not interpolate across contact loss');
-  assert.equal(splitPoseValue([-10,0,10],[10,20,30],15),null,'do not extrapolate beyond native poses');
-  const chart=createPlotChart({key:'rwd',x:0,y:0,width:300,height:230,xValues:[0,100],allowSinglePoint:true,
-    series:[{points:[{index:0,xValue:100,yValue:40}]}]});
-  assert.equal(chart.series[0].points.length,1);
-  assert.equal(chart.series[0].points[0].xValue,100);
-  assert.ok(chart.xDomain[0]<=0 && chart.xDomain[1]>=100);
-  state.geometryPlotPoses={};
-}
-`,ctx);
-
-vm.runInContext(`
-{
-  const previous=state.kinematicsPayload;
-  state.kinematicsPayload={model:'BobLib native KnC',curve_meta:[
-    {id:'split_brake_anti_pct',x_id:'front_brake_share_pct'},
-    {id:'split_drive_anti_pct',x_id:'rear_drive_share_pct'},
-    {id:'split_force_rc_height_mm',x_id:'left_lateral_share_pct'}],
-    axles:{rear:{curves:{bump_anti_lift_pct:[1,2,3]},load_split:{brake_anti_pct:[1,2,3]}}}};
-  assert.deepEqual(kinematicCurveDescriptors(state.kinematicsPayload).map(d=>d.id),
-    ['split_brake_anti_pct','split_drive_anti_pct','split_force_rc_height_mm'],
-    'native metadata includes derived split plots and hides internal basis curves');
-  assert.deepEqual(geometryXAxisOptions().map(d=>d.id),
-    ['front_brake_share_pct','rear_drive_share_pct','left_lateral_share_pct']);
-  state.kinematicsPayload=previous;
+  state.geometryPlotForceShares={};
+  assert.deepEqual(kinematicPlotValues(payload,'front','bump_anti_dive_pct'),[10,15,null]);
+  assert.deepEqual(kinematicPlotValues(payload,'rear','bump_anti_lift_pct'),[5,10,15]);
+  assert.deepEqual(kinematicPlotValues(payload,'rear','bump_anti_squat_pct'),[30,40,50]);
+  assert.deepEqual(kinematicPlotValues(payload,'front','bump_anti_squat_pct'),[]);
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_force_rc_height_mm'),[-20,-20,-20]);
+  state.geometryPlotForceShares.roll_force_rc_height_mm=100;
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_force_rc_height_mm'),[-30,-20,-10]);
+  state.geometryPlotForceShares.roll_force_rc_height_mm=0;
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_force_rc_height_mm'),[-10,-20,-30]);
+  state.geometryPlotForceShares.bump_anti_dive_pct=75;
+  assert.deepEqual(kinematicPlotValues(payload,'front','bump_anti_dive_pct'),[15,22.5,null]);
+  assert.deepEqual(kinematicPlotValues(payload,'rear','bump_anti_lift_pct'),[5,10,15], 'sliders are independent');
+  assert.deepEqual(kinematicChartXValues(payload,{x_id:'roll_deg'},'front'),[-1,0,1]);
+  assert.deepEqual(kinematicChartXValues(payload,{x_id:'heave_mm'},'rear'),[-10,0,10]);
+  const descriptors=new Map([['roll_force_rc_height_mm',{id:'roll_force_rc_height_mm',x_id:'roll_deg'}]]);
+  assert.deepEqual(normalizeGeometryPlotSelection({x:'left_lateral_share_pct',y:'split_force_rc_height_mm'},descriptors),
+    {x:'roll_deg',y:'roll_force_rc_height_mm'}, 'saved split-axis plots migrate to the original roll axis');
+  assert.ok(geometryPlotPoseControl({id:'roll_force_rc_height_mm',label:'RC'}).includes('Left lateral-force share'));
+  assert.ok(geometryPlotPoseControl({id:'bump_anti_squat_pct',label:'Anti-squat'}).includes('disabled'));
+  assert.equal(geometryPlotPoseControl({id:'bump_camber_deg'}),'');
+  state.geometryPlotForceShares={};
 }
 `,ctx);

@@ -186,30 +186,23 @@ and repeat with halved and reversed lateral loads. The existing
 compiled binaries expose this signal, so no BobLib rebuild is required.
 
 
-### Force-split plots
+### Force-split controls
 
-The additional horizontal axes are **Front brake-force share**, **Rear drive-force
-share**, and **Left lateral-force share**, all in percent. Each split plot has its own pose slider (also in its expanded
-view), selecting heave for longitudinal plots and roll for the lateral plot, with
-interpolation only between valid native samples. These sliders do not run a
-simulation or change vehicle calibration.
+The existing heave and roll horizontal axes remain unchanged. Front anti-dive,
+rear anti-lift, rear anti-squat, and force-based equivalent RC height each have
+an independent force-share slider in their plot card and expanded view. Moving
+it changes the entire travel curve locally, without another simulation.
 
-The braking plot scales front axle-normalized anti-dive by the front fraction
-and rear axle-normalized anti-lift by its complement. Brake-force share is the
-actual longitudinal tire-force split, not necessarily hydraulic pressure bias.
-The supported vehicle architecture is RWD, so the drive plot contains only the
-100% rear-drive point; it does not fabricate an AWD response.
+Anti-dive scales by front brake-force share; anti-lift scales by its rear
+complement. RWD anti-squat retains the whole heave curve with its drive-share
+control fixed at 100% rear. These are actual tire-force shares, not necessarily
+hydraulic pressure bias.
 
-The lateral plot combines independently measured left-only and right-only
-reactions: `h = share * h_left + (1-share) * h_right`. Native tests verify this
-against equal and 75/25 loading. Lateral-force share is not vertical tire-load
-transfer; the latter influences tire capacity but does not uniquely determine
-lateral-force allocation. Both forces have the same lateral sign. Load split is
-an imposed condition, not a predicted cornering equilibrium.
+At every roll sample, equivalent RC height combines the independent lateral
+responses: `h = share * h_left + (1-share) * h_right`. Native tests verify equal
+and 75/25 loading. Lateral-force share is distinct from vertical load transfer;
+both lateral forces have the same sign. Invalid native samples remain missing.
 
-KnC binaries expose a bounded `lateralLeftShare` runtime setter (default 0.5),
-which changes only lateral-force gains. Longitudinal force probes remain
-symmetric. Updating to this wrapper requires rebuilding the KnC artifacts once;
-results then reuse the existing architecture and run caches. The geometry view
-loads the independent responses concurrently and retains their basis curves in
-`load_split`, alongside the original axle-normalized travel curves.
+The KnC wrapper's `lateralLeftShare` setter changes only lateral-force gains;
+longitudinal probes remain symmetric. Compiled artifacts and independent native
+responses are cached and reused.

@@ -166,7 +166,7 @@ const state = {
   geometryPlotSelections: savedGeometryPlotSelections,
   geometryPlotDraftX: "jounce_mm",
   geometryPlotDraftY: "",
-  geometryPlotPoses: {},
+  geometryPlotForceShares: {},
   geometryPlotScene: null,
   geometryPlotHover: null,
   massScene: null,
@@ -9472,7 +9472,9 @@ function normalizeGeometryPlotSelection(selection, descriptorMap) {
     return descriptor ? { x: descriptorXAxisId(descriptor), y: selection } : null;
   }
   if (!selection || typeof selection !== "object") return null;
-  const y = String(selection.y || selection.id || "");
+  const oldY = String(selection.y || selection.id || "");
+  const y = ({split_brake_anti_pct: "bump_anti_dive_pct", split_drive_anti_pct: "bump_anti_squat_pct",
+    split_force_rc_height_mm: "roll_force_rc_height_mm"})[oldY] || oldY;
   const descriptor = descriptorMap.get(y);
   if (!descriptor) return null;
   const descriptorX = descriptorXAxisId(descriptor);
@@ -9605,7 +9607,7 @@ function drawGeometryPlotPanel() {
   let totalHeight = 0;
   const offsets = descriptors.map((item) => {
     const offset = totalHeight;
-    totalHeight += (item.y_id || item.id).startsWith("split_") ? 285 : 230;
+    totalHeight += Boolean(forceSplitControl(item.y_id || item.id)) ? 285 : 230;
     return offset;
   });
   canvas.style.height = `${Math.max(230, totalHeight)}px`;
@@ -12714,53 +12716,57 @@ function inferCurveUnit(id) {
   return "";
 }
 
-function splitPoseValue(axis, values, pose) {
-  if (!axis?.length || !values?.length || pose < axis[0] || pose > axis[axis.length - 1]) return null;
-  const exact = axis.findIndex((x) => Math.abs(x - pose) < 1e-8);
-  if (exact >= 0) return Number.isFinite(values[exact]) ? values[exact] : null;
-  const upper = axis.findIndex((x) => x > pose);
-  if (upper <= 0 || !Number.isFinite(values[upper - 1]) || !Number.isFinite(values[upper])) return null;
-  const t = (pose - axis[upper - 1]) / (axis[upper] - axis[upper - 1]);
-  return values[upper - 1] * (1 - t) + values[upper] * t;
+function forceSplitControl(key) {
+  return {
+    bump_anti_dive_pct: {label: "Front brake-force share", default: 50},
+    bump_anti_lift_pct: {label: "Front brake-force share", default: 50},
+    bump_anti_squat_pct: {label: "Rear drive-force share (RWD)", default: 100, fixed: true},
+    roll_force_rc_height_mm: {label: "Left lateral-force share", default: 50},
+  }[key];
+}
+
+function plotForceShare(key) {
+  const control = forceSplitControl(key);
+  return control?.fixed ? control.default : (state.geometryPlotForceShares[key] ?? control?.default ?? 50);
 }
 
 function kinematicPlotValues(payload, axle, key) {
+  const control = forceSplitControl(key);
+  if (!control) return payload.axles?.[axle]?.curves?.[key] || [];
   const response = payload.axles?.[axle]?.load_split;
-  if (!key.startsWith("split_")) return payload.axles?.[axle]?.curves?.[key] || [];
   if (!response) return [];
-  if (key === "split_brake_anti_pct") {
-    const anti = splitPoseValue(response.heave_mm, response.brake_anti_pct, (state.geometryPlotPoses[key] || 0));
-    return (payload.x_axes.front_brake_share_pct || []).map((share) =>
-      anti == null ? null : anti * (axle === "front" ? share : 100 - share) / 100);
+  const share = plotForceShare(key) / 100;
+  if (key === "bump_anti_dive_pct" || key === "bump_anti_lift_pct") {
+    if (axle !== (key === "bump_anti_dive_pct" ? "front" : "rear")) return [];
+    return (response.brake_anti_pct || []).map(value =>
+      Number.isFinite(value) ? value * (axle === "front" ? share : 1 - share) : null);
   }
-  if (key === "split_drive_anti_pct") {
-    if (axle !== "rear") return [];
-    return [splitPoseValue(response.heave_mm, response.drive_anti_pct, (state.geometryPlotPoses[key] || 0))];
-  }
-  const left = splitPoseValue(response.roll_deg, response.rc_left_mm, (state.geometryPlotPoses[key] || 0));
-  const right = splitPoseValue(response.roll_deg, response.rc_right_mm, (state.geometryPlotPoses[key] || 0));
-  return (payload.x_axes.left_lateral_share_pct || []).map((share) =>
-    left == null || right == null ? null : (share * left + (100 - share) * right) / 100);
+  if (key === "bump_anti_squat_pct") return axle === "rear" ? response.drive_anti_pct || [] : [];
+  const left = response.rc_left_mm || [];
+  const right = response.rc_right_mm || [];
+  return left.map((value, index) => {
+    if (share === 1) return Number.isFinite(value) ? value : null;
+    if (share === 0) return Number.isFinite(right[index]) ? right[index] : null;
+    return Number.isFinite(value) && Number.isFinite(right[index]) ? share * value + (1 - share) * right[index] : null;
+  });
 }
 
 function geometryPlotPoseControl(descriptor, top = null) {
   const key = descriptor.y_id || descriptor.id;
-  if (!key.startsWith("split_")) return "";
-  const roll = key === "split_force_rc_height_mm";
-  const axis = state.kinematicsPayload?.x_axes?.[roll ? "roll_deg" : "heave_mm"] || [0, 0];
+  const control = forceSplitControl(key);
+  if (!control) return "";
   return `<label class="geometry-plot-pose" ${top == null ? "" : `style="position:absolute;top:${top}px;left:18px;right:18px"`}>
-    ${roll ? "Roll" : "Heave"} <output data-pose-output="${key}"></output>
-    <input type="range" data-plot-pose="${key}" aria-label="${escapeHtml(descriptor.label)} ${roll ? "roll" : "heave"} slice"
-      min="${axis[0]}" max="${axis[axis.length - 1]}" step="${roll ? .01 : .1}" value="0">
+    ${control.label} <output></output>
+    <input type="range" data-plot-force-share="${key}" aria-label="${escapeHtml(descriptor.label)} ${control.label}"
+      min="0" max="100" step="1" value="${control.default}" ${control.fixed ? "disabled" : ""}>
   </label>`;
 }
 
 function syncGeometryPlotPoses(container) {
-  container?.querySelectorAll("[data-plot-pose]").forEach((slider) => {
-    const key = slider.dataset.plotPose;
-    const value = state.geometryPlotPoses[key] || 0;
+  container?.querySelectorAll("[data-plot-force-share]").forEach((slider) => {
+    const value = plotForceShare(slider.dataset.plotForceShare);
     slider.value = value;
-    slider.previousElementSibling.textContent = `${value.toFixed(2)} ${key === "split_force_rc_height_mm" ? "deg" : "mm"}`;
+    slider.previousElementSibling.textContent = `${value.toFixed(0)}%`;
   });
 }
 
@@ -12778,8 +12784,8 @@ function drawKinematicChart(
   const key = descriptor.id;
   const yKey = descriptor.y_id || descriptor.id;
   const baseTitle = descriptor.label || humanizeKinematicCurve(key);
-  const title = yKey.startsWith("split_")
-    ? `${baseTitle} · ${yKey === "split_force_rc_height_mm" ? (state.geometryPlotPoses[yKey] || 0).toFixed(2) + "° roll" : (state.geometryPlotPoses[yKey] || 0).toFixed(1) + " mm heave"}`
+  const title = forceSplitControl(yKey)
+    ? `${baseTitle} · ${plotForceShare(yKey).toFixed(0)}% ${forceSplitControl(yKey).label.toLowerCase()}`
     : baseTitle;
   const unit = descriptor.y_unit || descriptor.unit || inferCurveUnit(yKey);
   const visibleAxles = new Set(Array.isArray(axles) && axles.length ? axles : ["front", "rear"]);
@@ -12822,10 +12828,8 @@ function drawKinematicChart(
     yUnit: unit,
     series,
     // Preserve the commanded sweep even where contact loss invalidates Y.
-    xValues: yKey.startsWith("split_") ? [0, 100]
-      : [...visibleAxles].flatMap((axle) => kinematicChartXValues(payload, descriptor, axle)),
-    allowSinglePoint: yKey === "split_drive_anti_pct",
-    includeZeroY: !(/_anti_(dive|squat|roll|lift)_pct$/.test(yKey) || yKey.startsWith("split_")),
+    xValues: [...visibleAxles].flatMap((axle) => kinematicChartXValues(payload, descriptor, axle)),
+    includeZeroY: !(/_anti_(dive|squat|roll|lift)_pct$/.test(yKey) || Boolean(forceSplitControl(yKey))),
     margins: focused
       ? { left: 62, right: 18, top: 48, bottom: 44 }
       : { left: 50, right: 14, top: 36, bottom: 36 },
@@ -12851,7 +12855,7 @@ function drawKinematicChart(
 
 function kinematicChartXValues(payload, descriptor, axle = null) {
   const xId = descriptor?.x_id || "jounce_mm";
-  const axes = xId.endsWith("_share_pct") ? payload?.x_axes : (payload?.axles?.[axle]?.x_axes ?? payload?.x_axes);
+  const axes = payload?.axles?.[axle]?.x_axes ?? payload?.x_axes;
   if (axes) {
     // An explicitly missing axis must not silently become a jounce sweep.
     return Array.isArray(axes[xId]) ? axes[xId].map(value => value == null ? NaN : Number(value)) : [];
@@ -14654,11 +14658,11 @@ function wireEvents() {
     drawSuspensionPlotModal();
   });
   document.addEventListener("input", (event) => {
-    const key = event.target.dataset?.plotPose;
+    const key = event.target.dataset?.plotForceShare;
     if (!key) return;
     const value = Number(event.target.value);
     if (!Number.isFinite(value)) return;
-    state.geometryPlotPoses[key] = value;
+    state.geometryPlotForceShares[key] = value;
     drawGeometryPlotPanel();
     drawSuspensionPlotModal();
   });

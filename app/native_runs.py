@@ -191,8 +191,6 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                         response["curves"]["curves"]["roll_force_rc_height_mm"])
             except (ValueError, RuntimeError, OSError) as exc:
                 payload["warnings"].append(f"{side.title()} {wheel}-load response unavailable: {exc}")
-    payload["x_axes"].update(front_brake_share_pct=list(range(0, 101, 5)),
-                             rear_drive_share_pct=[100], left_lateral_share_pct=list(range(0, 101, 5)))
     payload["available"] = any(axle["ok"] for axle in payload["axles"].values())
     payload["sweep_m"] = [x / 1000 for x in payload["x_axes"].get("heave_mm", [])]
     payload["roll_deg"] = payload["x_axes"].get("roll_deg", [])

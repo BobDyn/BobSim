@@ -131,13 +131,13 @@
                     Alignment, trail, and scrub curves refer to the left wheel.</p>
                   <p>Geometric RC is the front-view projection of the native wishbone positions, measured above
                     the contact plane. Force-based RC is an equivalent centerline height from the total incremental reaction moment,
-                    including front steering support, referenced to the contact plane. The roll sweep uses equal lateral forces;
-                    the split view combines independently measured left/right lateral-load responses.</p>
+                    including front steering support, referenced to the contact plane. The default roll sweep uses equal lateral forces;
+                    the force-share slider combines independently measured left/right lateral-load responses at each roll sample.</p>
                   <p>Jacking subtracts the unloaded response from a 1000 N contact-force pulse, with the stabilizer removed.
                     Geometric anti-roll is RC height / posed sprung CG height above the same contact plane;
                     negative values mean a below-ground RC. Net jacking can be zero while the roll moment is nonzero.
-                    Heave-sweep anti percentages are axle-normalized. Split plots apply front/rear brake-force share
-                    to front anti-dive and rear anti-lift; RWD anti-squat uses 100% rear drive.
+                    Anti plots apply the selected front/rear brake-force share to front anti-dive and rear anti-lift
+                    at each heave sample; RWD anti-squat uses 100% rear drive.
                     Brake-force share means actual tire force, which need not equal hydraulic pressure bias.
                     Roll-axis reaction is the suspension load onto the rig about world +X through the origin,
                     opposite the actuator holding torque. Its load-induced curve subtracts the same-pose unloaded
