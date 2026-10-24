@@ -12721,7 +12721,7 @@ function forceSplitControl(key) {
     bump_anti_dive_pct: {label: "Front brake-force share", default: 50},
     bump_anti_lift_pct: {label: "Front brake-force share", default: 50},
     bump_anti_squat_pct: {label: "Rear drive-force share (RWD)", default: 100, fixed: true},
-    roll_force_rc_height_mm: {label: "Left lateral-force share", default: 50},
+    roll_force_rc_height_mm: {label: "Left (+) lateral-force share", default: 50},
   }[key];
 }
 

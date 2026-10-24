@@ -1217,7 +1217,7 @@ vm.runInContext(`
   const descriptors=new Map([['roll_force_rc_height_mm',{id:'roll_force_rc_height_mm',x_id:'roll_deg'}]]);
   assert.deepEqual(normalizeGeometryPlotSelection({x:'left_lateral_share_pct',y:'split_force_rc_height_mm'},descriptors),
     {x:'roll_deg',y:'roll_force_rc_height_mm'}, 'saved split-axis plots migrate to the original roll axis');
-  assert.ok(geometryPlotPoseControl({id:'roll_force_rc_height_mm',label:'RC'}).includes('Left lateral-force share'));
+  assert.ok(geometryPlotPoseControl({id:'roll_force_rc_height_mm',label:'RC'}).includes('Left (+) lateral-force share'));
   assert.ok(geometryPlotPoseControl({id:'bump_anti_squat_pct',label:'Anti-squat'}).includes('disabled'));
   assert.equal(geometryPlotPoseControl({id:'bump_camber_deg'}),'');
   state.geometryPlotForceShares={};
