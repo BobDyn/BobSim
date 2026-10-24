@@ -124,16 +124,6 @@
                     <button id="geometry-add-plot-btn" class="ghost-button" type="button">Add</button>
                   </div>
                 </div>
-                <div id="geometry-split-pose" class="geometry-split-pose" hidden>
-                  <label id="geometry-split-heave-control">Heave <output id="geometry-split-heave-value"></output>
-                    <input id="geometry-split-heave" type="range" min="-38.1" max="38.1" step="0.1" value="0">
-                  </label>
-                  <label id="geometry-split-roll-control">Roll <output id="geometry-split-roll-value"></output>
-                    <input id="geometry-split-roll" type="range" min="-1.25" max="1.25" step="0.01" value="0">
-                  </label>
-                  <small>Split plots include force distribution. RWD drive share is fixed at 100% rear.
-                    Lateral-force share is not vertical load transfer. Sliders interpolate valid native poses.</small>
-                </div>
                 <details class="geometry-plot-notes">
                   <summary>Plot definitions <span id="geometry-plot-status" role="status"></span></summary>
                   <p>Heave is chassis displacement, positive upward. Heave and roll use zero steering;
@@ -603,6 +593,7 @@
           </div>
           <button id="kinematic-plot-close" class="ghost-button" type="button">Close</button>
         </div>
+        <div id="kinematic-plot-pose" hidden></div>
         <div class="plot-modal-body">
           <canvas id="kinematic-plot-modal-canvas"></canvas>
         </div>

@@ -5223,8 +5223,7 @@ summary:focus-visible {
 .travel-controls output { font-variant-numeric: tabular-nums; }
 .travel-controls p { font-size: 11px; margin: 8px 0 0; }
 
-.geometry-split-pose { display: grid; gap: 8px; padding: 8px; font-size: 12px; }
-.geometry-split-pose[hidden], .geometry-split-pose label[hidden] { display: none; }
-.geometry-split-pose label { display: grid; grid-template-columns: 1fr auto; gap: 4px; }
-.geometry-split-pose input { grid-column: 1 / -1; width: 100%; margin: 0; }
-.geometry-split-pose small { color: var(--muted); line-height: 1.4; }
+.geometry-plot-pose { display: grid; grid-template-columns: 1fr auto; gap: 4px; font-size: 12px; pointer-events: auto; }
+.geometry-plot-pose input { grid-column: 1 / -1; width: 100%; margin: 0; }
+#kinematic-plot-pose { padding: 8px 24px; }
+.plot-card:has(#kinematic-plot-pose:not([hidden])) { grid-template-rows: auto auto minmax(0, 1fr); }

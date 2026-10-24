@@ -1199,14 +1199,15 @@ vm.runInContext(`
     front:{load_split:{heave_mm:[-10,0,10],brake_anti_pct:[20,30,40],roll_deg:[-1,0,1],rc_left_mm:[-30,-20,-10],rc_right_mm:[-10,-20,-30]}},
     rear:{load_split:{heave_mm:[-10,0,10],brake_anti_pct:[10,20,30],drive_anti_pct:[30,40,50]}},
   }};
-  state.geometrySplitHeaveMm=0; state.geometrySplitRollDeg=1;
+  state.geometryPlotPoses={split_force_rc_height_mm:1};
   assert.deepEqual(kinematicPlotValues(payload,'front','split_brake_anti_pct'),[0,15,30]);
   assert.deepEqual(kinematicPlotValues(payload,'rear','split_brake_anti_pct'),[20,10,0]);
   assert.deepEqual(kinematicPlotValues(payload,'rear','split_drive_anti_pct'),[40]);
   assert.deepEqual(kinematicPlotValues(payload,'front','split_drive_anti_pct'),[]);
   assert.deepEqual(kinematicPlotValues(payload,'front','split_force_rc_height_mm'),[-30,-20,-10]);
-  state.geometrySplitHeaveMm=5;
+  state.geometryPlotPoses.split_drive_anti_pct=5;
   assert.deepEqual(kinematicPlotValues(payload,'rear','split_drive_anti_pct'),[45]);
+  assert.deepEqual(kinematicPlotValues(payload,'front','split_brake_anti_pct'),[0,15,30], 'drive pose must not change brake plot');
   assert.equal(splitPoseValue([-10,0,10],[10,null,30],5),null,'do not interpolate across contact loss');
   assert.equal(splitPoseValue([-10,0,10],[10,20,30],15),null,'do not extrapolate beyond native poses');
   const chart=createPlotChart({key:'rwd',x:0,y:0,width:300,height:230,xValues:[0,100],allowSinglePoint:true,
@@ -1214,7 +1215,7 @@ vm.runInContext(`
   assert.equal(chart.series[0].points.length,1);
   assert.equal(chart.series[0].points[0].xValue,100);
   assert.ok(chart.xDomain[0]<=0 && chart.xDomain[1]>=100);
-  state.geometrySplitHeaveMm=0;state.geometrySplitRollDeg=0;
+  state.geometryPlotPoses={};
 }
 `,ctx);
 

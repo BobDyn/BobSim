@@ -189,8 +189,8 @@ compiled binaries expose this signal, so no BobLib rebuild is required.
 ### Force-split plots
 
 The additional horizontal axes are **Front brake-force share**, **Rear drive-force
-share**, and **Left lateral-force share**, all in percent. Local pose sliders
-select heave for the longitudinal plots and roll for the lateral plot, with
+share**, and **Left lateral-force share**, all in percent. Each split plot has its own pose slider (also in its expanded
+view), selecting heave for longitudinal plots and roll for the lateral plot, with
 interpolation only between valid native samples. These sliders do not run a
 simulation or change vehicle calibration.
 
