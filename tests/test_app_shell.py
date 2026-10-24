@@ -933,7 +933,10 @@ def test_app_vehicle_setup_exposes_vehicle_parameters_without_repo_paths() -> No
     assert fields_by_path[("aero", "drag_table_n")]["array_shape"] == [5, 5]
     assert fields_by_path[("front", "actuation", "bellcrank", "order")]["choices"] == front_order_choices
     assert fields_by_path[("front", "actuation", "shock", "spring_table", "table")]["label"] == "Spring force curve"
-    assert fields_by_path[("front", "actuation", "shock", "damper_table", "table")]["label"] == "Damper force curve"
+    front_ls = ("front", "actuation", "shock", "damper", "compression", "low_speed_clicks_from_closed")
+    rear_ls = ("rear", "actuation", "shock", "damper", "rebound", "low_speed_clicks_from_closed")
+    assert fields_by_path[front_ls]["value"] == 6
+    assert fields_by_path[rear_ls]["value"] == 10
     assert payload["data"]["powertrain"]["implementation"] == "EVBatInvMotDiff"
     assert fields_by_path[("powertrain", "pBattery", "Ns")]["value"] == 140
     assert fields_by_path[("powertrain", "pMotor", "P_mech_peak")]["unit"] == "W"
@@ -1250,6 +1253,21 @@ def test_modelica_build_signature_changes_when_boblib_source_changes(
 
     assert before["modelica_source_digest"] != after["modelica_source_digest"]
     assert before["signature"] != after["signature"]
+
+
+def test_runtime_damper_settings_do_not_invalidate_modelica_build_signature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    target = app.MODELICA_BUILD_TARGETS["vehicle"]
+    script_path = tmp_path / target.script
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text("// fixed build script\n", encoding="utf-8")
+    signatures = []
+    for generated in ("compression-clicks-6", "compression-clicks-10"):
+        stack = {"written_to_boblib": False, "signatures": {"vehicle": {"generated": generated}}}
+        signatures.append(app._modelica_build_signature_payload(target, stack)["signature"])
+    assert signatures[0] == signatures[1]
 
 
 def test_app_evaluates_active_tire_template_for_ui_curves() -> None:

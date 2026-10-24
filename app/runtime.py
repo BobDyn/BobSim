@@ -25,6 +25,7 @@ APP_RUNTIME_SEED_SCHEMA_VERSION = 4
 
 APP_SEED_RUNTIME_PATHS = (
     "vehicle.yml",
+    "common/damper_data/ttx25_mkii_c12_r12_pdf_v1.json",
     "engines/boblib/BobLib",
     "common/plotting",
     "common/reporting",
@@ -66,6 +67,7 @@ def _runtime_copy_ignore(_: str, names: list[str]) -> set[str]:
 
 
 APP_REFRESH_RUNTIME_PATHS = {
+    "common/damper_data/ttx25_mkii_c12_r12_pdf_v1.json",
     "engines/boblib/BobLib",
     "common/plotting",
     "common/reporting",

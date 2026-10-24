@@ -47,6 +47,9 @@ def _run_subprocess_action(_action: ActionSpec, _job_id: str) -> int:
     raise RuntimeError("Subprocess runner has not been connected")
 
 
+RUNTIME_DAMPER_TARGETS = {"vehicle", "four_post"}
+
+
 def _modelica_build_payload(
     raw_path: str,
     stack: dict[str, Any] | None,
@@ -189,8 +192,12 @@ def _modelica_build_signature_payload(
     script_text = script_path.read_text(encoding="utf-8", errors="replace")
     host = _host_build_fingerprint()
     modelica_sources = _fingerprint_paths(ROOT, APP_MODELICA_BUILD_FINGERPRINT_PATHS)
+    # The executable contains the current BobLib sources. TTX25 settings are
+    # supplied at launch, so a planned YAML-to-Modelica rewrite is not a build input.
+    if target.id in RUNTIME_DAMPER_TARGETS:
+        generated = modelica_sources["digest"]
     inputs = {
-        "version": 2,
+        "version": 3,
         "target": target.id,
         "label": target.label,
         "exec_name": target.exec_name,
@@ -388,6 +395,8 @@ def _modelica_existing_build_matches(
     metadata = _read_modelica_build_metadata(build_dir)
     if metadata:
         return metadata.get("signature") == signature["signature"]
+    if target.id in RUNTIME_DAMPER_TARGETS:
+        return False
 
     exe_path = _modelica_build_exe_file(target, build_dir)
     if exe_path is None:
