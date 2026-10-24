@@ -44,8 +44,8 @@ of going unnoticed.
 plot titles cannot move a simulated number.
 
 The digest names the *checked-in* study configs, so the refresh pins the runs to
-them: it sets `BOBSIM_SEED_CONFIGS=1`, which makes `_0_Utils/config_io.resolve`
-ignore a config you have edited in the app (`_5_App/user_data/config/active/`).
+them: it sets `BOBSIM_SEED_CONFIGS=1`, which makes `common/config_io.resolve`
+ignore a config you have edited in the app (`app/user_data/config/active/`).
 A baseline has to mean the same thing on every machine, and one built from a
 config that is not in the repo would be compared against a digest of one that
 is. If you rerun the studies by hand to refresh a baseline, set it yourself.
@@ -67,7 +67,7 @@ the new reports have been reviewed.
    make regression-baseline
    ```
 
-2. Inspect the regenerated artifacts under `_3_StandardSim/results/`:
+2. Inspect the regenerated artifacts under `simulations/mbd/results/`:
 
    - `*_report_metrics.csv`
    - `*_report.pdf`

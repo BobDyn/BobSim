@@ -10,20 +10,15 @@ hand-written init XML rather than trusted.
 from __future__ import annotations
 
 from pathlib import Path
-import sys
+from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-OPTSIM_DIR = ROOT / "_4_OptSim"
-if str(OPTSIM_DIR) not in sys.path:
-    sys.path.insert(0, str(OPTSIM_DIR))
-
 pytest.importorskip("scipy", reason="the OptSim pipeline package imports scipy")
 
-from StandardSens import solve_setup  # noqa: E402
-from StandardSens.pipeline import evaluator, overrides  # noqa: E402
-from StandardSens.pipeline.generator import resolve_targets  # noqa: E402
+from optimization.response import solve_setup  # noqa: E402
+from optimization.response.pipeline import evaluator, overrides  # noqa: E402
+from optimization.response.pipeline.generator import resolve_targets  # noqa: E402
 
 # (name, runtime-changeable, compiled-in start value or None for "has none")
 INIT_SCALARS = [
@@ -46,7 +41,7 @@ INIT_XML = (
     + "</ModelVariables></fmiModelDescription>"
 )
 
-VARIABLES = {
+VARIABLES: dict[str, dict[str, Any]] = {
     "rear.stabar": {"path": "rear.stabar", "block": "pRrStabar", "param": "barRate"},
     "front.spring": {
         "path": "front.spring",
@@ -103,8 +98,7 @@ def test_one_value_fans_out_to_every_target_with_its_scale(init_parameters) -> N
     ("path", "reason"),
     [
         ("typo", "not in the compiled model"),
-        # The runner keys its lookup on the start value, so it would drop this
-        # one exactly as it drops a name that does not exist.
+        # The runner keys its lookup on the start value, so it drops this name silently.
         ("no_start", "not in the compiled model"),
         ("frozen", "fixed at compile time"),
         ("aero.load_scale", "scaled tables are compiled"),

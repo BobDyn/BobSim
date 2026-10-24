@@ -25,10 +25,13 @@ jobs:
         include:
           - name: Linux
             os: ubuntu-latest
+            mode: onefile
           - name: Windows
             os: windows-latest
+            mode: onefile
           - name: macOS
             os: macos-latest
+            mode: onedir
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +46,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r _0_Utils/deploy/requirements.txt
+          python -m pip install -r requirements.txt -r common/deploy/requirements.txt
 
       - name: Build and package BobSim
         shell: bash
@@ -52,20 +55,20 @@ jobs:
           if [ -z "$version" ] && [[ "$GITHUB_REF_NAME" == v* ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
-          args=(--release --mode onefile)
+          args=(--release --mode "${{ matrix.mode }}")
           if [ -n "$version" ]; then
             args+=(--version "$version")
           fi
-          python _0_Utils/deploy/deploy.py "${args[@]}"
+          python common/deploy/deploy.py "${args[@]}"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: BobSim-${{ matrix.name }}-${{ runner.arch }}
           path: |
-            _0_Utils/deploy/dist/releases/*.zip
-            _0_Utils/deploy/dist/releases/*.tar.gz
-            _0_Utils/deploy/dist/releases/*.sha256
+            common/deploy/dist/releases/*.zip
+            common/deploy/dist/releases/*.tar.gz
+            common/deploy/dist/releases/*.sha256
           if-no-files-found: error
 
   publish:

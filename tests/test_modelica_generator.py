@@ -5,8 +5,8 @@ import shutil
 
 import yaml
 
-from _0_Utils.vehicle_io import load_yaml
-from _5_App.modelica_generator import (
+from common.vehicle_io import load_yaml
+from app.modelica_generator import (
     ARCHITECTURES,
     generate_modelica_stack,
     modelica_generation_payload,
@@ -15,7 +15,7 @@ from _5_App.modelica_generator import (
 
 
 def _write_temp_vehicle(repo_root: Path, tmp_path: Path) -> Path:
-    data = load_yaml(repo_root / "_0_Utils/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml")
+    data = load_yaml(repo_root / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml")
     active_data = load_yaml(repo_root / "vehicle.yml")
     if isinstance(active_data.get("powertrain"), dict):
         data["powertrain"] = active_data["powertrain"]
@@ -23,7 +23,7 @@ def _write_temp_vehicle(repo_root: Path, tmp_path: Path) -> Path:
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
-    shutil.copy(repo_root / "_0_Utils/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
+    shutil.copy(repo_root / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
 
     vehicle_path = tmp_path / "vehicle.yml"
     vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -144,8 +144,8 @@ def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> Non
 
     Expected values are the ones BobLib ships in its own checked-in record.
     """
-    from _0_Utils.vehicle_io import load_yaml, vehicle_yaml_path
-    from _5_App.modelica_generator import _pickup_order
+    from common.vehicle_io import load_yaml, vehicle_yaml_path
+    from app.modelica_generator import _pickup_order
 
     vehicle = load_yaml(vehicle_yaml_path())
     expected = {
@@ -158,16 +158,15 @@ def test_bellcrank_pickup_indices_come_from_geometry_not_the_order_list() -> Non
             bellcrank["pickups_m"], bellcrank["pivot_m"], bellcrank["axis"], axle
         ) == want
 
-    # The two axles disagree, which is the proof that the shared order list -
-    # identical for both - cannot be the source.
+    # The axles differ, so one shared order list cannot be the source.
     assert vehicle["front"]["actuation"]["bellcrank"]["order"] == \
         vehicle["rear"]["actuation"]["bellcrank"]["order"]
     assert expected["front"] != expected["rear"]
 
 
 def test_modelica_generator_cli_reports_then_writes(tmp_path: Path, capsys) -> None:
-    """`python -m _5_App.modelica_generator` checks by default and writes on --write."""
-    from _5_App import modelica_generator
+    """`python -m app.modelica_generator` checks by default and writes on --write."""
+    from app import modelica_generator
 
     repo_root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
@@ -186,3 +185,50 @@ def test_modelica_generator_cli_reports_then_writes(tmp_path: Path, capsys) -> N
     # A check straight after a write is clean, and writing does not report stale.
     assert modelica_generator.main(argv) == 0
     assert "state:    written" in capsys.readouterr().out
+
+
+def test_calibrated_initialization_survives_generation_and_rejects_changed_inputs(tmp_path):
+    import pytest
+    from app.modelica_generator import plan_modelica_stack, _record_parameters
+    root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(root, tmp_path)
+    result = generate_modelica_stack(vehicle_path, root=tmp_path)
+    record = result.files[0].path
+    pinned = root / 'engines/boblib/BobLib/Records/VehicleDefn' / record.name
+    calibration = _record_parameters(pinned.read_text())["pQSSInitialization"]
+    record.write_text(record.read_text().replace('  annotation(', calibration + '\n  annotation(', 1))
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert calibration in record.read_text()
+    entry = result.files[3].path.read_text()
+    assert 'useRuntimeDamperTables = false' in entry
+    assert 'runtimeDamperTableFile = damperTableFile' in entry
+    assert 'fixInitialSuspensionAngles = true' in entry
+    assert 'initialRearRightLowerArmAngle = pVehicle.pQSSInitialization.rearRightLowerArmAngle' in entry
+    assert 'abs(initialVel - pVehicle.pQSSInitialization.referenceVelocity)' in entry
+    data = load_yaml(vehicle_path)
+    data['front']['actuation']['shock']['damper_table']['table'][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert plan_modelica_stack(vehicle_path, root=tmp_path).initialization_error is None
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)['written_to_boblib'] is True
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert calibration in record.read_text()
+    before = {item.path: item.path.read_bytes() for item in result.files}
+    data = load_yaml(vehicle_path)
+    data['sprung_mass']['mass_kg'] += 10
+    vehicle_path.write_text(yaml.safe_dump(data))
+    assert plan_modelica_stack(vehicle_path, root=tmp_path).initialization_error
+    with pytest.raises(ValueError, match='Recalibrate'):
+        generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert before == {path: path.read_bytes() for path in before}
+    data['modelica_initialization'] = 'legacy'
+    vehicle_path.write_text(yaml.safe_dump(data))
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert 'pQSSInitialization' not in record.read_text()
+
+
+def test_current_pinned_calibration_cannot_be_silently_transplanted():
+    from app.modelica_generator import plan_modelica_stack
+    root = Path(__file__).resolve().parents[1]
+    plan = plan_modelica_stack(root / 'vehicle.yml', root=root)
+    # The current YAML aero and VCU inputs differ from the solved BobLib car.
+    assert plan.initialization_error is not None

@@ -1,0 +1,40 @@
+# Report metrics to extract per standard.
+# key: parquet column name. value: metric name in the standard's metrics CSV.
+
+standards:
+
+  SteadyStateEval:
+    steady_state_metrics:
+
+      ay_min:                               "ay_min"
+      ay_max:                               "ay_max"
+      limit_ay_mps2:                        "limit_ay_mps2"
+
+      sideslip_gradient_rad_per_mps2:       "sideslip_gradient_rad_per_mps2"
+      sideslip_gradient_deg_per_g:          "sideslip_gradient_deg_per_g"
+      understeer_gradient_rad_per_mps2:     "understeer_gradient_rad_per_mps2"
+      understeer_gradient_deg_per_g:        "understeer_gradient_deg_per_g"
+      handwheel_angle_gradient_rad_per_mps2: "handwheel_angle_gradient_rad_per_mps2"
+      handwheel_angle_gradient_deg_per_g:    "handwheel_angle_gradient_deg_per_g"
+      roll_gradient_deg_per_g:              "roll_gradient_deg_per_g"
+
+      limit_sideslip_gradient_rad_per_mps2: "limit_sideslip_gradient_rad_per_mps2"
+      limit_sideslip_gradient_deg_per_g:    "limit_sideslip_gradient_deg_per_g"
+      limit_understeer_gradient_rad_per_mps2: "limit_understeer_gradient_rad_per_mps2"
+      limit_understeer_gradient_deg_per_g:    "limit_understeer_gradient_deg_per_g"
+      limit_handwheel_gradient_rad_per_mps2: "limit_handwheel_gradient_rad_per_mps2"
+      limit_handwheel_gradient_deg_per_g:    "limit_handwheel_gradient_deg_per_g"
+      limit_roll_gradient_rad_per_mps2:     "limit_roll_gradient_rad_per_mps2"
+      limit_roll_gradient_deg_per_g:        "limit_roll_gradient_deg_per_g"
+
+      peak_handwheel_torque_Nm:             "peak_handwheel_torque_Nm"
+      peak_handwheel_torque_ay_mps2:        "peak_handwheel_torque_ay_mps2"
+
+      sideslip_gradient_velocity_slope_deg_per_g_per_mps: "sideslip_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps: "limit_sideslip_gradient_velocity_slope_deg_per_g_per_mps"
+      understeer_gradient_velocity_slope_deg_per_g_per_mps: "understeer_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_understeer_gradient_velocity_slope_deg_per_g_per_mps: "limit_understeer_gradient_velocity_slope_deg_per_g_per_mps"
+      handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps: "handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps: "limit_handwheel_gradient_velocity_slope_deg_per_g_per_mps"
+      roll_gradient_velocity_slope_deg_per_g_per_mps: "roll_gradient_velocity_slope_deg_per_g_per_mps"
+      limit_roll_gradient_velocity_slope_deg_per_g_per_mps: "limit_roll_gradient_velocity_slope_deg_per_g_per_mps"

@@ -1,6 +1,6 @@
-from _0_Utils.kin_py.suspension_model.suspension_elements._2_elements.wishbone import Wishbone
-from _0_Utils.kin_py.suspension_model.suspension_elements._1_elements.link import Link
-from _0_Utils.kin_py.suspension_model.suspension_elements._1_elements.node import Node
+from engines.kinpy.suspension_model.suspension_elements._2_elements.wishbone import Wishbone
+from engines.kinpy.suspension_model.suspension_elements._1_elements.link import Link
+from engines.kinpy.suspension_model.suspension_elements._1_elements.node import Node
 import numpy as np
 
 from unittest import TestCase
@@ -72,7 +72,7 @@ class TestWishbone(TestCase):
         wishbone = Wishbone(fore_link=fore_link, aft_link=aft_link)
         a, b, c, x_0, y_0, z_0 = wishbone.plane
 
-        # Check if planes are equivalent type shit
+        # Points on the plane give zero.
         point_1 = a * (1 - x_0) + b * (0 - y_0) + c * (0 - z_0)
         point_2 = a * (0 - x_0) + b * (1 - y_0) + c * (0 - z_0)
         point_3 = a * (0 - x_0) + b * (0 - y_0) + c * (0 - z_0)

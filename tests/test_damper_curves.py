@@ -7,12 +7,12 @@ import numpy as np
 import pytest
 import yaml
 
-from _0_Utils.damper_curves import (
+from common.damper_curves import (
     resolve_damper_curve, write_modelica_damper_tables, write_runtime_damper_file,
 )
-from _0_Utils.dyn_py import create_model, load_reduced_vehicle_parameters
-from _0_Utils.vehicle_io import load_yaml, repo_root
-from _5_App.modelica_generator import plan_modelica_stack, _modelica_stack_signatures
+from engines.dynpy import create_model, load_reduced_vehicle_parameters
+from common.vehicle_io import load_yaml, repo_root
+from app.modelica_generator import plan_modelica_stack, _modelica_stack_signatures
 
 
 def ttx(ls=6, hs=4.3, rebound_ls=10):
@@ -147,7 +147,7 @@ def test_yaml_generation_and_dataset_changes_invalidate_signature(tmp_path, monk
     expected = resolve_damper_curve(shock).force(.1)
     assert f"0.1, {expected:g}" in text
     original = _modelica_stack_signatures(plan)
-    dataset_path = repo_root() / "_0_Utils/damper_data/ttx25_mkii_c12_r12_pdf_v1.json"
+    dataset_path = repo_root() / "common/damper_data/ttx25_mkii_c12_r12_pdf_v1.json"
     raw = dataset_path.read_bytes()
     read_bytes = Path.read_bytes
 
@@ -183,7 +183,7 @@ def test_reduced_model_evaluates_curve_with_power_preserving_motion_ratio(tmp_pa
 
 
 def test_dataset_has_reproducible_raw_samples():
-    root = repo_root() / "_0_Utils/damper_data"
+    root = repo_root() / "common/damper_data"
     dataset = json.loads((root / "ttx25_mkii_c12_r12_pdf_v1.json").read_text())
     samples = json.loads((root / "c12_r12_pixel_samples.json").read_text())
     assert len(dataset["curves"]) == 22
@@ -191,7 +191,7 @@ def test_dataset_has_reproducible_raw_samples():
 
 
 def test_app_architecture_defaults_preserve_named_damper_and_explicit_conflicts():
-    from _5_App.data_services import _vehicle_with_architecture_defaults
+    from app.data_services import _vehicle_with_architecture_defaults
 
     data = load_yaml(repo_root() / "vehicle.yml")
     shock = data["front"]["actuation"]["shock"]

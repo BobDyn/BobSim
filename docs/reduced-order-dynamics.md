@@ -1,13 +1,15 @@
 # Reduced-order vehicle dynamics
 
-**TL;DR:** `_0_Utils/dyn_py` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
+**TL;DR:** `engines/dynpy` is a fast, inspectable reduced-order vehicle model for envelopes and transient lap simulation. Intentionally lower fidelity than BobLib but explicitly correlated against it. Choose 3/6/10/14 DOF to quantify the value of each added state.
 
-BobSim also includes the original `_0_Utils/kin_py/` kinematics — used for detailed suspension-element workflows, independent and backward-compatible.
+KinPy owns the suspension geometry. DynPy and the app use its original
+`QuarterCar`, `Wishbone`, `Link`, `Node` and `Tire` elements through a vehicle YAML
+adapter. Lookup tables are sampled from that same assembly.
 
 ## Using the unified vehicle interface
 
 ```python
-from _0_Utils.dyn_py import Vehicle
+from engines.dynpy import Vehicle
 
 vehicle = Vehicle.from_yaml()
 wheel_state = vehicle.kinematics_at([0.01, -0.01, 0.0, 0.0])  # all four wheels
@@ -15,7 +17,8 @@ model_14dof = vehicle.model(14)                               # 14DOF transient
 trim = vehicle.steady_state(14, speed_mps=12.0)              # QSS trim at 12 m/s
 ```
 
-The vehicle definition and kinematics lookup are built once and shared across all DOF models. Lower-level functions (`create_kinematics`, `create_model`, QSS, transient) remain public for specialized use.
+The vehicle definition and kinematics lookup are built once and shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
+transient solvers are exposed by `engines.dynpy`.
 
 ## Fidelity ladder
 
@@ -46,13 +49,18 @@ omega_dot = I^-1 (sum(M) - omega × I·omega)  (rotational)
 **Load transfer:**
 - 3DOF: pitch/roll moments closed algebraically (longitudinal ∝ ride height + wheelbase, lateral ∝ roll-stiffness split)
 - 6DOF: heave/roll/pitch integrated with wheel rates, damping, anti-roll stiffness, preload
-- 10/14DOF: unsprung masses integrated separately; 14DOF adds tire vertical compliance
+- 10DOF: adds wheel rotation dynamics
+- 14DOF: integrates unsprung vertical motion and tire vertical compliance
 
 **Tire model:**
+
+Front and rear use their own `tire.template` selections. `aero.tire_template`
+is a fallback only when an axle has no selection. Load validity is checked
+against each corner's active fit.
 - Contact patch position/velocity from kinematics evaluator (includes bump toe, camber, migration effects)
 - Slip evaluated in individual wheel frames
-- Load-sensitive peak and cornering-stiffness from Magic Formula
-- Combined-slip ellipse with saturation
+- MF5.2 Fx, Fy, Mx, My and Mz curves with load and camber dependence
+- MF5.2 combined slip, shifts, scale factors and post-peak force reduction
 
 **Drive and brake:**
 - Drive torque: `drive_distribution_front` from `vehicle.yml` (0 = RWD)
@@ -68,27 +76,33 @@ acceleration rather than incorrectly imposing zero wheel acceleration. In the
 14DOF equations, longitudinal and lateral translation use total vehicle mass;
 sprung mass is used only for the independently released chassis heave equation.
 
-Aerodynamic downforce is applied at the center of pressure inferred directly
-from the nominal `vehicle.yml` downforce and free-pitch-moment maps. The rigid
-body receives the equivalent CG wrench
-`F_aero, r_CG_to_CoP x F_downforce`; drag remains applied at `aero_ref_m`.
-The reported front aero balance is derived from that CoP for the planar axle
-load closure. The CoP is not clipped to the wheelbase, because doing so would
-change the map's pitch moment.
+DynPy interpolates drag, downforce and all three CFD moments at the current
+front and rear axle ride heights. Heights come from the chassis-mounted
+reference points in `vehicle.yml`, mirrored for the right side, as in BobLib.
+Queries outside the CFD grids clamp to the grid edges. The force acts at
+`aero_ref_m`, with the interpolated free moment added to its moment about the CG.
+Loads scale with air density and full three-dimensional speed. DynPy currently
+assumes still air. The 3 DOF model keeps the nominal chassis pose and closes
+vertical aero loads algebraically. The 6, 10 and 14 DOF models update the aero
+map as the chassis moves.
 
 `vehicle.yml` supplies geometry, component mass/inertia, wheel/tire values,
-suspension tables, aero maps, and powertrain layout. When available, the
-FourPost metrics CSV supplies measured/projected wheel and anti-roll stiffness;
-the YAML shock tables are the fallback.
+suspension tables, aero maps, and powertrain layout. Shock motion ratios and
+anti-roll stiffness come from the YAML geometry. FourPost calibration requires
+an explicit `four_post_metrics_path`.
 
 ## Double-wishbone kinematic coupling
 
 The dynamic system receives suspension hardpoints, not hand-entered curves,
-instant centers, or jacking coefficients. The `dyn_py` kinematics surface uses the
-shared nonlinear `CornerKinematics` constraint solver to derive contact-patch
+instant centers, or jacking coefficients. The KinPy `CornerKinematics` adapter uses the original
+`QuarterCar` constraint solver to derive contact-patch
 and wheel-center migration; camber, toe, caster, KPI, trail, and scrub; and the
-contact-patch tangent across wheel travel. At the current corner jounce,
-`dyn_py` consumes one four-corner kinematic state. The reciprocal instantaneous
+contact-patch tangent across wheel travel. At each corner's current jounce and
+the commanded rack displacement, DynPy consumes one four-corner kinematic state. Steering headings are taken from the solved wheel
+poses, including the linkage's Ackermann behavior. The existing `steering_rad`
+input specifies mean front-wheel heading at nominal ride height and is converted
+to rack travel through KinPy. `ModelInputs.rack_displacement_m` supplies rack
+travel directly when provided. The reciprocal instantaneous
 links remain:
 
 ```text
@@ -111,8 +125,10 @@ boundary; longitudinal coefficients retain their axle sign.
 
 Two interchangeable backends are available:
 
-- `lookup` (default) solves the hardpoints once at vehicle load, then uses
-  interpolation during QSS and ODE evaluations;
+- `lookup` (default) interpolates precomputed jounce curves at zero rack travel.
+  At nonzero rack travel it uses direct KinPy solves for the coupled pose and
+  its contact-patch derivative. Steered evaluations therefore cost the same as
+  the nonlinear backend.
 - `nonlinear` solves each corner and the centered contact-patch derivative
   inside every force evaluation. It is intended for short correlation runs and
   as the accuracy reference for choosing a lookup grid.
@@ -127,9 +143,8 @@ make reduced-eval REDUCED_KINEMATICS=nonlinear
 On the default vehicle, the 49-point lookup built in about 0.67 s and differed
 from off-grid nonlinear solutions by at most 2.25 micrometers at the contact
 patch, 0.00014 degrees camber, 0.00010 degrees toe, and `4.6e-6` in an
-instant-link coefficient. A 14DOF force evaluation took about 1.5 ms with the
-lookup and 165 ms with in-loop solves on the development machine. Grid density
-has negligible interpolation-time cost, so 49 points remains the default.
+instant-link coefficient. These errors describe the zero-rack lookup. Steered
+evaluations now use direct solves with both backends. The zero-rack lookup retains 49 points.
 
 Spring/damper and stabilizer-bar forces remain a separate elastic path. Springs
 are projected through the BobLib/FourPost motion ratio to an equivalent wheel
@@ -178,7 +193,8 @@ equations and constrains selected generalized accelerations:
 The unknown set grows naturally with fidelity: body sideslip/steer/drive torque,
 then heave-roll-pitch, then four wheel slips, then four unsprung positions.
 
-Finite tire-fit bounds are validity constraints. GGV and YMD cells are rejected
+QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
+range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected
 when any normal load falls outside the active `.tir` file's `FZMIN`/`FZMAX`
 range; warning-only extrapolation is available only through an explicit config
 override. Study-grade GGV and lap configs enable a deterministic beta/steer
@@ -187,7 +203,7 @@ boundary from a disconnected local trim branch. The routine all-DOF visual
 smoke config disables that expensive audit explicitly. Sideslip and roadwheel-
 steer bounds remain study assumptions and are written into lap summaries.
 
-Select the backend in `GGV/ggv_config.yml` or `YMD/ymd_config.yml`:
+Select the backend in `simulations/envelope/ggv/ggv_config.yml` or `simulations/envelope/ymd/ymd_config.yml`:
 
 ```yaml
 generation:
@@ -207,7 +223,7 @@ Compare common time histories with an existing OpenModelica result CSV:
 ```bash
 make reduced-eval \
   REDUCED_DOF=10 \
-  REDUCED_BOBLIB_CSV=_3_StandardSim/BuildBobLib/VehicleSim/results/run_.../BobLib.Experiments.Standards.VehicleSim_res.csv
+  REDUCED_BOBLIB_CSV=simulations/mbd/BuildBobLib/VehicleSim/results/run_.../BobLib.Experiments.Standards.VehicleSim_res.csv
 ```
 
 The comparison reports RMSE, range-normalized RMSE, maximum absolute error, and
@@ -261,15 +277,19 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
 
 ## Current reduction limits
 
-- The current map is one-dimensional in jounce. It captures fixed-rack bump
-  steer, but commanded roadwheel steer is added afterward; rack travel,
-  Ackermann, and steer-dependent camber/caster/trail require a future 2D
-  jounce-by-rack map.
-- Pushrod/bellcrank motion ratio remains a static FourPost projection, and
+- The fast lookup remains one-dimensional in jounce. Steered poses use direct
+  KinPy solves. Left and right corners have independent travel, but their
+  hardpoints still come from mirrored axle geometry.
+- Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.
-- The tire is a compact MF-derived saturation model, not the full MF52/MF6.2
-  equation set, and has no relaxation-length states.
+- Tire forces and moments use BobLib's steady-state MF5.2 curves.
+  Relaxation-length states are not included. The 3/6DOF models solve algebraic
+  wheel slip within the tire fit bounds and reject trims that miss wheel torque
+  demand, including rolling resistance. The 10/14DOF models obtain slip from
+  wheel rotation with `J*omega_dot = torque + My - Fx*radius`. The chassis
+  moment balance excludes torque accelerating wheel spin. Wheel gyroscopic
+  coupling and steering inertia remain outside the reduced model.
 - The powertrain is represented by wheel torque in the transient equations;
   the GGV and lap-controller power cap remains an outer feasibility constraint.
 - The 32 kW endurance setting is a constant event cap, not an accumulator-energy

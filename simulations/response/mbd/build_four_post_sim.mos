@@ -1,0 +1,41 @@
+clear();
+
+root := OpenModelica.Scripting.cd();
+boblibDir := root + "/engines/boblib/BobLib";
+buildDir := root + "/simulations/mbd/BuildBobLib/FourPostSim";
+
+OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
+
+OpenModelica.Scripting.setCommandLineOptions("--maxSizeLinearTearing=5000");
+
+OpenModelica.Scripting.setCommandLineOptions("--indexReductionMethod=dynamicStateSelection");
+
+OpenModelica.Scripting.setCommandLineOptions("--matchingAlgorithm=PFPlusExt");
+
+OpenModelica.Scripting.setCommandLineOptions("-d=NLSanalyticJacobian");
+
+loadModel(Modelica, {"4.1.0"});
+loadModel(VehicleInterfaces, {"2.0.2"});
+
+loadFile(boblibDir + "/package.mo");
+
+mkdir(root + "/simulations/mbd/BuildBobLib");
+mkdir(buildDir);
+
+cd(buildDir);
+
+// The makefile sets BOBSIM_NATIVE_CFLAGS for the container architecture. clang on AArch64 rejects -march=native.
+nativeCflags := OpenModelica.Scripting.getEnvironmentVar("BOBSIM_NATIVE_CFLAGS");
+nativeCflags := if nativeCflags == "" then "-O3 -march=native -mtune=native" else nativeCflags;
+
+res := buildModel(
+  BobLib.Experiments.Standards.FourPostSim,
+  startTime = 0,
+  stopTime = 118,
+  tolerance = 1e-6,
+  outputFormat = "csv",
+  cflags = nativeCflags
+);
+
+res;
+getErrorString();

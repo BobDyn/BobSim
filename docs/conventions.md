@@ -15,7 +15,7 @@ Reference for the `boblib.vehicle.v1` schema (`vehicle.yml`). Everything here wa
 
 ## Sign conventions
 
-- **Camber**: inward tilt is negative (`_5_App/kinematics.py`)
+- **Camber**: inward tilt is negative (`engines/kinpy/kinematics.py`)
 - **Toe**: `atan2(forward_y, forward_x)`. Toe-in on +Y (left) is positive.
 - **Roll**: sampled in radians from Modelica; four-post report scales to degrees by 57.2958.
 - **Heave**: negated from raw signal, so positive heave = chassis moves *up* relative to contacts.
@@ -62,7 +62,7 @@ No extrapolation in adjuster setting or interpolation between valve specs occurs
 From the BobSim root, inspect the resolved table and its provenance:
 
 ```bash
-python -m _0_Utils.damper_curves vehicle.yml --output resolved_dampers.json
+python -m common.damper_curves vehicle.yml --output resolved_dampers.json
 make standard-eval-transient
 ```
 
@@ -74,6 +74,10 @@ After one initial build with runtime-table support, changing supported damper
 settings reuses the same executable. No record write, submodule commit, or
 rebuild is needed for a damper-only change. Changes apply to the next study;
 a launched batch of cases keeps its settings snapshot.
+Transient damper plots use the captured curves returned with the results, including
+after temporary run-file cleanup. They do not reread the current vehicle settings.
+Results without captured curves omit the reference overlay and issue a warning;
+the simulated force-versus-speed samples remain available.
 
 Older executables are rejected with a request to rebuild once. Standalone
 BobLib simulations retain their record-based defaults; BobSim explicitly enables
@@ -90,7 +94,7 @@ record fallback used by standalone BobLib simulations.
 
 Curve generation works with the existing BobLib tabular component. The additional
 table validation and diagnostic outputs require the updated BobLib checkout.
-The sibling `BobLib` repository and BobSim's `_0_Utils/external/BobLib` submodule
+The sibling `BobLib` repository and BobSim's `engines/boblib` submodule
 are separate checkouts: editing one does not update the other. Publish the BobLib
 changes separately, advance BobSim's submodule to that commit, and build once.
 Commit that submodule pointer with the BobSim
@@ -124,11 +128,11 @@ two points. Updated BobLib exposes `TabularDamper.extrapolating` and
 saved samples; they are not a bound on intermediate solver evaluations.
 
 The source digest, raw pixel samples and processed data live in
-`_0_Utils/damper_data`. Reproduce the extraction with a Python environment containing
+`common/damper_data`. Reproduce the extraction with a Python environment containing
 `pypdf`, `numpy`, and Pillow:
 
 ```bash
-python _0_Utils/damper_data/digitize_ttx25.py "path/to/_TTX25 MkII Dyno N vs mmps.pdf" temp/ttx25
+python common/damper_data/digitize_ttx25.py "path/to/_TTX25 MkII Dyno N vs mmps.pdf" temp/ttx25
 ```
 
 Inspect both generated trace overlays before replacing a dataset. Add new

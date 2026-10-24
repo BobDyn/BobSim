@@ -7,14 +7,13 @@ import numpy as np
 import pytest
 import yaml
 
-from _3_StandardSim.FourPostEval import four_post_eval_sim as four_post_eval
-from _0_Utils.kin_py import (
+from simulations.response.mbd.four_post import four_post_eval_sim as four_post_eval
+from engines.kinpy import (
     KINEMATIC_CURVE_META,
     CornerKinematics,
     create_kinematics,
     kinematic_curves_payload,
 )
-from _5_App import kinematics as app_kinematics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,13 +21,8 @@ INCH_TO_M = 0.0254
 
 
 def test_kinematics_model_lives_in_shared_suspension_package() -> None:
-    assert CornerKinematics.__module__ == "_0_Utils.kin_py.kinematics"
-    assert kinematic_curves_payload.__module__ == "_0_Utils.kin_py.kinematics"
-
-
-def test_app_kinematics_import_is_compatibility_shim() -> None:
-    assert app_kinematics.CornerKinematics is CornerKinematics
-    assert app_kinematics.kinematic_curves_payload is kinematic_curves_payload
+    assert CornerKinematics.__module__ == "engines.kinpy.kinematics"
+    assert kinematic_curves_payload.__module__ == "engines.kinpy.kinematics"
 
 
 def test_precomputed_vehicle_kinematics_matches_in_loop_nonlinear_solution() -> None:
@@ -527,14 +521,12 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     assert payload["warnings"] == []
     assert payload["axles"]["front"]["ok"] is True
     assert payload["axles"]["rear"]["ok"] is True
-    assert len(payload["sweep_m"]) == 20
-    assert len(payload["roll_deg"]) == 20
+    assert len(payload["sweep_m"]) == 21
+    assert len(payload["roll_deg"]) == 21
     assert len(payload["steer_m"]) == 21
     assert len(payload["curve_meta"]) == len(KINEMATIC_CURVE_META)
-    # Pin the absolute count too. Comparing only against KINEMATIC_CURVE_META is
-    # self-referential and passes even if the registry is silently truncated, which
-    # is exactly how a bad merge resolution once dropped the ten curves below.
-    assert len(payload["curve_meta"]) == 33
+    # Pin the absolute count. A bad merge once dropped ten curves from the registry.
+    assert len(payload["curve_meta"]) == 35
     published = {item["id"] for item in payload["curve_meta"]}
     assert {
         "bump_front_ic_y_mm", "bump_front_ic_z_mm", "bump_front_swing_arm_mm",
@@ -544,8 +536,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
         "steer_camber_deg", "steer_scrub_mm", "steer_mech_trail_mm",
         "steer_rc_y_mm", "steer_rc_z_mm", "steer_kpi_deg", "steer_caster_deg",
     } <= published
-    # The original sixteen curves keep their identity and ordering; instant-centre
-    # and roll-centre curves were appended after them.
+    # Instant-centre and roll-centre curves come after the original sixteen.
     assert [item["source_plot"] for item in payload["curve_meta"]][:16] == [
         "Plot1",
         "Plot2",
@@ -569,7 +560,7 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     axis_lengths = {
         "jounce_mm": len(payload["x_axes"]["jounce_mm"]),
         "roll_deg": len(payload["x_axes"]["roll_deg"]),
-        "steer_deg": len(payload["x_axes"]["steer_deg"]),
+        "rack_mm": len(payload["x_axes"]["rack_mm"]),
     }
     for item in KINEMATIC_CURVE_META:
         key = item["id"]
@@ -579,13 +570,9 @@ def test_corner_kinematics_payload_reports_complete_active_vehicle_sweep() -> No
     for item in KINEMATIC_CURVE_META:
         if item["id"].startswith("steer_"):
             assert rear_curves[item["id"]] == []
-    # Steer's x-axis is the *solved* road-wheel angle, not the commanded rack
-    # displacement, so it need not be monotonic in lockstep with the rack sweep,
-    # but it must vary and stay centered near zero at zero rack displacement.
-    steer_x = payload["x_axes"]["steer_deg"]
-    zero_index = payload["steer_m"].index(0.0)
-    assert steer_x[zero_index] == pytest.approx(0.0, abs=0.5)
-    assert steer_x[0] != steer_x[-1]
+    assert payload["x_axes"]["rack_mm"] == pytest.approx([1000 * value for value in payload["steer_m"]])
+    for axis in payload["x_axes"].values():
+        assert 0.0 in axis
     for key in (
         "bump_camber_deg",
         "bump_toe_deg",
@@ -1006,7 +993,7 @@ def test_four_post_lltd_uses_spring_roll_stiffness_when_arb_is_absent(
 
 
 def test_kinematic_heave_gains_match_four_post_eval_metrics() -> None:
-    metrics_path = ROOT / "_3_StandardSim/results/four_post_eval_report_metrics.csv"
+    metrics_path = ROOT / "simulations/mbd/results/four_post_eval_report_metrics.csv"
     if not metrics_path.is_file():
         pytest.skip("FourPostEval metrics artifact is not available")
 
@@ -1046,3 +1033,89 @@ def _curve_gain_rad_per_m(sweep_m: np.ndarray, curve_deg: list[float]) -> float:
 def _curve_gain_m_per_m(sweep_m: np.ndarray, curve_mm: list[float]) -> float:
     curve_m = np.asarray(curve_mm, dtype=float) / 1000.0
     return float(np.polyfit(sweep_m, curve_m, 1)[0])
+
+
+@pytest.mark.parametrize("pulse_force", [-1000.0, 1000.0])
+@pytest.mark.parametrize("expected_anti_pct", [-20.0, 20.0])
+def test_four_post_anti_dive_sign_is_independent_of_pulse_direction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pulse_force: float,
+    expected_anti_pct: float,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    result = _four_post_result_from_kinematics(
+        vehicle,
+        np.linspace(-0.03, 0.03, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+        np.linspace(-0.75, 0.75, four_post_eval.FOUR_POST_ROLL_POSE_COUNT),
+    )
+    front = CornerKinematics.from_vehicle(vehicle, "front").wheel_center_initial
+    rear = CornerKinematics.from_vehicle(vehicle, "rear").wheel_center_initial
+    wheelbase = abs(front[0] - rear[0])
+    # An upward response to negative braking Fx is dive-resisting geometry.
+    coefficient = -(expected_anti_pct / 100.0) * 0.35 / wheelbase
+    pulse = np.isin(
+        result["time"],
+        _jack_times(four_post_eval.FOUR_POST_HEAVE_START_S, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+    )
+    result["frKnC.fx"][pulse] = pulse_force
+    # The fixture reaction signal is opposite to the chassis jacking response.
+    result["frKnC.jackingForce"][pulse] = -coefficient * pulse_force
+    config = _four_post_unit_config(tmp_path)
+    summary, series = four_post_eval.FourPostEvalSim(config).summarize(result)
+
+    assert summary["avg_anti_dive_pct"] == pytest.approx(expected_anti_pct)
+    np.testing.assert_allclose(series["fr_anti_vs_heave"], expected_anti_pct)
+    assert summary["avg_longitudinal_jacking_coeff_front"] == pytest.approx(coefficient)
+
+
+@pytest.mark.parametrize("axle", ("front", "rear"))
+def test_kinpy_continuation_crosses_nominal_pose(axle: str) -> None:
+    vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text())
+    corner = CornerKinematics.from_vehicle(vehicle, axle)
+    guess = np.zeros(3)
+    for jounce in (-0.0025, 0.0, 0.0025):
+        guess, points, residual = corner.solve_jounce(jounce, guess)
+        assert residual < 1e-8
+        assert points.contact_patch[2] == pytest.approx(corner.contact_patch_initial[2] + jounce, abs=1e-8)
+
+
+def test_corner_snapshots_are_independent_of_later_solves() -> None:
+    corner = CornerKinematics.from_vehicle(_direct_quarter_car_vehicle(), "front")
+    _, first, _ = corner.solve_jounce(0.25, np.zeros(3))
+    saved = {name: values.copy() for name, values in vars(first).items()}
+    corner.solve_jounce(-0.3, np.zeros(3), rack_displacement_m=0.15)
+    for name, values in vars(first).items():
+        np.testing.assert_array_equal(values, saved[name])
+    _, repeated, _ = corner.solve_jounce(0.25, np.zeros(3))
+    for name, values in vars(repeated).items():
+        np.testing.assert_allclose(values, saved[name], atol=1e-10)
+
+
+def test_geometry_only_corner_rejects_unreachable_pose() -> None:
+    corner = CornerKinematics.from_vehicle(_direct_quarter_car_vehicle(), "front")
+    with pytest.raises(ValueError, match="constraint residual"):
+        corner.solve_jounce(100.0, np.zeros(3))
+    _, points, residual = corner.solve_jounce(0.25, np.zeros(3))
+    assert residual < 1e-8
+    assert points.contact_patch[2] == pytest.approx(0.25, abs=1e-8)
+
+
+def test_custom_jounce_sweep_includes_zero() -> None:
+    from engines.kinpy.kinematics import _clean_sweep
+
+    assert _clean_sweep([-0.02, 0.01]) == (-0.02, 0.0, 0.01)
+    assert _clean_sweep([0.01, 0.02]) == (0.01, 0.02)
+    assert _clean_sweep([-0.01, 0.0, 0.01]) == (-0.01, 0.0, 0.01)
+
+
+def test_roll_center_height_uses_both_corners() -> None:
+    vehicle = yaml.safe_load((ROOT / "vehicle.yml").read_text(encoding="utf-8"))
+    payload = kinematic_curves_payload(vehicle, sweep_m=[0.0], roll_deg=[-1.0, 0.0, 1.0], steer_m=[0.0])
+    for axle in ("front", "rear"):
+        curves = payload["axles"][axle]["curves"]
+        heights = curves["roll_rc_height_mm"]
+        # A symmetric axle has the same height for equal left and right roll.
+        assert heights[0] == pytest.approx(heights[2], abs=1e-5)
+        assert heights[1] == pytest.approx(curves["bump_rc_height_mm"][0], abs=1e-5)

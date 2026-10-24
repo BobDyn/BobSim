@@ -20,7 +20,7 @@ ever disagree.
    make regression-baseline
    ```
 
-2. **Inspect the regenerated artifacts** under `_3_StandardSim/results/`:
+2. **Inspect the regenerated artifacts** under `simulations/mbd/results/`:
    - `*_report_metrics.csv`
    - `*_report.pdf`
 

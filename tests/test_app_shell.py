@@ -4,17 +4,69 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
+import sys
+from types import SimpleNamespace
+import time
+from urllib.request import urlopen
 import zipfile
 
 import pytest
 import yaml
 
-from _0_Utils.deploy import deploy
-from _0_Utils.kin_py import KINEMATIC_CURVE_META
-from _3_StandardSim import _modelica_runner
-from _3_StandardSim._modelica_runner import ModelicaRunner
-from _5_App import app
-from _5_App import desktop
+from common.deploy import deploy
+from engines.kinpy import KINEMATIC_CURVE_META
+from simulations.response.mbd import _modelica_runner
+from simulations.response.mbd._modelica_runner import ModelicaRunner
+from app import app
+from app import desktop
+
+
+def test_editor_behavior() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    subprocess.run([node, "tests/app_editor_clarity.cjs"], cwd=app.PACKAGE_ROOT, check=True)
+
+
+def test_static_assets_allow_linked_root_but_reject_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resources = tmp_path / "Resources" / "static"
+    resources.mkdir(parents=True)
+    (resources / "styles.css").write_text("body { color: white; }")
+    linked_root = tmp_path / "static"
+    linked_root.symlink_to(resources, target_is_directory=True)
+    (resources / "outside").symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setattr(app, "STATIC_ROOT", linked_root)
+
+    assert app._safe_static_path("styles.css") == resources / "styles.css"
+    for path in ("../outside.txt", "outside/private.txt", str(tmp_path / "private.txt")):
+        with pytest.raises(ValueError, match="escapes app root"):
+            app._safe_static_path(path)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS archive tool")
+def test_macos_release_archive_preserves_bundle_symlinks(tmp_path: Path) -> None:
+    bundle = tmp_path / "build" / "BobSim.app"
+    resources = bundle / "Contents" / "Resources"
+    frameworks = bundle / "Contents" / "Frameworks"
+    resources.mkdir(parents=True)
+    frameworks.mkdir()
+    (resources / "asset.txt").write_text("bundled data")
+    (frameworks / "asset.txt").symlink_to("../Resources/asset.txt")
+    release = tmp_path / "BobSim-release"
+    release.mkdir()
+
+    deploy._copy_release_artifact(bundle, release)
+    archive = deploy._make_archive(release, tmp_path, release.name)
+    extracted = tmp_path / "extracted"
+    subprocess.run(["ditto", "-x", "-k", str(archive), str(extracted)], check=True)
+
+    asset = extracted / release.name / "BobSim.app/Contents/Frameworks/asset.txt"
+    assert asset.is_symlink()
+    assert asset.read_text() == "bundled data"
+
 
 def clear_openmodelica_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     app.OPENMODELICA_VERIFY_CACHE.clear()
@@ -31,9 +83,9 @@ def test_app_status_exposes_bobsim_workflows_and_boblib_state() -> None:
     payload = app.status_payload()
 
     repo = payload["repo"]
-    assert repo["boblib_package"]["path"] == "_0_Utils/external/BobLib/BobLib/package.mo"
-    assert repo["vehicle_exe"]["path"].startswith("_3_StandardSim/BuildBobLib/VehicleSim/")
-    assert repo["four_post_exe"]["path"].startswith("_3_StandardSim/BuildBobLib/FourPostSim/")
+    assert repo["boblib_package"]["path"] == "engines/boblib/BobLib/package.mo"
+    assert repo["vehicle_exe"]["path"].startswith("simulations/mbd/BuildBobLib/VehicleSim/")
+    assert repo["four_post_exe"]["path"].startswith("simulations/mbd/BuildBobLib/FourPostSim/")
     assert payload["runtime"]["home_env"] == "BOBSIM_HOME"
     assert payload["runtime"]["legacy_home_env"] == "BOBDYN_HOME"
 
@@ -78,10 +130,13 @@ def test_standard_config_fields_expose_sim_tuning_controls() -> None:
 @pytest.mark.parametrize(
     ("argv", "normalized"),
     [
-        (["BobSim", "--run-module", "_3_StandardSim.SomeEval"], ["BobSim", "--run-module", "_3_StandardSim.SomeEval"]),
         (
-            ["BobSim", "-m", "_3_StandardSim.SomeEval", "config.yml"],
-            ["BobSim", "--run-module", "_3_StandardSim.SomeEval", "config.yml"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval"],
+        ),
+        (
+            ["BobSim", "-m", "simulations.response.mbd.SomeEval", "config.yml"],
+            ["BobSim", "--run-module", "simulations.response.mbd.SomeEval", "config.yml"],
         ),
     ],
 )
@@ -97,14 +152,42 @@ def test_desktop_forwards_python_module_invocations_without_opening_window(
     monkeypatch.setattr(desktop.multiprocessing, "freeze_support", lambda: calls.append("freeze_support"))
     monkeypatch.setattr(
         desktop,
-        "_available_port",
-        lambda _host: (_ for _ in ()).throw(AssertionError("desktop window should not start")),
+        "_running_server",
+        lambda: (_ for _ in ()).throw(AssertionError("desktop window should not start")),
     )
 
     desktop.main()
 
     assert calls == ["freeze_support", "main"]
     assert desktop.sys.argv == normalized
+
+
+def test_desktop_window_can_load_after_slow_backend_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    pages: list[bytes] = []
+
+    def load_app():
+        time.sleep(0.5)
+        return app
+
+    def create_window(_title: str, url: str, **_kwargs) -> None:
+        with urlopen(url, timeout=2) as response:
+            pages.append(response.read())
+
+    def unexpected_fallback(*_args) -> None:
+        pytest.fail("The native window could not load the backend")
+
+    monkeypatch.setattr(desktop.sys, "argv", ["BobSim"])
+    monkeypatch.setattr(desktop, "_bobsim_app", load_app)
+    monkeypatch.setattr(desktop, "_can_start_embedded_window", lambda: True)
+    monkeypatch.setattr(desktop, "_open_browser_and_wait", unexpected_fallback)
+    monkeypatch.setitem(desktop.sys.modules, "webview", SimpleNamespace(
+        create_window=create_window, start=lambda **_kwargs: None,
+    ))
+
+    desktop.main()
+
+    assert len(pages) == 1
+    assert b"BobSim" in pages[0]
 
 
 def test_desktop_stdio_replaces_unencodable_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -320,8 +403,7 @@ def test_openmodelica_auto_detection_uses_user_package_library(
 ) -> None:
     clear_openmodelica_settings(monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
-    # Path.home() reads USERPROFILE on Windows, HOME elsewhere; set both so the
-    # lookup stays inside tmp_path on every platform.
+    # Path.home() reads USERPROFILE on Windows and HOME elsewhere.
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     home = tmp_path / "OpenModelica"
     omc = home / "bin" / ("omc.exe" if app.platform.system() == "Windows" else "omc")
@@ -428,13 +510,26 @@ def test_openmodelica_selection_accepts_omc_bin_directory(
 def test_deploy_does_not_bundle_generated_modelica_binaries() -> None:
     data_paths = set(deploy.DATA_PATHS)
 
-    assert "_3_StandardSim/build_vehicle_sim.mos" in data_paths
-    assert "_3_StandardSim/build_four_post_sim.mos" in data_paths
-    assert "_3_StandardSim/BuildBobLib" not in data_paths
+    assert "simulations/response/mbd/build_vehicle_sim.mos" in data_paths
+    assert "simulations/response/mbd/build_four_post_sim.mos" in data_paths
+    assert "simulations/mbd/BuildBobLib" not in data_paths
     assert app.BUILD_ARCHIVE_ROOT.as_posix() not in data_paths
 
 
-def test_deploy_collects_qt_webengine_for_embedded_desktop_window() -> None:
+def test_desktop_bundles_and_seeds_every_registered_config() -> None:
+    from app.registry import BASE_CONFIG_SPECS
+    from app.runtime import APP_SEED_RUNTIME_PATHS
+
+    for paths in (deploy.DATA_PATHS, APP_SEED_RUNTIME_PATHS):
+        for spec in BASE_CONFIG_SPECS.values():
+            assert any(Path(spec.path).is_relative_to(path) for path in paths), spec.path
+
+
+def test_deploy_collects_native_desktop_dependencies() -> None:
+    if sys.platform == "darwin":
+        assert deploy.PYINSTALLER_COLLECT_ALL == ("webview",)
+        assert deploy.PYINSTALLER_RUNTIME_HIDDEN_IMPORTS == ()
+        return
     assert "PyQt6" in deploy.PYINSTALLER_COLLECT_ALL
     assert "qtpy" in deploy.PYINSTALLER_COLLECT_ALL
     assert "PyQt6.QtWebEngineCore" in deploy.PYINSTALLER_RUNTIME_HIDDEN_IMPORTS
@@ -462,17 +557,17 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
 ) -> None:
     package_root = tmp_path / "package"
     runtime_root = tmp_path / "runtime"
-    package_script = package_root / "_3_StandardSim/build_vehicle_sim.mos"
+    package_script = package_root / "simulations/response/mbd/build_vehicle_sim.mos"
     package_vehicle = package_root / "vehicle.yml"
-    package_workflow = package_root / "_3_StandardSim/FourPostEval/four_post_eval_config.yml"
-    package_tire = package_root / "_0_Utils/tire_templates/stock.tir"
-    runtime_script = runtime_root / "_3_StandardSim/build_vehicle_sim.mos"
+    package_workflow = package_root / "simulations/response/mbd/four_post/four_post_eval_config.yml"
+    package_tire = package_root / "common/tire_templates/stock.tir"
+    runtime_script = runtime_root / "simulations/response/mbd/build_vehicle_sim.mos"
     runtime_vehicle = runtime_root / "vehicle.yml"
     runtime_active = runtime_root / app.ACTIVE_SIM_CONFIG_ROOT / "four_post_eval_config.yml"
-    runtime_workflow = runtime_root / "_3_StandardSim/FourPostEval/four_post_eval_config.yml"
-    runtime_tire = runtime_root / "_0_Utils/tire_templates/stock.tir"
-    runtime_custom_tire = runtime_root / "_0_Utils/tire_templates/custom.tir"
-    runtime_build = runtime_root / "_3_StandardSim/BuildBobLib/VehicleSim/old.exe"
+    runtime_workflow = runtime_root / "simulations/response/mbd/four_post/four_post_eval_config.yml"
+    runtime_tire = runtime_root / "common/tire_templates/stock.tir"
+    runtime_custom_tire = runtime_root / "common/tire_templates/custom.tir"
+    runtime_build = runtime_root / "simulations/mbd/BuildBobLib/VehicleSim/old.exe"
     runtime_archive = runtime_root / app.MODELICA_BUILD_CACHE_ROOT / "vehicle/old/files/old.exe"
     runtime_saved_result = runtime_root / app.SAVED_RESULTS_ROOT / "keep/manifest.json"
     runtime_settings = runtime_root / app.OPENMODELICA_SETTINGS_PATH
@@ -527,8 +622,8 @@ def test_runtime_seed_preserves_build_cache_when_packaged_sources_are_unchanged(
 ) -> None:
     package_root = tmp_path / "package"
     runtime_root = tmp_path / "runtime"
-    package_script = package_root / "_3_StandardSim/build_vehicle_sim.mos"
-    runtime_build = runtime_root / "_3_StandardSim/BuildBobLib/VehicleSim/current.exe"
+    package_script = package_root / "simulations/response/mbd/build_vehicle_sim.mos"
+    runtime_build = runtime_root / "simulations/mbd/BuildBobLib/VehicleSim/current.exe"
     package_script.parent.mkdir(parents=True)
     package_script.write_text("// build script\n", encoding="utf-8")
     monkeypatch.setattr(app, "PACKAGE_ROOT", package_root)
@@ -548,7 +643,7 @@ def test_runtime_seed_does_not_replace_boblib_for_generated_runtime_extras(
 ) -> None:
     package_root = tmp_path / "package"
     runtime_root = tmp_path / "runtime"
-    rel_boblib = Path("_0_Utils/external/BobLib/BobLib")
+    rel_boblib = Path("engines/boblib/BobLib")
     stabar_rel = Path("Records/VehicleRecord/Chassis/Suspension/Templates/Stabar/StabarRecord.mo")
     package_stabar = package_root / rel_boblib / stabar_rel
     runtime_stabar = runtime_root / rel_boblib / stabar_rel
@@ -616,7 +711,10 @@ def test_frozen_external_tool_env_removes_pyinstaller_paths(
 
 
 def test_modelica_build_scripts_use_cross_platform_directory_creation() -> None:
-    for rel_path in ("_3_StandardSim/build_vehicle_sim.mos", "_3_StandardSim/build_four_post_sim.mos"):
+    for rel_path in (
+        "simulations/response/mbd/build_vehicle_sim.mos",
+        "simulations/response/mbd/build_four_post_sim.mos",
+    ):
         text = Path(rel_path).read_text(encoding="utf-8")
 
         assert 'system("mkdir -p "' not in text
@@ -689,9 +787,10 @@ def test_modelica_build_action_creates_build_directory_before_omc(
     monkeypatch.setattr(app, "modelica_stack_status_payload", lambda _vehicle_path, _root: stack)
 
     def fake_build(_action: app.ActionSpec, _job_id: str) -> int:
-        assert (tmp_path / target.build_dir).is_dir()
-        (tmp_path / target.build_dir / target.exec_name).write_text("exe", encoding="utf-8")
-        (tmp_path / target.build_dir / f"{target.exec_name}_init.xml").write_text("<init />", encoding="utf-8")
+        build_dir = tmp_path / target.build_dir
+        assert build_dir.is_dir()
+        (build_dir / target.exec_name).write_text("fresh executable")
+        (build_dir / f"{target.exec_name}_init.xml").write_text("fresh init")
         return 0
 
     monkeypatch.setattr(app, "_run_subprocess_action", fake_build)
@@ -768,7 +867,7 @@ def test_standard_run_action_fails_cleanly_when_vehicle_sim_is_missing(
     assert job_state is not None
     log = job_state["log"]
     assert "VehicleSim is not built yet" in log
-    assert "_3_StandardSim/BuildBobLib/VehicleSim" in log
+    assert "simulations/mbd/BuildBobLib/VehicleSim" in log
 
 
 def test_modelica_runner_accepts_exe_suffix(tmp_path: Path) -> None:
@@ -786,9 +885,9 @@ def test_modelica_runner_accepts_exe_suffix(tmp_path: Path) -> None:
 
 
 def test_app_can_read_repo_configs() -> None:
-    payload = app.read_text_payload("_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml")
+    payload = app.read_text_payload("simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml")
 
-    assert payload["path"] == "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    assert payload["path"] == "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     assert "BobLib.Experiments.Standards.VehicleSim" in payload["text"]
 
 
@@ -844,20 +943,23 @@ def test_app_vehicle_setup_exposes_vehicle_parameters_without_repo_paths() -> No
 
 
 def test_frontend_renders_aero_maps_as_interactive_3d_surfaces() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function aeroSurfaceRowsFromTable" in app_js
-    assert 'area.visual === "aero" || (area.visual === "tires"' in app_js
+    assert 'area.visual === "aero" && !state.aeroReferenceView' in app_js
+    assert (
+        'area.visual === "hardpoints" || area.visual === "mass" || '
+        '(area.visual === "aero" && state.aeroReferenceView)'
+    ) in app_js
     assert "state.tireSurfaceScene = {" in app_js
-    assert '"FRH m"' in app_js
-    assert '"RRH m"' in app_js
+    assert '"Front ride height (mm)"' in app_js
+    assert '"Rear ride height (mm)"' in app_js
 
 
 def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function tireSetupCorners" in app_js
-    assert "function drawTireCornerSetupCard" in app_js
     assert "function drawTireFrictionEllipse" in app_js
     assert "function tireSetupForceMap" in app_js
     assert "force_map_nominal" in app_js
@@ -866,15 +968,10 @@ def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> Non
     assert "function interpolateTireForceMapAtAlpha" in app_js
     assert "function drawTireForceMapIsolines" in app_js
     assert "function tireForceMapPointAt" in app_js
-    assert "function drawTireAlphaOffsetVector" in app_js
-    assert "function drawTireInclinationGlyph" in app_js
     assert 'return side === "right" ? -numeric : numeric;' in app_js
-    assert "x: -Math.sin(alphaRad)" in app_js
-    assert "Friction Ellipses" in app_js
-    assert "Shared scale" in app_js
-    assert "FzNom" in app_js
+    assert "friction ellipse" in app_js
+    assert "Scale ${formatNumber(maxForce)} (N)" in app_js
     assert "skipInvalid: true" in app_js
-    assert "IA ${formatSignedNumber(corner.inclinationDeg)} deg  Fy" in app_js
     assert "function queueTirePayloadRefresh" in app_js
     assert 'await api("/api/tires/eval", {' in app_js
     assert "function isTireSetupFieldTarget" in app_js
@@ -897,7 +994,7 @@ def test_frontend_tire_setup_draws_corner_force_envelopes_and_alignment() -> Non
 
 
 def test_frontend_tire_tools_show_save_update_spinner() -> None:
-    styles = (app.ROOT / "_5_App/static/styles.css").read_text(encoding="utf-8")
+    styles = (app.ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 
     assert ".tir-status-row" in styles
     assert ".tir-spinner" in styles
@@ -905,8 +1002,8 @@ def test_frontend_tire_tools_show_save_update_spinner() -> None:
 
 
 def test_frontend_archive_exposes_delete_action() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
-    styles = (app.ROOT / "_5_App/static/styles.css").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
+    styles = (app.ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 
     assert "data-delete-result" in app_js
     assert 'await api("/api/results/delete"' in app_js
@@ -915,8 +1012,8 @@ def test_frontend_archive_exposes_delete_action() -> None:
 
 
 def test_frontend_pdf_preview_uses_inline_viewer_with_open_fallback() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
-    styles = (app.ROOT / "_5_App/static/styles.css").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
+    styles = (app.ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 
     assert "function pdfPreviewHtml" in app_js
     assert "pdf-preview-frame" in app_js
@@ -926,8 +1023,8 @@ def test_frontend_pdf_preview_uses_inline_viewer_with_open_fallback() -> None:
 
 
 def test_frontend_toolchain_selection_uses_omc_and_library_only() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
-    html = (app.ROOT / "_5_App/static/index.html").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
+    html = (app.ROOT / "app/static/index.html").read_text(encoding="utf-8")
 
     assert "toolchain-omc-input" in html
     assert "toolchain-library-input" in html
@@ -936,7 +1033,7 @@ def test_frontend_toolchain_selection_uses_omc_and_library_only() -> None:
 
 
 def test_frontend_middle_click_pans_3d_interactive_plots() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function isMiddleClick(event)" in app_js
     assert "function isPanClick(event)" in app_js
@@ -954,7 +1051,7 @@ def test_frontend_middle_click_pans_3d_interactive_plots() -> None:
 
 
 def test_frontend_powertrain_subsystem_tabs_wrap_before_clipping() -> None:
-    styles = (app.ROOT / "_5_App/static/styles.css").read_text(encoding="utf-8")
+    styles = (app.ROOT / "app/static/styles.css").read_text(encoding="utf-8")
 
     assert ".powertrain-subsystem-tabs" in styles
     assert "flex-wrap: wrap;" in styles
@@ -969,7 +1066,7 @@ def test_frontend_powertrain_subsystem_tabs_wrap_before_clipping() -> None:
 
 
 def test_frontend_gates_workflow_runner_on_toolchain_availability() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function externalToolchainAvailable" in app_js
     assert "function workflowAvailable" in app_js
@@ -1019,10 +1116,10 @@ def test_app_can_switch_direct_vehicle_to_bellcrank_actuation_defaults(
     source_root = app.ROOT
     active = tmp_path / "vehicle.yml"
     active.write_text(
-        (source_root / "_0_Utils/vehicle_templates/DWDirect_DWDirectRecord.yml").read_text(encoding="utf-8"),
+        (source_root / "common/vehicle_templates/DWDirect_DWDirectRecord.yml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    shutil.copytree(source_root / "_0_Utils/vehicle_templates", tmp_path / "_0_Utils/vehicle_templates")
+    shutil.copytree(source_root / "common/vehicle_templates", tmp_path / "common/vehicle_templates")
     monkeypatch.setattr(app, "ROOT", tmp_path)
     monkeypatch.setattr(
         app,
@@ -1057,13 +1154,13 @@ def test_app_can_switch_direct_vehicle_to_bellcrank_actuation_defaults(
 
 
 def test_app_can_generate_modelica_payload_from_active_vehicle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    template_path = app.ROOT / "_0_Utils/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml"
+    template_path = app.ROOT / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml"
     data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     data["paths"] = {"boblib": "BobLib", "tire_templates": "tires"}
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
-    shutil.copy(app.ROOT / "_0_Utils/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
+    shutil.copy(app.ROOT / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
     (tmp_path / "vehicle.yml").write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
 
@@ -1083,7 +1180,7 @@ def test_app_archives_and_restores_matching_modelica_builds(
     monkeypatch.setattr(app, "ROOT", tmp_path)
     fake_openmodelica_install(tmp_path, monkeypatch)
     (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: CacheCar\n", encoding="utf-8")
-    script_path = tmp_path / "_3_StandardSim/build_vehicle_sim.mos"
+    script_path = tmp_path / "simulations/response/mbd/build_vehicle_sim.mos"
     script_path.parent.mkdir(parents=True)
     script_path.write_text("// fake build script\n", encoding="utf-8")
     stack = {
@@ -1133,8 +1230,8 @@ def test_modelica_build_signature_changes_when_boblib_source_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(app, "ROOT", tmp_path)
-    script_path = tmp_path / "_3_StandardSim/build_vehicle_sim.mos"
-    boblib_package = tmp_path / "_0_Utils/external/BobLib/BobLib/package.mo"
+    script_path = tmp_path / "simulations/response/mbd/build_vehicle_sim.mos"
+    boblib_package = tmp_path / "engines/boblib/BobLib/package.mo"
     script_path.parent.mkdir(parents=True)
     boblib_package.parent.mkdir(parents=True)
     script_path.write_text("// fake build script\n", encoding="utf-8")
@@ -1254,21 +1351,21 @@ def test_app_evaluates_active_tire_template_for_ui_curves() -> None:
 def test_app_generates_live_kinematic_curves_for_active_vehicle() -> None:
     payload = app.kinematic_curves_from_active_vehicle()
 
-    assert payload["model"].startswith("BobSim native")
+    assert payload["model"] == "KinPy QuarterCar kinematics"
     if not payload["available"]:
         pytest.skip(payload["warnings"][0])
     assert payload["axles"]["front"]["ok"] is True
     assert payload["axles"]["rear"]["ok"] is True
-    assert len(payload["sweep_m"]) == 20
-    assert len(payload["roll_deg"]) == 20
-    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 20
-    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 20
-    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 20
+    assert len(payload["sweep_m"]) == 21
+    assert len(payload["roll_deg"]) == 21
+    assert len(payload["axles"]["front"]["curves"]["bump_camber_deg"]) == 21
+    assert len(payload["axles"]["rear"]["curves"]["bump_toe_deg"]) == 21
+    assert len(payload["axles"]["front"]["curves"]["roll_camber_deg"]) == 21
     assert payload["warnings"] == []
 
 
 def test_frontend_kinematic_plot_fallbacks_reflect_unit_tested_curve_metadata() -> None:
-    app_js = (app.ROOT / "_5_App/static/app.js").read_text(encoding="utf-8")
+    app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
     match = re.search(r"const DEFAULT_KINEMATIC_CURVES = \[(?P<body>.*?)\];", app_js, re.S)
     assert match is not None
 
@@ -1316,7 +1413,7 @@ def test_app_lists_reads_and_saves_tire_templates(tmp_path: Path, monkeypatch: p
     )
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
-    source = Path("_0_Utils/tire_templates/16x7p5_10_12psi.tir")
+    source = Path("common/tire_templates/16x7p5_10_12psi.tir")
     tire_text = source.read_text(encoding="utf-8")
     (tire_root / "base.tir").write_text(tire_text, encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
@@ -1343,7 +1440,7 @@ def test_app_can_save_and_load_named_vehicle_configs(tmp_path: Path, monkeypatch
         "  rear: direct\n",
         encoding="utf-8",
     )
-    template_root = tmp_path / "_0_Utils/vehicle_templates"
+    template_root = tmp_path / "common/vehicle_templates"
     template_root.mkdir(parents=True)
     (template_root / "TemplateVehicle.yml").write_text(
         "schema: boblib.vehicle.v1\n"
@@ -1575,7 +1672,7 @@ def test_results_route_is_global_unless_vehicle_key_is_requested(monkeypatch: py
 
 
 def test_app_can_explore_result_csv_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    results_dir = tmp_path / "_3_StandardSim/results"
+    results_dir = tmp_path / "simulations/mbd/results"
     results_dir.mkdir(parents=True)
     csv_path = results_dir / "raw_trace.csv"
     csv_path.write_text(
@@ -1588,11 +1685,11 @@ def test_app_can_explore_result_csv_sources(tmp_path: Path, monkeypatch: pytest.
     monkeypatch.setattr(app, "ROOT", tmp_path)
 
     sources = app.result_sources_payload()["sources"]
-    assert [source["path"] for source in sources] == ["_3_StandardSim/results/raw_trace.csv"]
+    assert [source["path"] for source in sources] == ["simulations/mbd/results/raw_trace.csv"]
     assert sources[0]["numeric_columns"] == ["time", "accY", "roll"]
 
     series = app.result_series_payload(
-        "_3_StandardSim/results/raw_trace.csv",
+        "simulations/mbd/results/raw_trace.csv",
         x_axis="time",
         signals=["accY", "roll"],
         max_points=2,
@@ -1706,9 +1803,9 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Editing a relocatable study config writes user_data, never the tracked file."""
-    from _0_Utils import config_io
+    from common import config_io
 
-    seed = tmp_path / "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    seed = tmp_path / "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     seed.parent.mkdir(parents=True)
     seed_text = "simulation:\n  solver: dassl\nexecution:\n  max_workers: 8\n"
     seed.write_text(seed_text, encoding="utf-8")
@@ -1721,7 +1818,7 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
                 id="ramp-steer",
                 group="standard",
                 label="Ramp",
-                path="_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml",
+                path="simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
                 workflow_id="ramp-steer",
                 relocatable=True,
                 fields=(app.FieldSpec(("simulation", "solver"), "Solver", kind="select", choices=("dassl", "ida")),),
@@ -1730,7 +1827,7 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
     )
 
     active = config_io.active_config_path(
-        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     )
     assert not active.exists()
 
@@ -1742,19 +1839,19 @@ def test_app_edits_an_active_copy_and_leaves_the_checked_in_config_alone(
 
     # The CLI reads the same file the app is running.
     assert config_io.resolve(
-        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     ) == active
 
     # "Default" is the checked-in config itself, so restoring cannot drift.
     library = app.sim_config_library_payload("ramp-steer")
-    assert library["sources"][0]["path"] == "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml"
+    assert library["sources"][0]["path"] == "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml"
     app.load_sim_config_source("default:ramp-steer")
     assert active.read_text(encoding="utf-8") == seed_text
 
     # With no active copy the CLI falls back to the checked-in config.
     active.unlink()
     assert config_io.resolve(
-        "_3_StandardSim/RampSteerEval/ramp_steer_eval_config.yml", root=tmp_path
+        "simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml", root=tmp_path
     ) == seed
 
 
@@ -1763,7 +1860,7 @@ def test_non_relocatable_configs_are_still_edited_in_place(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GGV/YMD/OptSim configs resolve "../" against their own directory, so they stay put."""
-    config = tmp_path / "_2_EnvelopeSim/GGV/ggv_config.yml"
+    config = tmp_path / "simulations/envelope/ggv/ggv_config.yml"
     config.parent.mkdir(parents=True)
     config.write_text("vehicle_template: ../../vehicle.yml\nreport:\n  enabled: true\n", encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
@@ -1775,7 +1872,7 @@ def test_non_relocatable_configs_are_still_edited_in_place(
                 id="ggv",
                 group="envelope",
                 label="GGV",
-                path="_2_EnvelopeSim/GGV/ggv_config.yml",
+                path="simulations/envelope/ggv/ggv_config.yml",
                 workflow_id="ggv",
                 fields=(app.FieldSpec(("report", "enabled"), "Enabled", kind="boolean"),),
             )
@@ -1786,3 +1883,145 @@ def test_non_relocatable_configs_are_still_edited_in_place(
 
     assert yaml.safe_load(config.read_text(encoding="utf-8"))["report"]["enabled"] is False
     assert not (tmp_path / app.ACTIVE_SIM_CONFIG_ROOT / "ggv_config.yml").exists()
+
+
+@pytest.mark.parametrize('returncode', [0, 1])
+def test_failed_rebuild_cannot_certify_previous_executable(tmp_path, monkeypatch, returncode):
+    from app import modelica_build as builds
+    from app.jobs import JobStore
+    target = app.MODELICA_BUILD_TARGETS['vehicle']
+    build_dir = tmp_path / target.build_dir
+    build_dir.mkdir(parents=True)
+    (build_dir / target.exec_name).write_text('old executable')
+    (build_dir / f'{target.exec_name}_init.xml').write_text('old init')
+    (build_dir / app.BUILD_METADATA_FILENAME).write_text('{"signature": "old"}')
+    monkeypatch.setattr(builds, '_safe_repo_path', lambda path: tmp_path / path)
+    jobs = JobStore(10000)
+    job = jobs.create('build', 'Build', [])
+    monkeypatch.setattr(builds, 'JOBS', jobs)
+    monkeypatch.setattr(builds, 'modelica_stack_status_payload', lambda *args: {'written_to_boblib': True})
+    monkeypatch.setattr(builds, '_modelica_build_signature_payload', lambda *args: {'signature': 'new'})
+    monkeypatch.setattr(builds, '_restore_modelica_build_from_archive', lambda *args: False)
+    monkeypatch.setattr(builds, '_run_subprocess_action', lambda *args: returncode)
+    assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) != 0
+    assert not (build_dir / target.exec_name).exists()
+    assert not (build_dir / app.BUILD_METADATA_FILENAME).exists()
+
+
+def test_architecture_defaults_read_templates_once(monkeypatch):
+    from app import data_services
+    from unittest.mock import Mock
+
+    templates = app._vehicle_template_data()
+    read = Mock(return_value=templates)
+    monkeypatch.setattr(data_services, "_vehicle_template_data", read)
+    data = data_services._vehicle_with_architecture_defaults({
+        "architecture": {"front": "direct", "rear": "direct"},
+    })
+    read.assert_called_once_with()
+    for axle in ("front", "rear"):
+        assert data[axle]["suspension"]["wheel_center_m"]
+        assert "bellcrank" in data[axle]["actuation"]
+
+
+def test_bellcrank_visual_order_matches_modelica_pickup_order():
+    import subprocess
+    from app.modelica_generator import _pickup_order
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the geometry preview check")
+    cases = []
+    for path in (app.ROOT / "common/vehicle_templates").glob("*.yml"):
+        vehicle = yaml.safe_load(path.read_text())
+        for axle in ("front", "rear"):
+            bellcrank = vehicle[axle]["actuation"].get("bellcrank")
+            if not bellcrank:
+                continue
+            roles = list(bellcrank["pickups_m"])
+            expected = _pickup_order(bellcrank["pickups_m"], bellcrank["pivot_m"], bellcrank["axis"], axle)
+            cases.append([bellcrank, roles, sorted(roles, key=expected.get)])
+    source = (app.ROOT / "app/static/app.js").read_text()
+    helpers = source[source.index("function bellcrankOutlineOrder("):source.index("function pointColor(")]
+    script = helpers + """
+const assert = require('node:assert/strict');
+for (const [bellcrank, roles, expected] of JSON.parse(require('node:fs').readFileSync(0, 'utf8'))) {
+  assert.deepEqual(bellcrankOutlineOrder(bellcrank, roles), expected);
+}
+assert.deepEqual(bellcrankOutlineOrder({}, ['rod', 'shock']), ['rod', 'shock']);
+"""
+    assert cases
+    subprocess.run([node, "-e", script], input=json.dumps(cases), text=True, check=True)
+
+
+def test_component_editor_keeps_every_field_and_defaults_to_body():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the component editor check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    start = source.index("function vehicleFieldComponent(")
+    helpers = source[start:source.index("function wireVehicleComponentEditors(")]
+    script = """
+const assert = require('node:assert/strict');
+const state = {};
+const humanizeToken = value => value.replaceAll('_', ' ').replace(/^./, char => char.toUpperCase());
+const escapeHtml = value => String(value);
+const fieldPathString = field => field.path.join('.');
+const fieldControl = field => `<input name="${field.path.join('.')}">`;
+""" + helpers + """
+const fields = [
+  ['front', 'masses', 'unsprung', 'mass_kg'],
+  ['driver_mass', 'mass_kg'],
+  ['sprung_mass', 'mass_kg'],
+  ['sprung_mass', 'cg_m'],
+  ['sprung_mass', 'inertia_kg_m2'],
+].map(path => ({path}));
+const html = vehicleComponentEditorHtml({id: 'mass', fields});
+assert.equal(state.vehicleComponentSelection.mass, 'body');
+for (const field of fields) assert.equal(html.split(`name="${field.path.join('.')}"`).length, 2);
+assert(html.includes('<div class="component-inertia">'));
+assert(!html.includes('data-component-group aria-label'));
+assert(!html.includes('<details class="component-inertia"'));
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'upper_o_m']}, 'hardpoints').key,
+  'front.Upper wishbone');
+assert.equal(vehicleFieldComponent({path: ['front', 'suspension', 'tie_o_m']}, 'hardpoints').key,
+  vehicleFieldComponent({path: ['front', 'steering', 'rack_pickup_m']}, 'hardpoints').key);
+assert.equal(vehicleFieldComponent({path: ['rear', 'wheel', 'toe_deg']}, 'hardpoints').label, 'Alignment');
+"""
+    start = source.index("function updateVehicleMassSummary(")
+    summary = source[start:source.index("function tireSectionHtml(")]
+    script += summary + """
+const output = {};
+const document = {querySelector: () => output};
+const buildVehicleGeometry = () => ({points: [{aggregate: true, massKg: 100, x: -0.5, y: 0, z: 0.2}]});
+const formatMassValue = value => `${value} kg`;
+const formatVector = value => value.join(', ');
+updateVehicleMassSummary({front: {suspension: {wheel_center_m: [0, 1, 0]}},
+  rear: {suspension: {wheel_center_m: [-2, 1, 0]}}});
+assert(output.innerHTML.includes('75.0 / 25.0%'));
+"""
+    subprocess.run([node, "-e", script], check=True)
+
+
+def test_tire_parameter_groups():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the setup controls check")
+    source = (app.ROOT / "app/static/app.js").read_text()
+    helpers = source[source.index("function parseTirParameterText("):source.index("function tirParameterPanelHtml(")]
+    subprocess.run([node, "-e", helpers + """
+const assert = require('node:assert/strict');
+const text = '[OVERTURNING_COEFFICIENTS]\\nQSX1 = 0.01 $Moment coefficient\\n[ALIGNING_COEFFICIENTS]\\nQBZ1 = 8';
+const parsed = parseTirParameterText(text);
+assert.equal(parsed.params.get('QSX1').description, 'Moment coefficient');
+assert.equal(parsed.lines.join('\\n'), text);
+assert.equal(tirParameterGroup(parsed.params.get('QSX1')), 'Mx');
+assert.equal(tirParameterGroup(parsed.params.get('QBZ1')), 'Mz');
+assert.equal(tirParameterGroup({key: 'QSY1'}), 'My');
+assert.equal(tirParameterGroup({key: 'LMUX'}, 'Fx friction scale'), 'Fx');
+assert.equal(tirParameterGroup({key: 'FITTYP'}), 'Reference');
+"""], check=True)
