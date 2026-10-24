@@ -64,6 +64,10 @@ def _workflow_by_id(_workflow_id: str) -> WorkflowSpec:
     raise KeyError(_workflow_id)
 
 
+def simulation_workspace(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise RuntimeError("Simulation workspace has not been connected")
+
+
 def capture_workflow_inputs(_workflow_id: str) -> dict[str, Any]:
     raise RuntimeError("Workflow input capture has not been connected")
 
@@ -135,11 +139,16 @@ def _run_subprocess_action(action: ActionSpec, job_id: str) -> int:
         errors="replace",
         bufsize=1,
         creationflags=_subprocess_creation_flags(),
+        start_new_session=sys.platform != "win32",
     ) as process:
-        assert process.stdout is not None
-        for line in process.stdout:
-            JOBS.append_log(job_id, line)
-        return process.wait()
+        JOBS.set_process(job_id, process)
+        try:
+            assert process.stdout is not None
+            for line in process.stdout:
+                JOBS.append_log(job_id, line)
+            return process.wait()
+        finally:
+            JOBS.set_process(job_id, None)
 
 
 def _run_action_process(action: ActionSpec, job_id: str) -> int:
@@ -168,9 +177,13 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
     JOBS.update(job_id, status="running", started_at=started_at)
     try:
         input_snapshot = capture_workflow_inputs(workflow_id) if workflow_id else None
+        if input_snapshot is not None:
+            input_snapshot["simulation"] = (JOBS.get(job_id) or {}).get("simulation")
         returncode = 0
         action_wall_time_s: dict[str, float] = {}
         for action in actions:
+            if (JOBS.get(job_id) or {}).get("cancel_requested"):
+                break
             action_started = time.perf_counter()
             returncode = _run_action_process(action, job_id)
             elapsed = time.perf_counter() - action_started
@@ -180,8 +193,9 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
                 break
         if input_snapshot is not None:
             input_snapshot["action_wall_time_s"] = action_wall_time_s
+        cancelled = JOBS.finish_execution(job_id)
         review = None
-        if returncode == 0 and workflow_id:
+        if returncode == 0 and workflow_id and not cancelled:
             workflow = _workflow_by_id(workflow_id)
             JOBS.append_log(job_id, "\nPackaging review outputs...\n")
             try:
@@ -199,14 +213,15 @@ def run_actions_job(actions: tuple[ActionSpec, ...], job_id: str, workflow_id: s
                 returncode = -1
         JOBS.update(
             job_id,
-            status="succeeded" if returncode == 0 else "failed",
+            status="cancelled" if cancelled else "succeeded" if returncode == 0 else "failed",
             returncode=returncode,
             review=review,
             ended_at=time.time(),
         )
     except Exception as exc:  # pragma: no cover - defensive job boundary
         JOBS.append_log(job_id, f"\n{type(exc).__name__}: {exc}\n")
-        JOBS.update(job_id, status="failed", returncode=-1, ended_at=time.time())
+        cancelled = JOBS.finish_execution(job_id)
+        JOBS.update(job_id, status="cancelled" if cancelled else "failed", returncode=-1, ended_at=time.time())
 
 
 def start_job(action_id: str) -> dict[str, Any]:
@@ -218,7 +233,9 @@ def start_job(action_id: str) -> dict[str, Any]:
     return _launch_job((action,), action.id, action.label, list(action.argv))
 
 
-def start_workflow(workflow_id: str) -> dict[str, Any]:
+def start_workflow(
+    workflow_id: str, simulation_id: str | None = None, vehicle_key: str | None = None,
+) -> dict[str, Any]:
     workflows = {workflow.id: workflow for workflow in WORKFLOWS}
     if workflow_id not in workflows:
         raise KeyError(workflow_id)
@@ -229,14 +246,22 @@ def start_workflow(workflow_id: str) -> dict[str, Any]:
         raise RuntimeError(unavailable_action_reason(unavailable[0]))
     label = f"Run {workflow.label}"
     argv = [action.label for action in actions]
-    return _launch_job(actions, f"workflow:{workflow.id}", label, argv, workflow.id)
+    return _launch_job(actions, f"workflow:{workflow.id}", label, argv, workflow.id, simulation_id, vehicle_key)
 
 
-def _launch_job(actions, action_id, label, argv, workflow_id=None):
+def _launch_job(actions, action_id, label, argv, workflow_id=None, simulation_id=None, vehicle_key=None):
     # Reserve before creating a thread, so simultaneous requests cannot both win.
     workspace_execution.reserve()
     try:
+        simulation = None
+        if simulation_id:
+            loaded = simulation_workspace("prepare-run", {"id": simulation_id, "workflow_id": workflow_id,
+                                                   "vehicle_key": vehicle_key})
+            simulation = loaded["simulation"]
+            label = f"Run {simulation['name']}"
         job = JOBS.create(action_id, label, argv)
+        if simulation:
+            JOBS.update(job["id"], simulation=simulation, vehicle_key=vehicle_key)
         owner = workflow_id or next((w.id for w in WORKFLOWS if action_id in w.actions
                                      and not action_id.startswith("build-")), None)
         JOBS.update(job["id"], workflow_id=owner)

@@ -17,7 +17,7 @@ model_14dof = vehicle.model(14)                               # 14DOF transient
 trim = vehicle.steady_state(14, speed_mps=12.0)              # QSS trim at 12 m/s
 ```
 
-The vehicle definition and kinematics lookup are built once and shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
+The vehicle definition and kinematics cache are shared across all DOF models. Import `create_kinematics` from `engines.kinpy`. Dynamics constructors, QSS and
 transient solvers are exposed by `engines.dynpy`.
 
 ## Fidelity ladder
@@ -123,28 +123,20 @@ but remains valid when the 3D wishbone pivot axes are swept and a simple 2D
 hardpoint projection is not. Left/right geometry is mirrored at the lookup
 boundary; longitudinal coefficients retain their axle sign.
 
-Two interchangeable backends are available:
+The app selects cached KinPy evaluation automatically. Front corners use a
+jounce/rack grid that fills as a run visits new regions. The 3 DOF model stays
+on the zero-jounce steering row. Rear corners use jounce curves. Each front
+cell is checked against an exact midpoint solve before interpolation. Failed
+checks and travel outside the grid use the direct solve. Contact positions
+and their jounce derivatives share the same interpolation polynomial.
 
-- `lookup` (default) interpolates precomputed jounce curves at zero rack travel.
-  At nonzero rack travel it uses direct KinPy solves for the coupled pose and
-  its contact-patch derivative. Steered evaluations therefore cost the same as
-  the nonlinear backend.
-- `nonlinear` solves each corner and the centered contact-patch derivative
-  inside every force evaluation. It is intended for short correlation runs and
-  as the accuracy reference for choosing a lookup grid.
-
-Run the repeatable trade study or a short exact-kinematics transient with:
+The Python API retains `nonlinear` evaluation as a correlation reference.
+The existing benchmark covers zero-rack travel curves:
 
 ```bash
 make reduced-kinematics-benchmark
 make reduced-eval REDUCED_KINEMATICS=nonlinear
 ```
-
-On the default vehicle, the 49-point lookup built in about 0.67 s and differed
-from off-grid nonlinear solutions by at most 2.25 micrometers at the contact
-patch, 0.00014 degrees camber, 0.00010 degrees toe, and `4.6e-6` in an
-instant-link coefficient. These errors describe the zero-rack lookup. Steered
-evaluations now use direct solves with both backends. The zero-rack lookup retains 49 points.
 
 Spring/damper and stabilizer-bar forces remain a separate elastic path. Springs
 are projected through the BobLib/FourPost motion ratio to an equivalent wheel
@@ -181,27 +173,50 @@ equations and constrains selected generalized accelerations:
 
 - constant-radius trim: all generalized accelerations are zero in the body
   frame; centripetal acceleration remains through `omega x v`;
-- prescribed GGV point: body `ax/ay` are prescribed at zero yaw rate while yaw,
-  vertical, rotational, wheel-speed, and unsprung accelerations are
-  equilibrated. Curvature and steering-radius feasibility belong to the track
-  solver, not the acceleration-capability envelope. The acceleration and brake
-  branches share a separately solved pure-lateral coast endpoint, so the map is
-  closed at the true lateral limit rather than the final feasible grid slice;
+- GGV point: path-tangential and path-normal accelerations are solved with
+  constant sideslip and heading rate `psi_dot = an / V`. Retained body angular
+  accelerations and world-vertical acceleration are zero. Wheel acceleration
+  preserves the local slip ratio. At each normal demand, the solver maximizes and minimizes tangential acceleration under the
+  same tire and actuator limits. The lateral endpoint maximizes normal
+  acceleration with tangential acceleration free.
 - YMD point: sideslip and steer are imposed, longitudinal/vertical/wheel states
   are equilibrated, and lateral acceleration plus yaw moment are outputs.
 
-The unknown set grows naturally with fidelity: body sideslip/steer/drive torque,
-then heave-roll-pitch, then four wheel slips, then four unsprung positions.
+Acceleration and constant-radius trims solve rack travel directly. Tire loads
+and massless-wheel slips are algebraic unknowns solved alongside body equilibrium.
+MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
+These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
+each boundary with the same equations and retains the trim search as a fallback.
+File-backed GGV runs solve speed slices in up to four separate processes.
+Lateral samples within each slice retain their continuation order.
+GGV checks independent tire-force inversion at the solved loads, then verifies
+load and wheel-torque balance. Near tire peaks, transient evaluation starting
+from static loads can select a different saturated branch. A valid QSS point
+does not guarantee identical transient initialization.
+Drive power is evaluated from wheel torque and angular speed. An upper tangential
+acceleration limit can be negative when drag exceeds available propulsion.
+`QSSResult` keeps its body-axis acceleration properties. GGV uses the explicit
+`path_longitudinal_acceleration_mps2` and `path_lateral_acceleration_mps2` properties.
+
+This is a local QSS approximation. Zero angular acceleration does not imply zero
+yaw rate or, with a full inertia tensor, zero net moment. Along a real racing
+line, `psi_ddot = curvature * at + V² * d(curvature)/ds` when sideslip is constant.
+The envelope omits this yaw-acceleration demand and does not certify dynamic
+stability. Continuation and optional multistart reduce local-solver failures,
+but do not prove global optimality. DynPy solves both turn directions independently. Signed lateral acceleration
+is retained through GGV storage and lap interpolation.
 
 QSS rejects equilibria outside each corner's fitted slip-angle or slip-ratio
-range. Finite tire-load bounds are additional validity constraints. GGV and YMD cells are rejected
-when any normal load falls outside the active `.tir` file's `FZMIN`/`FZMAX`
-range; warning-only extrapolation is available only through an explicit config
-override. Study-grade GGV and lap configs enable a deterministic beta/steer
-multistart search after the warm start fails, which protects the reported
-boundary from a disconnected local trim branch. The routine all-DOF visual
-smoke config disables that expensive audit explicitly. Sideslip and roadwheel-
-steer bounds remain study assumptions and are written into lap summaries.
+range. GGV requires positive load at every wheel. Below `FZMIN`, the existing
+tire model scales the wrench toward zero load. This region is outside the fitted
+data. `enforce_tire_load_range` retains the upper `FZMAX` check. YMD still checks
+both fitted load limits. GGV and lap workflows select numerical settings internally
+and ignore legacy search controls in saved configs. Speed samples follow the
+vehicle's drivetrain limit. Acceleration bounds expand until the envelope closes,
+then lateral samples span the solved range. A failed search reports an error
+rather than a clipped envelope. Multistart follows failed continuation. Sideslip
+and roadwheel-steer limits remain model assumptions, recorded in lap summaries.
+
 
 Select the backend in `simulations/envelope/ggv/ggv_config.yml` or `simulations/envelope/ymd/ymd_config.yml`:
 
@@ -277,9 +292,10 @@ transient lap for 3/6/10/14DOF. Inspect the generated figures under
 
 ## Current reduction limits
 
-- The fast lookup remains one-dimensional in jounce. Steered poses use direct
-  KinPy solves. Left and right corners have independent travel, but their
-  hardpoints still come from mirrored axle geometry.
+- Left and right corners have independent travel and opposite rack inputs,
+  but their hardpoints still come from mirrored axle geometry. Midpoint checks
+  limit interpolation error locally, but do not prove an error bound throughout
+  every grid cell.
 - Pushrod/bellcrank motion ratio remains a nominal tangent projection, and
   compliance plus detailed individual link loads remain BobLib validation
   targets.

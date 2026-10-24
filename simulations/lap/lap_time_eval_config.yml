@@ -10,13 +10,12 @@ event:
 
 track:
   boundary_csv: simulations/lap/tracks/endurance_michigan_2019.csv
-  vehicle_width_m: 1.35
   safety_margin_m: 0.15
   sample_step_m: 1.0
 
 racing_line:
-  mode: minimum_time_qss  # centerline, minimum_curvature, minimum_time_qss
-  curvature_max_iterations: 20
+  mode: minimum_curvature  # centerline, minimum_curvature, minimum_time_qss
+  curvature_max_iterations: 10000
   lap_time_max_iterations: 15
 
 qss:

@@ -42,6 +42,84 @@ def synthetic_ggv() -> GGVMap:
     return GGVMap.from_arrays(speed, ay, acceleration, braking)
 
 
+@pytest.fixture
+def varying_ggv() -> GGVMap:
+    return GGVMap.from_arrays(
+        [10.0, 20.0], [0.0, 5.0, 10.0, 15.0],
+        [[4.0, 0.0, np.nan, np.nan], [8.0, 16.0 / 3.0, 8.0 / 3.0, 0.0]],
+        [[-8.0, 0.0, np.nan, np.nan], [-16.0, -32.0 / 3.0, -16.0 / 3.0, 0.0]],
+    )
+
+
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+@pytest.mark.parametrize("speed,ay", [(10.0, 10.0), (15.0, 11.0), (5.0, 6.0), (25.0, 16.0)])
+def test_ggv_does_not_borrow_feasibility_from_another_speed(varying_ggv, mode, speed, ay):
+    assert np.isnan(varying_ggv.longitudinal_limit(speed, ay, mode))
+    assert np.isnan(varying_ggv.longitudinal_limit(speed, -ay, mode))
+
+
+@pytest.mark.parametrize("mode,scale", [("drive", 1.0), ("brake", -2.0)])
+def test_ggv_interpolates_within_the_local_lateral_boundary(varying_ggv, mode, scale):
+    assert varying_ggv.longitudinal_limit(10.0, 2.5, mode) == pytest.approx(2.0 * scale)
+    assert varying_ggv.longitudinal_limit(15.0, 5.0, mode) == pytest.approx(3.0 * scale)
+    for speed in [5.0, 10.0, 12.0, 15.0, 20.0, 25.0]:
+        limit = varying_ggv.lateral_limit(speed)
+        assert varying_ggv.longitudinal_limit(speed, limit, mode) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+def test_ggv_keeps_missing_speed_slices(mode):
+    ggv = GGVMap.from_arrays(
+        [10.0, 20.0, 30.0], [0.0, 5.0],
+        [[4.0, 0.0], [np.nan, np.nan], [8.0, 0.0]],
+        [[-8.0, 0.0], [np.nan, np.nan], [-16.0, 0.0]],
+    )
+    for speed in [15.0, 20.0, 25.0]:
+        assert np.isnan(ggv.longitudinal_limit(speed, 1.0, mode))
+    assert np.isfinite(ggv.longitudinal_limit(10.0, 1.0, mode))
+    assert np.isfinite(ggv.longitudinal_limit(30.0, 1.0, mode))
+
+
+@pytest.mark.parametrize("mode", ["drive", "brake"])
+def test_cached_ggv_matches_full_slice_interpolation(mode):
+    from simulations.lap.core.qss import _directional_slice, _slice_lateral_limit
+
+    rng = np.random.default_rng(17)
+    ay = np.arange(-6., 7.)
+    drive = rng.uniform(0., 5., (4, ay.size))
+    brake = -rng.uniform(0., 8., drive.shape)
+    drive[1, :3] = np.nan
+    brake[2, -3:] = np.nan
+    ggv = GGVMap.from_arrays([5., 10., 20., 30.], ay, drive, brake)
+    for speed in [0., 5., 7., 10., 15., 20., 25., 30., 40.]:
+        for direction in [-1., 1.]:
+            limits = [_slice_lateral_limit(item, direction) for item in ggv.slices]
+            for fraction in [0., .1, .5, 1.]:
+                values = []
+                for original, limit in zip(ggv.slices, limits):
+                    item = _directional_slice(original, direction)
+                    boundary = item.ax_accel_mps2 if mode == "drive" else item.ax_brake_mps2
+                    finite = np.isfinite(boundary)
+                    target = fraction * limit
+                    values.append(np.interp(target, item.ay_mps2[finite], boundary[finite])
+                                  if target <= item.ay_mps2[finite][-1] else np.nan)
+                expected = np.interp(speed, [5., 10., 20., 30.], values)
+                lateral = direction * fraction * np.interp(speed, [5., 10., 20., 30.], limits)
+                np.testing.assert_allclose(ggv.longitudinal_limit(speed, lateral, mode), expected, rtol=1e-14)
+
+
+def test_qss_lap_uses_varying_speed_slice_boundaries(circular_corridor, varying_ggv):
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    lap = solve_qss_lap(line, varying_ggv)
+
+    assert lap.converged
+    assert np.isfinite(lap.lap_time_s)
+    for speed, ay in zip(lap.speed_mps, lap.lateral_acceleration_mps2):
+        assert abs(ay) <= varying_ggv.lateral_limit(float(speed)) + 1e-6
+        for mode in ("drive", "brake"):
+            assert np.isfinite(varying_ggv.longitudinal_limit(float(speed), float(ay), mode))
+
+
 def test_track_corridor_builds_closed_clearance_constrained_line(
     circular_corridor: TrackCorridor,
 ) -> None:
@@ -126,6 +204,23 @@ def test_qss_profile_respects_gvv_acceleration_boundaries(
             assert ax >= limit - 1e-6
 
 
+def test_qss_lap_respects_negative_upper_acceleration_boundary(
+    circular_corridor: TrackCorridor,
+) -> None:
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    ggv = GGVMap.from_arrays(
+        [2.0, 10.0, 20.0], [0.0, 20.0],
+        [[2.0, 2.0], [0.0, 0.0], [-2.0, -2.0]],
+        [[-4.0, -4.0], [-4.0, -4.0], [-4.0, -4.0]],
+    )
+    lap = solve_qss_lap(line, ggv)
+
+    assert lap.converged
+    assert np.allclose(lap.speed_mps, 10.0, atol=1e-3)
+    for speed, ax, ay in zip(lap.speed_mps, lap.longitudinal_acceleration_mps2, lap.lateral_acceleration_mps2):
+        assert ax <= ggv.longitudinal_limit(float(speed), float(ay), "drive") + 1e-4
+
+
 def test_minimum_time_line_keeps_best_qss_candidate(
     circular_corridor: TrackCorridor,
     synthetic_ggv: GGVMap,
@@ -173,7 +268,15 @@ def test_forward_transient_executes_against_same_qss_reference(
     assert np.all(np.isfinite(result.lateral_error_m))
 
 
-def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
+@pytest.mark.parametrize("scenario", ("qss", "transient"))
+def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -> None:
+    from simulations.lap import lap_time_eval_sim as runner
+    original = runner.simulate_transient_lap
+
+    def short_lap(*args, **kwargs):
+        return original(*args, **kwargs, stop_time_s=0.1)
+
+    monkeypatch.setattr(runner, "simulate_transient_lap", short_lap)
     ggv_path = tmp_path / "ggv.csv"
     with ggv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -206,8 +309,11 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    summary = run_lap_time_evaluation(config_path, scenario="qss")
+    summary = run_lap_time_evaluation(config_path, scenario=scenario)
 
+    assert summary["ggv_speed_min_mps"] == 2.
+    assert summary["ggv_speed_max_mps"] == 30.
+    assert summary["ggv_range_limited"] == (summary["qss_max_speed_mps"] >= 30. - 1e-6)
     assert summary["model_dof"] == 3
     assert summary["effective_drive_power_limit_w"] == pytest.approx(32_000.0)
     assert summary["ggv_provenance"]["status"] == "supplied_unverified"
@@ -216,4 +322,29 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path) -> None:
     assert summary["optimized_qss_lap_time_s"] > 0.0
     assert (output_path / "qss_lap.csv").is_file()
     assert (output_path / "summary.json").is_file()
-    assert not (output_path / "transient_lap.csv").exists()
+    assert (output_path / "transient_lap.csv").exists() == (scenario == "transient")
+    if scenario == "transient":
+        from app.visual import reduced_scene_payload
+        from common.vehicle_io import repo_root
+        path = output_path / "transient_signals.csv"
+        assert path.is_file()
+        replay = reduced_scene_payload(repo_root() / "vehicle.yml", path, 3)
+        assert replay.header["frames"] > 1
+
+
+def test_signed_csv_preserves_turn_capability_and_lap_direction(tmp_path, circular_corridor):
+    path = tmp_path / 'signed.csv'
+    path.write_text('speed_mps,ay_mps2,ax_accel_mps2,ax_brake_mps2\n'
+                    '10,-4,0,0\n10,0,4,-8\n10,8,0,0\n'
+                    '20,-4,0,0\n20,0,4,-8\n20,8,0,0\n')
+    ggv = GGVMap.from_csv(path)
+    assert ggv.lateral_limit(15.) == 8.
+    assert ggv.lateral_limit(15., direction=-1.) == 4.
+    assert np.isnan(ggv.longitudinal_limit(15., -5., 'drive'))
+    assert np.isfinite(ggv.longitudinal_limit(15., 5., 'drive'))
+    line = circular_corridor.line_from_offsets(np.zeros(circular_corridor.gate_count))
+    from dataclasses import replace
+    left = solve_qss_lap(line, ggv)
+    right = solve_qss_lap(replace(line, curvature_per_m=-line.curvature_per_m), ggv)
+    assert left.converged and right.converged
+    assert right.lap_time_s > left.lap_time_s

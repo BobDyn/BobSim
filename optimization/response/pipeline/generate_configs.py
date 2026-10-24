@@ -23,7 +23,7 @@ from typing import Any
 import yaml
 
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 REPO_ROOT = repo_root()
 CONFIG_DIR = STANDARD_DIR / "configs"

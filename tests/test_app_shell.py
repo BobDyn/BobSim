@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -591,7 +592,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     package_workflow.write_text("procedure:\n  rollMagnitude: 0.02181661564992912\n", encoding="utf-8")
     runtime_workflow.write_text("procedure:\n  rollMagnitude: 0.035\n", encoding="utf-8")
     package_tire.write_text("[MDI_HEADER]\nFILE = stock\n", encoding="utf-8")
-    runtime_tire.write_text("[MDI_HEADER]\nFILE = stale-stock\n", encoding="utf-8")
+    runtime_tire.write_text("[MDI_HEADER]\nFILE = edited-stock\n", encoding="utf-8")
     runtime_custom_tire.write_text("[MDI_HEADER]\nFILE = custom\n", encoding="utf-8")
     runtime_build.write_text("stale build\n", encoding="utf-8")
     runtime_archive.write_text("stale archive\n", encoding="utf-8")
@@ -607,7 +608,7 @@ def test_runtime_seed_refreshes_app_owned_paths_and_preserves_user_state(
     # refreshes the shipped study config beside it and leaves this alone.
     assert runtime_active.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.05\n"
     assert runtime_workflow.read_text(encoding="utf-8") == "procedure:\n  rollMagnitude: 0.02181661564992912\n"
-    assert runtime_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = stock\n"
+    assert runtime_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = edited-stock\n"
     assert runtime_custom_tire.read_text(encoding="utf-8") == "[MDI_HEADER]\nFILE = custom\n"
     assert not runtime_build.exists()
     assert not runtime_archive.exists()
@@ -1471,7 +1472,8 @@ def test_app_can_save_and_load_named_vehicle_configs(tmp_path: Path, monkeypatch
     assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "TemplateVehicle"
 
     app.load_vehicle_source("saved:my-saved-vehicle")
-    assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "ActiveVehicle"
+    assert yaml.safe_load(active.read_text(encoding="utf-8"))["vehicle"]["name"] == "My Saved Vehicle"
+    assert app.vehicle_workspace_payload()["key"] == "my-saved-vehicle"
 
     library = app.delete_saved_vehicle("saved:my-saved-vehicle")
     assert not (tmp_path / app.SAVED_VEHICLE_ROOT / "my-saved-vehicle.yml").exists()
@@ -2025,3 +2027,114 @@ assert.equal(tirParameterGroup({key: 'QSY1'}), 'My');
 assert.equal(tirParameterGroup({key: 'LMUX'}, 'Fx friction scale'), 'Fx');
 assert.equal(tirParameterGroup({key: 'FITTYP'}), 'Reference');
 """], check=True)
+
+
+def test_result_color_signal_stays_aligned_with_sampled_points(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/colors.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('x,y,color\n' + '\n'.join(f'{i},{i*2},{i*3 if i != 4 else ""}' for i in range(100)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x',
+                                       signals=['y'], color_signal='color', max_points=50)
+    indices = result['row_indices']
+    assert indices[0] == 0 and indices[-1] == 99
+    assert 4 in indices
+    assert result['color']['values'] == [float(i*3) if i != 4 else None for i in indices]
+    assert result['series'][0]['values'] == [float(i*2) for i in indices]
+    assert len(result['x']) == len(result['color']['values']) <= 50
+    with pytest.raises(ValueError, match='color_signal'):
+        app.result_series_payload(path.relative_to(tmp_path).as_posix(), color_signal='missing')
+
+
+@pytest.mark.parametrize('time_column', ['time', 'time_s'])
+def test_result_inspection_coordinates_follow_sample_rows(tmp_path, monkeypatch, time_column):
+    path = tmp_path / 'simulations/mbd/results/coordinates.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text(f'x,y,{time_column},station_m\n' + '\n'.join(
+        f'{i if i != 4 else ""},{i*2},{i/10},{i*3 if i != 6 else ""}' for i in range(100)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='x', signals=['y'], max_points=50)
+    indices = result['row_indices']
+    assert indices[0] == 0 and indices[-1] == 99
+    assert 4 not in indices
+    assert result['coordinates']['time'] == [i / 10 for i in indices]
+    assert result['coordinates']['station_m'] == [float(i*3) if i != 6 else None for i in indices]
+    assert len(result['coordinates']['time']) == len(result['x']) <= 50
+
+
+def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    spec = app.BASE_CONFIG_SPECS["four-post"]
+    seed = tmp_path / spec.path
+    seed.parent.mkdir(parents=True)
+    original = yaml.safe_load((app.PACKAGE_ROOT / spec.path).read_text())
+    original.update({
+        "standard": "FourPostEval", "simulation": {"stepSize": 9.0},
+        "execution": {"parallel": True},
+        "model_overrides": {"suspension": {"front": {"spring_rate_n_per_m": 1.0}}},
+    })
+    original["report"]["brand"] = "Legacy brand"
+    seed.write_text(yaml.safe_dump(original))
+    (tmp_path / "vehicle.yml").write_text("vehicle:\n  name: Test\n")
+    monkeypatch.setattr(app, "ROOT", tmp_path)
+    monkeypatch.delenv("BOBSIM_SEED_CONFIGS", raising=False)
+    # Older named simulations and presets can still contain the removed overrides.
+    simulation = app.simulation_workspace("create", {"workflow_id": "four-post"})["simulation"]
+    result = app.simulation_workspace("prepare-run", {"id": simulation["id"]})
+    config = result["config"]
+    assert not {"standard", "simulation", "execution", "model_overrides"}.intersection(config["data"])
+    assert config["data"]["procedure"] == original["procedure"]
+    assert "brand" not in config["data"]["report"]
+    assert all(field["label"] != "Brand" for field in config["fields"])
+    assert config["fields"][0]["group"] == "Procedure"
+    fields = {field["label"]: field for field in config["fields"]}
+    for label, unit, scale in (("Handwheel angle", "deg", 180 / math.pi),
+                               ("Heave", "mm", 1000), ("Roll", "deg", 180 / math.pi)):
+        assert fields[label]["display_unit"] == unit
+        assert fields[label]["display_scale"] == pytest.approx(scale)
+    assert fields["Heave"]["value"] == pytest.approx(0.03)
+    assert fields["Roll"]["value"] * fields["Roll"]["display_scale"] == pytest.approx(0.75)
+    assert {field["group"] for field in config["fields"]} == {"Procedure", "Report"}
+    path, _, _ = app._load_yaml_config(spec)
+    assert yaml.safe_load(path.read_text()) == config["data"] == yaml.safe_load(config["raw"])
+    assert yaml.safe_load(seed.read_text()) == original
+    brand_only = yaml.safe_dump({"procedure": original["procedure"], "report": {"brand": "Legacy brand"}})
+    assert "brand" not in app.save_raw_config("four-post", brand_only)["data"]["report"]
+
+
+def test_signal_sampling_preserves_short_extrema_and_endpoints(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/pulse.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('time,force,roll\n' + '\n'.join(
+        f'{i},{100 if i == 1 else -80 if i == 1799 else 0},{5 if i == 2471 else 0}'
+        for i in range(3601)))
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    result = app.result_series_payload(path.relative_to(tmp_path).as_posix(),
+                                      x_axis='time', signals=['force', 'roll'], max_points=50)
+    assert result['row_indices'][0] == 0
+    assert result['row_indices'][-1] == 3600
+    assert {1, 1799, 2471}.issubset(result['row_indices'])
+    assert max(result['series'][0]['values']) == 100.
+    assert min(result['series'][0]['values']) == -80.
+    assert max(result['series'][1]['values']) == 5.
+    assert len(result['x']) <= 50
+
+
+def test_result_series_carries_known_units_without_guessing_unknown_channels(tmp_path, monkeypatch):
+    path = tmp_path / 'simulations/mbd/results/units.csv'
+    path.parent.mkdir(parents=True)
+    path.write_text('time,accY,roll,yawVel,custom\n0,1,2,3,4\n')
+    monkeypatch.setattr(app, 'ROOT', tmp_path)
+    payload = app.result_series_payload(path.relative_to(tmp_path).as_posix(), x_axis='time',
+                                        signals=['accY', 'roll', 'yawVel', 'custom'])
+    assert payload['x_unit'] == 's'
+    assert [series['unit'] for series in payload['series']] == ['m/s²', 'rad', 'rad/s', None]
+
+
+def test_envelope_sensitivity_identifies_legacy_model(tmp_path: Path) -> None:
+    workflow = next(item for item in app.WORKFLOWS if item.id == "envelope-sens")
+    from app.data_services import workflow_model
+
+    model = workflow_model(workflow, root=tmp_path)
+    assert model["engine"] == "Legacy envelope"
+    assert model["model_dofs"] == []
+    assert model["fidelity"] == "QSS"

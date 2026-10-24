@@ -15,9 +15,7 @@ Open `http://127.0.0.1:8765`.
 | View | Contents |
 | --- | --- |
 | Setup | Vehicle parameters, geometry preview, saved vehicles, and Write to MBD |
-| Simulation | Response, envelope and lap workflows with model labels, run configs and job logs |
-| Replay | Captured 3D scenes, tire data, and metrics |
-| Results | Saved run packages and downloads |
+| Simulation | Named simulations with setup, run history, reports, signal explorers and 3D replay |
 
 Setup uses the architecture templates in `common/vehicle_templates`, including
 direct, bellcrank, and bellcrank-stabar suspension. The preview shows hardpoints,
@@ -40,11 +38,22 @@ BobSim runtime directory. `storage.py` defines these paths:
 
 The UI assets are in `static/`. Default run configs live with their workflows.
 `visualization/` captures scenes. `visual.py` and `static/visual.js` load and draw
-them in Replay.
+them under Simulation → Captured scenes. Captures are separate from ordinary
+simulation runs.
 
 The app defaults to dark mode. The theme toggle saves `bobsim-theme` in
 `localStorage`. Colors are defined in `static/styles.css` and `canvasPalette()`
 in `static/app.js`.
+
+The outline groups simulations under Kinematics, Performance envelopes, Vehicle
+response, Track and Laptime. Each overview shows inputs and results, with the
+method in a disclosure. QSS Lap connects to reusable GGV and racing-line analyses.
+Its Run action is available when both linked results are valid. Existing BobLib
+steady-state studies remain accessible under Vehicle response.
+
+Named simulations are stored in `workspaces/vehicles/<vehicle>/simulations.json`.
+Completed runs retain the simulation name, vehicle and config used at run time.
+Removing a simulation keeps its saved runs.
 
 ## Module layout
 
@@ -53,7 +62,7 @@ in `static/app.js`.
   and outputs.
 - `registry.py`: declarative workflow/action/build-target/config-field
   registry.
-- `python_simulations.py`: app entry point for ramp-steer, step-steer and DynPy lap runs.
+- `python_simulations.py`: app entry point for steering maneuvers, racing lines and DynPy lap runs.
 - `runtime.py`: packaged-app runtime seeding, manifests, and cache invalidation.
 - `toolchain.py`: OpenModelica discovery, verification, and environment setup.
 - `server.py`: HTTP routing, JSON/file responses, and static/repo file serving.
@@ -67,6 +76,7 @@ in `static/app.js`.
 - `http_utils.py`: small HTTP parsing helpers.
 - `storage.py`: canonical folder layout for shipped app assets and mutable user
   data.
+- `tracks.py`: track CSV import and boundary previews.
 - `tire_eval.py`: MF52 tire-load and curve payload generation for the UI.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
 - `desktop.py`: desktop/webview wrapper for packaged builds.

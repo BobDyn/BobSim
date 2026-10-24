@@ -66,12 +66,14 @@ def build_dynpy_report(
     Path
         Generated PDF path.
     """
-    response = workflow_id in {"reduced-step-steer", "reduced-ramp-steer"}
+    response = workflow_id in {"maneuver", "reduced-step-steer", "reduced-ramp-steer"}
     ramp = workflow_id == "reduced-ramp-steer"
     transient = workflow_id == "lap-transient"
     title = "Step-steer response" if response else "Transient lap" if transient else "QSS lap"
     if ramp:
         title = "Ramp-steer response"
+    if workflow_id == "maneuver":
+        title = f"{config['maneuver'].capitalize()} steering response"
     method = "Transient" if response else "Transient with QSS reference" if transient else "QSS"
     model = f"DynPy | {summary['model_dof']} DOF | {method} | Python"
     filename = "report.pdf" if response else "transient_report.pdf" if transient else "qss_report.pdf"
@@ -81,6 +83,11 @@ def build_dynpy_report(
     if response:
         frame = pd.read_csv(output_directory / "signals.csv")
         inputs = (
+            [("Maneuver", config["maneuver"]), ("Magnitude (deg)", config["amplitude_deg"]),
+             ("Start time (s)", config["start_time_s"]),
+             ({"ramp": "Ramp duration (s)", "step": "Rise time (s)", "sine": "Frequency (Hz)"}[config["maneuver"]],
+              config[{"ramp": "ramp_duration_s", "step": "rise_time_s", "sine": "frequency_hz"}[config["maneuver"]]])]
+            if workflow_id == "maneuver" else
             [("Roadwheel rate (deg/s)", config["roadwheel_rate_deg_s"]),
              ("Ramp start (s)", config["start_time_s"]),
              ("Ramp end (s)", config.get("ramp_end_time_s", config["stop_time_s"]))] if ramp else
@@ -94,7 +101,7 @@ def build_dynpy_report(
                 ("Final yaw rate (deg/s)", float(frame.yawVel.iloc[-1] * deg)),
                 ("Final speed (m/s)", float(frame.get("speed", frame.velX).iloc[-1]))]
         plots = [
-            _plot("Steering input", "time", "handwheelAngle", "Time (s)", "Roadwheel steer (deg)", deg),
+            _plot("Steering input", "time", "roadwheelSteer", "Time (s)", "Roadwheel steer (deg)", deg),
             _plot("Yaw response", "time", "yawVel", "Time (s)", "Yaw rate (deg/s)", deg),
             _plot("Lateral response", "time", "accY", "Time (s)", "Lateral acceleration (m/s²)"),
             _plot("Speed", "time", "speed" if "speed" in frame else "velX", "Time (s)", "Speed (m/s)"),
@@ -122,6 +129,12 @@ def build_dynpy_report(
                 ("QSS lap time (s)", summary["optimized_qss_lap_time_s"]),
                 ("Power cap (W)", summary["effective_drive_power_limit_w"]),
                 ("GGV provenance", summary["ggv_provenance"]["status"])]
+        if "ggv_speed_max_mps" in summary:
+            rows.extend([
+                ("GGV minimum speed (m/s)", summary["ggv_speed_min_mps"]),
+                ("GGV maximum speed (m/s)", summary["ggv_speed_max_mps"]),
+                ("GGV range limited", summary["ggv_range_limited"]),
+            ])
         pages.append((qss, {"title": "QSS racing line", "equal_aspect": True,
                            **_plot("QSS racing line", "x_m", "y_m", "x (m)", "y (m)")}))
         pages.append((qss, {"layout": "quad", "title": "QSS speed and acceleration", "subplots": [

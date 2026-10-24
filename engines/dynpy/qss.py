@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Mapping
 
 import numpy as np
@@ -20,7 +20,7 @@ FloatArray = NDArray[np.float64]
 
 @dataclass(frozen=True)
 class QSSResult:
-    """A steady circular-running trim point.
+    """A quasi-steady operating point.
 
     Success requires equation and wheel-force closure within the tire slip fits.
     Workflows separately enforce load, steering and sideslip limits.
@@ -43,6 +43,39 @@ class QSSResult:
     @property
     def longitudinal_acceleration_mps2(self) -> float:
         return float(_physical_body_acceleration(self.state, self.output)[0])
+
+    @property
+    def path_longitudinal_acceleration_mps2(self) -> float:
+        return float(_physical_path_acceleration(self.state, self.output)[0])
+
+    @property
+    def path_lateral_acceleration_mps2(self) -> float:
+        return float(_physical_path_acceleration(self.state, self.output)[1])
+
+
+def _physical_path_acceleration(state: FloatArray, output: ModelOutput) -> FloatArray:
+    """## Path Acceleration
+
+    Parameters
+    ----------
+    state : FloatArray
+        Vehicle coordinates and body-frame velocities.
+    output : ModelOutput
+        Evaluated accelerations at that state.
+
+    Returns
+    -------
+    FloatArray
+        Horizontal acceleration tangent to velocity and normal to its left.
+    """
+    dof = output.generalized_acceleration.size
+    rotation = _body_to_world_rotation(state[3:6]) if dof >= 6 else np.eye(3)
+    body_acceleration = _physical_body_acceleration(state, output)
+    acceleration = rotation @ np.pad(body_acceleration, (0, 3 - len(body_acceleration)))
+    velocity = rotation[:2, :2] @ state[dof:dof + 2] if dof == 3 else (rotation @ state[dof:dof + 3])[:2]
+    tangent = velocity / np.linalg.norm(velocity)
+    return np.array([np.dot(acceleration[:2], tangent),
+                     -acceleration[0] * tangent[1] + acceleration[1] * tangent[0]])
 
 
 def _physical_body_acceleration(state: FloatArray, output: ModelOutput) -> FloatArray:
@@ -210,76 +243,107 @@ def _solve_trim(
             if name in initial_unknowns:
                 guess[index] = float(initial_unknowns[name])
 
+    kinematics = model.parameters.kinematics
+    # Convert steering seeds and bounds once, then solve rack travel directly.
+    guess[1] = kinematics.rack_from_steering(float(np.clip(guess[1], lower[1], upper[1])))
+    try:
+        rack_bounds = sorted(kinematics.rack_from_steering(angle) for angle in (lower[1], upper[1]))
+    except (ValueError, RuntimeError):
+        # Unreachable steering endpoints must not reject a reachable trim.
+        rack_bounds = [-np.inf, np.inf]
+    lower[1], upper[1] = rack_bounds
+    names[1] = "rack_displacement_m"
+    if model.dof < 14:
+        names.extend(("load_fl_n", "load_fr_n", "load_rl_n", "load_rr_n"))
+        guess.extend(model.parameters.static_wheel_loads_n)
+        lower.extend((0.0,) * 4)
+        upper.extend((np.inf,) * 4)
+    if model.dof < 10:
+        names.extend(("slip_fl", "slip_fr", "slip_rl", "slip_rr"))
+        guess.extend((0.0,) * 4)
+        lower.extend(tire.coefficients["KPUMIN"] for tire in model.parameters.tires)
+        upper.extend(tire.coefficients["KPUMAX"] for tire in model.parameters.tires)
+    if initial_unknowns is not None:
+        for index in range(model.dof, len(names)):
+            guess[index] = float(initial_unknowns.get(names[index], guess[index]))
+
     scales = _residual_scales(model)
+    force_scale = model.parameters.mass_kg * G / 4.0
+
+    def evaluate(values: FloatArray) -> tuple[FloatArray, ModelInputs, ModelOutput]:
+        state, controls = _trim_state_and_inputs(
+            model, values[:model.dof], speed_mps=speed_mps,
+            yaw_rate_radps=yaw_rate_radps, rack_input=True,
+        )
+        output = model.evaluate(
+            state, controls,
+            normal_loads_n=values[model.dof:model.dof + 4] if model.dof < 14 else None,
+            algebraic_slips=values[-4:] if model.dof < 10 else None,
+        )
+        return state, controls, output
 
     def residual(values: FloatArray) -> FloatArray:
-        state, controls = _trim_state_and_inputs(
-            model,
-            values,
-            speed_mps=speed_mps,
-            yaw_rate_radps=yaw_rate_radps,
-        )
-        output = model.evaluate(state, controls)
+        state, controls, output = evaluate(values)
         acceleration = output.generalized_acceleration.copy()
         if target_acceleration_mps2 is not None:
             acceleration -= _generalized_acceleration_target(
-                model,
-                state,
-                output,
+                model, state, output,
                 longitudinal_mps2=target_acceleration_mps2[0],
                 lateral_mps2=target_acceleration_mps2[1],
                 acceleration_frame=acceleration_frame,
             )
-        return acceleration / scales
+        return np.concatenate((acceleration / scales, _algebraic_residual(model, controls, output) / force_scale))
 
     lower_array = np.asarray(lower, dtype=float)
     upper_array = np.asarray(upper, dtype=float)
-    # The kinematic steer guess can exceed the roadwheel bound in tight, slow
-    # corners. That must give an infeasible trim, not an optimizer exception.
     bounded_guess = np.clip(np.asarray(guess, dtype=float), lower_array, upper_array)
     solution = least_squares(  # type: ignore[operator]
-        residual,
-        bounded_guess,
-        # Center differences across near-zero MF52 moment shifts and geometry roundoff.
-        jac="3-point",
+        residual, bounded_guess, jac="2-point",
         bounds=(lower_array, upper_array),
-        xtol=tolerance,
-        ftol=tolerance,
-        gtol=tolerance,
-        max_nfev=max_nfev,
-        x_scale="jac",
+        xtol=tolerance, ftol=tolerance, gtol=tolerance,
+        max_nfev=max_nfev, x_scale="jac",
     )
-    state, inputs = _trim_state_and_inputs(
-        model,
-        solution.x,
-        speed_mps=speed_mps,
-        yaw_rate_radps=yaw_rate_radps,
-    )
-    output = model.evaluate(state, inputs)
+    state, inputs, output = evaluate(solution.x)
     physical_residual = output.generalized_acceleration.copy()
     if target_acceleration_mps2 is not None:
         physical_residual -= _generalized_acceleration_target(
-            model,
-            state,
-            output,
+            model, state, output,
             longitudinal_mps2=target_acceleration_mps2[0],
             lateral_mps2=target_acceleration_mps2[1],
             acceleration_frame=acceleration_frame,
         )
-    physical_norm = float(np.linalg.norm(physical_residual))
+    steering = float(np.mean(kinematics.at(np.zeros(4), float(solution.x[1])).toe_rad[:2]))
+    inputs = replace(inputs, steering_rad=steering)
     tire_error = _tire_state_error(model, inputs, output)
     return QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
-                     and not tire_error),
+                     and abs(steering) <= 0.7 + 1e-8 and not tire_error),
         message=f"{solution.message} {tire_error}".strip(),
-        residual_norm=physical_norm,
-        state=state,
-        inputs=inputs,
-        output=output,
-        unknowns={name: float(value) for name, value in zip(names, solution.x)},
-        speed_mps=float(speed_mps),
-        yaw_rate_radps=float(yaw_rate_radps),
+        residual_norm=float(np.linalg.norm(physical_residual)),
+        state=state, inputs=inputs, output=output,
+        unknowns={**{name: float(value) for name, value in zip(names, solution.x)}, "steering_rad": steering},
+        speed_mps=float(speed_mps), yaw_rate_radps=float(yaw_rate_radps),
     )
+
+
+def _algebraic_residual(model: ReducedVehicleModel, inputs: ModelInputs, output: ModelOutput) -> FloatArray:
+    """## Algebraic Closure
+
+    Parameters
+    ----------
+    model : ReducedVehicleModel
+        Shared transient force model.
+    inputs : ModelInputs
+        Applied wheel torques.
+    output : ModelOutput
+        Evaluation at trial loads and slips.
+
+    Returns
+    -------
+    NDArray
+        Corner load and massless wheel force residuals, in newtons.
+    """
+    return model.algebraic_residual(inputs, output)
 
 
 def solve_moment_state(
@@ -394,10 +458,15 @@ def _trim_state_and_inputs(
     *,
     speed_mps: float,
     yaw_rate_radps: float,
+    rack_input: bool = False,
 ) -> tuple[FloatArray, ModelInputs]:
     cursor = 0
     beta, steering, total_torque = values[cursor : cursor + 3]
     cursor += 3
+    rack = float(steering) if rack_input else None
+    if rack_input:
+        steering = (float(np.mean(model.parameters.kinematics.at(np.zeros(4), float(steering)).toe_rad[:2]))
+                    if model.dof >= 10 else 0.0)
     state = model.initial_state(speed_mps)
     coordinates = state[: model.dof]
     velocities = state[model.dof :]
@@ -454,6 +523,7 @@ def _trim_state_and_inputs(
     )
     return state, ModelInputs(
         steering_rad=float(steering),
+        rack_displacement_m=rack,
         wheel_torques_nm=(
             float(torques[0]),
             float(torques[1]),
@@ -516,6 +586,14 @@ def _generalized_acceleration_target(
             target[0] * np.cos(steering)
             + target[1] * np.sin(steering)
         )
+        if acceleration_frame == "path":
+            corner_velocity = body_velocity + np.cross(omega, output.contact_patch_positions_body_m)
+            longitudinal_speed = (corner_velocity[:, 0] * np.cos(steering)
+                                  + corner_velocity[:, 1] * np.sin(steering))
+            # Hold the fitted slip ratio fixed as rolling speed changes.
+            wheel_longitudinal_acceleration *= 1.0 + output.slip_ratios * np.where(
+                np.abs(longitudinal_speed) > 1.0, np.sign(longitudinal_speed), 0.,
+            )
         wheel_acceleration = wheel_longitudinal_acceleration / np.asarray(
             model.parameters.wheel_radius_m
         )
@@ -551,6 +629,33 @@ def _wheel_force_balance_valid(
     return bool(np.allclose(actual, requested, rtol=2e-3, atol=1.0))
 
 
+def _algebraic_slip_slopes(model: ReducedVehicleModel, output: ModelOutput) -> FloatArray:
+    """## Longitudinal Slip Stability
+
+    Parameters
+    ----------
+    model : ReducedVehicleModel
+        Front and rear tire fits.
+    output : ModelOutput
+        Corner loads, slip angles, slips and camber.
+
+    Returns
+    -------
+    NDArray
+        Longitudinal force slopes in newtons per unit slip, ordered FL to RR.
+    """
+    slopes = np.empty(4)
+    for axle, tire in enumerate((model.parameters.front_tire, model.parameters.rear_tire)):
+        corners = slice(2 * axle, 2 * axle + 2)
+        fx = tire.forces(
+            output.normal_loads_n[corners, None], output.slip_angles_rad[corners, None],
+            output.slip_ratios[corners, None] + np.array([-1e-5, 1e-5]),
+            output.camber_rad[corners, None],
+        )[0]
+        slopes[corners] = (fx[:, 1] - fx[:, 0]) / 2e-5
+    return slopes
+
+
 def _tire_state_error(
     model: ReducedVehicleModel, inputs: ModelInputs, output: ModelOutput,
 ) -> str:
@@ -562,6 +667,8 @@ def _tire_state_error(
     ]
     if outside:
         return f"Outside tire slip fit at {', '.join(outside)}."
+    if model.dof < 10 and np.any(_algebraic_slip_slopes(model, output) < -1e-4):
+        return "Massless wheel equilibrium lies on a falling tire-force branch."
     if not _wheel_force_balance_valid(model, inputs, output):
         return "Wheel force does not balance applied torque and rolling moment."
     return ""

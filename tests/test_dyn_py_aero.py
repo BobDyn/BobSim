@@ -71,7 +71,7 @@ def test_models_use_current_aero_pose_and_full_wrench(aero, dof):
         assert sum(vertical.normal_loads_n)-sum(parameters.static_wheel_loads_n) == pytest.approx(-force[2])
         np.testing.assert_allclose(model._aero_load(velocity, pose)[1], moment)
         vertical_forces = np.zeros((4, 3))
-        vertical_forces[:, 2] = vertical.normal_loads_n - parameters.static_wheel_loads_n
+        vertical_forces[:, 2] = vertical.normal_loads_n
         reaction = np.cross(parameters.corner_positions, vertical_forces).sum(axis=0)
         np.testing.assert_allclose(reaction[:2] + moment[:2], 0, atol=1e-9)
 
@@ -107,3 +107,24 @@ def test_vehicle_yaml_accepts_zero_downforce_with_a_free_pitch_moment(tmp_path):
     force, moment = model._aero_load(np.array([15., 0, 0, 0, 0, 0]))
     np.testing.assert_array_equal(force, np.zeros(3))
     np.testing.assert_allclose(moment, [0, 17, 0])
+
+
+def test_planar_load_transfer_reuses_the_body_aero_wrench(monkeypatch):
+    model = create_model(3, load_reduced_vehicle_parameters())
+    original = model._aero_load
+    calls = []
+
+    def counted(*args):
+        result = original(*args)
+        calls.append(result)
+        return result
+
+    monkeypatch.setattr(model, '_aero_load', counted)
+    state = model.initial_state(15.)
+    output = model.evaluate(state, ModelInputs(), normal_loads_n=model.parameters.static_wheel_loads_n,
+                            algebraic_slips=np.zeros(4))
+    assert len(calls) == 1
+    force, _ = calls[0]
+    expected_load = sum(model.parameters.static_wheel_loads_n) - force[2]
+    np.testing.assert_allclose(np.sum(output.suspension_forces_n), expected_load)
+    np.testing.assert_allclose(output.body_force_n[:2], output.wheel_forces_body_n[:, :2].sum(axis=0) + force[:2])

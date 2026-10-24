@@ -27,7 +27,9 @@ from typing import Any
 import numpy as np
 import yaml
 
-OUT_DIR = Path(__file__).resolve().parent / "results"
+from common.vehicle_io import repo_root
+
+OUT_DIR = repo_root() / "visualization/results"
 CONFIG_NAME = "demo_step_steer.yml"
 DATA_NAME = "demo_step_steer.npz"
 
@@ -401,6 +403,7 @@ def build(duration: float = 8.0) -> tuple[dict[str, np.ndarray], dict[str, Any]]
     signals["state/speed_mps"] = np.full(car.time.size, car.speed)
 
     config: dict[str, Any] = {
+        "representation": "Synthetic demo · Not a dynamics model",
         "style": {
             "joints": {"radius": 0.014, "color": "#e0483c"},
             "links": {

@@ -11,11 +11,14 @@ import time
 from typing import Any, Iterable
 
 from app import storage as app_storage
+from common.vehicle_io import (
+    APP_NAME as APP_NAME,
+    PROJECT_NAME as PROJECT_NAME,
+    PRIMARY_HOME_ENV as PRIMARY_HOME_ENV,
+    LEGACY_HOME_ENV as LEGACY_HOME_ENV,
+    default_runtime_root as _default_runtime_root,
+)
 
-PROJECT_NAME = "BobDyn"
-APP_NAME = "BobSim"
-PRIMARY_HOME_ENV = "BOBSIM_HOME"
-LEGACY_HOME_ENV = "BOBDYN_HOME"
 PACKAGE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])).resolve()
 FROZEN_APP = bool(getattr(sys, "frozen", False))
 APP_RUNTIME_SEED_SCHEMA_VERSION = 4
@@ -32,6 +35,8 @@ APP_SEED_RUNTIME_PATHS = (
     "simulations/response/reduced/reduced_order_eval_config.yml",
     "simulations/response/reduced/ramp_steer_config.yml",
     "simulations/lap/lap_time_eval_config.yml",
+    "simulations/lap/racing_line_config.yml",
+    "simulations/response/maneuver_config.yml",
     "simulations/lap/lap_validation_config.yml",
     "simulations/lap/tracks",
     "simulations/envelope/ggv/ggv_config.yml",
@@ -47,21 +52,6 @@ APP_SEED_RUNTIME_PATHS = (
     "optimization/envelope/config.yml",
     "optimization/response/configs",
 )
-
-
-def _default_runtime_root() -> Path:
-    override = os.environ.get(PRIMARY_HOME_ENV) or os.environ.get(LEGACY_HOME_ENV)
-    if override:
-        return Path(override).expanduser().resolve()
-
-    system = platform.system()
-    if system == "Windows":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    elif system == "Darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return (base / PROJECT_NAME / APP_NAME).resolve()
 
 
 def _runtime_copy_ignore(_: str, names: list[str]) -> set[str]:
@@ -153,6 +143,18 @@ def _copy_runtime_file(source: Path, target: Path) -> bool:
 
 
 def _copy_runtime_tree(source: Path, target: Path, *, merge: bool = False) -> bool:
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = _runtime_copy_ignore(directory, names)
+        if merge:
+            for name in names:
+                original = Path(directory) / name
+                existing = target / original.relative_to(source)
+                if existing.exists() or existing.is_symlink():
+                    if (not original.is_dir() or not existing.is_dir()
+                            or original.is_symlink() or existing.is_symlink()):
+                        ignored.add(name)
+        return ignored
+
     target.parent.mkdir(parents=True, exist_ok=True)
     return _retry_runtime_io(
         f"Copy {source} to {target}",
@@ -160,7 +162,7 @@ def _copy_runtime_tree(source: Path, target: Path, *, merge: bool = False) -> bo
             source,
             target,
             symlinks=True,
-            ignore=_runtime_copy_ignore,
+            ignore=ignore,
             dirs_exist_ok=merge,
         ),
     )
@@ -291,6 +293,8 @@ def _seed_runtime_root(
         refresh = rel_path in APP_REFRESH_RUNTIME_PATHS
         merge = rel_path in APP_MERGE_RUNTIME_DIRS
         current = _source_path_current(source, target)
+        if merge and (target.is_symlink() or (target.exists() and not target.is_dir())):
+            continue
         if source.is_dir():
             if target.exists() and not target.is_dir():
                 if not remove_runtime_path(target):
@@ -321,5 +325,6 @@ def _prepare_runtime_root() -> Path:
 
     runtime_root = _default_runtime_root()
     _seed_runtime_root(runtime_root)
+    os.environ[PRIMARY_HOME_ENV] = runtime_root.as_posix()
     os.chdir(runtime_root)
     return runtime_root

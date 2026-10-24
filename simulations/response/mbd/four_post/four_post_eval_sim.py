@@ -19,6 +19,17 @@ SEED_CONFIG_PATH = Path("simulations/response/mbd/four_post/four_post_eval_confi
 DEFAULT_CONFIG_PATH = config_io.resolve(SEED_CONFIG_PATH)
 DEFAULT_BUILD_DIR = "simulations/mbd/BuildBobLib/FourPostSim"
 DEFAULT_EXEC_NAME = "BobLib.Experiments.Standards.FourPostSim"
+FOUR_POST_SIMULATION = {
+    "build_dir": DEFAULT_BUILD_DIR,
+    "exec_name": DEFAULT_EXEC_NAME,
+    "solver": "dassl",
+    "stepSize": 0.5,
+    "output_format": "csv",
+    "log_level": "LOG_STATS,LOG_SOLVER,LOG_INIT,LOG_STDOUT,LOG_ASSERT",
+    "extra_args": ["-jacobian=internalNumerical"],
+    "no_grid": False,
+    "no_event_emit": True,
+}
 DEFAULT_METRICS_CSV_PATH = "simulations/mbd/results/four_post_eval_report_metrics.csv"
 REPO_ROOT = repo_root()
 ACTIVE_VEHICLE_YAML_CANDIDATES = (REPO_ROOT / "vehicle.yml",)
@@ -454,8 +465,16 @@ def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
         if _side_has_stabar(rear_side)
         else 0.0
     )
-    front_spring_table = _linearize_spring_table_rate(front_vehicle_table, front_spring_rate)
-    rear_spring_table = _linearize_spring_table_rate(rear_vehicle_table, rear_spring_rate)
+    front_spring_table = (
+        _linearize_spring_table_rate(front_vehicle_table, front_spring_rate)
+        if _configured_optional_float(front_cfg, ("spring_rate_n_per_m", "spring_rate")) is not None
+        else front_vehicle_table
+    )
+    rear_spring_table = (
+        _linearize_spring_table_rate(rear_vehicle_table, rear_spring_rate)
+        if _configured_optional_float(rear_cfg, ("spring_rate_n_per_m", "spring_rate")) is not None
+        else rear_vehicle_table
+    )
     corner_loads = _sprung_corner_loads(vehicle)
 
     return {
@@ -627,7 +646,7 @@ def _static_balance_iterations(config: dict[str, Any]) -> int:
         model_overrides.get("suspension"),
         name="model_overrides.suspension",
     )
-    return max(1, int(suspension_cfg.get("static_balance_iterations", 3)))
+    return max(1, int(suspension_cfg.get("static_balance_iterations", 4)))
 
 
 def _static_balance_convergence_n(config: dict[str, Any]) -> float:
@@ -854,7 +873,13 @@ def _quarter_car_frequencies(
 
 class FourPostEvalSim:
     def __init__(self, config: dict[str, Any]):
-        self.config = config
+        self.config = {
+            **config,
+            "standard": "FourPostEval",
+            "report": {**_as_mapping(config.get("report"), name="report"), "brand": "BobSim"},
+            "simulation": copy.deepcopy(FOUR_POST_SIMULATION),
+            "execution": {"parallel": False, "cleanup": False, "stream_logs": False},
+        }
 
     def build_overrides(self) -> dict[str, Any]:
         procedure = _as_mapping(self.config.get("procedure"), name="procedure")
@@ -1872,10 +1897,11 @@ def main(path: str | Path | None = None) -> dict[str, Any]:
     config = load_config(config_path)
     _normalize_four_post_report_config(config)
 
-    result = FourPostEvalSim(config).run()
+    simulation = FourPostEvalSim(config)
+    result = simulation.run()
 
     if _as_mapping(config.get("report"), name="report").get("enabled", True):
-        ReportEngine(config).build(result)
+        ReportEngine(simulation.config).build(result)
 
     return result
 

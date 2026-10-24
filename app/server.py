@@ -4,6 +4,7 @@ import gzip
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from ipaddress import ip_address
 import mimetypes
 from pathlib import Path
 from typing import Any
@@ -31,9 +32,13 @@ def _visual_payload(run_id: str) -> Any:
     if run is None:
         raise FileNotFoundError(f"No visual run named {run_id!r}")
     data_path = ROOT / run["data"]
-    key = f"{run_id}:{data_path.stat().st_mtime_ns}"
+    config_path = ROOT / run["config"]
+    key = f"{run_id}:{run.get('dof')}:{data_path.stat().st_mtime_ns}:{config_path.stat().st_mtime_ns}"
     if _VISUAL_CACHE["key"] != key:
-        _VISUAL_CACHE["payload"] = app_visual.scene_payload(ROOT / run["config"], data_path)
+        _VISUAL_CACHE["payload"] = (
+            app_visual.reduced_scene_payload(config_path, data_path, int(run["dof"]))
+            if "dof" in run else app_visual.scene_payload(config_path, data_path)
+        )
         _VISUAL_CACHE["key"] = key
     return _VISUAL_CACHE["payload"]
 
@@ -58,6 +63,7 @@ saved_results_payload = _not_connected
 _active_vehicle_workspace_key = _not_connected
 result_sources_payload = _not_connected
 result_source_payload = _not_connected
+simulation_workspace = _not_connected
 processing_workflows_payload = _not_connected
 tire_eval_payload = _not_connected
 kinematic_curves_from_active_vehicle = _not_connected
@@ -118,6 +124,13 @@ class BobSimHandler(BaseHTTPRequestHandler):
                 self._send_json(vehicle_workspace_payload(vehicle_key))
             elif parsed.path == "/api/vehicle-templates":
                 self._send_json(vehicle_template_payloads())
+            elif parsed.path == "/api/simulations":
+                self._send_json(simulation_workspace())
+            elif parsed.path == "/api/simulations/comparison":
+                self._send_json(simulation_workspace("comparison", {
+                    "id": _query_one(parsed.query, "id"), "run_id": parse_qs(parsed.query).get("run_id", [None])[0],
+                    "vehicle_key": _query_one(parsed.query, "vehicle_key"),
+                }))
             elif parsed.path == "/api/sim-configs":
                 self._send_json(sim_config_library_payload(_query_one(parsed.query, "workflow_id")))
             elif parsed.path == "/api/results":
@@ -176,10 +189,27 @@ class BobSimHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def do_POST(self) -> None:  # noqa: N802
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        try:
+            hostname = urlparse("//" + host).hostname or ""
+            if hostname != "localhost":
+                ip_address(hostname)
+        except ValueError:
+            self._send_error(HTTPStatus.FORBIDDEN, "Unrecognized API host")
+            return
+        if (origin is not None and origin not in (f"http://{host}", f"https://{host}")) \
+                or self.headers.get("Sec-Fetch-Site") == "cross-site":
+            self._send_error(HTTPStatus.FORBIDDEN, "Cross-origin API requests are not allowed")
+            return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            self._send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "API requests require application/json")
+            return
         path = urlparse(self.path).path
         launches_job = path == "/api/jobs" or (path.startswith("/api/workflows/") and path.endswith("/run"))
-        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval"}
-        if launches_job or read_only:
+        read_only = path in {"/api/results/series", "/api/kinematics/curves", "/api/tires/eval", "/api/tracks/preview"}
+        cancels_job = path.startswith("/api/jobs/") and path.endswith("/cancel")
+        if launches_job or cancels_job or read_only or path == "/api/simulations/visualization-settings":
             self._handle_post()
             return
         try:
@@ -200,12 +230,16 @@ class BobSimHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/jobs":
                 job = start_job(str(body.get("action_id", "")))
                 self._send_json(job, status=HTTPStatus.CREATED)
+            elif parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):
+                job_id = parsed.path.removeprefix("/api/jobs/").removesuffix("/cancel")
+                self._send_json(JOBS.cancel(job_id))
             elif parsed.path == "/api/toolchain/openmodelica":
                 payload = save_openmodelica_toolchain_settings(body)
                 self._send_json(payload)
             elif parsed.path.startswith("/api/workflows/") and parsed.path.endswith("/run"):
                 workflow_id = parsed.path.removeprefix("/api/workflows/").removesuffix("/run").strip("/")
-                job = start_workflow(workflow_id)
+                job = start_workflow(workflow_id, simulation_id=body.get("simulation_id"),
+                                     vehicle_key=body.get("vehicle_key"))
                 self._send_json(job, status=HTTPStatus.CREATED)
             elif parsed.path.startswith("/api/configs/"):
                 config_id = parsed.path.rsplit("/", 1)[-1]
@@ -233,6 +267,10 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/modelica/generate":
                 payload = generate_modelica_payload()
                 self._send_json(payload)
+            elif parsed.path == "/api/simulations/visualization-settings":
+                self._send_json(simulation_workspace("update-visualization", body))
+            elif parsed.path == "/api/simulations":
+                self._send_json(simulation_workspace(str(body.get("action", "list")), body))
             elif parsed.path == "/api/sim-configs/load":
                 payload = load_sim_config_source(str(body.get("source_id", "")))
                 self._send_json(payload)
@@ -269,6 +307,7 @@ class BobSimHandler(BaseHTTPRequestHandler):
                     x_axis=str(body.get("x_axis", "__index__")),
                     signals=[str(signal) for signal in raw_signals],
                     max_points=int(body.get("max_points", 1800)),
+                    color_signal=str(body["color_signal"]) if body.get("color_signal") else None,
                 )
                 self._send_json(payload)
             elif parsed.path == "/api/kinematics/curves":
@@ -291,6 +330,12 @@ class BobSimHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tires/template":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)
+            elif parsed.path == "/api/tracks/import":
+                from app.tracks import import_track
+                self._send_json(import_track(ROOT, str(body.get("name", "")), str(body.get("text", ""))))
+            elif parsed.path == "/api/tracks/preview":
+                from app.tracks import track_payload
+                self._send_json(track_payload(ROOT, str(body.get("path", ""))))
             elif parsed.path == "/api/tires/import":
                 payload = save_tire_template(str(body.get("name", "")), str(body.get("text", "")))
                 self._send_json(payload)

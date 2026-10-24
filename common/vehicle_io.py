@@ -6,11 +6,51 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 import re
+import os
+import platform
+import sys
 
 import yaml
 
 
+PROJECT_NAME = "BobDyn"
+APP_NAME = "BobSim"
+PRIMARY_HOME_ENV = "BOBSIM_HOME"
+LEGACY_HOME_ENV = "BOBDYN_HOME"
+
+
+def default_runtime_root() -> Path:
+    """## Desktop Data Directory
+
+    Returns
+    -------
+    Path
+        User-selected or platform-default directory for mutable app data.
+    """
+    override = os.environ.get(PRIMARY_HOME_ENV) or os.environ.get(LEGACY_HOME_ENV)
+    if override:
+        return Path(override).expanduser().resolve()
+
+    system = platform.system()
+    if system == "Windows":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif system == "Darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return (base / PROJECT_NAME / APP_NAME).resolve()
+
+
 def repo_root() -> Path:
+    """## Working Data Root
+
+    Returns
+    -------
+    Path
+        Desktop runtime directory when bundled, otherwise the source checkout.
+    """
+    if getattr(sys, "frozen", False):
+        return default_runtime_root()
     return Path(__file__).resolve().parents[1]
 
 

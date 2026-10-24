@@ -201,6 +201,28 @@ def test_component_cg_move_recomputes_total_cg_and_yaw_inertia(
     )
 
 
+@pytest.mark.parametrize("lateral_offset_m", [-0.10, 0.0, 0.10])
+@pytest.mark.parametrize("speed_mps", [0.0, 12.0])
+@pytest.mark.parametrize("steering_rad", [-0.08, 0.0, 0.08])
+def test_3dof_balances_offset_cg_weight_and_roll_moment(tmp_path, lateral_offset_m, speed_mps, steering_rad):
+    data = deepcopy(load_yaml(vehicle_yaml_path()))
+    data["driver_mass"]["cg_m"][1] += lateral_offset_m
+    path = tmp_path / "offset_driver.yml"
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    model = create_model(3, load_reduced_vehicle_parameters(path))
+    state = model.initial_state(speed_mps)
+    state[4] = 0.03 * speed_mps
+    output = model.evaluate(state, ModelInputs(steering_rad=steering_rad))
+
+    assert np.all(output.normal_loads_n > 0.0)
+    np.testing.assert_allclose(output.body_force_n[2], 0.0, atol=1e-6)
+    np.testing.assert_allclose(output.body_moment_nm[:2], 0.0, atol=1e-6)
+    if speed_mps == 0.0 and lateral_offset_m and steering_rad == 0.0:
+        left_load = np.sum(output.normal_loads_n[[0, 2]])
+        right_load = np.sum(output.normal_loads_n[[1, 3]])
+        assert (left_load - right_load) * lateral_offset_m > 0.0
+
+
 def test_dyn_py_applies_full_aero_wrench_at_reference_point(parameters):
     model = create_model(6, parameters)
     aero = parameters.aero
@@ -456,7 +478,7 @@ def test_qss_returns_infeasible_result_when_kinematic_steer_guess_exceeds_bound(
 
 @pytest.mark.parametrize("dof", (3, 6, 10, 14))
 @pytest.mark.parametrize("speed_mps", (6.0, 18.0))
-def test_ggv_lateral_trim_is_acceleration_not_implied_corner_radius(
+def test_default_body_acceleration_trim_does_not_imply_corner_radius(
     parameters,
     dof,
     speed_mps,
@@ -474,7 +496,9 @@ def test_ggv_lateral_trim_is_acceleration_not_implied_corner_radius(
     assert result.lateral_acceleration_mps2 == pytest.approx(8.0, abs=1e-6)
 
 
-def test_ggv_pure_lateral_endpoint_is_closed_at_coast(parameters):
+def test_ggv_lateral_endpoint_closes_path_acceleration(parameters):
+    from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit
+
     projection = project_vehicle_yaml(load_vehicle_yaml())
     ay, ax = solve_lateral_limit(
         projection.ggv,
@@ -484,18 +508,36 @@ def test_ggv_pure_lateral_endpoint_is_closed_at_coast(parameters):
         binary_iterations=4,
     )
 
-    # Check feasibility rather than baking in the old zero-ARB fallback's
-    # numerical limit: the active YAML now supplies nominal linkage/bar rates.
+    # The lateral endpoint can require a nonzero tangential acceleration.
     assert 0 < ay < 2.6 * G
     model = create_model(3, parameters)
+    boundary = _solve_envelope_limit(
+        projection.ggv, model, speed=12., ay=2.6 * 9.80665,
+        ax_bounds=(-3.2 * G, 2.8 * G), mode="lateral",
+        max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
+    )
+    assert boundary is not None
     trim = solve_acceleration_trim(model, speed_mps=12.0,
+                                  initial_unknowns=boundary.unknowns,
                                   longitudinal_acceleration_mps2=ax,
-                                  lateral_acceleration_mps2=ay)
+                                  lateral_acceleration_mps2=ay,
+                                  yaw_rate_radps=ay / 12.0, acceleration_frame="path")
     assert trim.success
     assert _trim_is_racing_feasible(trim, model=model, ay=ay,
                                    max_abs_beta_rad=0.25, max_abs_steering_rad=0.5)
-    assert ax < 0.0
-    assert abs(ax) < 1.0
+    assert trim.path_longitudinal_acceleration_mps2 == pytest.approx(ax, abs=1e-5)
+    assert trim.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
+    assert trim.yaw_rate_radps == pytest.approx(ay / 12.0)
+    from engines.dynpy.qss import _algebraic_residual
+
+    # Verify the coupled QSS root independently of static-start load iteration.
+    forward = model.evaluate(trim.state, trim.inputs, normal_loads_n=trim.output.normal_loads_n)
+    np.testing.assert_allclose(_algebraic_residual(model, trim.inputs, forward), 0., atol=1e-4)
+    np.testing.assert_allclose(forward.normal_loads_n, trim.output.normal_loads_n, atol=1e-5)
+    np.testing.assert_allclose(forward.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-5)
+    forward_trim = replace(trim, output=forward)
+    assert forward_trim.path_longitudinal_acceleration_mps2 == pytest.approx(ax, abs=1e-5)
+    assert forward_trim.path_lateral_acceleration_mps2 == pytest.approx(ay, abs=1e-5)
 
 
 def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
@@ -520,7 +562,7 @@ def test_ggv_force_closure_uses_kinematic_bump_toe(parameters):
     invalid_output = replace(
         result.output,
         normal_loads_n=np.array(
-            [parameters.front_tire.fz_min_n - 1.0, 500.0, 500.0, 500.0]
+            [parameters.front_tire.fz_max_n + 1.0, 500.0, 500.0, 500.0]
         ),
     )
     invalid_trim = replace(result, output=invalid_output)
@@ -594,6 +636,8 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
     )
 
     assert result.success
+    assert "roadwheelSteer" in result.signals
+    assert "handwheelAngle" not in result.signals
     for signal in (
         "velX",
         "velY",
@@ -616,11 +660,16 @@ def test_transient_result_exposes_boblib_comparison_channels(parameters, dof):
         "instantLinkLateralRR",
         "tireFxFL",
         "tireFyFR",
+        "tireFzFL",
         "tireMxFL",
         "tireMyRL",
         "tireMzRR",
     ):
         assert signal in result.signals
+    for index, state in enumerate(result.state):
+        expected = model.evaluate(state, trim.inputs).normal_loads_n
+        assert np.allclose([result.signals[f"tireFz{corner}"][index]
+                            for corner in ("FL", "FR", "RL", "RR")], expected)
     metrics = compare_transient_signals(
         result.time_s,
         {"yawVel": result.signals["yawVel"]},
@@ -1000,3 +1049,74 @@ def test_controller_integral_is_integrated_without_changing_vehicle_state(parame
     assert result.state_names == model.state_names
     # The final calls reconstruct the sampled outputs from the integrated state.
     np.testing.assert_allclose([integral for _, integral in observed[-5:]], 0.5 * result.time_s**2, atol=1e-10)
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+@pytest.mark.parametrize("iterations", [0, 30])
+def test_transient_evaluation_reproduces_qss_acceleration_trim(parameters, monkeypatch, dof, iterations):
+    model = create_model(dof, parameters)
+    trim = solve_acceleration_trim(
+        model, speed_mps=12., yaw_rate_radps=.25,
+        longitudinal_acceleration_mps2=1., lateral_acceleration_mps2=3.,
+        acceleration_frame="path",
+    )
+    assert trim.success, trim.message
+    monkeypatch.setattr(model, "_force_path_iterations", iterations)
+    actual = model.evaluate(trim.state, trim.inputs)
+    np.testing.assert_allclose(actual.normal_loads_n, trim.output.normal_loads_n, atol=1e-4)
+    np.testing.assert_allclose(actual.generalized_acceleration, trim.output.generalized_acceleration, atol=1e-5)
+    np.testing.assert_allclose(model.algebraic_residual(trim.inputs, actual), 0., atol=1e-4)
+
+
+def test_unclosed_load_iteration_fails_explicitly(parameters, monkeypatch):
+    model = create_model(10, parameters)
+    monkeypatch.setattr(model, "_closed_normal_loads", lambda loads, *args: loads + 100.)
+    with pytest.raises(RuntimeError, match="algebraic tire/load balance did not converge"):
+        model.evaluate(model.initial_state(12.))
+
+
+@pytest.mark.parametrize("dof", [3, 6])
+def test_unattainable_massless_wheel_torque_fails_explicitly(parameters, dof):
+    model = create_model(dof, parameters)
+    with pytest.raises(RuntimeError, match="massless-wheel model's capacity"):
+        model.evaluate(model.initial_state(12.), ModelInputs(wheel_torques_nm=(1e6,) * 4))
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_nominal_evaluation_keeps_fast_force_iteration(parameters, monkeypatch, dof):
+    model = create_model(dof, parameters)
+
+    def unexpected_fallback(*args):
+        pytest.fail("Nominal force balance should converge without a coupled solve.")
+
+    monkeypatch.setattr(model, "_solve_algebraic_forces", unexpected_fallback)
+    model.evaluate(model.initial_state(12.))
+
+
+@pytest.mark.parametrize("dof", [3, 6, 10, 14])
+def test_transient_holds_a_steady_turn(parameters, dof):
+    model = create_model(dof, parameters)
+    trim = solve_steady_state(model, speed_mps=12., yaw_rate_radps=.2)
+    assert trim.success, trim.message
+    result = simulate_transient(
+        model, initial_state=trim.state, controls=trim.inputs,
+        time_s=np.linspace(0., .1, 6), rtol=1e-9, atol=1e-11,
+    )
+    assert result.success, result.message
+    np.testing.assert_allclose(
+        result.state[:, dof:], np.broadcast_to(trim.state[dof:], result.state[:, dof:].shape),
+        atol=1e-5,
+    )
+
+
+@pytest.mark.parametrize("dof", [3, 6])
+def test_coupled_load_closure_preserves_explicit_slip_constraints(parameters, monkeypatch, dof):
+    model = create_model(dof, parameters)
+    monkeypatch.setattr(model, "_force_path_iterations", 0)
+    slips = np.full(4, .02)
+    controls = ModelInputs()
+    output = model.evaluate(model.initial_state(12.), controls, algebraic_slips=slips)
+    np.testing.assert_array_equal(output.slip_ratios, slips)
+    balance = model.algebraic_residual(controls, output)
+    np.testing.assert_allclose(balance[:4], 0., atol=1e-5)
+    assert np.linalg.norm(balance[4:]) > 1.

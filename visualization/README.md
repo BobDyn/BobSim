@@ -1,13 +1,13 @@
 # BobVis
 
-BobVis captures simulation geometry for the app's Replay view. It shows
+BobVis captures simulation geometry for the app's Simulation → Captured scenes view. It shows
 suspension links, tires, force vectors, and tire loads.
 
 ```bash
 make visual-maneuver   # capture a VehicleSim transient
 make visual-rig        # capture a four-post run
 make visual-demo       # generate a synthetic scene
-make app               # open Replay
+make app               # open Simulation → Captured scenes
 ```
 
 These targets run in Docker by default.
@@ -22,7 +22,22 @@ These targets run in Docker by default.
 | `visual-demo` | Synthetic data, no simulation required |
 
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
-`visualization/results/`. Replay lists the available scenes.
+`visualization/results/`. Captured scenes lists these scenes and saved DynPy
+ramp-steer, step-steer and transient-lap runs with saved state signals. Reduced replay uses the run's archived signals and
+vehicle definition. The display settings button selects geometry and tire overlays.
+The Tires panel shows each corner on its peak-grip ellipse and percent utilization.
+
+The camera uses the geometry editor's orbit, pan and zoom gestures. Home restores
+the isometric view. Top, front and side views are available. World frame follows position with a fixed heading. Vehicle frame also follows
+heading, keeping front and side views aligned during a turn. Roll stays visible.
+
+Reduced replay shows two axles and a center spine at 3 DOF, body motion at 6 DOF,
+and unsprung motion at 14 DOF. Wheel spin uses saved angles at 10/14 DOF and
+distance traveled at 3/6 DOF. The latter is a rolling animation, without wheel slip.
+Contact trails show all four wheels. Force arrows use saved Fx and Fy. Load
+footprints use Fz, which is available in new runs. Wishbones and steering use archived hardpoints and KinPy reconstruction from
+corner travel and rack input. Chassis lines connect the inboard mounts. Actuation
+linkages are omitted in reduced replay. MBD replay uses captured linkage positions.
 
 ## Scene Capture
 
@@ -59,6 +74,7 @@ pair. Missing signal names are reported when a template is loaded.
 | `from_results.py` | Convert BobLib result frames to a scene |
 | `capture.py` | Run an evaluation with geometry capture and convert its output |
 | `demo.py` | Generate the synthetic scene |
+| `dynpy.py` | Build reduced replay geometry from archived response signals |
 | `visual_templates/` | Older templates |
 | `results/` | Generated scenes, excluded from Git |
 | `../app/visual.py` | Resolve scenes into a JSON header and float32 buffer |
@@ -126,8 +142,9 @@ camera:
 ```
 
 Point coordinates are in the world frame, in metres, matching BobSim's axis
-conventions ([`docs/conventions.md`](../docs/conventions.md)). Wheel spin is
-integrated from wheel-center velocity, without a separate spin-angle signal.
+conventions ([`docs/conventions.md`](../docs/conventions.md)). Spin markers use
+saved wheel-angle signals when available. Reduced 3/6 DOF replay derives them
+from distance traveled.
 
 `input_stride` is applied once, to every signal including `time`, so geometry,
 plots and the timeline stay on one index.
@@ -137,5 +154,5 @@ plots and the timeline stay on one index.
 The friction display uses an ellipse based on pure-slip peak friction. It does
 not represent the full MF5.2 combined-slip envelope.
 
-Video export is not supported. Scenes are generated locally and excluded from
-Git.
+Video export depends on browser recording support. Generated scenes are excluded
+from Git.

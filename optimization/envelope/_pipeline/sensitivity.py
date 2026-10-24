@@ -18,7 +18,7 @@ import pandas as pd
 import yaml
 
 
-PIPELINE_DIR = Path(__file__).resolve().parent
+PIPELINE_DIR = repo_root() / "optimization/envelope/_pipeline"
 ENVELOPE_DIR = PIPELINE_DIR.parent
 OPTSIM_DIR = ENVELOPE_DIR.parent
 REPO_ROOT = repo_root()
@@ -208,9 +208,9 @@ def envelope_scope_table(config_path: Path = ENVELOPE_CONFIG) -> pd.DataFrame:
                 "label": str(var.get("label", path)),
                 "included": included,
                 "reason": (
-                    "represented by the quasi-static EnvelopeSim reduced model"
+                    "represented by the legacy envelope capacity model"
                     if included
-                    else "excluded: not represented by the current EnvelopeSim reduced model"
+                    else "excluded: not represented by the legacy envelope capacity model"
                 ),
             }
         )

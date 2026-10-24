@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from common.vehicle_io import repo_root
 from pathlib import Path
 
 import pandas as pd
@@ -22,7 +23,7 @@ import yaml
 
 from optimization.response.pipeline.standards import get_standard, run_standard
 
-STANDARD_DIR = Path(__file__).resolve().parents[1]
+STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
 DEFAULT_CONFIG = STANDARD_DIR / "configs/compiler_config.yaml"
 

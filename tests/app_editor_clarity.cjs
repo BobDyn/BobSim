@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
-const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+const source = fs.readFileSync('app/static/simulation_diagrams.js', 'utf8') + '\n' + fs.readFileSync('app/static/vendor/katex/katex.min.js', 'utf8') + '\n' + fs.readFileSync('app/static/app.js', 'utf8').split('\nwireEvents();')[0];
+const ctx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, ctx);
 vm.runInContext(`
 for (const view of ['iso','top','side']) {
@@ -192,8 +192,15 @@ state.dirtyVehicle=false;
 assert.equal(canRunStandardWorkflow(standardWorkflows()[0]),false);
 state.selectedWorkflowId='mbd';
 renderStandard=()=>{};
+api=async()=>({jobs:[]});
+simulationRequest=async()=>({simulation:{id:'test',workflow_id:'mbd'},config:{id:'mbd',data:{}},library:{sources:[]}});
+refreshStatus=async()=>{};
+setView=()=>{};
+closeSimulationCatalog=()=>{};
+let createdOverview = null;
+openSimulationOverview=async(id)=>{createdOverview=id;};
 `,ctx);
-(async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('state.simModalOpen',ctx),true); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{await vm.runInContext("configureSimulationWorkflow('mbd')",ctx); assert.equal(vm.runInContext('createdOverview',ctx),'test'); console.log('Editor behavior checks passed');})().catch(e=>{console.error(e);process.exitCode=1});
 
 vm.runInContext(`
 state.activeTireTab='load-maps';
@@ -219,7 +226,7 @@ for (const axle of ['front','rear']) for (const slip of ['pure','combined']) for
 }
 `,ctx);
 
-const momentCtx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{body:{classList:{toggle(){}}}}});
+const momentCtx = vm.createContext({localStorage:{getItem:()=>null}, console, assert, document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
 vm.runInContext(source, momentCtx);
 vm.runInContext(`
 currentTireCombinedFz=()=>150;
@@ -355,3 +362,748 @@ vm.runInContext(`
   drawGeometryPlotPanel = originalDraw;
 }
 `, ctx);
+
+vm.runInContext(`
+{
+  const originalDocument = document;
+  const form = {dataset:{instance:'named:step'},innerHTML:'edited inputs',classList:{toggle(){}}};
+  document = {getElementById:()=>form};
+  state.selectedSimulationId='named'; state.simConfigPayload={id:'step',fields:[]};
+  state.dirtySimConfig=true;
+  renderSimConfigForm();
+  assert.equal(form.innerHTML,'edited inputs','background refresh must preserve unsaved fields');
+  state.dirtySimConfig=false;
+  state.status={jobs:[]};
+  state.simConfigPayload.fields=[
+    {path:['simulation','solver'],key:'solver',label:'Solver',group:'Numerics',kind:'string',value:'dassl'},
+    {path:['simulation','stop_time'],key:'stop',label:'Stop time',group:'Simulation',kind:'number',value:10},
+    {path:['sweep','velocity'],key:'velocity',label:'Velocity',group:'Sweep',kind:'number',value:12},
+  ];
+  renderSimConfigForm();
+  assert.ok(form.innerHTML.indexOf('sweep.velocity') < form.innerHTML.indexOf('simulation.stop_time'));
+  assert.ok(form.innerHTML.indexOf('<summary>Advanced</summary>') < form.innerHTML.indexOf('simulation.solver'));
+  assert.ok(!form.innerHTML.includes(' open'));
+  state.simConfigPayload=null;
+  document=originalDocument;
+}
+`,ctx);
+
+vm.runInContext(`
+{
+  const originalDocument = document, originalSetView = setView;
+  const replay = {dataset:{}};
+  document = {getElementById:()=>replay};
+  setView = view => { state.view = view; };
+  openSimulationVisualization({id:'plot',kind:'report',run_id:'saved-run'});
+  assert.equal(state.view,'studies');
+  assert.equal(state.selectedResultId,'saved-run');
+  assert.equal(state.selectedVisualizationId,'plot');
+  openSimulationVisualization({id:'signals',kind:'signals',run_id:'signal-run'});
+  assert.equal(state.view,'studies');
+  assert.equal(state.selectedResultId,'signal-run');
+  assert.equal(state.selectedVisualizationId,'signals');
+  openSimulationVisualization({id:'animation',kind:'replay',run_id:'captured-scene'});
+  assert.equal(state.view,'replay');
+  assert.equal(replay.dataset.capture,'captured-scene');
+  assert.equal(state.selectedVisualizationId,'animation');
+  state.selectedSimulationId='new-analysis';
+  openSimulationVisualization({id:'empty',kind:'replay',run_id:null});
+  assert.equal(replay.dataset.capture,'pending:new-analysis','empty views must not show another analysis');
+  document=originalDocument; setView=originalSetView;
+}
+`,ctx);
+
+vm.runInContext(`
+{
+  const originalResults = savedResults;
+  savedResults = () => [{id:'unrelated'}];
+  state.selectedResultId='removed'; state.selectedVisualizationId='pinned-view';
+  assert.equal(selectedSavedResult(),null,'a missing visualization source must not show another run');
+  state.selectedVisualizationId=null;
+  assert.equal(selectedSavedResult().id,'unrelated');
+  savedResults=originalResults;
+}
+`,ctx);
+
+vm.runInContext(`
+{
+  const originalDocument=document, originalStorage=localStorage;
+  const handlers={}, attributes={}, properties={}, stored={};
+  const splitter={addEventListener:(event,fn)=>handlers[event]=fn,setAttribute:(key,value)=>attributes[key]=value};
+  const workspace={clientWidth:1000,style:{setProperty:(key,value)=>properties[key]=value}};
+  document={getElementById:()=>splitter,querySelector:()=>workspace};
+  localStorage={getItem:()=>null,setItem:(key,value)=>stored[key]=value};
+  globalThis.ResizeObserver=class {constructor(callback){this.callback=callback;}observe(){this.callback();}};
+  wireSimulationSplitter();
+  assert.equal(attributes['aria-valuenow'],'230');
+  handlers.keydown({key:'ArrowRight',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'246');
+  assert.equal(stored['bobsim-simulation-pane-width'],'246');
+  handlers.keydown({key:'End',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'560');
+  handlers.keydown({key:'Home',preventDefault(){}});
+  assert.equal(attributes['aria-valuenow'],'180');
+  document=originalDocument;localStorage=originalStorage;
+  delete globalThis.ResizeObserver;
+}
+`,ctx);
+
+(async () => {
+  const deletionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,deletionContext);
+  await vm.runInContext(`
+  (async () => {
+    const originals={request:simulationRequest,render:renderSimulationWorkspace,view:setView};
+    globalThis.window={confirm:()=>true};
+    let deleted=null;
+    simulationRequest=async (action,payload)=>{deleted=payload.id;};
+    renderSimulationWorkspace=()=>{};
+    setView=view=>{state.view=view;};
+    state.simulationWorkspace={simulations:[{id:'editing',name:'Editing'},{id:'other',name:'Other'}]};
+    state.selectedSimulationId='editing';state.dirtySimConfig=true;state.simModalOpen=true;
+    await removeSimulation('other');
+    assert.equal(deleted,'other');
+    assert.equal(state.selectedSimulationId,'editing');
+    assert.equal(state.dirtySimConfig,true,'deleting another simulation must preserve unsaved inputs');
+    await removeSimulation('editing');
+    assert.equal(state.selectedSimulationId,null);
+    assert.equal(state.simModalOpen,false);
+    assert.equal(state.view,'standard');
+    simulationRequest=originals.request;renderSimulationWorkspace=originals.render;setView=originals.view;
+    delete globalThis.window;
+  })()
+  `,deletionContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+// Peak utilization may exceed the reference ellipse without leaving its cell.
+{
+  const arcs = [];
+  const labels = [];
+  const drawing = new Proxy({arc:(...args)=>arcs.push(args),fillText:text=>labels.push(text)}, {
+    get:(target,key)=>key in target ? target[key] : ()=>{},
+  });
+  const canvas = {clientWidth:240,clientHeight:240,getContext:()=>drawing};
+  const panel = vm.createContext({window:{devicePixelRatio:1},document:{compatMode:"CSS1Compat",readyState:'loading',body:{},
+    addEventListener(){},getElementById:id=>id==='replay-tires-canvas'?canvas:{}},
+    getComputedStyle:()=>({getPropertyValue:()=>''})});
+  const panelSource = fs.readFileSync('app/static/visual_panel.js','utf8').replace(
+    '  function bootstrap() {',
+    '  window.testTires = scene => { state.scene=scene; state.tab="tires"; renderFrictionCircles(0); };\n  function bootstrap() {'
+  );
+  vm.runInContext(panelSource,panel);
+  panel.window.testTires({header:{grip:{corners:['fl','fr','rl','rr'].map((corner,i)=>({
+    corner,slot_x:i*4,slot_y:i*4+1,slot_usage:i*4+2,slot_airborne:i*4+3,
+  }))}},scalar:slot=>[2,3,3.6,0,-4,1,4.1,0,0,0,0,0,0,0,0,1][slot]});
+  const dots=arcs.filter(arc=>arc[2]===5);
+  assert.equal(dots.length,3);
+  dots.forEach(([x,y],i)=>{
+    assert.ok(x>=(i%2)*120+5&&x<=(i%2+1)*120-5);
+    assert.ok(y>=Math.floor(i/2)*120+5&&y<=(Math.floor(i/2)+1)*120-5);
+  });
+  assert.ok(labels.includes('410% of peak'));
+}
+{
+  const plotContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,plotContext);
+  vm.runInContext(`
+    assert.equal(resultUnitGroups({series:[{signal:'accY',unit:'m/s²'},{signal:'roll',unit:'rad'},{signal:'pitch',unit:'rad'},{signal:'custom'}]}).length,3);
+    const fills=[];
+    const pen=new Proxy({fillRect:(...args)=>fills.push(args)}, {get:(target,key)=>key in target?target[key]:()=>{}});
+    const legend={innerHTML:''};
+    const canvas={parentElement:{classList:{toggle(){}},querySelectorAll:()=>[]},getBoundingClientRect:()=>({width:800,height:400,left:0,top:0}),getContext:()=>pen,focus(){}};
+    document={getElementById:id=>id==='result-plot-canvas'?canvas:id==='result-selected-signals'?legend:{}};
+    window={devicePixelRatio:1};
+    canvasPalette=()=>({surface:'#000',blue:'#00f',green:'#0f0'});
+    let limits;
+    drawPlotGrid=(_ctx,chart)=>{limits=chart;};
+    drawCanvasText=()=>{};
+    selectedResultSource=()=>null;
+    state.resultPlotStatus='ready';state.resultXAxis='time';
+    state.resultPlotPayload={x:[0,1,2],series:[{signal:'small',unit:'N',values:[-1,0,2]},{signal:'large',unit:'N',values:[-1000,null,2000]}]};
+    drawResultPlotCanvas();
+    assert.ok(limits.yDomain[0]<-1000&&limits.yDomain[1]>2000);
+    assert.ok(legend.innerHTML.includes('small')&&legend.innerHTML.includes('large'));
+    assert.equal(fills.length,1,'the legend must not paint over the plot');
+    state.resultBaselinePayload={x:[-5,7],series:[{signal:'small',unit:'N',values:[-3000,4000]}]};
+    drawResultPlotCanvas();
+    assert.ok(limits.xDomain[0]<-5 && limits.xDomain[1]>7);
+    assert.ok(limits.yDomain[0]<-3000 && limits.yDomain[1]>4000);
+    assert.ok(legend.innerHTML.includes('Baseline: small'));
+    state.resultBaselinePayload={x:[0,1],series:[{signal:'large',unit:'N',values:[2,3]}]};
+    drawResultPlotCanvas();
+    assert.equal(pen.strokeStyle,'#0f0','baseline must match the same signal color even when earlier signals are missing');
+    assert.ok(legend.innerHTML.includes('background:#0f0"></i>Baseline: large'));
+    state.resultPlotStatus='error';
+    drawResultPlotCanvas();
+    assert.equal(legend.innerHTML,'','failed source must not leave the previous legend');
+    assert.equal(canvas.onclick,null,'failed source must not retain a sample handler');
+    state.resultPlotStatus='ready'; state.resultBaselinePayload=null;
+    const segments=[],strokes=[];
+    pen.lineTo=(...point)=>segments.push(point);
+    pen.stroke=()=>strokes.push(pen.strokeStyle);
+    state.resultPlotPayload={x:[0,1,2,3,4],series:[{signal:'y',values:[0,1,2,3,4]}],color:{signal:'speed',values:[0,1,null,3,4]}};
+    drawResultPlotCanvas();
+    assert.equal(segments.length,2,'missing color must break the line');
+    assert.notEqual(strokes[0],strokes[1]);
+    assert.ok(legend.innerHTML.includes('speed'));
+    assert.equal(resultSignalColor(5,[5,5]),resultSignalColor(.5,[0,1]));
+    state.selectedResultId='selected-run'; state.selectedResultSourcePath='run.csv';
+    state.resultPlotPayload.coordinates={time:[0,1,2,3,4]};
+    state.resultBaselinePayload={x:[-1,10],series:[{signal:'y',values:[-1,10]}],coordinates:{time:[99,100]}};
+    renderResultPlotCanvas=()=>{};
+    drawResultPlotCanvas();
+    canvas.onclick({clientX:100,clientY:100});
+    assert.ok(readResultCursor('selected-run').time<=4,'baseline coordinates must not become selected-run time');
+    state.resultBaselinePayload=null;
+    state.resultHoverIndex=null;
+    state.resultPlotPayload.color=null;
+    state.resultBaselinePayload={x:[0,1],series:[{signal:'y',values:[0,1]}],color:{signal:'speed',values:[1,2]}};
+    drawResultPlotCanvas();
+    assert.ok(legend.innerHTML.includes('speed'),'baseline-only color must not crash the legend');
+    state.resultBaselinePayload=null;
+    isLapMap=()=>true;
+    drawResultPlotCanvas();
+    assert.ok(Math.abs((limits.xDomain[1]-limits.xDomain[0])/limits.plot.width
+      -(limits.yDomain[1]-limits.yDomain[0])/limits.plot.height)<1e-9,'lap coordinates must have equal scale');
+  `,plotContext);
+}
+
+{
+  const cursorContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source, cursorContext);
+  vm.runInContext(`
+    state.selectedResultId='run-a'; state.selectedResultSourcePath='a.csv';
+    const payload={coordinates:{time:[0,1,2],station_m:[0,10,20]},row_indices:[0,4,8]};
+    selectResultSample(payload,1);
+    assert.equal(readResultCursor('run-a').time,1);
+    assert.equal(readResultCursor('run-b'),null,'a new run must not inherit the selection');
+    assert.equal(resultCursorIndex({coordinates:{time:[0,.9,1.8]}},'run-a','other.csv'),1);
+    assert.equal(resultCursorIndex({coordinates:{station_m:[0,9,18]}},'run-a','lap.csv'),1);
+    assert.equal(resultCursorIndex({row_indices:[0,3,6]},'run-a','a.csv'),1);
+    assert.equal(resultCursorIndex({row_indices:[0,3,6]},'run-a','other.csv'),null);
+    setResultCursor('run-a',{time:1.9});
+    assert.equal(resultCursorIndex(payload,'run-a','a.csv'),2,'replay time maps to the nearest plotted sample');
+    assert.equal(resultCursorIndex({coordinates:{time:[null,NaN]}},'run-a','a.csv'),null);
+  `,cursorContext);
+  const panelSource=fs.readFileSync('app/static/visual_panel.js','utf8');
+  const restore=panelSource.slice(panelSource.indexOf('  function cursorRunId()'),panelSource.indexOf('  function syncTimeline('));
+  const replay={runId:'saved-2026-run-a',runs:[{id:'saved-2026-run-a',data:'app/user_data/results/saved/2026-run-a/files/signals.csv'}, {id:'saved-2026-capture',data:'visualization/results/saved-2026-capture.npz'}],scene:{time:[2,3,4]},viewer:{simTime:2,playing:true}};
+  const play={setAttribute(name,value){this[name]=value;}};
+  const replayContext=vm.createContext({state:replay,window:{readResultCursor:id=>id==='2026-run-a'?{time:3.2}:null},$:()=>play});
+  const playback=panelSource.slice(panelSource.indexOf('  function renderPlaybackButton('),panelSource.indexOf('  function screenActive('));
+  vm.runInContext(playback+restore+'; restoreResultCursor();',replayContext);
+  assert.equal(replay.viewer.simTime,3.2);
+  assert.equal(replay.viewer.playing,false);
+  assert.equal(play['aria-label'],'Play');
+  assert.ok(play.innerHTML.includes('<svg'));
+  assert.equal(vm.runInContext('cursorRunId()',replayContext),'2026-run-a');
+  replay.runId='saved-2026-capture';
+  assert.equal(vm.runInContext('cursorRunId()',replayContext),null,'captured scenes must not collide with archived run IDs');
+  replay.runId='run-b'; replay.viewer.simTime=2;
+  vm.runInContext('restoreResultCursor()',replayContext);
+  assert.equal(replay.viewer.simTime,2,'unrelated replay retains its own start');
+}
+
+(async () => {
+  const simulationContext = vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source, simulationContext);
+  await vm.runInContext(`(async () => {
+    for (const [id, group] of [['four-post','kinematic'], ['steady-state','transient'],
+      ['ggv','steady-state'], ['ymd','steady-state'], ['lap-qss','lap'],
+      ['reduced-ramp-steer','transient'], ['mbd-step-steer','transient'],
+      ['transient','transient'], ['lap-transient','lap']]) {
+      assert.equal(simulationAnalysisGroup({id}), group);
+    }
+    const configRequests=[];
+    state.status={workflows:[{id:'ggv',group:'envelope',config_id:'ggv'}]};
+    state.dirtySimConfig=true;
+    api=async path=>{configRequests.push(path);return {id:'ggv',data:{generation:{model_dof:3}}};};
+    await refreshSelectedSimConfig();
+    assert.deepEqual(configRequests,['/api/configs/ggv'],'simulation setup loads without a preset library');
+    assert.equal(state.simConfigPayload.id,'ggv');
+    assert.equal(state.dirtySimConfig,false);
+    assert.equal(state.loadingSimConfigFor,null);
+    let requests=[];
+    api=async (path, options)=>{
+      assert.equal(options,undefined,'reopening a running simulation must be read-only');
+      requests.push(path);
+      return {jobs:[{id:'job',simulation:{id:'ggv-test'},workflow_id:'ggv',status:'running'}]};
+    };
+    simulationRequest=()=>{throw new Error('Must not reload the locked workspace');};
+    refreshSelectedSimConfig=async()=>{};
+    refreshStatus=async()=>{};
+    setView=view=>{state.view=view;};
+    const runLogMenu={open:false};
+    document.getElementById=()=>runLogMenu;
+    await openSimulation('ggv-test');
+    assert.equal(state.selectedSimulationId,'ggv-test');
+    assert.equal(state.selectedJobId,'job');
+    assert.equal(runLogMenu.open,true);
+    assert.equal(state.simModalOpen,true);
+    assert.equal(state.view,'standard');
+    assert.deepEqual(requests,['/api/jobs']);
+
+    const elements={};
+    document.getElementById=id=>elements[id] ||= {options:[]};
+    activeVehicleKey=()=> 'vehicle';
+    savedResults=()=>[{id:'result',created_label:'Today',simulation:{id:'ggv-test'},files:[{kind:'csv'}]}];
+    state.simulationWorkspace={simulations:[{id:'ggv-test',workflow_id:'ggv'}]};
+    api=()=>{throw new Error('An envelope must not request replay captures');};
+    const created=[];
+    simulationRequest=async(action,values)=>{
+      created.push({action,...values});
+      return {visualization:{id:values.kind,kind:values.kind,run_id:'inherited-result'}};
+    };
+    let opened;
+    openSimulationVisualization=child=>{opened=child;};
+    for (const kind of ['signals','replay']) {
+      state.collapsedSimulations.add('ggv-test');
+      state.collapsedSimulations.add('results:ggv-test');
+      await addSimulationVisualization('ggv-test',kind);
+      assert.equal(opened.kind,kind);
+      assert.equal(opened.run_id,'inherited-result');
+      assert.equal(state.selectedSimulationId,'ggv-test');
+      assert.equal(state.collapsedSimulations.has('results:ggv-test'),false);
+    }
+    assert.deepEqual(created,[
+      {action:'add-visualization',id:'ggv-test',kind:'signals'},
+      {action:'add-visualization',id:'ggv-test',kind:'replay'}
+    ],'creation inherits the parent result without choosing a source');
+    state.selectedSimulationId='existing';
+    simulationRequest=async()=>{throw new Error('Creation failed');};
+    await assert.rejects(addSimulationVisualization('ggv-test','signals'),/Creation failed/);
+    assert.equal(state.selectedSimulationId,'existing','failed creation preserves selection');
+  })()`, simulationContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+{
+  const treeContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,treeContext);
+  vm.runInContext(`
+    const elements={};
+    document={getElementById:id=>elements[id] ||= {
+      classList:{toggle(){}},setAttribute(){},querySelector(){return {};}
+    }};
+    drawSimulationGgvConnections=()=>{};
+    activeVehicleKey=()=> 'car'; activeVehicleName=()=> 'Car';
+    savedResults=()=> [{id:'ggv-run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'Today'}];
+    state.simulationWorkspace={vehicle_key:'car',simulations:[
+      {id:'lap',workflow_id:'lap-qss',name:'QSS lap'},
+      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer',visualizations:[{id:'plot',kind:'signals',name:'Signals'},{id:'legacy-report',kind:'report',name:'Old report'}]},
+      {id:'ggv',workflow_id:'ggv',name:'GGV'},
+      {id:'rig',workflow_id:'four-post',name:'Rig'}
+    ]};
+    renderSimulationWorkspace();
+    const html=elements['simulation-tree'].innerHTML;
+    const group=id=>html.split('data-analysis-group="'+id+'"')[1].split('</section>')[0];
+    assert.match(group('steady-state'),/data-simulation-branch="ggv"/);
+    assert.match(html,/draggable="true" data-ggv-source="ggv"/);
+    assert.equal((html.match(/draggable="true"/g)||[]).length,1);
+    assert.match(html,/simulation-drag-grip/);
+    assert.equal(html.split('>Results</span>').length-1,4,'every simulation has Results');
+    assert.match(html,/data-simulation-run="" data-owner="step" aria-haspopup="menu" disabled/);
+    assert.match(html,/data-simulation-run="ggv-run" data-owner="ggv" aria-haspopup="menu" draggable/);
+    assert.match(html,/data-simulation-toggle="results:step"/);
+    assert.doesNotMatch(html,/data-simulation-visualization="legacy-report"/);
+    assert.ok(html.indexOf('data-simulation-toggle="results:step"') < html.indexOf('data-simulation-visualization="plot"'));
+    assert.match(html,/ggv-link-empty/);
+    assert.ok(html.includes('>Link GGV</span>'));
+    assert.match(group('lap'),/data-simulation-branch="lap"/);
+    assert.doesNotMatch(group('steady-state'),/data-simulation-branch="step"/);
+    assert.match(group('transient'),/data-simulation-branch="step"/);
+    assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
+    assert.match(group('kinematic'),/data-simulation-branch="rig"/);
+    assert.doesNotMatch(html,/data-analysis-overview/);
+    assert.ok(html.includes('<span class="simulation-tree-item simulation-analysis-label">Performance envelopes</span>'));
+    assert.doesNotMatch(html,/data-simulation-add-child/);
+    assert.match(html,/data-simulation-results="ggv"/);
+    assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
+    state.simulationWorkspace.simulations[0].ggv_source_id='ggv';
+    state.simulationWorkspace.simulations[0].ggv_input={name:'GGV',status:'Ready'};
+    renderSimulationWorkspace();
+    assert.match(elements['simulation-tree'].innerHTML,/Link Racing line/);
+    assert.match(elements['simulation-tree'].innerHTML,/ggv-link-supplied/);
+    assert.match(elements['simulation-tree'].innerHTML,/GGV → GGV/);
+    assert.match(elements['simulation-tree'].innerHTML,/ggv-link-supplied/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-ggv-linked="ggv"/);
+    state.collapsedSimulations.add('group:transient');
+    renderSimulationWorkspace();
+    assert.match(elements['simulation-tree'].innerHTML,/data-simulation-toggle="group:transient" aria-expanded="false"/);
+    state.simulationWorkspace={vehicle_key:'car',simulations:[],analysis_groups:['steady-state']};
+    renderSimulationWorkspace();
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="steady-state"/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="kinematic"/);
+    assert.match(elements['simulation-tree'].innerHTML,/data-analysis-group="transient"/);
+  `,treeContext);
+}
+
+{
+  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,menuContext);
+  vm.runInContext(`
+    const events={}; let focused, added;
+    const buttons=['add','duplicate','replay','signals','delete'].map(action=>({
+      dataset:{action},hidden:false,focus(){focused=action;}
+    }));
+    const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
+      querySelectorAll:()=>buttons,
+      querySelector:selector=>selector==='button:not([hidden]):not([disabled])' ? buttons.find(b=>!b.hidden&&!b.disabled)
+        : buttons.find(b=>selector.includes('"'+b.dataset.action+'"')),
+      addEventListener:(name,fn)=>events['menu:'+name]=fn
+    };
+    const trigger={setAttribute(){},focus(){}};
+    document={getElementById:id=>id==='simulation-context-menu' ? menu : {
+      addEventListener:(name,fn)=>events['tree:'+name]=fn
+    },addEventListener(){},querySelector:()=>({addEventListener(){}})};
+    window={innerWidth:1000,innerHeight:800,addEventListener(){}};
+    workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
+    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
+    wireSimulationContextMenu();
+    const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
+      closest:selector=>selector==='[data-simulation-results]' || selector==='.simulation-tree-runs' ? null : selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
+        : {dataset:{analysisGroup:group},querySelector:()=>trigger}
+    }});
+    for (const group of ['kinematic','steady-state','transient']) {
+      rightClick('transient','maneuver');
+      assert.equal(menu.hidden,false);
+      rightClick(group);
+      assert.equal(menu.hidden,false);
+      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add']);
+      events['menu:click']({target:{closest:()=>buttons[0]}});
+      assert.equal(added,group);
+      assert.equal(menu.hidden,true);
+    }
+    rightClick('steady-state','envelope');
+    assert.equal(focused,'duplicate');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['duplicate','delete']);
+    const resultsClick=id=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
+      closest:selector=>selector==='[data-simulation-results]' ? {dataset:{simulationResults:id},querySelector:()=>trigger} : null
+    }});
+    resultsClick('envelope');
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['replay','signals']);
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,true);
+    assert.match(buttons.find(b=>b.dataset.action==='replay').title,/steady-state/);
+    resultsClick('maneuver');
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,false);
+    state.simulationWorkspace.simulations.find(s=>s.id==='maneuver').visualizations=[{kind:'replay'}];
+    resultsClick('maneuver');
+    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,true);
+    assert.match(buttons.find(b=>b.dataset.action==='replay').title,/already has an animation/);
+    events['tree:contextmenu']({preventDefault(){},target:{closest:selector=>selector==='.simulation-tree-runs' ? {} : null}});
+    assert.equal(menu.hidden,true,'simulation children have no context menu');
+  `,menuContext);
+}
+
+(async () => {
+  const dragContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,dragContext);
+  await vm.runInContext(`(async () => {
+    const events={}, requests=[]; let action, opened, saved=false, highlighted=false;
+    const lap={dataset:{simulationBranch:'lap'},classList:{
+      add(){highlighted=true;},remove(){highlighted=false;}
+    }};
+    const tree={addEventListener:(name,fn)=>events[name]=fn,
+      querySelectorAll:()=>[lap],contains:()=>false};
+    document={getElementById:()=>tree};
+    state.simulationWorkspace={simulations:[{id:'lap',workflow_id:'lap-qss'},{id:'ggv',workflow_id:'ggv'}]};
+    workspaceAction=fn=>{action=fn();};
+    saveSimulationEdits=async()=>{saved=true;};
+    simulationRequest=async(...args)=>{assert.ok(saved);requests.push(args);};
+    openSimulationGgv=async id=>{opened=id;};
+    wireSimulationGgvDrag();
+    const transfer={setData(type,value){assert.equal(type,'text/plain');assert.equal(value,'ggv');}};
+    const start=()=>events.dragstart({target:{closest:()=>({dataset:{ggvSource:'ggv'}})},dataTransfer:transfer});
+    const drop={target:{closest:selector=>selector==='[data-input-kind]' ? null : lap},dataTransfer:transfer,preventDefault(){this.accepted=true;}};
+    events.dragover(drop); assert.equal(drop.accepted,undefined);
+    start(); assert.equal(transfer.effectAllowed,'link');
+    events.dragover(drop); assert.equal(drop.accepted,true); assert.equal(highlighted,true);
+    assert.equal(transfer.dropEffect,'link');
+    events.drop(drop); await action;
+    assert.deepEqual(requests,[['set-ggv',{id:'lap',source_id:'ggv'}]]);
+    assert.equal(opened,'lap'); assert.equal(highlighted,false);
+    start(); events.dragend(); events.drop(drop); assert.equal(requests.length,1);
+    start(); lap.dataset.simulationBranch='ggv';
+    const invalid={...drop,accepted:false}; events.dragover(invalid); events.drop(invalid);
+    assert.equal(invalid.accepted,false); assert.equal(requests.length,1);
+  })()`,dragContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+{
+  const connectionContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,connectionContext);
+  vm.runInContext(`
+    let width=240, sourceVisible=true, titleVisible=true;
+    const rect=top=>({right:width-24,top,height:28});
+    const sourceNode={dataset:{ggvSource:'ggv'},getClientRects:()=>sourceVisible?[1]:[],getBoundingClientRect:()=>rect(100)};
+    const title={dataset:{simulationId:'ggv'},getClientRects:()=>titleVisible?[1]:[],getBoundingClientRect:()=>rect(40)};
+    const input={dataset:{ggvLinked:'ggv',simulationGgv:'lap'},getClientRects:()=>[1],getBoundingClientRect:()=>rect(220)};
+    const svg={setAttribute(){},innerHTML:''};
+    const tree={getBoundingClientRect:()=>({left:0,top:20,width,height:400}),
+      querySelectorAll:selector=>selector==='[data-ggv-source]'?[sourceNode]:selector==='[data-simulation-id]'?[title]:[input]};
+    document={getElementById:id=>id==='simulation-tree'?tree:svg};
+    drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M216 94H232V214H216'));
+    width=300; drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M276 94H292V214H276'));
+    sourceVisible=false; drawSimulationGgvConnections(); assert.ok(svg.innerHTML.includes('M276 34H292V214H276'));
+    titleVisible=false; drawSimulationGgvConnections(); assert.equal(svg.innerHTML,'');
+  `,connectionContext);
+}
+
+(async () => {
+  const overviewContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,overviewContext);
+  await vm.runInContext(`(async()=>{
+    const controls={};
+    const panel={hidden:true,innerHTML:'',querySelector:key=>controls[key] ||= {},querySelectorAll:()=>[]};
+    document.getElementById=()=>panel;
+    state.simulationWorkspace={vehicle_key:'car',analysis_groups:['steady-state'],simulations:[
+      {id:'ggv',workflow_id:'ggv',name:'Envelope <A>',model:{engine:'DynPy <test>',fidelity:'6 DOF'}},
+      {id:'step',workflow_id:'reduced-step-steer',name:'Step steer'}
+    ]};
+    activeVehicleKey=()=> 'car';
+    savedResults=()=>[{id:'run',vehicle_key:'car',simulation:{id:'ggv'},created_label:'2026-10-15'}];
+    let saves=0;
+    saveSimulationEdits=async()=>{saves++;};
+    api=()=>{throw new Error('Overview must not load config or start a job');};
+    simulationRequest=api;
+    setView=view=>{state.view=view;};
+    workspaceAction=fn=>fn();
+    simulationVisualHtml=()=>'<div class="existing-visual"></div>';
+
+    await openSimulationOverview('ggv');
+    assert.equal(saves,1);
+    assert.equal(state.simModalOpen,false);
+    assert.equal(state.simulationOverview.id,'ggv');
+    assert.equal(renderSimulationOverview(),true);
+    assert.match(panel.innerHTML,/Envelope &lt;A&gt;/);
+    assert.doesNotMatch(panel.innerHTML,/2026-10-15|<dt>Results<|<dt>Model</);
+    assert.match(panel.innerHTML,/simulation-diagram/);
+    assert.match(panel.innerHTML, /data-overview-setup/);
+    assert.match(panel.innerHTML, /simulation-method-disclosure/);
+    const lap={id:'lap',workflow_id:'lap-qss',name:'Lap'};
+    canRunStandardWorkflow=()=>false;
+    standardWorkflowLockedMessage=()=> 'Linked results required';
+    let dependency=simulationDependencyHtml(lap,{id:'lap-qss'});
+    assert.match(dependency,/data-overview-input="ggv"/);
+    assert.match(dependency,/data-overview-input="racing-line"/);
+    assert.match(dependency,/data-overview-run disabled/);
+    assert.match(dependency,/data-overview-results="" disabled/);
+    lap.ggv_source_id='ggv';
+    lap.ggv_input={status:'Ready',name:'Envelope <A>',model_dof:14,power_limit_w:32000};
+    lap.racing_line_source_id='line';
+    lap.racing_line_input={status:'Ready',name:'Track'};
+    canRunStandardWorkflow=()=>true;
+    dependency=simulationDependencyHtml(lap,{id:'lap-qss'});
+    assert.match(dependency,/data-overview-source="ggv"/);
+    assert.match(dependency,/Envelope &lt;A&gt;/);
+    assert.match(dependency,/14 DOF · linked GGV/);
+    assert.doesNotMatch(dependency,/data-overview-run disabled/);
+    state.simModalOpen=true;
+    assert.equal(renderSimulationOverview(),false);
+    assert.equal(panel.hidden,true);
+    state.selectedVisualizationId='plot';
+    state.simulationGgvEditor=true;
+    await openSimulationHome();
+    assert.equal(saves,2,'home saves pending settings before leaving');
+    assert.equal(state.view,'standard');
+    for(const key of ['selectedSimulationId','selectedVisualizationId','simulationOverview']) assert.equal(state[key],null);
+    for(const key of ['simModalOpen','simulationGgvEditor']) assert.equal(state[key],false);
+    state.selectedSimulationId='ggv';
+    saveSimulationEdits=async()=>{throw new Error('Invalid settings');};
+    await assert.rejects(openSimulationHome(),/Invalid settings/);
+    assert.equal(state.selectedSimulationId,'ggv','failed edits keep the current simulation selected');
+  })()`,overviewContext);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+vm.runInContext(`
+{
+  const button = {classList:{toggle(){}},setAttribute(){}};
+  setActionButton(button, {label:'Run',disabled:true,title:'The saved vehicle has changed.'});
+  assert.equal(button.disabled,true);
+  assert.equal(button.title,'The saved vehicle has changed.');
+  setActionButton(button, {label:'Run',busy:true,busyLabel:'Running'});
+  assert.equal(button.disabled,true);
+  assert.equal(button.title,'Running in progress.');
+  setActionButton(button, {label:'Run'});
+  assert.equal(button.disabled,false);
+  assert.equal(button.title,'');
+}
+`, ctx);
+
+vm.runInContext(`
+for (const [value, scale, display, edited, expected] of [
+  [0.03,1000,30,40,0.04],
+  [0.01308996938995747,180/Math.PI,0.75,1,Math.PI/180],
+  [Math.PI/6,180/Math.PI,30,45,Math.PI/4],
+]) {
+  assert.equal(numericDisplayValue(value,scale),display);
+  const input={value:String(display),dataset:{displayScale:String(scale),originalValue:String(value),originalDisplay:String(display)},
+    setCustomValidity(){},checkValidity(){return true;}};
+  assert.equal(collectScalarValue(input,'number',false),value);
+  input.value=String(edited);
+  assert.ok(Math.abs(collectScalarValue(input,'number',false)-expected)<1e-12);
+}
+`, ctx);
+
+(async () => {
+  const context=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,context);
+  await vm.runInContext(`(async()=>{
+    const elements={};
+    document.getElementById=id=>elements[id] ||= {open:true,textContent:'',setAttribute(){},scrollHeight:100,scrollTop:0,clientHeight:100,classList:{toggle(){}},querySelectorAll:()=>[]};
+    state.selectedSimulationId='other-sim';
+    state.view='standard';
+    state.status={jobs:[{id:'done',label:'Completed',status:'completed',argv:[]},
+      {id:'active',label:'GGV',status:'running',argv:[],simulation:{id:'ggv',name:'Envelope'}}]};
+    const originalLoad=loadJobLog;
+    let logLoads=0; loadJobLog=()=>{logLoads++;};
+    renderRunLog();
+    assert.equal(state.selectedJobId,'active');
+    assert.match(elements['job-list'].innerHTML,/Completed/);
+    assert.match(elements['job-list'].innerHTML,/Envelope/);
+    assert.equal(elements['run-status'].textContent,'GGV · running');
+    assert.equal(elements['cancel-run'].hidden,false);
+    assert.equal(elements['cancel-run'].disabled,false);
+    assert.equal(elements['cancel-run'].title,'Cancel GGV');
+    state.status.jobs[1].cancel_requested=true;
+    renderRunLog();
+    assert.equal(elements['cancel-run'].disabled,true);
+    assert.match(elements['job-list'].innerHTML,/cancelling/);
+    state.status.jobs[1].cancel_requested=false;
+    elements['run-log-menu'].open=false;
+    renderRunLog();
+    assert.equal(logLoads,2,'closed log does not fetch job output');
+    elements['run-log-menu'].open=true;state.view='setup';renderRunLog();
+    assert.equal(logLoads,2,'vehicle Setup does not fetch hidden logs');
+    state.view='standard';
+    state.status.jobs=[]; elements['run-log-menu'].open=true;
+    renderRunLog();
+    assert.equal(elements['run-status'].textContent,'');
+    assert.match(elements['job-list'].innerHTML,/No jobs yet/);
+    loadJobLog=originalLoad;
+    let resolve;
+    api=()=>new Promise(done=>{resolve=done;});
+    state.selectedJobId='old';
+    const pending=loadJobLog();
+    state.selectedJobId='new';
+    elements['job-log'].textContent='new output';
+    resolve({log:'stale output'});await pending;
+    assert.equal(elements['job-log'].textContent,'new output','late logs cannot replace a different job');
+    api=async()=>({log:'updated output'});
+    elements['job-log'].scrollHeight=1000; elements['job-log'].scrollTop=100;
+    await loadJobLog();assert.equal(elements['job-log'].scrollTop,100,'reading position survives refresh');
+    selectedWorkflow=()=>({id:'lap-qss',actions:[]});
+    canRunStandardWorkflow=()=>true;
+    saveSimulationEdits=async()=>{};
+    activeVehicleKey=()=>'vehicle';
+    state.dirtySimConfig=false;
+    state.status={jobs:[{id:'old',label:'Old run',status:'succeeded',argv:[]}]};
+    state.selectedJobId='old';
+    const newJob={id:'new-run',label:'QSS lap',status:'running',argv:[]};
+    api=async path=>path==='/api/status' ? {jobs:[newJob,...state.status.jobs]} : newJob;
+    Object.defineProperty(elements['run-log-menu'],'open',{
+      get:()=>true,set:()=>renderRunLog(),configurable:true,
+    });
+    renderStandard=()=>renderRunLog();
+    await startSelectedWorkflow();
+    assert.equal(state.selectedJobId,'new-run','opening the log follows the new job');
+    assert.equal(elements['job-log'].scrollTop,0,'new run resets the old reading position');
+    const saves=[];
+    state.simulationWorkspace={simulations:[{id:'sim',name:'Original'}]};
+    simulationRequest=async(action,values)=>saves.push({action,...values});
+    renderSimulationWorkspace=()=>{};
+    await renameSimulation('sim','  Changed  ');
+    await renameSimulation('sim','  ');
+    await renameSimulation('sim','Original');
+    assert.deepEqual(saves,[{action:'rename',id:'sim',name:'Changed'}]);
+  })()`,context);
+})().catch(error=>{console.error(error);process.exitCode=1;});
+
+
+{
+  const classes = new Set();
+  let redraws = 0;
+  const geometryContext = vm.createContext({
+    localStorage:{getItem:()=>null}, console, assert,
+    document:{compatMode:"CSS1Compat", body:{classList:{toggle(){}}},
+      querySelector:()=>({classList:{toggle(name){classes.has(name) ? classes.delete(name) : classes.add(name);}}})},
+  });
+  vm.runInContext(source, geometryContext);
+  geometryContext.redraw = () => redraws++;
+  vm.runInContext('drawVehicleFromForm = redraw; drawGeometryPlotPanel = redraw; toggleGeometryExpanded();', geometryContext);
+  assert.ok(classes.has('geometry-expanded'));
+  vm.runInContext('toggleGeometryExpanded();', geometryContext);
+  assert.ok(!classes.has('geometry-expanded'));
+  assert.equal(redraws, 4, 'both canvases redraw on expand and restore');
+}
+
+vm.runInContext(`
+{
+  const originalText = drawCanvasText;
+  const originalFit = fitCanvasText;
+  const originalChart = createPlotChart;
+  const messages = [];
+  let plotted;
+  drawCanvasText = (_ctx, text) => messages.push(text);
+  fitCanvasText = (_ctx, text) => text;
+  createPlotChart = options => { plotted = options; return null; };
+  const context = {save(){},restore(){},beginPath(){},roundRect(){},fill(){},stroke(){}};
+  drawKinematicChart(context, 0, 0, 300, 230, {
+    x_axes:{rack_mm:[-1,0,1]},
+    axles:{rear:{curves:{steer_camber_deg:[null,null,null]}}},
+  }, {id:'steer_camber_deg',x_id:'rack_mm'}, {axles:['rear']});
+  assert.equal(plotted.series.length,1);
+  assert.equal(plotted.series[0].points.length,0,'failed samples must not become zero camber');
+  assert.ok(messages.includes('No valid samples for this curve'));
+  assert.ok(!messages.some(text=>text.includes('Waiting')));
+  drawCanvasText = originalText;
+  fitCanvasText = originalFit;
+  createPlotChart = originalChart;
+}
+`,ctx);
+
+vm.runInContext(`
+{
+  const data={amplitude_deg:6,start_time_s:1,ramp_duration_s:3,rise_time_s:.02,frequency_hz:2};
+  assert.equal(maneuverSteering(0,{...data,maneuver:'ramp'}),0);
+  assert.equal(maneuverSteering(2.5,{...data,maneuver:'ramp'}),3);
+  assert.equal(maneuverSteering(10,{...data,maneuver:'ramp'}),6);
+  assert.ok(Math.abs(maneuverSteering(1.01,{...data,maneuver:'step'})-3)<1e-10);
+  assert.equal(maneuverSteering(1.125,{...data,maneuver:'sine'}),6);
+  assert.equal(maneuverSteering(1.375,{...data,maneuver:'sine'}),-6);
+}
+`,ctx);
+
+vm.runInContext(`
+const sequenceField = {key:'frequencies',value:[0.5,0.75,1],array_shape:[3],array_element_kind:'number',coordinate:false};
+assert.ok(vectorControl(sequenceField).includes('data-array-action="add-item"'));
+assert.ok(!vectorControl(sequenceField).includes('coordinate-cell'));
+assert.notEqual(formatPlotTick(0.0005),formatPlotTick(0.001));
+assert.equal(formatPlotTick(0), '0');
+`,ctx);
+
+{
+  const menuContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,
+    document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}}}});
+  vm.runInContext(source,menuContext);
+  vm.runInContext(`
+    const handlers={}, pane={scrollTop:240,addEventListener:(name,fn)=>{handlers[name]=fn;}};
+    const trigger={dataset:{simulationMenu:'test'},setAttribute(){},getBoundingClientRect:()=>({left:20,bottom:100})};
+    const button={dataset:{action:'delete'},focus(){}};
+    const menu={hidden:true,style:{},offsetWidth:100,offsetHeight:80,
+      querySelectorAll:()=>[button],querySelector:()=>button,addEventListener(){}};
+    const tree={addEventListener:(name,fn)=>{handlers['tree:'+name]=fn;}};
+    document={getElementById:id=>id==='simulation-tree'?tree:menu,
+      querySelector:()=>pane,addEventListener(){}};
+    window={innerWidth:1000,innerHeight:800,addEventListener(){}};
+    state.simulationWorkspace={simulations:[{id:'test',workflow_id:'maneuver'}]};
+    wireSimulationContextMenu();
+    handlers['tree:click']({target:{closest:()=>trigger}});
+    assert.equal(menu.hidden,false);
+    handlers.scroll();
+    assert.equal(menu.hidden,false,'pending scroll from revealing the row must not close its menu');
+    pane.scrollTop=250; handlers.scroll();
+    assert.equal(menu.hidden,true,'subsequent scrolling closes the menu');
+  `,menuContext);
+}

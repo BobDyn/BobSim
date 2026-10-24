@@ -33,6 +33,24 @@ QEZ1 QEZ2 QEZ3 QEZ4 QEZ5 QHZ1 QHZ2 QHZ3 QHZ4 LGAZ LTR LRES SSZ1 SSZ2 SSZ3 SSZ4 L
 MF52_COEFFICIENTS = FORCE_COEFFICIENTS + MOMENT_COEFFICIENTS
 
 
+CONTACT_LOAD_N = 1e-3
+
+
+def peak_friction(fz_n: ArrayLike, gamma_rad: ArrayLike, p: Mapping[str, float]) -> tuple[FloatArray, FloatArray]:
+    """## MF5.2 Peak Coefficients
+
+    Return signed pure-slip peak coefficients at the fitted evaluation load.
+    Below FZMIN, force scales with actual load while these coefficients stay fixed.
+    """
+    fz = np.maximum(np.asarray(fz_n, dtype=float), p.get("FZMIN", CONTACT_LOAD_N))
+    gamma = np.asarray(gamma_rad, dtype=float)
+    nominal = p["FNOMIN"] * p.get("LFZO", 1.)
+    dfz = (fz - nominal) / nominal
+    mux = (p["PDX1"] + p["PDX2"] * dfz) * (1 - p.get("PDX3", 0.) * (gamma * p.get("LGAX", 1.)) ** 2)
+    muy = (p["PDY1"] + p["PDY2"] * dfz) * (1 - p.get("PDY3", 0.) * (gamma * p.get("LGAY", 1.)) ** 2)
+    return mux * p.get("LMUX", 1.), muy * p.get("LMUY", 1.)
+
+
 @dataclass(frozen=True)
 class MF52Tire:
     """## MF5.2 Tire
@@ -130,7 +148,7 @@ class MF52Tire:
         curves = self.forces(fz[..., None], alpha[..., None], grid, gamma[..., None])[0]
         result = np.zeros(fz.shape)
         for index in np.ndindex(fz.shape):
-            if fz[index] <= 1e-3:
+            if fz[index] <= CONTACT_LOAD_N:
                 continue
             curve = curves[index]
             wanted = float(target[index])
@@ -192,9 +210,11 @@ class MF52Tire:
             Fx, Fy in newtons and Mx, My, Mz in newton meters, in the z-up wheel frame.
         """
         load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
-        fx, fy = self.forces(load, alpha, slip, gamma)
-        mx, my, mz = self.moments(load, alpha, slip, gamma, speed)
-        return fx, fy, mx, my, mz
+        fz = np.maximum(load, self.fz_min_n)
+        scale = np.where(load > CONTACT_LOAD_N, load / fz, 0.0)
+        fx, fy = self.forces(fz, alpha, slip, gamma)
+        mx, my, mz = self._moments_from_forces(fz, alpha, slip, gamma, speed, fx, fy)
+        return scale * fx, scale * fy, scale * mx, -scale * my, -scale * mz
 
     def rolling_moment(self, fz_n: ArrayLike, fx_n: ArrayLike, speed_mps: ArrayLike) -> FloatArray:
         """## Rolling Moment
@@ -217,7 +237,7 @@ class MF52Tire:
         """
         load, fx, speed = np.broadcast_arrays(fz_n, fx_n, speed_mps)
         fz = np.maximum(load, self.fz_min_n)
-        scale = np.where(load > 1e-3, load / fz, 0.0)
+        scale = np.where(load > CONTACT_LOAD_N, load / fz, 0.0)
         raw_fx = np.divide(fx, scale, out=np.zeros_like(fz, dtype=float), where=scale != 0)
         return -scale * self._my_raw(fz, raw_fx, speed)
 
@@ -267,11 +287,14 @@ class MF52Tire:
         tuple[NDArray, NDArray, NDArray]
             Overturning, rolling and aligning moments in the z-up wheel frame.
         """
-        load, alpha, slip, gamma, speed = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad, speed_mps)
-        fz = np.maximum(load, self.fz_min_n)
-        scale = np.where(load > 1e-3, load / fz, 0.0)
+        return self.evaluate(fz_n, alpha_rad, kappa, camber_rad, speed_mps)[2:]
+
+    def _moments_from_forces(
+        self, fz: FloatArray, alpha: FloatArray, slip: FloatArray, gamma: FloatArray,
+        speed: FloatArray, fx: FloatArray, fy_up: FloatArray,
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        # Forces use the clamped load here. The complete wrench receives the low-load fade once.
         p = self.coefficients
-        fx, fy_up = self.forces(fz, alpha, slip, gamma)
         fy = -fy_up
         radius, nominal = p["UNLOADED_RADIUS"], p["FNOMIN"]
         mx = radius * fz * (p["QSX1"] * p["LVMX"] + (-p["QSX2"] * gamma + p["QSX3"] * fy / nominal) * p["LMX"])
@@ -320,7 +343,7 @@ class MF52Tire:
         vyk *= np.sin(p["RVY5"] * np.arctan(p["RVY6"] * slip)) * p["LVYKA"]
         arm = (p["SSZ1"] + p["SSZ2"] * fy / nominal + (p["SSZ3"] + p["SSZ4"] * dfz) * gamma) * radius * p["LS"]
         mz = -trail * (fy - vyk) + residual + arm * fx
-        return scale * mx, -scale * my, -scale * mz
+        return mx, my, mz
 
     def forces(
         self,
@@ -352,11 +375,10 @@ class MF52Tire:
         """
         load, alpha, slip, gamma = np.broadcast_arrays(fz_n, alpha_rad, kappa, camber_rad)
         fz = np.maximum(load, self.fz_min_n)
-        scale = np.where(load > 1e-3, load / fz, 0.0)
+        scale = np.where(load > CONTACT_LOAD_N, load / fz, 0.0)
         p = self.coefficients
         dfz = (fz - p["FNOMIN"] * p["LFZO"]) / (p["FNOMIN"] * p["LFZO"])
-        mux = (p["PDX1"] + p["PDX2"] * dfz) * (1 - p["PDX3"] * (gamma * p["LGAX"]) ** 2) * p["LMUX"]
-        muy = (p["PDY1"] + p["PDY2"] * dfz) * (1 - p["PDY3"] * (gamma * p["LGAY"]) ** 2) * p["LMUY"]
+        mux, muy = peak_friction(fz, gamma, p)
         cx = p["PCX1"] * p["LCX"]
         cy = p["PCY1"] * p["LCY"]
         dx, dy = mux * fz, muy * fz

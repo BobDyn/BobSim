@@ -9,7 +9,7 @@ import yaml
 from app.tire_eval import _tire_template_for_side
 from common.vehicle_io import load_yaml, repo_root, tire_template_name, vehicle_yaml_path
 from engines.dynpy import ModelInputs, Vehicle
-from simulations.envelope.ggv.ggv_generation import _trim_outside_tire_domain
+from simulations.envelope.ggv.ggv_generation import _trim_above_tire_load_range
 
 
 @pytest.fixture(scope="module")
@@ -53,10 +53,10 @@ def test_each_axle_uses_its_own_force_fit(mixed_vehicle, dof):
     alpha = np.full(4, 0.1)
     gamma = np.zeros(4)
     controls = ModelInputs(wheel_torques_nm=(5.0, 5.0, 5.0, 5.0))
-    fx, fy, slips = model._tire_forces(loads, alpha, np.full(4, 0.02), gamma, controls)
+    fx, fy, slips, moments = model._tire_wrench(loads, alpha, np.full(4, 0.02), gamma, controls)
     for corner, tire in enumerate(mixed_vehicle.parameters.tires):
-        expected = tire.forces(loads[corner], alpha[corner], slips[corner], gamma[corner])
-        np.testing.assert_allclose([fx[corner], fy[corner]], expected, rtol=1e-12)
+        expected = tire.evaluate(loads[corner], alpha[corner], slips[corner], gamma[corner])
+        np.testing.assert_allclose([fx[corner], fy[corner], *moments[corner]], expected, rtol=1e-12)
     assert max(abs(fy[2:])) < min(abs(fy[:2])) * 0.4
     if dof < 10:
         np.testing.assert_allclose(
@@ -71,8 +71,8 @@ def test_tire_load_validity_uses_each_corners_fit(mixed_vehicle):
 
     def outside(loads):
         trim = SimpleNamespace(output=SimpleNamespace(normal_loads_n=np.asarray(loads)))
-        return _trim_outside_tire_domain(trim, model)
+        return _trim_above_tire_load_range(trim, model)
 
     assert not outside([150, 1200, 300, 700])
     assert outside([150, 1200, 300, 900])
-    assert outside([150, 1200, 150, 700])
+    assert not outside([150, 1200, 150, 700])

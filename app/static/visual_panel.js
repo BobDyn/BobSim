@@ -18,11 +18,22 @@
     runId: null,
     tab: "tires",
     started: false,
+    capture: null,
+    loadVersion: 0,
     metricFilter: "",
     recording: null,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  function renderPlaybackButton(playing) {
+    const button = $("replay-play");
+    const label = playing ? "Pause" : "Play";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' +
+      (playing ? "M6 4h4v16H6zM14 4h4v16h-4z" : "M7 4v16l13-8z") + '"/></svg>';
+  }
 
   function screenActive() {
     const screen = $("replay-view");
@@ -34,6 +45,7 @@
   // ==========================================================================
 
   async function loadRuns() {
+    const capture = state.capture;
     let body;
     try {
       const response = await fetch("/api/visual/runs");
@@ -44,13 +56,16 @@
       setStatus("Could not reach the app to list captured runs: " + error.message);
       return;
     }
+    if (capture !== state.capture) return;
     if (body && body.error) {
       setStatus("Could not list captured runs: " + body.error);
       return;
     }
-    state.runs = body.runs || [];
+    state.runs = (body.runs || []).filter(run => !state.capture || run.id === state.capture);
     const picker = $("replay-run");
     picker.innerHTML = "";
+    picker.disabled = Boolean(state.capture);
+    picker.hidden = Boolean(state.capture);
     for (const run of state.runs) {
       const option = document.createElement("option");
       option.value = run.id;
@@ -59,8 +74,9 @@
     }
     if (!state.runs.length) {
       setStatus(
-        "No captured runs yet. Produce one with a rig or manoeuvre capture, " +
-          "then reopen this tab."
+        state.capture?.startsWith("pending:") ? "Run this analysis to generate replay data." :
+          state.capture ? "This captured scene is no longer available." :
+          "No captured runs yet. Produce one with a rig or manoeuvre capture, then reopen this tab."
       );
       return;
     }
@@ -68,22 +84,27 @@
   }
 
   async function loadRun(runId) {
+    const version = ++state.loadVersion;
     setStatus("Loading " + runId + "…");
     try {
       const [header, buffer] = await Promise.all([
         fetch("/api/visual/scene?run=" + encodeURIComponent(runId)).then((r) => r.json()),
         fetch("/api/visual/data?run=" + encodeURIComponent(runId)).then((r) => r.arrayBuffer()),
       ]);
+      if (version !== state.loadVersion) return;
       if (header.error) throw new Error(header.error);
       state.runId = runId;
       state.scene = new window.BobVis.Scene(header, buffer);
       state.viewer.load(state.scene);
+      restoreResultCursor();
+      $("replay-camera-view").value = "iso";
+      $("replay-model").textContent = header.representation || "Captured geometry";
       $("replay-run").value = runId;
       buildLayerToggles(header);
       buildTabs(header);
       setStatus("");
     } catch (error) {
-      setStatus("Could not open this run: " + error.message);
+      if (version === state.loadVersion) setStatus("Could not open this run: " + error.message);
     }
   }
 
@@ -97,28 +118,12 @@
   // Controls
   // ==========================================================================
 
-  /** Follow rides with the car; the rest are scene layers. */
-  function buildFollowToggle() {
-    const menu = $("replay-layers");
-    const wrap = document.createElement("label");
-    wrap.className = "replay-layer";
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.checked = state.viewer.follow;
-    box.addEventListener("change", () => {
-      state.viewer.follow = box.checked;
-    });
-    wrap.appendChild(box);
-    wrap.appendChild(document.createTextNode("Follow the car"));
-    menu.appendChild(wrap);
-  }
-
   const LAYER_LABELS = {
     links: "Links",
     joints: "Joints",
     tires: "Tires",
     loads: "Load footprints",
-    tracks: "Contact trails",
+    tracks: "Wheel paths",
     arrows: "Force vectors",
     grid: "Ground grid",
   };
@@ -148,8 +153,22 @@
       wrap.appendChild(box);
       wrap.appendChild(document.createTextNode(label));
       menu.appendChild(wrap);
+      if (key === "tracks") {
+        const legend = document.createElement("div");
+        legend.className = "replay-trail-legend";
+        legend.hidden = !box.checked;
+        for (const corner of header.tracks.corners) {
+          const item = document.createElement("span");
+          const name = header.points[corner.point];
+          item.textContent = /^(fl|fr|rl|rr)/i.test(name) ? name.slice(0, 2).toUpperCase() : name;
+          item.style.color = corner.color;
+          legend.appendChild(item);
+        }
+        box.addEventListener("change", () => { legend.hidden = !box.checked; });
+        menu.appendChild(legend);
+      }
     }
-    buildFollowToggle();
+
   }
 
   /** Tabs only appear when the run actually carries their data. */
@@ -196,6 +215,10 @@
     ctx.clearRect(0, 0, width, height);
 
     const corners = grip.corners;
+    const extent = Math.max(1, ...corners.flatMap(corner =>
+      state.scene.scalar(corner.slot_airborne, f) > 0.5 ? [] : [
+        Math.abs(state.scene.scalar(corner.slot_x, f)), Math.abs(state.scene.scalar(corner.slot_y, f)),
+      ]));
     const columns = 2;
     const rows = Math.ceil(corners.length / columns);
     const cellW = width / columns;
@@ -213,7 +236,7 @@
       ctx.lineWidth = 1 * dpr;
       for (const ring of [0.5, 1]) {
         ctx.beginPath();
-        ctx.arc(cx, cy, radius * ring, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius * ring / extent, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.beginPath();
@@ -224,14 +247,15 @@
       ctx.stroke();
 
       const airborne = state.scene.scalar(corner.slot_airborne, f) > 0.5;
+      const unavailable = corner.slot_grip_unavailable !== undefined && state.scene.scalar(corner.slot_grip_unavailable, f) > 0.5;
       const usage = state.scene.scalar(corner.slot_usage, f);
       const gx = state.scene.scalar(corner.slot_x, f);
       const gy = state.scene.scalar(corner.slot_y, f);
 
-      if (!airborne) {
+      if (!airborne && !unavailable) {
         // Lateral is the horizontal axis: it is the one a driver feels.
-        const px = cx + gy * radius;
-        const py = cy - gx * radius;
+        const px = cx + gy * radius / extent;
+        const py = cy - gx * radius / extent;
         ctx.fillStyle = usage >= 1 ? "#d64550" : "#2b7fd4";
         ctx.beginPath();
         ctx.arc(px, py, 5 * dpr, 0, Math.PI * 2);
@@ -243,7 +267,7 @@
       ctx.textAlign = "center";
       ctx.fillText(corner.corner.toUpperCase(), cx, cy - radius - 10 * dpr);
       ctx.fillText(
-        airborne ? "off the ground" : Math.round(usage * 100) + "% of peak",
+        airborne ? "off the ground" : unavailable ? "grip unavailable" : Math.round(usage * 100) + "% of peak",
         cx,
         cy + radius + 18 * dpr
       );
@@ -299,9 +323,25 @@
   // Timeline
   // ==========================================================================
 
+  function cursorRunId() {
+    const run = state.runs.find(item => item.id === state.runId);
+    if (!run?.id.startsWith("saved-")) return null;
+    const archiveId = run.id.slice("saved-".length);
+    return run.data?.startsWith(`app/user_data/results/saved/${archiveId}/`) ? archiveId : null;
+  }
+
+  function restoreResultCursor() {
+    const time = window.readResultCursor?.(cursorRunId())?.time;
+    if (!state.scene || !Number.isFinite(time)) return;
+    state.viewer.playing = false;
+    state.viewer.simTime = Math.max(state.scene.time[0], Math.min(state.scene.time[state.scene.time.length - 1], time));
+    renderPlaybackButton(false);
+  }
+
   function syncTimeline(simTime) {
     const scene = state.scene;
     if (!scene) return;
+    if (screenActive() && !state.recording) window.setResultCursor?.(cursorRunId(), {time: simTime});
     const slider = $("replay-time");
     if (document.activeElement !== slider) {
       slider.value = String(((simTime - scene.time[0]) / Math.max(scene.duration, 1e-6)) * 1000);
@@ -532,7 +572,7 @@
     // The export owns the clock and the canvas until it is done; the live loop
     // would otherwise be advancing time underneath it.
     viewer.playing = false;
-    $("replay-play").textContent = "Play";
+    renderPlaybackButton(false);
     recorder.start();
     setExportLabel("Recording 0%", "Click to stop and save what has been recorded");
     setStatus("");
@@ -623,7 +663,7 @@
       viewer.simTime = rec.wasTime;
       viewer.playing = rec.wasPlaying;
       viewer.render(); // put the frame the export borrowed the view from back
-      $("replay-play").textContent = viewer.playing ? "Pause" : "Play";
+      renderPlaybackButton(viewer.playing);
     }
     resetExportButton();
   }
@@ -666,12 +706,30 @@
     // holds the live camera, layers and clock.
     window.BobVis.viewer = state.viewer;
 
+    const displaySettings = $("replay-display-settings");
+    document.addEventListener("pointerdown", event => {
+      if (!displaySettings.contains(event.target)) displaySettings.open = false;
+    });
+    displaySettings.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        displaySettings.open = false;
+        displaySettings.querySelector("summary").focus();
+      }
+    });
     $("replay-run").addEventListener("change", (event) => loadRun(event.target.value));
     $("replay-play").addEventListener("click", () => {
       state.viewer.playing = !state.viewer.playing;
-      $("replay-play").textContent = state.viewer.playing ? "Pause" : "Play";
+      renderPlaybackButton(state.viewer.playing);
     });
-    $("replay-reset-view").addEventListener("click", () => state.viewer.resetView());
+    $("replay-reset-view").addEventListener("click", () => {
+      $("replay-camera-view").value = "iso";
+      state.viewer.resetView();
+    });
+    $("replay-camera-view").addEventListener("change", event => state.viewer.resetView(event.target.value));
+    $("replay-camera-follow").addEventListener("change", event => {
+      state.viewer.follow = event.target.value;
+      state.viewer.resetView($("replay-camera-view").value);
+    });
     const exportButton = $("replay-export");
     if (canExport()) {
       resetExportButton();
@@ -689,7 +747,7 @@
       const scene = state.scene;
       if (!scene) return;
       state.viewer.playing = false;
-      $("replay-play").textContent = "Play";
+      renderPlaybackButton(false);
       state.viewer.simTime = scene.time[0] + (Number(event.target.value) / 1000) * scene.duration;
     });
     for (const name of ["tires", "metrics"]) {
@@ -728,20 +786,25 @@
   }
 
   function watch() {
-    if (screenActive()) start();
+    if (!screenActive()) return;
+    const capture = $("replay-view").dataset.capture || null;
+    const changed = capture !== state.capture;
+    state.capture = capture;
+    if (!state.started) start();
+    else if (!changed && state.viewer) restoreResultCursor();
+    else if (changed && state.viewer) {
+      state.loadVersion++;
+      state.viewer.playing = false;
+      state.scene = null;
+      state.viewer.scene = null;
+      $("replay-layers").innerHTML = "";
+      for (const id of ["replay-tabs", "replay-panel-tires", "replay-panel-metrics"]) $(id).hidden = true;
+      loadRuns().catch(error => setStatus("Could not open the viewer: " + error.message));
+    }
   }
 
   function bootstrap() {
-    // The rail is wired by app.js; this only needs to know when its own screen
-    // becomes visible, so the WebGL context is not created for people who
-    // never open the tab.
-    //
-    // app.js switches screens inside its own click handler, so this one has to
-    // look afterwards rather than during: a microtask is enough and, unlike a
-    // timer, is not clamped when the tab is in the background.
-    document.querySelectorAll(".rail-item").forEach((button) => {
-      button.addEventListener("click", () => Promise.resolve().then(watch));
-    });
+    document.addEventListener("bobsim-view-change", watch);
     watch();
   }
 

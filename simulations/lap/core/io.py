@@ -82,7 +82,7 @@ def write_transient_lap_csv(path: str | Path, result: TransientLapResult) -> Non
             result.target_speed_mps,
             speed,
             result.transient.signals["yawVel"],
-            result.transient.signals["handwheelAngle"],
+            result.transient.signals["roadwheelSteer"],
             result.transient.signals["accX"],
             result.transient.signals["accY"],
         ):

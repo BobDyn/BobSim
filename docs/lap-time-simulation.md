@@ -1,6 +1,6 @@
 # QSS and transient lap-time simulation
 
-**TL;DR:** One track, one racing line, one DOF model (3/6/10/14) → two results: QSS (idealized, point-wise envelope-bound) and transient (executable, with dynamics). Delta = controller lag, transient buildup, effects invisible to equilibrium envelopes.
+QSS Lap computes a speed profile along a fixed racing line using a GGV. Transient Lap integrates the selected DynPy model with a driver following a QSS reference. Differences include driver tracking, transient dynamics and the approximations in the envelope.
 
 See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity context.
 
@@ -20,15 +20,17 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 - Change `model_dof` (3, 6, 10, or 14) in the config to select fidelity
 
 **GGV behavior:**
+- Generated envelopes use nine speed slices through the vehicle's drivetrain limit and automatically expand acceleration search bounds. Linked and supplied envelopes retain their original range.
+- The lap summary and report show the GGV speed range and whether its upper edge limits the lap.
 - Cached GGV files are reused only when the model, settings, and physical inputs match. Otherwise they are regenerated.
-- With `generate_if_missing: false`, an existing CSV is used without verification. A missing CSV fails.
+- With `generate_if_missing: false`, an external CSV without provenance is explicitly unverified. Known older BobSim envelopes are rejected. A missing CSV fails.
 - High-slip roots (sideslip > `max_abs_beta_rad`, steer > `max_abs_steering_rad`) are rejected; use EnvelopeSim YMD workflow for deliberate high-beta states
 - Paths can contain `{model_dof}` placeholder to prevent silent reuse across fidelities
 - `summary.json` records the GGV provenance and cache status.
 
 **Power caps:**
-- Default endurance: 32 kW constant (energy-budget proxy, not thermal model)
-- Acceleration/autocross/skidpad: 80 kW VCU limit (from `vehicle.yml`)
+- App QSS Lap inherits model fidelity and power limits from its linked GGV. It has no independent power setting.
+- Standalone lap generation and Transient Lap use the configured event cap, limited by the vehicle powertrain. The default seed is 32 kW. This constant cap does not model energy depletion or thermal derating.
 
 **Validation visuals:** `make lap-validation-visuals` generates a resumable 3/6/10/14DOF comparison matrix under `temp/lap_time_validation/`:
 
@@ -53,27 +55,45 @@ make lap-validation-visuals              # resume from cached work
 
 ## Track format and racing line
 
-**Track input:** closed sequence of paired gates with left/right boundaries (metres):
+Boundary previews and saved racing-line reports use periodic cubic splines through every boundary point. Spline refinement bounds width between the neighboring cone segments and the wider adjacent cone pair, within 10 mm. It retains every cone and allows the measured width to vary. Optimization gates are evenly spaced along the paired-boundary midpoint reference.
+Their target spacing is the nominal wheelbase, adjusted down
+to divide the closed circuit evenly. Original CSV pairs preserve boundary
+correspondence but do not set the optimization gate locations. Clearance is
+checked at the resampled gates, not continuously between them.
+
+**Track input:** closed sequence of paired boundary points (metres):
 ```csv
-left_x_m,left_y_m,right_x_m,right_y_m
+x1,y1,x2,y2
 ...
 ```
 
-Legal vehicle-center interval = gate midline ± (half vehicle width + safety margin).
+Vehicle width comes from the widest axle spacing plus its tire section width.
+The vehicle-center offset is bounded by half the gate width minus half the
+vehicle width and the requested edge clearance.
 
-Periodic cubic splines → arc-length-sampled line with heading, curvature, segment length.
+Each row pairs two boundary points across the track. Rows follow the circuit
+in order and each boundary stays on the same side. The track closes automatically.
+Legacy `left_x_m,left_y_m,right_x_m,right_y_m` headers are also accepted.
+
+The app has a Track analysis for importing the CSV and generating a racing line.
+QSS Lap requires linked GGV and racing-line results. It uses the saved line
+without re-optimization. Track, clearance or derived-width changes invalidate
+the line connection until it is regenerated. Results include the boundaries,
+line and curvature.
+
+Periodic cubic splines use fixed gate-center chord parameters for both optimization and output. An analytic gradient and sparse spline solves support bounded L-BFGS-B optimization. Eight-point Gauss quadrature integrates squared curvature along each segment.
 
 **Default track:** `simulations/lap/tracks/endurance_michigan_2019.csv` (2019 FSAE Michigan; metres, provenance in `tracks/README.md`).
 
 **For acceptance tests:** `endurance_reference.csv` (synthetic 694 m course, fast for repeated 10/14DOF runs). Full 2 km course → `temp/lap_time_validation/reference_tracks/`. Both are rendered so real course is always visible as a system-level reference, not confused with test-only synthetic track.
 
-Three line modes are available:
+The app offers `centerline` and `minimum_curvature` in the Track analysis. The standalone lap runner also supports `minimum_time_qss`:
 
 - `centerline` uses zero gate offset.
-- `minimum_curvature` minimizes integrated squared curvature and is useful as a
-  fast, vehicle-independent seed.
+- `minimum_curvature` minimizes integrated squared curvature. This is the default.
+  The lap speed profile is solved along this fixed line. Vehicle width constrains the path, but tire grip and power do not enter the curvature objective.
 - `minimum_time_qss` starts from the minimum-curvature line and minimizes the
-  actual propagated QSS lap time. This is the default.
+  actual propagated QSS lap time. This optional search takes longer.
 
 Integrated absolute curvature is deliberately not the final objective. It is
 nearly fixed at one revolution for many simple closed tracks and does not price
@@ -84,7 +104,9 @@ corner radius, acceleration zones, braking zones, or speed-dependent grip.
 At every path sample, curvature and the GGV lateral boundary set a local speed
 ceiling. Alternating closed-loop forward and backward passes then enforce the
 available combined acceleration and braking at each speed and lateral load.
-The final segment time uses the two endpoint speeds.
+The GGV uses path-tangent and path-normal acceleration. The forward pass retains
+negative upper acceleration limits, so a vehicle that cannot maintain speed
+slows down. The final segment time uses the two endpoint speeds.
 
 The output `qss_lap.csv` contains station, path geometry, speed, longitudinal
 and lateral acceleration, and segment time. It is an equilibrium envelope
