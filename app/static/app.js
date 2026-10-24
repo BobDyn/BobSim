@@ -12749,6 +12749,8 @@ function drawKinematicChart(
     yLabel: descriptor.y_label || title,
     yUnit: unit,
     series,
+    // Preserve the commanded sweep even where contact loss invalidates Y.
+    xValues: [...visibleAxles].flatMap((axle) => kinematicChartXValues(payload, descriptor, axle)),
     includeZeroY: !/_anti_(dive|squat|roll|lift)_pct$/.test(yKey),
     margins: focused
       ? { left: 62, right: 18, top: 48, bottom: 44 }
@@ -12837,6 +12839,7 @@ function createPlotChart({
   yUnit,
   series,
   includeZeroY = false,
+  xValues = null,
   margins = { left: 52, right: 16, top: 38, bottom: 38 },
 }) {
   const validSeries = series
@@ -12849,7 +12852,7 @@ function createPlotChart({
     .filter((item) => item.points.length);
   const allPoints = validSeries.flatMap((item) => item.points);
   if (allPoints.length < 2) return null;
-  const [minX, maxX] = plotDomain(allPoints.map((point) => point.xValue), { padFraction: 0.02 });
+  const [minX, maxX] = plotDomain(xValues || allPoints.map((point) => point.xValue), { padFraction: 0.02 });
   const [minY, maxY] = plotDomain(allPoints.map((point) => point.yValue), { includeZero: includeZeroY, padFraction: 0.12 });
   const plot = {
     x: x + margins.left,
