@@ -169,3 +169,28 @@ not Formula SAE competition points. BobSim does not contain a QSS-to-points
 conversion. Such a claim requires controlled correlation, uncertainty, matching
 competition telemetry, and demonstrated response-space coverage; absent that
 evidence, `summary.json` declares `competition_points_supported: false`.
+
+## Operating-state frequency
+
+Each lap run retains its exact GGV input as `usage_ggv.csv` and exports
+`qss_operating_states.csv`, `qss_state_frequency.csv` and `qss_ggv_usage.png`.
+Transient runs also export the corresponding `transient_*` artifacts. The app
+archives these outputs, exposes their CSVs in the signal explorer, and includes
+usage figures in the lap PDF. Existing GGV/racing-line connections select inputs.
+
+Frequency is **time spent**, not sample count: QSS points carry segment duration;
+transient points carry the following sample interval, clipped at the first finish
+crossing. An incomplete transient describes only its simulated duration. Occupancy
+CSVs contain 16 bins per dimension in speed, signed lateral acceleration and
+longitudinal acceleration, with explicit edges, counts, seconds and percentage.
+The report shows the operating cloud on GGV speed slices and three 24-bin marginal
+heatmaps. Bins span the observed range, including points outside the map.
+
+Acceleration uses horizontal velocity-tangent/normal axes. Transient export
+rotates the full inertial acceleration (including angular transport) into that
+frame. QSS acceleration is a segment average; its local drive/brake margins are
+diagnostics, not residuals of the forward/backward propagation. Missing limits,
+negative margins and speeds outside the map are retained and flagged; the solver's
+endpoint-clamped speed interpolation is unchanged. Occupancy is not a tire-force
+utilization percentage. The usage report consumes no YMD surface: the current lap
+solver uses GGV alone and does not constrain yaw-moment demand against YMD.

@@ -322,6 +322,17 @@ def test_lap_time_runner_writes_qss_artifacts(tmp_path, monkeypatch, scenario) -
     assert summary["optimized_qss_lap_time_s"] > 0.0
     assert (output_path / "qss_lap.csv").is_file()
     assert (output_path / "summary.json").is_file()
+    import pandas as pd
+    usage = pd.read_csv(output_path / "qss_operating_states.csv")
+    frequency = pd.read_csv(output_path / "qss_state_frequency.csv")
+    assert usage.duration_s.sum() == pytest.approx(summary["optimized_qss_lap_time_s"])
+    assert frequency.time_percent.sum() == pytest.approx(100.)
+    assert (output_path / "usage_ggv.csv").read_bytes() == ggv_path.read_bytes()
+    assert (output_path / "qss_ggv_usage.png").is_file()
+    if scenario == "transient":
+        actual = pd.read_csv(output_path / "transient_operating_states.csv")
+        assert actual.duration_s.sum() == pytest.approx(.1)
+        assert actual.time_percent.sum() == pytest.approx(100.)
     assert (output_path / "transient_lap.csv").exists() == (scenario == "transient")
     if scenario == "transient":
         from app.visual import reduced_scene_payload

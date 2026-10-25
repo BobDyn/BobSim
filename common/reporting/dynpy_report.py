@@ -171,4 +171,14 @@ def build_dynpy_report(
                 fig.text(0.99, 0.015, model, ha="right", fontsize=8, color="#555555")
                 pdf.savefig(fig)
                 plt.close(fig)
+        if not response:
+            for prefix in (("qss", "transient") if transient else ("qss",)):
+                image = output_directory / f"{prefix}_ggv_usage.png"
+                if image.is_file():
+                    fig = plt.figure(figsize=(11, 8.5))
+                    axis = fig.add_axes((0, 0, 1, 1))
+                    axis.imshow(plt.imread(image))
+                    axis.axis("off")
+                    pdf.savefig(fig)
+                    plt.close(fig)
     return report_path

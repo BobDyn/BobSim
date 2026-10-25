@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 import hashlib
+import shutil
 import csv
 import time
 import json
@@ -23,6 +24,7 @@ from simulations.lap.core import (
     write_transient_lap_csv,
 )
 from simulations.lap.core.racing_line import LineMode
+from simulations.lap.core.usage import interval_durations, operating_points, save_usage
 from common.physics_provenance import ggv_physics_sha256
 from common.vehicle_io import load_yaml, repo_root, tire_template_name, tire_templates_root
 
@@ -127,6 +129,14 @@ def run_lap_time_evaluation(
             ),
         )
     write_qss_lap_csv(output_directory / "qss_lap.csv", optimized.qss_lap)
+    lap = optimized.qss_lap
+    usage = operating_points(ggv, lap.speed_mps, lap.longitudinal_acceleration_mps2,
+                             lap.lateral_acceleration_mps2, lap.segment_time_s, lap.line.station_m)
+    save_usage(output_directory, "qss", usage, ggv)
+    # Retain the exact map alongside usage artifacts; provenance is in summary.json.
+    snapshot = output_directory / "usage_ggv.csv"
+    if ggv_path.resolve() != snapshot.resolve():
+        shutil.copyfile(ggv_path, snapshot)
     summary: dict[str, Any] = {
         "scenario": scenario,
         "engine": "DynPy",
@@ -193,6 +203,22 @@ def run_lap_time_evaluation(
                 ),
             }
         )
+        # Clip weights to the first finish crossing (or the incomplete run end).
+        times = transient.transient.time_s
+        duration = interval_durations(times, transient.unwrapped_progress_m,
+                                      optimized.line.track_length_m, transient.completed_lap)
+        active = duration > 0
+        signals = transient.transient.signals
+        actual = operating_points(ggv, signals["pathSpeed"][:-1][active],
+                                  signals["pathAccX"][:-1][active], signals["pathAccY"][:-1][active],
+                                  duration[active], transient.station_m[:-1][active])
+        save_usage(output_directory, "transient", actual, ggv)
+    summary["envelope_usage"] = {
+        "weighting": "time", "frame": "horizontal path tangent/normal",
+        "ggv_snapshot": "usage_ggv.csv", "ymd_consumed": False,
+        "qss_duration_s": float(usage.duration_s.sum()),
+        "qss_speed_outside_map_time_s": float(usage.loc[~usage.speed_in_map, "duration_s"].sum()),
+    }
     summary["wall_time_s"] = time.perf_counter() - started
     summary_path = output_directory / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -350,3 +350,12 @@ accepted for display; `equilibrium_converged` distinguishes numerical closure.
 The low-level generator can still enforce load validity for strict comparisons.
 Rejected moment-state solves get bounded cold and neutral-state retries; CSV `solver_attempts` records
 this separately from convergence and fit-validity flags.
+
+### Lap envelope usage
+
+Lap results include GGV usage images and downloadable operating-state and state-
+frequency CSVs. Frequency weights each state by time, with separate QSS prediction
+and actual transient outputs. The lap PDF includes these pages automatically.
+The exact linked GGV is archived with the run. See
+[Operating-state frequency](../docs/lap-time-simulation.md#operating-state-frequency)
+for axis, binning and validity conventions.

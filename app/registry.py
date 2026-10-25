@@ -1094,6 +1094,13 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
                 outputs=(
                     OutputSpec("Report", f"simulations/lap/results/{name.removeprefix('lap-')}_report.pdf", "pdf"),
                     OutputSpec("QSS lap", "simulations/lap/results/qss_lap.csv", "csv"),
+                    OutputSpec("GGV used", "simulations/lap/results/usage_ggv.csv", "csv"),
+                    *(OutputSpec(label, f"simulations/lap/results/{prefix}_{suffix}", kind)
+                      for prefix in (("qss", "transient") if name == "lap-transient" else ("qss",))
+                      for label, suffix, kind in (
+                          (f"{prefix.upper()} GGV usage", "ggv_usage.png", "image"),
+                          (f"{prefix.upper()} operating states", "operating_states.csv", "csv"),
+                          (f"{prefix.upper()} state frequency", "state_frequency.csv", "csv"))),
                     OutputSpec("Summary", "simulations/lap/results/summary.json", "json"),
                     *((OutputSpec("Transient lap", "simulations/lap/results/transient_lap.csv", "csv"),
                        OutputSpec("Signals", "simulations/lap/results/transient_signals.csv", "csv"))

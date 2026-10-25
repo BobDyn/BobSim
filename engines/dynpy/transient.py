@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.integrate import solve_ivp
 
-from engines.dynpy.models import ModelInputs, ReducedVehicleModel
+from engines.dynpy.models import ModelInputs, ReducedVehicleModel, _body_to_world_rotation
 
 
 FloatArray = NDArray[np.float64]
@@ -137,6 +137,7 @@ def simulate_transient(
     }
     body_acceleration = np.empty((len(solution.t), 3), dtype=float)
     steering = np.empty(len(solution.t), dtype=float)
+    path_response = np.empty((len(solution.t), 3), dtype=float)
     tire_forces = np.empty((len(solution.t), 4, 2), dtype=float)
     normal_loads = np.empty((len(solution.t), 4), dtype=float)
     tire_moments = np.empty((len(solution.t), 4, 3), dtype=float)
@@ -165,6 +166,7 @@ def simulate_transient(
             output.generalized_acceleration[1] + yaw_rate * u,
             output.generalized_acceleration[2] if model.dof == 3 else output.generalized_acceleration[5],
         )
+        path_response[index] = _path_response(model, state, output.generalized_acceleration)
         steering[index] = model_inputs.steering_rad
         heading = output.toe_rad
         body_forces = output.wheel_forces_body_n
@@ -186,6 +188,9 @@ def simulate_transient(
         instant_link[index] = output.instant_link_coefficients
     signals.update(
         {
+            "pathSpeed": path_response[:, 0],
+            "pathAccX": path_response[:, 1],
+            "pathAccY": path_response[:, 2],
             "accX": body_acceleration[:, 0],
             "accY": body_acceleration[:, 1],
             "yawAccel": body_acceleration[:, 2],
@@ -260,3 +265,15 @@ def compare_transient_signals(
             "bias": float(np.mean(error)),
         }
     return metrics
+
+
+def _path_response(model, state, generalized_acceleration):
+    """Return horizontal speed and inertial acceleration along/across velocity."""
+    pose, velocity = model._body_state(state[:model.dof], state[model.dof:])
+    _, derivative = model._body_state(np.zeros(model.dof), generalized_acceleration)
+    rotation = _body_to_world_rotation(pose[3:6])
+    world_velocity = rotation @ velocity[:3]
+    acceleration = rotation @ (derivative[:3] + np.cross(velocity[3:6], velocity[:3]))
+    speed = float(np.linalg.norm(world_velocity[:2]))
+    tangent = world_velocity[:2] / speed if speed > 1e-9 else np.array([np.cos(pose[5]), np.sin(pose[5])])
+    return speed, np.dot(acceleration[:2], tangent), np.dot(acceleration[:2], [-tangent[1], tangent[0]])
