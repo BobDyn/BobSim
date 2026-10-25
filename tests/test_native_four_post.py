@@ -3,6 +3,7 @@ import csv
 import copy
 import os
 
+import numpy as np
 import pytest
 
 from app import app, native_four_post
@@ -87,8 +88,10 @@ def test_report_plot_selection_preserves_quad_layouts_and_normalized_choices():
     original = copy.deepcopy(config)
     fields = app._config_fields(app.BASE_CONFIG_SPECS["four-post"], config)
     choices = [field for field in fields if field["path"][0] == "plots"]
-    assert len(choices) == len(config["plots"])
-    assert all(field["kind"] == "boolean" and field["value"] and field["group"] == "Report" for field in choices)
+    assert len(choices) == len(config["plots"]) + len(native_four_post.GEOMETRY_REPORT_METRICS)
+    assert all(field["kind"] == "boolean" and field["group"] == "Report" for field in choices)
+    assert all(field["value"] == (field["path"][1] not in native_four_post.GEOMETRY_REPORT_METRICS)
+               for field in choices)
     assert config == original
     for name, plot in config["plots"].items():
         plot["enabled"] = name == "camber_heave"
@@ -140,3 +143,27 @@ def test_lateral_share_is_applied_to_the_native_forces():
         pulse = min(rows, key=lambda row: abs(float(row["time"]) - 64))
         assert float(pulse["leftLoad.worldForce.force[2]"]) == pytest.approx(1000 * share)
         assert float(pulse["rightLoad.worldForce.force[2]"]) == pytest.approx(1000 * (1 - share))
+
+
+def test_optional_geometry_report_uses_native_values_and_preserves_missing_data():
+    from common.plotting.plot_engine import PlotEngine
+    from matplotlib import pyplot as plt
+    curves = {"roll_force_rc_height_mm": [100, 200], "roll_force_anti_roll_pct": [10, 20],
+              "bump_anti_dive_pct": [30, 40], "bump_anti_squat_pct": [50, 60]}
+    for _, metric, _ in native_four_post.GEOMETRY_REPORT_METRICS.values():
+        curves[metric] = [None, 2.5]
+    runs = {kind: {"curves": {"x_axes": {"roll_deg": [-1, 1], "heave_mm": [-10, 10]},
+                             "curves": curves}} for kind in native_four_post.KINDS}
+    result = {"series": {}, "summary": {}}
+    native_four_post.apply_force_results(result, runs, native_four_post.force_settings({}, {}))
+    config = {"plots": {name: {"enabled": True} for name in native_four_post.GEOMETRY_REPORT_METRICS}}
+    plots = native_four_post.report_plots(config)
+    for _, metric, _ in native_four_post.GEOMETRY_REPORT_METRICS.values():
+        assert np.isnan(result["series"]["fr_" + metric][0])
+        assert result["series"]["fr_" + metric][1] == 2.5
+    assert config["plots"]["moment_ratio_roll"] == {"enabled": True}
+    pages = list(PlotEngine({"plots": plots}).render(result))
+    assert len(pages) == 5
+    for _, figure in pages:
+        assert len(figure.axes) == 2
+        plt.close(figure)

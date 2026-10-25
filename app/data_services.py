@@ -790,7 +790,7 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
         fields.append(field)
     payloads = [_field_payload(field, data) for field in fields]
     if spec.id == "four-post":
-        from app.native_four_post import force_settings
+        from app.native_four_post import force_settings, report_plots
         vehicle_path = ROOT / "vehicle.yml"
         vehicle = yaml.safe_load(vehicle_path.read_text()) if vehicle_path.is_file() else {}
         shares = force_settings(vehicle, data)
@@ -804,7 +804,7 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
                            if name == "front_brake_share" else
                            "Share of this axle's lateral force applied on the left (+Y). Not vertical load transfer."),
             ), {"force_based": shares}), "display_unit": "%", "display_scale": 100})
-        for name, plot in data.get("plots", {}).items():
+        for name, plot in report_plots(data).items():
             label = {"jacking_roll": "Force-based anti-roll vs roll",
                      "fbrc_roll": "Force-based equivalent RC height vs roll",
                      "jacking_heave": "Anti-dive / anti-squat vs heave"}.get(

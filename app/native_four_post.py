@@ -16,6 +16,34 @@ from common.vehicle_io import load_yaml, repo_root
 KINDS = ("knc-front", "knc-rear", "knc-rear-traction")
 
 
+# These are axle quantities; corner-alignment plots retain their existing quads.
+GEOMETRY_REPORT_METRICS = {
+    "geometric_rc_height_roll": ("Geometric RC height vs roll", "roll_rc_height_mm", "Geometric RC height (mm)"),
+    "geometric_rc_lateral_roll": ("Geometric RC lateral position vs roll",
+                                  "roll_rc_y_mm", "Geometric RC lateral position (mm)"),
+    "jacking_ratio_roll": ("Jacking / applied lateral force vs roll",
+                           "roll_jacking_ratio", "Jacking / applied force (N/N)"),
+    "moment_ratio_roll": ("Moment / applied lateral force vs roll",
+                           "roll_reaction_per_fy_m", "Moment / applied force (m)"),
+    "geometric_anti_roll": ("Geometric anti-roll proxy vs roll", "roll_anti_roll_pct", "Geometric anti-roll proxy (%)"),
+}
+
+
+def report_plots(config: dict) -> dict:
+    """Offer optional native geometry plots without mutating saved selections."""
+    plots = copy.deepcopy(config.get("plots", {}))
+    for name, (title, metric, label) in GEOMETRY_REPORT_METRICS.items():
+        definition = {"enabled": False, "layout": "dual", "title": title,
+            "subplots": [{"title": side.title(),
+                "x": {"key": prefix + "_native_roll_deg", "label": "Roll (deg)"},
+                "y": {"key": prefix + "_" + metric, "label": label}}
+                for side, prefix in (("front", "fr"), ("rear", "rr"))]}
+        # Older saved configs may contain only an enabled flag for a new plot.
+        definition.update(plots.get(name, {}))
+        plots[name] = definition
+    return plots
+
+
 def force_settings(vehicle: dict, config: dict) -> dict:
     """Resolve physical force shares separately from imposed suspension pose."""
     defaults = {"front_brake_share": vehicle.get("brake", {}).get("front_bias", .5),
@@ -115,6 +143,10 @@ def apply_force_results(result: dict, runs: dict, shares: dict) -> None:
     for side, prefix in (("front", "fr"), ("rear", "rr")):
         data = runs["knc-" + side]["curves"]
         roll = np.radians(data["x_axes"]["roll_deg"])
+        series[prefix + "_native_roll_deg"] = np.asarray(data["x_axes"]["roll_deg"], dtype=float)
+        for _, metric, _ in GEOMETRY_REPORT_METRICS.values():
+            series[prefix + "_" + metric] = np.asarray(
+                data["curves"].get(metric, [None] * len(roll)), dtype=float)
         height = np.asarray(data["curves"]["roll_force_rc_height_mm"], dtype=float) / 1000
         anti = np.asarray(data["curves"]["roll_force_anti_roll_pct"], dtype=float)
         series[prefix + "_fbrc_vs_roll_x"] = roll
@@ -151,6 +183,7 @@ def run(vehicle: dict, config: dict, root: Path) -> dict:
     )
     config = copy.deepcopy(config)
     _normalize_four_post_report_config(config)
+    config["plots"] = report_plots(config)
     shares = force_settings(vehicle, config)
     runner = AxleRunner(vehicle, root, shares)
     simulation = FourPostEvalSim(config)

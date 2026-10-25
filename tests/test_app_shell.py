@@ -30,6 +30,15 @@ def test_editor_behavior() -> None:
     subprocess.run([node, "tests/app_editor_clarity.cjs"], cwd=app.PACKAGE_ROOT, check=True)
 
 
+def test_help_covers_registered_sections_and_workflows() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    subprocess.run([node, "tests/app_help_traceability.cjs",
+                    json.dumps([workflow.id for workflow in app.WORKFLOWS])],
+                   cwd=app.PACKAGE_ROOT, check=True)
+
+
 def test_static_assets_allow_linked_root_but_reject_escapes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2096,6 +2105,11 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
         assert choice["group"] == "Report"
         assert reloaded["data"]["plots"]["camber_heave"]["layout"] == "quad"
         assert yaml.safe_load(seed.read_text()) == original
+    optional = app.patch_config("four-post", {'["plots", "moment_ratio_roll", "enabled"]': True})
+    assert next(field for field in optional["fields"]
+                if field["path"] == ["plots", "moment_ratio_roll", "enabled"])["value"] is True
+    from app.native_four_post import report_plots
+    assert report_plots(optional["data"])["moment_ratio_roll"]["subplots"][0]["y"]["key"] == "fr_roll_reaction_per_fy_m"
     shared = app.patch_config("four-post", {'["force_based", "front_brake_share"]': .65})
     share = next(field for field in shared["fields"] if field["path"] == ["force_based", "front_brake_share"])
     assert share["value"] == .65

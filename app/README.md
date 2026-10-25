@@ -246,3 +246,17 @@ traction. `make knc-catalog` prebuilds all 15 unique artifacts; see
 
 Field help popups link to the relevant BobDocs Vehicle Dynamics section, or to
 the BobSim app guide for operational controls.
+
+Section help maps Setup areas and registered workflows to the public
+[Section Reference](https://bobdyn.com/bobsim/section-reference). The maps in
+`static/app.js` are checked by `tests/app_help_traceability.cjs`; add a documented
+topic when adding a section/workflow. To verify built BobDocs anchors locally,
+pass its `docs/.vitepress/dist` directory as the test's third command-line
+argument (after a JSON array of workflow IDs). Keep field-level physics links
+more specific than the section landing page.
+
+Four Post Report also offers five optional native geometry plots: geometric RC
+height and lateral position, jacking/applied force, moment/applied force, and
+the geometric anti-roll proxy. They default off, retain undefined measurements,
+and reuse the Geometry view's processed native values. Axle quantities use
+front/rear panels; existing corner-alignment plots retain their quad layouts.

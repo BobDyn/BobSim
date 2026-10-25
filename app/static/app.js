@@ -327,6 +327,38 @@ const STUDY_GROUPS = [
   { id: "opt", label: "Optimization", accent: "amber" },
 ];
 
+// Every setup area and registered workflow has an explicit documentation topic.
+const SETUP_DOC_TOPICS = {
+  vehicle: "architecture", hardpoints: "geometry", mass: "mass", suspension: "suspension",
+  compliances: "compliances", tires: "tires", aero: "aero", powertrain: "powertrain-and-brakes",
+};
+const WORKFLOW_DOC_TOPICS = {
+  "four-post": "kinematics-and-four-post", "ramp-steer": "vehicle-response",
+  "steady-state": "vehicle-response", transient: "vehicle-response",
+  "mbd-step-steer": "vehicle-response", "mbd-maneuver": "vehicle-response",
+  maneuver: "vehicle-response", "reduced-ramp-steer": "vehicle-response",
+  "reduced-step-steer": "vehicle-response", ggv: "ggv", ymd: "yaw-moment-diagram",
+  "racing-line": "track-and-racing-line", "lap-qss": "qss-lap", "lap-transient": "transient-lap",
+  "vehicle-review": "studies-and-vehicle-review", "standard-sens": "studies-and-vehicle-review",
+  "envelope-sens": "studies-and-vehicle-review",
+};
+function sectionDocsUrl(topic) {
+  return `https://bobdyn.com/bobsim/section-reference#${topic}`;
+}
+function docsLink(url, label = "Read in BobDocs ↗") {
+  return `<a class="info-docs-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
+function workflowDocsUrl(id) {
+  return sectionDocsUrl(WORKFLOW_DOC_TOPICS[id] || "numerics-and-execution");
+}
+function configGroupDocsUrl(group) {
+  if (/report|plot/i.test(group)) return sectionDocsUrl("report");
+  if (/force-based/i.test(group)) return sectionDocsUrl("force-based");
+  if (/numeric|execution|closed loop|fit/i.test(group)) return sectionDocsUrl("numerics-and-execution");
+  const workflow = state.view === "studies" ? selectedStudyWorkflow() : selectedWorkflow();
+  return workflowDocsUrl(workflow?.id);
+}
+
 const SETUP_GUIDE = {
   vehicle: {
     title: "Architecture",
@@ -1446,6 +1478,7 @@ function renderWorkflowGuide(guide = setupGuide()) {
     <div class="guide-row"><span>Why</span><strong>${escapeHtml(guide.purpose || guide.focus)}</strong></div>
     <div class="guide-row"><span>View</span><strong>${escapeHtml(guide.figure || "")}</strong></div>
     <div class="guide-row"><span>Check</span><strong>${escapeHtml(guide.check || "")}</strong></div>
+    ${docsLink(sectionDocsUrl(SETUP_DOC_TOPICS[guide.id] || "architecture"))}
   `;
   panel.hidden = !state.referenceOpen;
   const button = document.getElementById("reference-toggle-btn");
@@ -1822,7 +1855,7 @@ function vehicleComponentEditorHtml(area) {
       ${area.id === "mass" ? "" : `<div class="form-field"><div class="field-heading"><label for="${area.id}-assembly">${area.id === "mass" ? "Assembly" : "Axle"}</label></div><select id="${area.id}-assembly" data-component-group aria-label="${area.id === "mass" ? "Mass assembly" : "Geometry axle"}">
         ${groups.map((group) => `<option${group === selected?.group ? " selected" : ""}>${escapeHtml(group)}</option>`).join("")}
       </select></div>`}
-      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", [["Move point", "Drag along the highlighted axis"], ["Change axis", "Tab"], ["Deselect", "Esc or click empty space"], ["Rotate / pan", "Drag empty space / Ctrl-drag"], ["Undo / redo", "Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z"], ["Coordinates", "+X forward, +Y left, +Z up"], ["Mirroring", "Left-side points define the right side"]]) : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
+      <div class="form-field"><div class="field-heading"><label for="${area.id}-component">Component</label>${area.id === "hardpoints" ? infoHint("Geometry controls and coordinates", [["Move point", "Drag along the highlighted axis"], ["Change axis", "Tab"], ["Deselect", "Esc or click empty space"], ["Rotate / pan", "Drag empty space / Ctrl-drag"], ["Undo / redo", "Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z"], ["Coordinates", "+X forward, +Y left, +Z up"], ["Mirroring", "Left-side points define the right side"]], sectionDocsUrl("geometry")) : ""}</div><select id="${area.id}-component" data-component-select aria-label="${area.id === "mass" ? "Mass component" : "Geometry component"}">
         ${entries.map((entry) => `<option value="${escapeHtml(entry.key)}" data-component-group-name="${escapeHtml(entry.group)}"${entry.key === selected?.key ? " selected" : ""}>${escapeHtml(area.id === "mass" && entry.group !== "Vehicle" ? `${entry.group.replace(" suspension", "")} ${entry.label.toLowerCase()}` : entry.label)}</option>`).join("")}
       </select></div>
     </div>
@@ -1906,7 +1939,7 @@ function tireSectionHtml(area) {
     </div>
   `;
   if (state.activeTireTab === "load-maps") {
-    return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.")}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
+    return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${tireFitSelectorsHtml()}<section class="tire-preview-conditions"><div class="inspector-label">Preview conditions ${infoHint("Preview conditions", "These controls change the plots only. Vehicle properties are unchanged.", sectionDocsUrl("tires"))}</div>${tireLoadMapControlsHtml()}</section><details class="tire-model-editor"><summary>Edit tire model</summary>${tireParameterToolsHtml()}${tirParameterPanelHtml()}</details>`;
   }
   return `${tabs}${axleSelectorHtml(state.activeTireAxle || "front", "data-tire-axle")}${["front", "rear"].map((side) => `<section data-tire-axle-panel="${side}"${side === (state.activeTireAxle || "front") ? "" : " hidden"}>
       ${tireAssignmentHtml(side)}${tireSetupFieldsHtml(area.fields.filter((field) => field.path?.[0] === side).map((field) => ({ ...field, label: field.label.replace(/^(Front|Rear) /, "").replace(/^./, (letter) => letter.toUpperCase()) })))}
@@ -2138,7 +2171,7 @@ function syncTireLoadCamberFromPayload() {
 
 function fieldGroupSections(fields, areaId = "") {
   const grouped = groupFields(["sim-config", "study-config"].includes(areaId)
-    ? fields.map(field => ({...field, coordinate: false})) : fields);
+    ? fields.map(field => ({...field, coordinate: false, docsUrl: configGroupDocsUrl(field.group)})) : fields);
   if (areaId === "suspension") {
     return suspensionFieldSections(grouped);
   }
@@ -2225,7 +2258,7 @@ function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
   return `
     <section class="field-subsection expanded ${fieldGroupClass(group)}${nested ? " nested-subsection" : ""}">
       <div class="field-subsection-title">
-        <span>${escapeHtml(humanizeToken(group))}</span>
+        <span>${escapeHtml(humanizeToken(group))}</span>${infoHint(`${humanizeToken(group)} information`, "Inputs, outputs, assumptions and design considerations for this section.", fields[0]?.docsUrl || sectionDocsUrl(SETUP_DOC_TOPICS[state.activeParamGroup] || "architecture"))}
       </div>
       <div class="field-grid">${fields.map(fieldControl).join("")}</div>
     </section>
@@ -2344,7 +2377,7 @@ function aeroSectionHtml(area) {
       </div>
       <details class="component-details"><summary>Edit map table</summary>${aeroTableControl(area.fields)}</details>
       </div><section data-aero-reference-editor${state.aeroReferenceView ? "" : " hidden"}>
-        ${infoHint("Aero coordinates and controls", [["Coordinates", "+X forward, +Y left, +Z up"], ["Origin", "Average of the front contact patches"], ["Input", "Left-side points. Right side mirrors Y"], ["Rotate", "Drag"], ["Zoom", "Scroll"], ["Pan", "Ctrl-drag"], ["Reset", "Double-click"]])}
+        ${infoHint("Aero coordinates and controls", [["Coordinates", "+X forward, +Y left, +Z up"], ["Origin", "Average of the front contact patches"], ["Input", "Left-side points. Right side mirrors Y"], ["Rotate", "Drag"], ["Zoom", "Scroll"], ["Pan", "Ctrl-drag"], ["Reset", "Double-click"]], sectionDocsUrl("aero"))}
         <div class="field-grid">${references.map(fieldControl).join("")}</div>
       </section>
     </div>
@@ -2921,18 +2954,20 @@ function fieldDocsUrl(field) {
   if (path[0] === "plots") {
     const plot = path[1] || "";
     if (/fbrc|roll_center|rc_height|rc_lateral/.test(plot)) return `${dynamics}#roll-centers`;
-    if (/jacking|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
+    if (/jacking|moment_ratio|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
     if (/lltd|load_transfer/.test(plot)) return `${dynamics}#load-transfer`;
     if (/caster|kpi|trail|scrub/.test(plot)) return `${dynamics}#steering-geometry`;
     if (/motion_ratio/.test(plot)) return `${dynamics}#suspension`;
     if (/camber|toe/.test(plot)) return `${dynamics}#suspension-kinematics`;
   }
+  if (field.docsUrl) return field.docsUrl;
+  if (/powertrain|^brake/.test(key)) return sectionDocsUrl("powertrain-and-brakes");
   if (/damp/.test(key)) return `${dynamics}#damping`;
   if (/tire/.test(key)) return `${dynamics}#tires`;
   if (/aero/.test(key)) return `${dynamics}#aero`;
   if (/mass|brake.*bias/.test(key)) return `${dynamics}#load-transfer`;
   if (/spring|shock|stabar|suspension/.test(key)) return `${dynamics}#suspension`;
-  return "https://bobdyn.com/bobsim/app";
+  return sectionDocsUrl(SETUP_DOC_TOPICS[state.activeParamGroup] || "settings-and-files");
 }
 
 function fieldHelpHtml(field) {
@@ -5142,7 +5177,7 @@ function workflowCard(workflow) {
     <article class="simulation-card" data-workflow="${escapeHtml(workflow.id)}">
       <div class="simulation-card-body">
         <div class="simulation-card-heading">
-          <h3>${escapeHtml(meta.title || workflow.label)}</h3>
+          <h3>${escapeHtml(meta.title || workflow.label)}</h3>${infoHint("Simulation information", meta.summary || "Method, inputs, outputs and assumptions.", workflowDocsUrl(workflow.id))}
           ${responseModelPicker(workflow)}
         </div>
         <p class="card-meta">${escapeHtml(meta.summary)}</p>
@@ -5670,6 +5705,10 @@ function simulationMathHtml(id) {
 }
 
 function simulationMethodHtml(workflow) {
+  return `${docsLink(workflowDocsUrl(workflow.id), "Method and interpretation in BobDocs ↗")}${simulationMethodContentHtml(workflow)}`;
+}
+
+function simulationMethodContentHtml(workflow) {
   if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return simulationMathHtml(workflow.id);
   if (workflow.id === "racing-line") return `${simulationMathHtml(workflow.id)}<div class="simulation-math">
     <section><h3>Track format</h3><pre>x1,y1,x2,y2</pre><p>CSV coordinates are in metres. Each row pairs two points across the track. Rows follow the circuit in order, with each boundary on a consistent side. The circuit closes automatically. The boundaries interpolate every cone. Spline refinement prevents artificial narrowing or widening beyond the neighboring cone geometry, within 10 mm. Measured changes in width remain.</p></section>
@@ -5932,7 +5971,7 @@ function studyDiagnosticHtml(workflow, data) {
     <div class="study-diagnostic-summary">
       <div>
         <span class="context-label">${escapeHtml(group.label)}</span>
-        <h3>${escapeHtml(workflow.label)}</h3>
+        <h3>${escapeHtml(workflow.label)}</h3>${infoHint("Study information", "Method, inputs, outputs and assumptions.", workflowDocsUrl(workflow.id))}
         <p>${escapeHtml(workflowModelLabel(workflow))}</p>
         <p>${escapeHtml(studyDescription(workflow))}</p>
       </div>
@@ -7242,13 +7281,13 @@ function renderSimConfigForm() {
   const physical = fields.filter(field => !advancedGroups.has(field.group));
   physical.sort((a, b) => (["Simulation", "Report"].indexOf(a.group) + 1) - (["Simulation", "Report"].indexOf(b.group) + 1));
   const advanced = fields.filter(field => advancedGroups.has(field.group));
-  form.innerHTML = `<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>
+  form.innerHTML = `${docsLink(workflowDocsUrl(selectedWorkflow()?.id), "Setup reference ↗")}<fieldset class="simulation-input-fields"${busy ? " disabled" : ""}>
     ${fieldGroupSections(physical, "sim-config")}
     ${advanced.length ? `<details class="component-details"><summary>Advanced</summary>${fieldGroupSections(advanced, "sim-config")}</details>` : ""}
   </fieldset>`;
   if (selectedWorkflow()?.id === "lap-qss") {
     const simulation = selectedSimulation();
-    form.innerHTML = `<div class="simulation-inputs-summary">${[["GGV", "ggv", simulation?.ggv_source_id, simulation?.ggv_input], ["Racing line", "racing-line", simulation?.racing_line_source_id, simulation?.racing_line_input]].map(([label, kind, source, input]) => `<section><h3>${label} <small>${escapeHtml(input?.status || "Unavailable")}</small></h3>${source ? `<button type="button" class="ghost-button" data-input-source="${escapeHtml(source)}">${escapeHtml(input?.name || label)}</button><button type="button" class="ghost-button" data-unlink-input="${kind}" aria-label="Unlink ${label}">×</button>` : ""}<p class="muted">${escapeHtml(source ? input?.message || "Linked result unavailable." : `A completed ${label} is required. Drag its Results onto this lap in the outline.`)}</p>${kind === "ggv" && input?.status === "Ready" ? `<p class="muted">${input.model_dof} DOF · ${formatPlotTick(input.power_limit_w / 1000)} kW. Vehicle, tires and power limit come from the GGV.</p>` : ""}</section>`).join("")}</div>`;
+    form.innerHTML = `${docsLink(workflowDocsUrl(selectedWorkflow()?.id), "Setup reference ↗")}<div class="simulation-inputs-summary">${[["GGV", "ggv", simulation?.ggv_source_id, simulation?.ggv_input], ["Racing line", "racing-line", simulation?.racing_line_source_id, simulation?.racing_line_input]].map(([label, kind, source, input]) => `<section><h3>${label} <small>${escapeHtml(input?.status || "Unavailable")}</small></h3>${source ? `<button type="button" class="ghost-button" data-input-source="${escapeHtml(source)}">${escapeHtml(input?.name || label)}</button><button type="button" class="ghost-button" data-unlink-input="${kind}" aria-label="Unlink ${label}">×</button>` : ""}<p class="muted">${escapeHtml(source ? input?.message || "Linked result unavailable." : `A completed ${label} is required. Drag its Results onto this lap in the outline.`)}</p>${kind === "ggv" && input?.status === "Ready" ? `<p class="muted">${input.model_dof} DOF · ${formatPlotTick(input.power_limit_w / 1000)} kW. Vehicle, tires and power limit come from the GGV.</p>` : ""}</section>`).join("")}</div>`;
     form.querySelectorAll("[data-input-source]").forEach(button => {
       button.onclick = () => workspaceAction(() => openSimulation(button.dataset.inputSource));
     });
