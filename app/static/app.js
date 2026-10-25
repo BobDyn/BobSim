@@ -196,7 +196,6 @@ const state = {
   suppressUndo: false,
   referenceOpen: false,
   busyAction: null,
-  modelicaWriting: false,
   dark: localStorage.getItem("bobsim-theme") !== "light",
 };
 
@@ -777,27 +776,11 @@ function workflowUnavailableMessage(workflow) {
     || "Simulation runner unavailable.";
 }
 
-function vehicleDefinitionCurrent() {
-  return Boolean(state.vehiclePayload) && !state.dirtyVehicle && state.vehicleDefinitionState === "current";
-}
-
-function vehicleDefinitionPending() {
-  return Boolean(state.vehiclePayload) && !state.dirtyVehicle && state.vehicleDefinitionState === "pending";
-}
-
-function canWriteMbd() {
-  return boblibInitialized() && activeVehicleConfigReady() && vehicleDefinitionPending() && !state.modelicaWriting;
-}
-
-function canUseStandardSim() {
-  return externalToolchainAvailable() && vehicleDefinitionCurrent() && activeVehicleConfigReady();
-}
-
 function canRunStandardWorkflow(workflow = selectedWorkflow()) {
   if (!workflow || !activeVehicleConfigReady() || state.dirtyVehicle) return false;
   if (workflow.id === "lap-qss" && selectedSimulation() &&
       [selectedSimulation().ggv_input, selectedSimulation().racing_line_input].some(input => input?.status !== "Ready")) return false;
-  return (!workflow.requires_mbd || canUseStandardSim()) && workflowAvailable(workflow);
+  return workflowAvailable(workflow);
 }
 
 function canSaveActiveResults() {
@@ -967,60 +950,7 @@ function renderTopbar() {
     const toolchain = openmodelicaToolchain();
     toolchainButton.title = toolchain.reason || "OpenModelica toolchain";
   }
-  renderModelicaStack();
-}
-
-function renderModelicaStack() {
-  const stack = state.status?.modelica || {};
-  const definitionCurrent = vehicleDefinitionCurrent() && activeVehicleConfigReady();
-  setModelicaStep(
-    "boblib-initialized-step",
-    boblibInitialized() ? "BobLib submodule initialized" : "BobLib submodule missing",
-    boblibInitialized() ? "ok" : "warn",
-  );
-  setModelicaStep(
-    "modelica-write-step",
-    modelicaDefinitionTitle(stack),
-    modelicaDefinitionTone(stack),
-  );
-
-  const vehicleBuild = stack.builds?.vehicle || {};
-  const fourPostBuild = stack.builds?.four_post || {};
-  const buildReadyTone = (build) => (["built", "cached"].includes(build.state) ? "ok" : "warn");
-  setModelicaStep(
-    "modelica-vehicle-build-step",
-    definitionCurrent ? `VehicleSim ${vehicleBuild.label || "status unknown"}` : "Save and write the vehicle config first",
-    definitionCurrent ? buildReadyTone(vehicleBuild) : "disabled",
-  );
-  setModelicaStep(
-    "modelica-four-post-build-step",
-    definitionCurrent ? `FourPostSim ${fourPostBuild.label || "status unknown"}` : "Save and write the vehicle config first",
-    definitionCurrent ? buildReadyTone(fourPostBuild) : "disabled",
-  );
-
   renderRailActions();
-}
-
-function setModelicaStep(stepId, title, tone) {
-  const step = document.getElementById(stepId);
-  if (step) step.className = `modelica-stack-step ${tone}`;
-  if (step) step.title = title;
-}
-
-function modelicaDefinitionTitle(stack) {
-  if (state.dirtyVehicle) return "Save the vehicle before writing the vehicle definition to MBD";
-  if (stack.state === "error") return stack.error || "Vehicle definition status unavailable";
-  if (state.vehicleDefinitionState === "current") return "Vehicle definition is current in MBD";
-  if (state.vehicleDefinitionState === "pending") return "Vehicle definition is saved and ready to write to MBD";
-  return "Save the vehicle before writing to MBD";
-}
-
-function modelicaDefinitionTone(stack) {
-  if (!state.vehiclePayload) return "disabled";
-  if (state.dirtyVehicle || state.vehicleDefinitionState === "invalid") return "error";
-  if (stack.state === "error") return "error";
-  if (state.vehicleDefinitionState === "current") return "ok";
-  return "warn";
 }
 
 function renderThemeButton() {
@@ -1054,8 +984,8 @@ function renderVehicleMenuActions() {
     label: "Save As",
     busy: state.vehicleSaving && actionBusy("menu-save-vehicle"),
     busyLabel: "Saving",
-    disabled: state.vehicleSaving || state.modelicaWriting || !state.vehiclePayload,
-    title: state.vehicleSaving ? "Vehicle save in progress." : state.modelicaWriting ? "MBD preparation in progress." : !state.vehiclePayload ? "No vehicle is loaded." : "",
+    disabled: state.vehicleSaving || !state.vehiclePayload,
+    title: state.vehicleSaving ? "Vehicle save in progress." : !state.vehiclePayload ? "No vehicle is loaded." : "",
   });
 }
 
@@ -1221,17 +1151,9 @@ function applySetupPaneWidth(width = state.setupPaneWidth, min, max) {
   }
 }
 
-function simulationLockedMessage() {
-  if (!activeVehicleConfigReady()) return "Save this vehicle to your library before running a simulation.";
-  if (!vehicleDefinitionCurrent()) return "Prepare the multibody (MBD) model from your saved vehicle before running a simulation.";
-  if (!externalToolchainAvailable()) return state.status?.external_toolchain?.reason || "Simulation runner unavailable.";
-  return "Simulation is available.";
-}
-
 function standardWorkflowLockedMessage(workflow = selectedWorkflow()) {
   if (!activeVehicleConfigReady()) return "Save this vehicle to your library first.";
   if (state.dirtyVehicle) return "Save your vehicle changes first.";
-  if (workflow?.requires_mbd && !canUseStandardSim()) return simulationLockedMessage();
   if (workflow?.id === "lap-qss" && selectedSimulation()) {
     const blocked = [selectedSimulation().ggv_input, selectedSimulation().racing_line_input].find(input => input?.status !== "Ready");
     if (blocked) return blocked.message;
@@ -1269,9 +1191,8 @@ function renderRailActions() {
       label: "Save Vehicle",
       busy: state.vehicleSaving && actionBusy("rail-save-vehicle"),
       busyLabel: "Saving",
-      disabled: !canSaveVehicle || state.modelicaWriting || state.vehicleSaving,
+      disabled: !canSaveVehicle || state.vehicleSaving,
       title: state.vehicleSaving ? "Vehicle save in progress."
-        : state.modelicaWriting ? "MBD preparation in progress."
         : !state.vehiclePayload ? "No vehicle is loaded."
         : state.dirtyVehicle
         ? "Save active vehicle edits and update the saved config"
@@ -1309,20 +1230,10 @@ function renderRailActions() {
   });
 }
 
-function mbdWriteDisabledReason() {
-  if (state.modelicaWriting) return "Writing vehicle definition to MBD";
-  if (!boblibInitialized()) return "Initialize the BobLib submodule first";
-  if (!state.vehiclePayload) return "Load or create a vehicle first";
-  if (!activeVehicleConfigReady()) return "Save this vehicle config before writing to MBD";
-  if (state.dirtyVehicle || state.vehicleDefinitionState === "invalid") return "Save the vehicle before writing to MBD";
-  if (state.vehicleDefinitionState === "current") return "Vehicle definition is already current in MBD";
-  return "Write the saved vehicle definition to MBD";
-}
-
 function renderSetup() {
   renderVehicleLibrary();
   renderVehicleEditor();
-  renderModelicaStack();
+  renderRailActions();
   renderVehiclePreview(state.vehiclePayload?.data || {});
   if (state.view === "setup" && isKinematicPlotArea()) queueKinematicsRefresh();
 }
@@ -1578,7 +1489,7 @@ function updateDirtyState() {
   setSaveStatus("");
   renderMode();
   renderRailActions();
-  renderModelicaStack();
+  renderRailActions();
 }
 
 function applyVehicleDataToPayload(data) {
@@ -3499,43 +3410,6 @@ async function saveVehicleAs({ useNameInput = true, actionKey = "rail-save-vehic
     state.vehicleSaving = false;
     if (state.busyAction === actionKey) state.busyAction = null;
     renderBusyActionSurfaces();
-  }
-}
-
-async function generateModelicaFromVehicle({ actionKey = "rail-write-mbd" } = {}) {
-  if (!canWriteMbd()) {
-    const saveStatus = document.getElementById("save-status");
-    if (saveStatus) saveStatus.textContent = mbdWriteDisabledReason();
-    renderRailActions();
-    return;
-  }
-  state.modelicaWriting = true;
-  state.busyAction = actionKey;
-  renderBusyActionSurfaces();
-  renderModelicaStack();
-  try {
-    const generated = await api("/api/modelica/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    state.vehicleDefinitionState = "current";
-    state.status = await api("/api/status");
-    await refreshSavedResults();
-    await refreshResultSources();
-    await refreshProcessingWorkflows();
-    setSaveStatus(`Wrote ${generated.record?.name || "vehicle definition"} to MBD`);
-    renderTopbar();
-    renderModelicaStack();
-    setView("standard");
-  } catch (error) {
-    setSaveStatus(error.message);
-    renderModelicaStack();
-  } finally {
-    state.modelicaWriting = false;
-    if (state.busyAction === actionKey) state.busyAction = null;
-    renderBusyActionSurfaces();
-    renderModelicaStack();
   }
 }
 
@@ -7764,16 +7638,12 @@ function renderJobs() {
   const busy = (state.status?.jobs || []).find(job => ["queued", "running"].includes(job.status));
   const canRun = !busy && Boolean(state.selectedSimulationId) && canRunStandardWorkflow(workflow);
   runButton.disabled = !canRun;
-  const runVerb = workflow?.actions.length > 1 ? "Build + run" : "Run";
+  const runVerb = "Run";
   runButton.textContent = busy?.simulation?.id === state.selectedSimulationId ? "Running" : runVerb;
   runButton.title = busy ? "A simulation is running." : !state.selectedSimulationId ? "No simulation is selected." : canRun ? "" : standardWorkflowLockedMessage(workflow);
   const readiness = document.getElementById("sim-readiness");
   readiness.hidden = workflow?.id === "lap-qss" && !busy;
   readiness.textContent = busy ? `${busy.label}. Settings are locked while it runs.` : canRun ? "" : standardWorkflowLockedMessage(workflow);
-  const prepare = document.getElementById("sim-prepare-mbd");
-  prepare.hidden = !workflow?.requires_mbd || vehicleDefinitionCurrent();
-  prepare.disabled = !canWriteMbd();
-  prepare.title = prepare.disabled ? mbdWriteDisabledReason() : "";
   renderRunLog();
 }
 
@@ -14944,13 +14814,12 @@ function wireEvents() {
   document.getElementById("save-raw-btn").addEventListener("click", saveRawVehicle);
   document.getElementById("run-workflow-btn").addEventListener("click", startSelectedWorkflow);
   document.getElementById("simulation-next-btn").addEventListener("click", () => {
-    if (activeVehicleConfigReady() && vehicleDefinitionCurrent()) openModelicaToolchain();
+    if (activeVehicleConfigReady()) openModelicaToolchain();
     else setView("setup");
   });
   document.getElementById("run-study-btn")?.addEventListener("click", saveActiveResults);
   document.getElementById("add-processing-btn")?.addEventListener("click", addProcessingWorkflow);
   document.getElementById("remove-processing-btn")?.addEventListener("click", removeSelectedProcessingWorkflow);
-  document.getElementById("sim-prepare-mbd").addEventListener("click", () => generateModelicaFromVehicle());
   document.getElementById("apply-sim-config-btn").addEventListener("click", applySimConfigEdits);
   document.getElementById("apply-study-config-btn")?.addEventListener("click", applyStudyConfigEdits);
   document.getElementById("save-study-config-btn")?.addEventListener("click", saveStudyConfigAs);
@@ -15053,7 +14922,7 @@ setInterval(async () => {
     state.status = await api("/api/status");
     await refreshSavedResults();
     renderTopbar();
-    renderModelicaStack();
+    renderRailActions();
     if (state.view === "studies") renderStudies();
     else if (state.view === "standard") renderStandard();
   }

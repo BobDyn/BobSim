@@ -359,3 +359,17 @@ and actual transient outputs. The lap PDF includes these pages automatically.
 The exact linked GGV is archived with the run. See
 [Operating-state frequency](../docs/lap-time-simulation.md#operating-state-frequency)
 for axis, binning and validity conventions.
+
+### Architecture owns compilation
+
+All app vehicle-response workflows (ramp steer, steady state, transient, step steer
+and configurable maneuver) run the cached Architecture maneuver executable through
+`native_response.py`. Four Post uses the cached axle rigs. Simulation has no record-
+preparation or build action; missing, stale or damaged bundles disable Run and point
+back to Architecture. Runtime execution does not require the OpenModelica compiler.
+
+Saved setup values are validated against the binary contract and applied to every
+case. Native driver aliases map legacy report settings onto the current `driver`
+parameters. Unknown or frozen overrides fail rather than being silently ignored.
+Reports and captured Modelica signals retain the existing processing paths. The
+standalone CLI standard-study commands retain their explicit build workflow.

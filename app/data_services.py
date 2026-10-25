@@ -1990,6 +1990,16 @@ def _workflow_run_target(workflow: WorkflowSpec) -> BuildTargetSpec | None:
 
 
 def _workflow_run_roots(workflow: WorkflowSpec) -> tuple[Path, ...]:
+    from app.native_response import ACTIONS
+    if any(action in ACTIONS for action in workflow.actions):
+        from common import native_artifacts
+        from common.vehicle_io import load_yaml
+        try:
+            selection = native_artifacts.architecture(load_yaml(ROOT / "vehicle.yml"))
+            directory = native_artifacts.artifact_dir(selection, "maneuver")
+            return (directory / "results", directory / "runs")
+        except (OSError, ValueError, KeyError):
+            return ()
     target = _workflow_run_target(workflow)
     if not target:
         return ()

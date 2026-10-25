@@ -24,7 +24,9 @@ def test_python_workflows_do_not_require_openmodelica(monkeypatch):
         assert not payload["requires_mbd"]
         assert payload["model"]["engine"] == "DynPy"
         assert payload["model"]["model_dofs"]
-    assert not app.workflow_available(next(w for w in app.WORKFLOWS if w.id == "transient"))
+    from app import native_response
+    monkeypatch.setattr(native_response, "unavailable_reason", lambda vehicle: "")
+    assert app.workflow_available(next(w for w in app.WORKFLOWS if w.id == "transient"))
 
 
 @pytest.mark.parametrize("workflow_id", ("reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient"))
@@ -183,14 +185,14 @@ def test_ramp_uses_active_rate_and_exports_its_own_report(tmp_path, monkeypatch)
 
 
 def test_mbd_step_dispatch_uses_its_active_config(tmp_path, monkeypatch):
-    from simulations.response.mbd.transient import transient_eval_sim
+    from app import native_response
 
     monkeypatch.setattr(python_simulations, "repo_root", lambda: tmp_path)
     active = config_io.active_config_path("step_steer_config.yml", root=tmp_path)
     active.parent.mkdir(parents=True)
     active.write_text("test:\n  run_step: true\n  run_continuous_sine: false\n")
     seen = []
-    monkeypatch.setattr(transient_eval_sim, "main", lambda config: seen.append(config))
+    monkeypatch.setattr(native_response, "run", lambda workflow, config_path: seen.append(config_path))
     python_simulations.run("mbd-step-steer")
     assert seen == [active]
 
@@ -207,7 +209,7 @@ def test_mbd_step_builds_only_step_cases(monkeypatch):
     assert all(item["mode"] == "step" for item in metadata)
     assert all(case["useMode"] == 2 for case in cases)
     assert config["report"]["output_path"].endswith("/step_steer_report.pdf")
-    assert app.MODELICA_RUN_TARGETS_BY_ACTION["run-mbd-step-steer"].id == "vehicle"
+    assert "run-mbd-step-steer" not in app.MODELICA_RUN_TARGETS_BY_ACTION
 
 
 def test_legacy_ramp_keeps_its_end_when_simulation_duration_changes(tmp_path, monkeypatch):

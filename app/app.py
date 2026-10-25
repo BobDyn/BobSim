@@ -155,13 +155,8 @@ PYTHON_MODULE_ARG = "--run-module" if FROZEN_APP else "-m"
 ACTION_SPECS = build_action_specs(ROOT, PYTHON, PYTHON_MODULE_ARG)
 MODELICA_BUILD_TARGETS = build_modelica_build_targets()
 MODELICA_BUILD_TARGETS_BY_ACTION = {target.action_id: target for target in MODELICA_BUILD_TARGETS.values()}
-MODELICA_RUN_TARGETS_BY_ACTION = {
-    "run-ramp-steer": MODELICA_BUILD_TARGETS["vehicle"],
-    "run-steady-state": MODELICA_BUILD_TARGETS["vehicle"],
-    "run-transient": MODELICA_BUILD_TARGETS["vehicle"],
-    "run-mbd-step-steer": MODELICA_BUILD_TARGETS["vehicle"],
-    "run-mbd-maneuver": MODELICA_BUILD_TARGETS["vehicle"],
-}
+MODELICA_RUN_TARGETS_BY_ACTION: dict[str, BuildTargetSpec] = {}
+
 WORKFLOWS = build_workflows()
 
 
@@ -285,13 +280,21 @@ def external_toolchain_payload() -> dict[str, Any]:
     return openmodelica_toolchain_payload()
 
 def action_available(action: ActionSpec) -> bool:
-    if action.id == "run-four-post":
+    from app.native_response import ACTIONS
+    if action.id == "run-four-post" or action.id in ACTIONS:
         return not unavailable_action_reason(action)
     return (action.id not in app_registry.LEGACY_RESPONSE_ACTIONS
             and (not action.requires_external_toolchain or external_toolchain_available()))
 
 
 def unavailable_action_reason(action: ActionSpec) -> str:
+    from app.native_response import ACTIONS, unavailable_reason as response_reason
+    if action.id in ACTIONS:
+        from common.vehicle_io import load_yaml
+        try:
+            return response_reason(load_yaml(ROOT / "vehicle.yml"))
+        except (OSError, ValueError, TypeError):
+            return "Save a vehicle and build its maneuver binary in Architecture first."
     if action.id == "run-four-post":
         from app.native_four_post import unavailable_reason
         from common.vehicle_io import load_yaml

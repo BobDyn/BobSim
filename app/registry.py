@@ -860,36 +860,22 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             requires_external_toolchain=True,
         ),
         "run-ramp-steer": ActionSpec(
-            id="run-ramp-steer",
-            label="Run RampSteerEval",
-            argv=_python_module_argv(
-                python, python_module_arg, "simulations.response.mbd.ramp_steer.ramp_steer_eval_sim"
-            ),
-            requires_external_toolchain=True,
+            id="run-ramp-steer", label="Run ramp-steer",
+            argv=(*_python_module_argv(python, python_module_arg, "app.native_response"), "ramp-steer"),
         ),
         "run-steady-state": ActionSpec(
-            id="run-steady-state",
-            label="Run SteadyStateEval",
-            argv=_python_module_argv(
-                python, python_module_arg, "simulations.response.mbd.steady_state.steady_state_eval_sim"
-            ),
-            requires_external_toolchain=True,
+            id="run-steady-state", label="Run steady-state",
+            argv=(*_python_module_argv(python, python_module_arg, "app.native_response"), "steady-state"),
         ),
         "run-transient": ActionSpec(
-            id="run-transient",
-            label="Run TransientEval",
-            argv=_python_module_argv(
-                python, python_module_arg, "simulations.response.mbd.transient.transient_eval_sim"
-            ),
-            requires_external_toolchain=True,
+            id="run-transient", label="Run transient",
+            argv=(*_python_module_argv(python, python_module_arg, "app.native_response"), "transient"),
         ),
         "run-mbd-maneuver": ActionSpec(id="run-mbd-maneuver", label="Run maneuver",
-            argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-maneuver"),
-            requires_external_toolchain=True),
+            argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-maneuver")),
         "run-mbd-step-steer": ActionSpec(
             id="run-mbd-step-steer", label="Run MBD step steer",
             argv=(*_python_module_argv(python, python_module_arg, "app.python_simulations"), "mbd-step-steer"),
-            requires_external_toolchain=True,
         ),
         "run-four-post": ActionSpec(
             id="run-four-post",
@@ -974,7 +960,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             group="standard",
             label="RampSteerEval",
             config="simulations/response/mbd/ramp_steer/ramp_steer_eval_config.yml",
-            actions=("build-vehicle", "run-ramp-steer"),
+            actions=("run-ramp-steer",),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/ramp_steer_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/ramp_steer_eval_report_metrics.csv", "csv"),
@@ -988,7 +974,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             group="standard",
             label="SteadyStateEval",
             config="simulations/response/mbd/steady_state/steady_state_eval_config.yml",
-            actions=("build-vehicle", "run-steady-state"),
+            actions=("run-steady-state",),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/steady_state_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/steady_state_eval_report_metrics.csv", "csv"),
@@ -1002,7 +988,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             group="standard",
             label="TransientEval",
             config="simulations/response/mbd/transient/transient_eval_config.yml",
-            actions=("build-vehicle", "run-transient"),
+            actions=("run-transient",),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/transient_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/transient_eval_report_metrics.csv", "csv"),
@@ -1028,7 +1014,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             id="mbd-step-steer", group="response", label="Step steer",
             engine="BobLib", fidelity="MBD", runtime="OpenModelica compiled executable",
             config="simulations/response/mbd/transient/step_steer_config.yml",
-            actions=("build-vehicle", "run-mbd-step-steer"),
+            actions=("run-mbd-step-steer",),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/step_steer_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/step_steer_report_metrics.csv", "csv"),
@@ -1039,7 +1025,7 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             fidelity="MBD" if name == "mbd-maneuver" else "Transient",
             runtime="OpenModelica compiled executable" if name == "mbd-maneuver" else "Python",
             config="simulations/response/maneuver_config.yml",
-            actions=("build-vehicle", "run-mbd-maneuver") if name == "mbd-maneuver" else ("run-maneuver",),
+            actions=("run-mbd-maneuver",) if name == "mbd-maneuver" else ("run-maneuver",),
             outputs=(OutputSpec("Report", f"app/user_data/results/{name}/report.pdf", "pdf"),
                      *((OutputSpec("Metrics", f"app/user_data/results/{name}/report_metrics.csv", "csv"),)
                        if name == "mbd-maneuver" else (

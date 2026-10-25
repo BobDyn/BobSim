@@ -47,6 +47,8 @@ def run(workflow_id: str) -> None:
             from common.reporting.report_engine import ReportEngine
             mbd_settings = mbd_config(data, load_yaml(
                 root / "simulations/response/mbd/transient/transient_eval_config.yml"))
+            from app.native_response import configure
+            mbd_settings = configure(mbd_settings)
             simulator = TransientEvalSim(mbd_settings)
             cases, metadata = simulator.build_cases()
             selected = [(case, meta) for case, meta in zip(cases, metadata)
@@ -59,10 +61,9 @@ def run(workflow_id: str) -> None:
             ReportEngine(mbd_settings).build(result_mbd)
             return
     if workflow_id == "mbd-step-steer":
-        from simulations.response.mbd.transient.transient_eval_sim import main as run_mbd_transient
-
+        from app.native_response import run as run_native_response
         config = config_io.resolve("simulations/response/mbd/transient/step_steer_config.yml", root=root)
-        run_mbd_transient(config)
+        run_native_response("mbd-step-steer", config_path=config)
         return
     if workflow_id in {"lap-qss", "lap-transient"}:
         config = config_io.resolve("simulations/lap/lap_time_eval_config.yml", root=root)

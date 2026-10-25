@@ -720,6 +720,14 @@ class ModelicaRunner:
 
     def _write_override_file(self, path, case):
         init_defaults = self._init_parameter_defaults()
+        simulation = getattr(self, "simulation", {})
+        aliases = simulation.get("override_aliases", MODELICA_OVERRIDE_ALIASES)
+        case = {aliases.get(key, key): value
+                for key, value in {**simulation.get("runtime_overrides", {}), **case}.items()}
+        editable = None
+        if simulation.get("strict_overrides"):
+            editable = {v.get("name") for v in ET.parse(self.init_xml).getroot().iter("ScalarVariable")
+                        if v.get("isValueChangeable") == "true"}
         with Path(path).open("w", newline="\n") as f:
             for key, value in case.items():
                 # "_" keys are Python-only metadata.
@@ -727,17 +735,21 @@ class ModelicaRunner:
                     continue
 
                 # _build_command() passes these as runtime flags.
-                if key in {"startTime", "stopTime"}:
+                if key in {"startTime", "stopTime", "stepSize"}:
                     continue
 
-                modelica_key = MODELICA_OVERRIDE_ALIASES.get(key, key)
+                modelica_key = key
                 formatted_value = self._format_override_value(value)
                 if init_defaults is not None:
                     default_value = init_defaults.get(modelica_key)
                     if default_value is None:
+                        if editable is not None:
+                            raise ValueError(f"Unknown native experiment parameter: {modelica_key}")
                         continue
                     if self._override_matches_default(formatted_value, default_value):
                         continue
+                if editable is not None and modelica_key not in editable:
+                    raise ValueError(f"Native experiment parameter is not editable: {modelica_key}")
                 f.write(f"{modelica_key}={formatted_value}\n")
 
     def _init_parameter_defaults(self) -> dict[str, str] | None:
@@ -843,7 +855,8 @@ class ModelicaRunner:
         variable_filter = self.simulation.get("variable_filter")
         if variable_filter:
             from visualization.from_results import variable_filter as geometry_filter
-            variable_filter += "|" + geometry_filter(prefix="chassis.detailedChassis.")
+            prefix = self.simulation.get("geometry_prefix", "chassis.detailedChassis.")
+            variable_filter += "|" + geometry_filter(prefix=prefix)
             cmd.append(f"-variableFilter={variable_filter}")
         # Geometry is captured alongside scalar outputs for automatic replay.
         if "-emit_protected" not in self.simulation.get("extra_args", []):
