@@ -54,7 +54,10 @@ braking thereafter, matching the report adapter. It writes a scene plus capture
 logs and provenance in `visualization/results/`. The source metadata associates
 the scene with that vehicle and simulation's Animation view. Cached original
 binaries and original native CSVs must still exist; a different binary is never
-silently substituted. Playback defaults to 4×; Export video uses the same rate.
+silently substituted. Orange arrows show the imposed contact-patch forces in world
+coordinates, with a fixed scale of 1 m per 1000 N; signed components appear in the
+signal plots. Display settings → Force vectors toggles them. These are applied
+loads, not vertical support reactions or a tire friction model. Playback defaults to 4×; Export video uses the same rate.
 
 ## Scene Capture
 

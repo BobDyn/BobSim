@@ -151,7 +151,8 @@
         state.viewer.layers[key] = box.checked;
       });
       wrap.appendChild(box);
-      wrap.appendChild(document.createTextNode(label));
+      wrap.appendChild(document.createTextNode(key === "arrows" && header.force_vectors
+        ? "Applied forces · 1 m = 1 kN" : label));
       menu.appendChild(wrap);
       if (key === "tracks") {
         const legend = document.createElement("div");

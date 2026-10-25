@@ -626,6 +626,7 @@
 
     load(scene) {
       this.scene = scene;
+      this.layers.arrows = Boolean(scene.header.force_vectors);
       this.simTime = scene.time.length ? scene.time[0] : 0;
       this.resetView();
     }
@@ -976,8 +977,17 @@
         for (const arrow of header.arrows) {
           scene.point(arrow.origin, f, pa);
           scene.vector(arrow.slot, f, va);
-          const tip = add(pa, scale(va, arrow.scale));
+          const delta = scale(va, arrow.scale);
+          const length = Math.hypot(...delta);
+          if (length < 1e-8) continue;
+          const direction = scale(delta, 1 / length);
+          const tip = add(pa, delta);
           this.segment(pa, tip, arrow.rgb, arrow.shaft_radius);
+          const head = Math.min(0.08, length * 0.3);
+          const base = sub(tip, scale(direction, head));
+          const side = unit(cross(direction, Math.abs(direction[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]));
+          this.segment(tip, add(base, scale(side, head * 0.45)), arrow.rgb, arrow.shaft_radius);
+          this.segment(tip, sub(base, scale(side, head * 0.45)), arrow.rgb, arrow.shaft_radius);
         }
       }
 

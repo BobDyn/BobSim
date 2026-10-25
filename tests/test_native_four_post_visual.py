@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from app.visual import available_runs
-from visualization.native_four_post import combine, geometry_filter, verify_replay
+from visualization.native_four_post import add_applied_forces, combine, geometry_filter, verify_replay
 
 
 def test_capture_is_bound_to_original_vehicle_and_simulation(tmp_path: Path):
@@ -48,3 +48,21 @@ def test_filter_captures_physical_pickups_and_wheel_orientations():
                  "axle.rightBellcrank.pickupFrame2.r_0[3]", "axle.toLeftWheelCenter.frame_b.R.T[2,3]"):
         assert pattern.fullmatch(name), name
     assert not pattern.fullmatch("unrelated.signal")
+
+
+def test_applied_vectors_preserve_sign_and_magnitude_without_reaction_substitution():
+    columns = {"time": np.array([0., 1.])}
+    for prefix in ("fr", "rr"):
+        for side in ("left", "right"):
+            columns[f"{prefix}.{side}Load.worldForce.force[1]"] = np.array([-100., 200.])
+            columns[f"{prefix}.{side}Load.worldForce.force[2]"] = np.array([300., -400.])
+    config = {"geometry": {}, "render": {}, "plots": []}
+    signals = {}
+    add_applied_forces(config, signals, columns)
+    for corner, vector in config["geometry"]["vectors"]["applied_force"].items():
+        assert vector["origin"] == corner + "_ContactPatch"
+        values = np.array([signals[name] for name in vector["direction"]]).T
+        np.testing.assert_allclose(values * vector["scale"], [[-.1, .3, 0], [.2, -.4, 0]])
+    del columns["fr.leftLoad.worldForce.force[1]"]
+    with pytest.raises(ValueError, match="omitted applied force"):
+        add_applied_forces(config, {}, columns)

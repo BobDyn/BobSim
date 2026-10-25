@@ -33,7 +33,7 @@ def geometry_filter() -> str:
     frames = {template.format(axle="axle", side=side, Side=side.title())
               for template in from_results.FRAME_MAP.values() for side in ("left", "right")}
     frames.update("axle." + side + frame for side in ("left", "right") for frame in _FRAME_ALIASES.values())
-    parts = ["time", r"knc\..*", "inputs.steer"]
+    parts = ["time", r"knc\..*", "inputs.steer", r"(left|right)Load\.worldForce\.force\[[123]\]"]
     parts.extend(re.escape(frame) + r"\.r_0\[[123]\]" for frame in sorted(frames))
     parts.extend(re.escape(from_results.WHEEL_FRAME.format(axle="axle", Side=side.title()))
                  + r"\.R\.T\[[123],[123]\]" for side in ("left", "right"))
@@ -86,7 +86,7 @@ def verify_replay(captured: dict, original: dict) -> None:
     if not np.isclose(captured["time"][-1], original["time"][-1], atol=1e-8, rtol=0):
         raise ValueError("Geometry capture did not complete the archived protocol")
     for key in original:
-        if not key.startswith("knc."):
+        if not (key.startswith("knc.") or ".worldForce.force[" in key):
             continue
         if key not in captured:
             raise ValueError(f"Capture omitted archived measurement {key}")
@@ -126,6 +126,25 @@ def combine(frames: dict[str, dict]) -> dict[str, np.ndarray]:
     return output
 
 
+def add_applied_forces(config: dict, signals: dict, columns: dict) -> None:
+    """Attach world-resolved imposed forces at contact patches with a fixed scale."""
+    vectors = {}
+    for corner, prefix, side in (("fl", "fr", "left"), ("fr", "fr", "right"),
+                                 ("rl", "rr", "left"), ("rr", "rr", "right")):
+        names = [f"{prefix}.{side}Load.worldForce.force[{axis}]" for axis in (1, 2, 3)]
+        if any(name not in columns for name in names[:2]):
+            raise ValueError(f"Capture omitted applied force at {corner}")
+        # ContactPatchForceActuator fixes Fz=0; native CSV omits constants.
+        signals.update({name: columns[name] for name in names[:2]})
+        signals[names[2]] = columns.get(names[2], np.zeros_like(columns["time"]))
+        vectors[corner] = {"origin": corner + "_ContactPatch", "direction": names,
+                           "scale": 0.001, "color": "#e67722", "shaft_radius": 0.009}
+        for axis, name in zip(("x", "y", "z"), names):
+            config["plots"].append({"name": f"{corner.upper()} applied F{axis} (N)", "x": "time", "y": name})
+    config["geometry"]["vectors"] = {"applied_force": vectors}
+    config["render"]["force_vectors"] = True
+
+
 def capture(run_directory: Path, *, root: Path | None = None) -> Path:
     """Write a replay scene linked to the saved simulation and vehicle workspace."""
     root = (root or repo_root()).resolve()
@@ -155,6 +174,12 @@ def capture(run_directory: Path, *, root: Path | None = None) -> Path:
     _, _, summary = from_results.convert(merged, template.with_suffix(".npz"), template,
                                         vehicle_yaml=vehicle_path, metrics_csv=run_directory / "files/metrics.csv")
     config = yaml.safe_load(template.read_text())
+    with np.load(template.with_suffix(".npz")) as stored:
+        scene_signals = dict(stored)
+    add_applied_forces(config, scene_signals, signals)
+    summary["applied_force_vectors"] = 4
+    summary["plots"] = len(config["plots"])
+    np.savez_compressed(template.with_suffix(".npz"), **scene_signals)
     for corner, tire in config["geometry"]["tires"].items():
         wheel = vehicle["front" if corner.startswith("f") else "rear"]["wheel"]
         tire["radius"] = wheel["radius_m"]
