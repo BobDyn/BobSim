@@ -30,7 +30,11 @@
     return `<label class="report-check"><input type="checkbox" ${attrs} ${value ? 'checked' : ''}>${esc(label)}</label>`;
   }
   function signal(label, axis, cfg) {
-    return field(label, cfg?.key, `data-axis="${axis}" data-prop="key" list="report-signals" placeholder="Find a signal"`);
+    const keys=editor.signals.map(signal=>signal.key);
+    if(cfg?.key && !keys.includes(cfg.key)) keys.unshift(cfg.key);
+    return `<div class="report-signal-picker">
+      ${field('Filter signals','', 'type="search" data-signal-filter placeholder="Search all signals"')}
+      ${select(label,cfg?.key,keys,`data-axis="${axis}" data-prop="key"`)}</div>`;
   }
   const unitGroups = [
     {m:1, cm:.01, mm:.001, in:.0254}, {rad:1, deg:Math.PI/180},
@@ -149,6 +153,27 @@
     if(editor.activeSub!==null || editor.pageTools) renderDetail();
     dialog.querySelector('[data-report-count]').textContent=`${entries.filter(([,p])=>p.enabled!==false).length} pages · ${editor.signals.length} signals`;
   }
+  function editTitle(card, target, index) {
+    editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
+    const plot=editor.plots[card.dataset.reportPage];
+    const sub=plot.subplots?.[index] || plot;
+    const input=document.createElement('input');
+    input.className='report-inline-title';input.setAttribute('aria-label','Subplot title');
+    input.value=sub.title || '';input.style.cssText=target.style.cssText;
+    input.style.fontSize=`${Math.max(12,target.offsetHeight*.85)}px`;
+    target.parentElement.append(input);
+    let cancelled=false;
+    input.addEventListener('keydown',event=>{
+      if(event.key==='Enter' || event.key==='Escape') {
+        event.preventDefault();event.stopPropagation();cancelled=event.key==='Escape';input.blur();
+      }
+    });
+    input.addEventListener('blur',()=>{
+      if(!cancelled && input.value!==sub.title) {sub.title=input.value;changed();}
+      input.remove();
+    },{once:true});
+    input.focus({preventScroll:true});input.select();
+  }
   function renderDetail() {
     dialog.querySelectorAll('.report-onplot-editor').forEach(el=>el.remove());
     dialog.querySelectorAll('[data-report-page]').forEach(card=>card.classList.toggle('selected',card.dataset.reportPage===editor.selected));
@@ -170,10 +195,8 @@
       const sub=subs()[editor.activeSub];
       if(!sub) return;
       panel.classList.toggle('report-label-editor',Boolean(editor.activeLabel));
-      panel.querySelector('header span').textContent=editor.activeLabel==='title'?'Plot title':editor.activeLabel?`${editor.activeLabel.toUpperCase()} axis`:`Plot ${editor.activeSub+1}`;
-      panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel==='title'
-        ? `<div data-sub="${editor.activeSub}">${field('Title',sub.title,'data-subprop="title"')}</div>`
-        : editor.activeLabel ? axisHtml(sub,editor.activeLabel) : subHtml(sub,editor.activeSub);
+      panel.querySelector('header span').textContent=editor.activeLabel?`${editor.activeLabel.toUpperCase()} axis`:`Plot ${editor.activeSub+1}`;
+      panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel ? axisHtml(sub,editor.activeLabel) : subHtml(sub,editor.activeSub);
       const preview=previews.get(pagePreviewKey(editor.selected));
       const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel)) || preview?.axes?.[editor.activeSub];
       panel.style.left=`${Math.min((box?.x||.05)*100,48)}%`;
@@ -229,6 +252,18 @@
     if(!item || at<0) return;
     rest.splice(at+(after?1:0),0,item); editor.plots=Object.fromEntries(rest); changed(); renderPages(); renderDetail();
   }
+  dialog.addEventListener('input',event=>{
+    if(!event.target.hasAttribute('data-signal-filter')) return;
+    const picker=event.target.closest('.report-signal-picker');
+    const query=event.target.value.trim().toLowerCase();
+    const select=picker.querySelector('select');
+    const selected=select.value;
+    const keys=editor.signals.map(signal=>signal.key).filter(key=>key.toLowerCase().includes(query));
+    select.innerHTML=keys.map(key=>`<option value="${esc(key)}" ${key===selected?'selected':''}>${esc(key)}</option>`).join('');
+    // Filtering must not select or apply another signal on the user's behalf.
+    select.value=selected;
+    select.size=query?Math.min(6,Math.max(2,keys.length)):1;
+  });
   dialog.addEventListener('change', event => {
     const el=event.target;
     const card=el.closest('[data-report-page]');
@@ -236,6 +271,7 @@
       editor.plots[card.dataset.reportPage][el.hasAttribute('data-sheet-title')?'title':'enabled']=el.hasAttribute('data-sheet-title')?el.value:el.checked;changed();return;
     }
     if(card && el.hasAttribute('data-layout')) {editor.selected=card.dataset.reportPage;editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;}
+    if(el.hasAttribute('data-signal-filter')) return;
     const p=page();if(!p)return;
     const sub=el.closest('[data-sub]') ? subs()[Number(el.closest('[data-sub]').dataset.sub)] : null;
     let value = el.type==='checkbox' ? el.checked : el.hasAttribute('data-number') ? Number(el.value) : el.value;
@@ -275,7 +311,9 @@
     const card=event.target.closest('[data-report-page]');
     const label=event.target.closest('[data-edit-label]');
     if(card && label) {
-      editor.selected=card.dataset.reportPage;editor.activeSub=Number(label.dataset.labelSub);
+      editor.selected=card.dataset.reportPage;
+      if(label.dataset.editLabel==='title') {editTitle(card,label,Number(label.dataset.labelSub));return;}
+      editor.activeSub=Number(label.dataset.labelSub);
       editor.activeLabel=label.dataset.editLabel;editor.pageTools=false;renderDetail();return;
     }
     const plot=event.target.closest('[data-edit-sub]');

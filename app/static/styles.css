@@ -5376,3 +5376,7 @@ summary:focus-visible {
 .report-label-editor { width:300px; }
 .report-label-editor .form-field { margin-bottom:12px; }
 .report-unit-note { font-size:12px; color:var(--text-muted); line-height:1.5; }
+
+.report-inline-title { position:absolute; z-index:12; box-sizing:content-box; min-width:120px; min-height:20px; padding:2px 6px; margin:-3px -7px; text-align:center; color:var(--ink); background:var(--surface); border:1px solid #4ea1ff; border-radius:3px; font-family:inherit; }
+.report-signal-picker { min-width:0; }
+.report-signal-picker select { width:100%; min-width:0; text-overflow:ellipsis; }
