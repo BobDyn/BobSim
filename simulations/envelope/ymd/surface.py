@@ -48,13 +48,18 @@ def save_limit_surface(sweep, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["speed_mps", "ay_mps2", "ay_g", "mz_min_nm", "mz_max_nm", "valid"])
+        writer.writerow(["speed_mps", "ay_mps2", "ay_g", "mz_min_nm", "mz_max_nm", "valid",
+                         "slice_has_load_extrapolation"])
         for result in sweep.results:
+            diagnostics = result.diagnostics or {}
+            load_valid = diagnostics.get("tire_load_valid", np.ones_like(result.ay))
+            extrapolated = bool(np.any(result.converged & (load_valid == 0)))
             ay, low, high = lateral_moment_limits(result.ay, result.mz, result.converged)
             if not len(ay):
-                writer.writerow([result.speed, "nan", "nan", "nan", "nan", 0])
+                writer.writerow([result.speed, "nan", "nan", "nan", "nan", 0, int(extrapolated)])
             for x, lower, upper in zip(ay, low, high):
-                writer.writerow([result.speed, x, x / 9.80665, lower, upper, int(np.isfinite(lower + upper))])
+                writer.writerow([result.speed, x, x / 9.80665, lower, upper, int(np.isfinite(lower + upper)),
+                                 int(extrapolated)])
 
 
 def limit_surface_figure(sweep):
@@ -63,24 +68,43 @@ def limit_surface_figure(sweep):
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection="3d")
     maps = [lateral_moment_limits(r.ay, r.mz, r.converged) for r in sweep.results]
-    for i in range(len(maps) - 1):
-        if not len(maps[i][0]) or not len(maps[i + 1][0]):
-            continue
-        x = np.stack([maps[i][0], maps[i + 1][0]]) / 9.80665
-        speed = np.broadcast_to(np.asarray(sweep.speeds[i:i + 2])[:, None], x.shape)
-        for index, color in ((1, "#287cb8"), (2, "#e17732")):
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+    from matplotlib.patches import Patch
+    # Opaque triangles in a shared collection avoid translucent face
+    # overlap and per-polygon depth sorting artifacts. No smoothing of physics.
+    faces, colors = [], []
+    for index, color in ((1, "#287cb8"), (2, "#e17732")):
+        for i in range(len(maps) - 1):
+            if not len(maps[i][0]) or not len(maps[i + 1][0]):
+                continue
+            x = np.stack([maps[i][0], maps[i + 1][0]]) / 9.80665
             yaw = np.stack([maps[i][index], maps[i + 1][index]])
-            # Each face needs four valid corners. Mask neighboring samples too
-            # so matplotlib cannot drop one NaN vertex and bridge a rejected cell.
+            speed = np.broadcast_to(np.asarray(sweep.speeds[i:i + 2])[:, None], x.shape)
             ok = np.isfinite(yaw)
             cells = ok[:, :-1].all(axis=0) & ok[:, 1:].all(axis=0)
             for j in np.flatnonzero(cells):
-                ax.plot_surface(x[:, j:j + 2], yaw[:, j:j + 2], speed[:, j:j + 2],
-                                color=color, alpha=.55, linewidth=0)
+                vertices = [(x[a, b], yaw[a, b], speed[a, b])
+                            for a, b in ((0, j), (0, j + 1), (1, j + 1), (1, j))]
+                faces.extend([[vertices[0], vertices[1], vertices[2]],
+                              [vertices[0], vertices[2], vertices[3]]])
+                colors.extend([color, color])
+    if faces:
+        ax.add_collection3d(Poly3DCollection(faces, facecolors=colors, edgecolors="none",
+                                            linewidths=0, antialiaseds=False, alpha=1))
+        vertices = np.asarray(faces).reshape(-1, 3)
+        ax.auto_scale_xyz(vertices[:, 0], vertices[:, 1], vertices[:, 2])
+    ax.legend(handles=[Patch(color="#287cb8", label="Lower sampled yaw limit"),
+                       Patch(color="#e17732", label="Upper sampled yaw limit")], loc="upper left")
     ax.set(xlabel="Lateral acceleration (g)", ylabel="Yaw moment (N m)", zlabel="Speed (m/s)",
            title="YMD sampled limit surface · 14DOF")
     ax.view_init(elev=24, azim=-55)
-    fig.tight_layout()
+    extrapolated = sum(int(np.count_nonzero(r.converged &
+                       ((r.diagnostics or {}).get("tire_load_valid", np.ones_like(r.ay)) == 0)))
+                       for r in sweep.results)
+    if extrapolated:
+        fig.text(.5, .02, f"Includes {extrapolated} states outside the tire load-fit range · extrapolated",
+                 ha="center", fontsize=10, color="#8c471c")
+    fig.tight_layout(rect=(0, .04, 1, 1))
     return fig
 
 

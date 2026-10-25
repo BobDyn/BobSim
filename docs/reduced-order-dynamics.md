@@ -231,9 +231,13 @@ zero-yaw-moment trim curve. This differs from GGV's speed/ax/ay surface.
 YMD holds the configured yaw rate; it does not solve a full combined-acceleration
 GGV surface or impose steady circular motion on every nonzero-moment point.
 
-Only accepted solutions contribute to the YMD surface: solver convergence,
-configured tire-load domain, and drivetrain/brake force and power limits are
-checked. Adjacent valid grid triangles define the sampled bounds; no convex
+Only solved, slip-valid states within drivetrain/brake force and power limits
+contribute to the YMD surface. Tire load-fit bounds are advisory: out-of-range
+loads remain visible and are tagged as extrapolated, with actual loads and fit
+bounds exported per point. File-backed YMD disables the legacy load rejection
+switch; the low-level generator retains it for strict validation studies.
+Equation convergence, tire-slip validity and tire-load validity are recorded
+separately, so exceeding the fit range is not mislabeled solver failure. Adjacent valid grid triangles define the sampled bounds; no convex
 hull closes rejected regions. Outer bounds do not encode internal gaps in yaw
 authority. Surface faces between recorded velocities are display interpolation.
 A speed with no accepted sampled states remains in the CSV and slider; that

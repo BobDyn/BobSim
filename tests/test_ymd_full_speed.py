@@ -22,6 +22,7 @@ def test_vehicle_speed_range_is_automatic(monkeypatch, tmp_path):
     np.testing.assert_allclose(sweep.speeds, np.arange(5., 46., 5.))
     assert [r.speed for r in sweep.results] == list(sweep.speeds)
     assert all(c['model_dof'] == 14 for c in calls)
+    assert all(c['enforce_tire_load_range'] is False for c in calls)
 
 
 def test_surface_bounds_and_rejected_gap():
@@ -70,3 +71,34 @@ def test_infeasible_or_failed_trials_do_not_enter_limits(monkeypatch):
     assert not result.converged.any()
     assert np.isnan(result.ay[0, 0])
     assert np.isfinite(result.ay[1, 1])
+
+
+def test_load_extrapolation_remains_visible_and_is_tagged(monkeypatch, tmp_path):
+    from simulations.envelope.ymd import ymd_generation as ymd
+    from app.ymd_view import speed_slices
+    from dataclasses import replace
+    trim = SimpleNamespace(success=True, equilibrium_converged=True, tire_state_valid=True,
+                           state=np.zeros(28), unknowns={"heave_m": .1}, output=SimpleNamespace(
+                               generalized_acceleration=np.ones(14), body_moment_nm=np.ones(3),
+                               normal_loads_n=np.array([500., 500., 1900., 1700.])))
+    seeds = []
+    def solve(*args, **kwargs):
+        seeds.append(kwargs['initial_unknowns'])
+        return trim
+    monkeypatch.setattr(ymd, 'solve_moment_state', solve)
+    cfg = replace(YMDConfig(), beta_points=2, hwa_points=2, verbose=False, warn_tire_load_range=False,
+                  enforce_tire_load_range=False)
+    vehicle = SimpleNamespace(steering_ratio=1., fz_min_valid=100., fz_max_valid=1800.)
+    result = ymd.generate_ymd(vehicle, cfg, SimpleNamespace(dof=14))
+    assert result.converged.all()
+    assert seeds == [None] * 4  # visibility must not promote extrapolation to a continuation seed
+    assert (result.diagnostics['equilibrium_converged'] == 1).all()
+    assert (result.diagnostics['tire_load_valid'] == 0).all()
+    strict = ymd.generate_ymd(vehicle, replace(cfg, enforce_tire_load_range=True), SimpleNamespace(dof=14))
+    assert not strict.converged.any()
+    path = tmp_path/'advisory.csv'
+    ymd.save_ymd_csv(result, path)
+    info = speed_slices(path)['slices'][0]['load_info']
+    assert info['shown_points'] == info['extrapolated_points'] == 4
+    assert info['maximum_load_n'] == 1900.
+    assert info['fit_maximum_load_n'] == 1800.

@@ -5669,7 +5669,7 @@ function simulationMethodGuide(workflowId) {
     "inputs": [
       "Vehicle definition and the DynPy 14DOF equilibrium model, evaluated in Python.",
       "Automatic vehicle-speed coverage, sideslip and roadwheel-angle ranges, grid resolution and prescribed yaw rate.",
-      "Solver iteration and tolerance settings, tire-load-range enforcement, and automatic full-speed coverage.",
+      "Solver iteration and tolerance settings, tire-load extrapolation tags, and automatic full-speed coverage.",
       "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
     ],
     "outputs": [
@@ -6636,6 +6636,14 @@ function showYmdSpeedSlice() {
     ymdSpeedSelections.set(detail.path, selected);
     const slice = slices[selected];
     document.getElementById("ymd-speed-value").textContent = `${formatNumber(slice.speed)} m/s${slices.length === 1 ? " · only recorded speed" : ""}`;
+    const loadInfo = document.getElementById("ymd-load-info");
+    if (loadInfo) {
+      const info = slice.load_info;
+      loadInfo.textContent = info?.extrapolated_points
+        ? `${info.extrapolated_points} of ${info.shown_points} displayed states outside the tire load-fit range · extrapolated`
+        : "";
+      loadInfo.title = info ? `Sampled loads: ${formatNumber(info.minimum_load_n)}–${formatNumber(info.maximum_load_n)} N. Tire fit: ${formatNumber(info.fit_minimum_load_n)}–${formatNumber(info.fit_maximum_load_n)} N.` : "";
+    }
     state.resultPlotPayload = {...slice, ymd: true, x_extent: detail.ymd.x_extent, y_extent: detail.ymd.y_extent};
     state.resultBaselinePayload = null;
     state.resultHoverIndex = null;

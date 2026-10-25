@@ -336,7 +336,15 @@ Older archives with one speed remain viewable at that speed.
 
 YMD exports the sampled outer yaw-moment limits versus lateral acceleration
 and speed as CSV, PNG, and a PDF page. The explorer overlays those limits on
-each recorded carpet. Invalid triangles and empty speed slices remain gaps.
+each recorded carpet. Unsolved or slip-invalid triangles and empty speed slices remain gaps.
 These are sampled bounds within the configured steer/sideslip grid, not a
 guarantee of a global optimum; internal gaps in yaw authority still require
 reading the carpet. Motor power/force and braking limits also gate acceptance.
+Tire load-fit excursions are advisory in the file-backed YMD workflow: those
+states stay visible. CSV rows record equilibrium convergence, slip-fit validity,
+load-fit validity, actuator validity, actual min/max tire loads and fit limits.
+The velocity slider flags the number of displayed extrapolated states and its
+hover text gives the load range. Surface images/PDFs label extrapolation, and
+surface CSVs include a per-slice extrapolation flag. Legacy `converged` means
+accepted for display; `equilibrium_converged` distinguishes numerical closure.
+The low-level generator can still enforce load validity for strict comparisons.

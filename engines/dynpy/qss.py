@@ -35,6 +35,8 @@ class QSSResult:
     unknowns: Mapping[str, float]
     speed_mps: float
     yaw_rate_radps: float
+    equilibrium_converged: bool | None = None
+    tire_state_valid: bool | None = None
 
     @property
     def lateral_acceleration_mps2(self) -> float:
@@ -437,6 +439,8 @@ def solve_moment_state(
     return QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
                      and not tire_error),
+        equilibrium_converged=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5),
+        tire_state_valid=not bool(tire_error),
         message=f"{solution.message} {tire_error}".strip(),
         residual_norm=float(np.linalg.norm(physical_residual)),
         state=state,

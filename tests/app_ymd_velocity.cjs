@@ -8,11 +8,13 @@ vm.runInContext(source,ctx);
 vm.runInContext(`
 renderResultPlotCanvas=()=>{};
 state.resultXAxis='ay_g'; state.resultSelectedSignals=['mz_nm'];
-state.resultSourceDetail={path:'saved/sweep.csv',ymd:{slices:[{speed:10,x:[1],series:[]},{speed:20,x:[2],series:[]}],x_extent:[0,3],y_extent:[-5,5]}};
+state.resultSourceDetail={path:'saved/sweep.csv',ymd:{slices:[{speed:10,x:[1],series:[]},{speed:20,x:[2],series:[],load_info:{extrapolated_points:3,shown_points:4,minimum_load_n:500,maximum_load_n:1900,fit_minimum_load_n:100,fit_maximum_load_n:1800}}],x_extent:[0,3],y_extent:[-5,5]}};
 assert.equal(showYmdSpeedSlice(),true);
 const slider=document.getElementById('ymd-speed-slider');
 slider.value='1'; slider.oninput();
 assert.equal(state.resultPlotPayload.speed,20);
+assert.match(document.getElementById('ymd-load-info').textContent,/3 of 4.*extrapolated/);
+assert.match(document.getElementById('ymd-load-info').title,/1,?800/);
 assert.equal(state.resultXAxis,'ay_g');
 assert.deepEqual(state.resultPlotPayload.x_extent,[0,3]);
 assert.equal(document.getElementById('ymd-speed-control').hidden,false);

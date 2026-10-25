@@ -132,6 +132,7 @@ class YMDResult:
     ay: FloatArray
     mz: FloatArray
     converged: BoolArray
+    diagnostics: dict[str, FloatArray] | None = None
 
 
 @dataclass
@@ -502,6 +503,10 @@ def generate_ymd(
     mz_grid = np.full((config.beta_points, config.hwa_points), np.nan, dtype=np.float64)
     converged_grid = np.zeros((config.beta_points, config.hwa_points), dtype=bool)
 
+    diagnostics = {name: np.full(ay_grid.shape, np.nan) for name in (
+        "equilibrium_converged", "tire_state_valid", "tire_load_valid", "actuator_valid",
+        "minimum_tire_load_n", "maximum_tire_load_n", "tire_fit_minimum_load_n", "tire_fit_maximum_load_n",
+    )}
     if config.verbose:
         print("=" * 72)
         print("Generating first-principles moment-method YMD")
@@ -548,6 +553,7 @@ def generate_ymd(
                         tolerance=config.tol_ay,
                     )
                 except (ValueError, RuntimeError):
+                    diagnostics["equilibrium_converged"][i, j] = 0.0
                     # An infeasible trial must leave a gap, not abort other speeds.
                     continue
                 velocity = trim.state[reduced_model.dof :]
@@ -561,12 +567,28 @@ def generate_ymd(
                     np.all(loads >= vehicle.fz_min_valid)
                     and np.all(loads <= vehicle.fz_max_valid)
                 )
+                actuator_valid = feasibility is None or feasibility(trim)
+                equilibrium = getattr(trim, "equilibrium_converged", None)
+                tire_state = getattr(trim, "tire_state_valid", None)
+                for name, value in {
+                    "equilibrium_converged": trim.success if equilibrium is None else equilibrium,
+                    "tire_state_valid": trim.success if tire_state is None else tire_state,
+                    "tire_load_valid": tire_domain_valid,
+                    "actuator_valid": actuator_valid,
+                    "minimum_tire_load_n": np.min(loads),
+                    "maximum_tire_load_n": np.max(loads),
+                    "tire_fit_minimum_load_n": vehicle.fz_min_valid,
+                    "tire_fit_maximum_load_n": vehicle.fz_max_valid,
+                }.items():
+                    diagnostics[name][i, j] = float(value)
                 converged = bool(
                     trim.success
-                    and (feasibility is None or feasibility(trim))
+                    and actuator_valid
                     and (tire_domain_valid or not config.enforce_tire_load_range)
                 )
-                if converged:
+                # Displaying extrapolated loads must not change continuation
+                # branches. Only in-domain states seed neighboring solves.
+                if trim.success and tire_domain_valid and actuator_valid:
                     row_seed = trim.unknowns
                     column_seeds[j] = trim.unknowns
 
@@ -576,7 +598,7 @@ def generate_ymd(
 
     if config.verbose:
         conv_pct = 100.0 * np.mean(converged_grid)
-        print(f"YMD generation complete. Converged points: {conv_pct:.1f}%")
+        print(f"YMD generation complete. Displayed points: {conv_pct:.1f}%")
         print("=" * 72, flush=True)
 
     if config.warn_tire_load_range:
@@ -589,6 +611,7 @@ def generate_ymd(
         ay=ay_grid,
         mz=mz_grid,
         converged=converged_grid,
+        diagnostics=diagnostics if reduced_model is not None else None,
     )
 
 
@@ -1013,6 +1036,7 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path, *,
     rows: list[list[float]] = []
 
     unique = {float(item.speed): item for item in [result, *(speed_results or [])]}
+    diagnostic_names = sorted({name for item in unique.values() for name in (item.diagnostics or {})})
     for result in sorted(unique.values(), key=lambda item: item.speed):
         for i, beta in enumerate(result.beta):
             for j, hwa in enumerate(result.hwa):
@@ -1030,6 +1054,8 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path, *,
                         float(ay / G if np.isfinite(ay) else np.nan),
                         float(mz),
                         float(int(result.converged[i, j])),
+                        *[float(result.diagnostics[name][i, j]) if result.diagnostics and name in result.diagnostics
+                          else float("nan") for name in diagnostic_names],
                     ]
                 )
 
@@ -1040,6 +1066,8 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path, *,
         "ay_mps2,ay_g,mz_nm,converged"
     )
 
+    if diagnostic_names:
+        header += "," + ",".join(diagnostic_names)
     np.savetxt(output, data, delimiter=",", header=header, comments="")
     print(f"Saved YMD CSV: {output}")
 
@@ -1311,7 +1339,8 @@ def summarize_ymd(
 def ymd_metric_rows(summary: dict[str, float]) -> list[dict[str, float | str]]:
     metadata = {
         "speed_mps": ("m/s", "YMD evaluation speed"),
-        "converged_fraction": ("fraction", "Fraction of converged beta/HWA points"),
+        "converged_fraction": ("fraction",
+                               "Fraction of accepted beta/HWA points (equilibrium and enforced validity limits)"),
         "peak_lateral_accel_mps2": ("m/s^2", "Signed ay at max absolute lateral acceleration"),
         "peak_lateral_accel_g": ("g", "Signed ay at max absolute lateral acceleration"),
         "peak_lateral_accel_abs_g": ("g", "Maximum absolute lateral acceleration"),
@@ -1588,7 +1617,7 @@ def _add_ymd_summary_page(
 
     rows = [
         ("Speed", metric_text("speed_mps", "{:.1f}"), "m/s"),
-        ("Converged map", metric_text("converged_fraction", "{:.3f}"), "fraction"),
+        ("Displayed map", metric_text("converged_fraction", "{:.3f}"), "fraction"),
         ("Peak map |ay|", metric_text("peak_lateral_accel_abs_g", "{:.3f}"), "g"),
         ("Trim peak |ay|", metric_text("trim_peak_lateral_accel_abs_g", "{:.3f}"), "g"),
         (

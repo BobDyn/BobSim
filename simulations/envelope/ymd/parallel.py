@@ -24,7 +24,10 @@ def _generate_speed(vehicle_path: str, settings: dict):
         return bool((_actuator_margins(projection.ggv, model, trim.state, trim.inputs,
                                        trim.output, config.speed) >= -1e-7).all())
     result = generate_ymd(projection.ymd, config, reduced_model=model, feasibility=feasible)
-    print(f"YMD {config.speed:.2f} m/s: {int(result.converged.sum())}/{result.converged.size} accepted states.",
+    diagnostics = result.diagnostics or {}
+    counts = ", ".join(f"{name}: {int((values == 1).sum())}" for name, values in diagnostics.items()
+                       if name in ("equilibrium_converged", "tire_state_valid", "tire_load_valid", "actuator_valid"))
+    print(f"YMD {config.speed:.2f} m/s: {int(result.converged.sum())}/{result.converged.size} accepted; {counts}.",
           flush=True)
     return result
 
@@ -39,7 +42,10 @@ def generate_ymd_from_vehicle(vehicle_path: Path, config: YMDConfig, *, workers:
     path = vehicle_path.resolve().as_posix()
     projection = project_vehicle_yaml(load_vehicle_yaml(Path(path)))
     speeds = automatic_vehicle_speed_grid(projection.ggv.max_drive_speed)
-    settings = [asdict(replace(config, speed=speed, verbose=False, warn_tire_load_range=False)) for speed in speeds]
+    # Load-fit excursions remain visible and are tagged by per-point diagnostics.
+    # The low-level generator still supports strict filtering for validation work.
+    settings = [asdict(replace(config, speed=speed, verbose=False, warn_tire_load_range=False,
+                              enforce_tire_load_range=False)) for speed in speeds]
     count = min(workers if workers is not None else 4, len(speeds), os.cpu_count() or 1)
     if count < 1:
         raise ValueError("YMD requires at least one worker")

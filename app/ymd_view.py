@@ -16,6 +16,10 @@ def speed_slices(path: Path) -> dict:
         for raw in csv.DictReader(stream):
             row = {key: float(raw[key]) for key in
                    ("speed_mps", "beta_deg", "hwa_deg", "ay_g", "mz_nm", "converged")}
+            for key in ("equilibrium_converged", "tire_state_valid", "tire_load_valid", "actuator_valid",
+                        "minimum_tire_load_n", "maximum_tire_load_n",
+                        "tire_fit_minimum_load_n", "tire_fit_maximum_load_n"):
+                row[key] = float(raw.get(key) or "nan")
             if math.isfinite(row["speed_mps"]):
                 speeds[row["speed_mps"]].append(row)
     slices = []
@@ -61,7 +65,18 @@ def speed_slices(path: Path) -> dict:
             for label, values in (("Lower sampled limit", low), ("Upper sampled limit", high)):
                 series.append({"signal": label, "unit": "N m",
                                "values": [None] * offset + [float(v) if np.isfinite(v) else None for v in values]})
-        slices.append({"speed": speed, "x": x, "x_unit": "g", "x_label": "Lateral acceleration",
+        shown = [r for r in rows if r["converged"] == 1]
+        extrapolated = [r for r in shown if r["tire_load_valid"] == 0]
+        def finite(key):
+            return [r[key] for r in rows if math.isfinite(r[key])]
+        load_info = {
+            "extrapolated_points": len(extrapolated), "shown_points": len(shown),
+            "minimum_load_n": min(finite("minimum_tire_load_n"), default=None),
+            "maximum_load_n": max(finite("maximum_tire_load_n"), default=None),
+            "fit_minimum_load_n": min(finite("tire_fit_minimum_load_n"), default=None),
+            "fit_maximum_load_n": max(finite("tire_fit_maximum_load_n"), default=None),
+        }
+        slices.append({"speed": speed, "load_info": load_info, "x": x, "x_unit": "g", "x_label": "Lateral acceleration",
                        "row_indices": list(range(len(x))), "series": series})
     return {"slices": slices, "x_extent": [min(all_x), max(all_x)] if all_x else [-1, 1],
             "y_extent": [min(all_y), max(all_y)] if all_y else [-1, 1]}
