@@ -281,13 +281,22 @@ onto a QSS input still creates the existing GGV/racing-line connection.
 ## Editable report canvas
 
 Results opens the saved run as a continuous report document after every plot page
-has preloaded. Click a plot to edit its signals, axes and styling inside the visual;
-there is no separate inspector pane. Edit a page title directly, or add
-single/dual/triple/quad pages.
-Page handles and up/down controls change page order. Curves select named X/Y
-signals and support overlays, display scales/offsets, fits, styles, axis limits,
-log axes and shared limits. Advanced YAML edits the same mapping consumed by
-`PlotEngine`. Disabled pages stay editable but are omitted from PDF export.
+has preloaded. Axis labels select named metrics and independent views from the
+recorded report definitions. Changing a view replaces both X and Y data together,
+preserving corner-specific signs and conversions. Units have separate click targets
+and conversions apply to the metric group. Standard subplot titles identify the
+provided values and are fixed. Metric choices show the number of values and maximum
+layout size; smaller layouts can select which values to display.
+
+Single/dual/triple/quad pages can combine independent metric groups. A dual metric
+and a single metric can occupy a triple page; edits affect only their own group.
+Plots may be split into independent groups or filled from one metric. Mixed pages
+allow custom subplot titles. Click a plot for styling, overlays, fits, limits and
+shared limits. Advanced YAML still edits the mapping consumed by `PlotEngine`.
+Page handles reorder the document; disabled pages are omitted from PDF export.
+Mouse-wheel scrolling eases to rest; small trackpad gestures and reduced-motion
+settings retain native scrolling.
+`report_metrics.js` maps named metric views onto the underlying plot definitions.
 
 `report_editor.py` reads archived inputs, caches processed plot data, and renders
 previews with BobSim's palette. Every page is preloaded; scrolling does not launch

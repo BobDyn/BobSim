@@ -5,6 +5,7 @@ import base64
 import copy
 from io import BytesIO
 import json
+import re
 from pathlib import Path
 import threading
 from typing import Any
@@ -196,6 +197,23 @@ def report_editor(body: dict) -> dict:
                             bounds = label.get_window_extent(renderer).transformed(fig.transFigure.inverted())
                             labels.append({"sub": index, "kind": kind, "x": bounds.x0, "y": 1 - bounds.y1,
                                            "width": bounds.width, "height": bounds.height})
+                            unit = re.search(r"\s*[([][^()[\]]+[)\]]\s*$", label.get_text())
+                            if kind != "title" and unit:
+                                full_width = renderer.get_text_width_height_descent(
+                                    label.get_text(), label.get_fontproperties(), False)[0]
+                                unit_width = renderer.get_text_width_height_descent(
+                                    unit.group(), label.get_fontproperties(), False)[0]
+                                fraction = min(.8, unit_width / max(full_width, 1))
+                                unit_box = dict(labels[-1], kind=kind + "-unit")
+                                if kind == "x":
+                                    unit_box["x"] += bounds.width * (1 - fraction)
+                                    unit_box["width"] *= fraction
+                                    labels[-1]["width"] *= 1 - fraction
+                                else:
+                                    unit_box["height"] *= fraction
+                                    labels[-1]["y"] += bounds.height * fraction
+                                    labels[-1]["height"] *= 1 - fraction
+                                labels.append(unit_box)
                     buffer = BytesIO()
                     fig.savefig(buffer, format="png", dpi=125)
                     boxes = [{"x": ax.get_position().x0, "y": 1 - ax.get_position().y1,

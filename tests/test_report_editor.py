@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -59,11 +61,15 @@ def test_report_edit_preview_export_and_reuse_are_independent_of_recorded_inputs
         "x": {"key": "time"}, "y": {"key": "ay", "scale": .5}, "label": "Overlay"}
     preview = report_editor({**context, "action": "preview", "plots": plots, "page": "response"})
     assert preview["image"].startswith("data:image/png;base64,iVBOR")
-    assert [(label["sub"], label["kind"]) for label in preview["labels"]] == [
+    assert [(label["sub"], label["kind"]) for label in preview["labels"] if not label["kind"].endswith("-unit")] == [
         (i, kind) for i in range(2) for kind in ("title", "x", "y")]
     for label in preview["labels"]:
         assert 0 <= label["x"] < 1 and 0 <= label["y"] < 1
         assert label["width"] > 0 and label["height"] > 0
+    for index in range(2):
+        axis_label = next(label for label in preview["labels"] if label["sub"] == index and label["kind"] == "x")
+        unit_label = next(label for label in preview["labels"] if label["sub"] == index and label["kind"] == "x-unit")
+        assert axis_label["x"] + axis_label["width"] == pytest.approx(unit_label["x"])
     report_editor({**context, "action": "save", "plots": plots, "reuse": True})
     assert report_editor(context)["plots"] == plots
     sim = json.loads((run_dir.parent.parent / "simulations.json").read_text())[0]
@@ -196,3 +202,11 @@ def test_preview_theme_does_not_change_pdf_style(report_workspace, monkeypatch):
     report_editor({**context, "action": "export", "plots": plots, "theme": "dark"})
     assert backgrounds[0] != (1, 1, 1, 1)
     assert backgrounds[-1] == (1, 1, 1, 1)
+
+
+@pytest.mark.parametrize("script", ["report_metrics.cjs", "report_units.cjs", "report_scroll.cjs"])
+def test_report_browser_metric_logic(script):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    subprocess.run([node, str(Path(__file__).with_name(script))], cwd=app.PACKAGE_ROOT, check=True)

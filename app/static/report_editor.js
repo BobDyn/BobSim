@@ -15,7 +15,7 @@
     body: JSON.stringify({...editor.context, action, plots: editor.plots, ...extra}),
   });
   const page = () => editor.plots[editor.selected];
-  const subs = () => page().subplots || [page()];
+  const subs = () => page()?.subplots || (page() ? [page()] : []);
   const message = text => { dialog.querySelector('[data-status]').textContent = text; };
   function field(label, value, attrs = '') {
     return `<label class="form-field"><span>${esc(label)}</span><input ${attrs} value="${esc(String(value ?? ''))}"></label>`;
@@ -29,13 +29,6 @@
   function check(label, value, attrs) {
     return `<label class="report-check"><input type="checkbox" ${attrs} ${value ? 'checked' : ''}>${esc(label)}</label>`;
   }
-  function signal(label, axis, cfg) {
-    const keys=editor.signals.map(signal=>signal.key);
-    if(cfg?.key && !keys.includes(cfg.key)) keys.unshift(cfg.key);
-    return `<div class="report-signal-picker">
-      ${field('Filter signals','', 'type="search" data-signal-filter placeholder="Search all signals"')}
-      ${select(label,cfg?.key,keys,`data-axis="${axis}" data-prop="key"`)}</div>`;
-  }
   const unitGroups = [
     {m:1, cm:.01, mm:.001, in:.0254}, {rad:1, deg:Math.PI/180},
     {'rad/s':1, 'deg/s':Math.PI/180}, {N:1, kN:1000},
@@ -48,17 +41,27 @@
     return {name:match?.[1] ?? axis.label ?? axis.key ?? '', unit,
       group:unitGroups.find(group=>Object.hasOwn(group,unit))};
   }
+  function metricControls(index, axis='y') {
+    const current=subs()[index];
+    const selected=editor.metrics.find(item=>item.id===current._metric_source);
+    const choices=axis==='x' ? editor.metrics.filter(item=>item.metric===selected?.metric) : editor.metrics;
+    const unique=[...new Map(choices.map(item=>[axis==='x'?item.view:item.metric,item])).values()];
+    const members=ReportMetrics.group(page(),index);
+    return `<div data-sub="${index}">
+      ${select(axis==='x'?'Independent axis':'Metric',(axis==='x'?selected?.view:selected?.metric) || '',
+        [...(!selected?[['','Choose a metric']]:[]),...unique.map(item=>[axis==='x'?item.view:item.metric, axis==='x'?item.view:`${item.metric} · ${item.count} values (up to ${Object.keys(sizes).find(key=>sizes[key]===item.count)})`])],`data-metric-axis="${axis}"`)}
+      ${selected && members.length<selected.count ? select('Value for this plot',String(current._metric_member || 0),selected.subplots.map((sub,i)=>[String(i),sub.title || `Value ${i+1}`]),'data-metric-member') : ''}
+      <p class="report-unit-note">Applies to ${members.length} plot${members.length===1?'':'s'} in this metric group.</p>
+      ${axis==='y' && members.length>1 && members.length<subs().length ? '<button type="button" class="ghost-button" data-action="split-metric">Edit this plot independently</button>' : ''}
+      ${members.length<subs().length ? '<button type="button" class="ghost-button" data-action="fill-metric">Apply this metric to the whole page</button>' : ''}
+      </div>`;
+  }
   function axisHtml(sub, axis) {
+    if(!editor.editUnits) return metricControls(editor.activeSub,axis);
     const cfg=sub[axis] || {}, info=axisUnit(cfg);
-    return `<div data-sub="${editor.activeSub}"><div data-curve="-1">
-      ${signal('Signal',axis,cfg)}
-      ${field('Axis label',cfg.label || cfg.key,`data-axis="${axis}" data-prop="label"`)}
-      ${info.group ? select('Display units',info.unit,Object.keys(info.group),`data-unit-axis="${axis}"`) : ''}
-      <details><summary>Custom units and conversion</summary>
-      <p class="report-unit-note">Values = signal × scale + offset. Include custom units in the axis label.</p>
-      ${field('Scale',cfg.scale ?? 1,`type="number" step="any" data-number data-axis="${axis}" data-prop="scale"`)}
-      ${field('Offset',cfg.offset ?? 0,`type="number" step="any" data-number data-axis="${axis}" data-prop="offset"`)}</details>
-      </div></div>`;
+    return `<div data-sub="${editor.activeSub}">
+      ${info.group ? select('Display units',info.unit,Object.keys(info.group),`data-unit-axis="${axis}"`) : '<p>This metric has no convertible display units.</p>'}
+      <p class="report-unit-note">Units apply to every plot in this metric group.</p></div>`;
   }
   function convertAxis(sub, axis, unit) {
     const info=axisUnit(sub[axis]);
@@ -78,17 +81,13 @@
   }
   function curveHtml(curve, overlay = -1) {
     return `<div class="report-curve" data-curve="${overlay}">
-      <div class="report-fields">${signal('X signal', 'x', curve.x)}${signal('Y signal', 'y', curve.y)}
+      <div class="report-fields">
       ${field('Legend label', curve.label, 'data-prop="label"')}
       ${select('Style', curve.style || 'line', ['line','scatter'], 'data-prop="style"')}
       ${field('Color', curve.color || '#4ea1ff', 'type="color" data-prop="color"')}
       ${select('Line', curve.linestyle || '-', [['-','Solid'],['--','Dashed'],[':','Dotted'],['-.','Dash-dot']], 'data-prop="linestyle"')}
       ${field('Line width', curve.linewidth ?? 2, 'type="number" min="0" step="0.25" data-number data-prop="linewidth"')}
       ${field('Opacity', curve.alpha ?? 1, 'type="number" min="0" max="1" step="0.1" data-number data-prop="alpha"')}</div>
-      <details><summary>Units and transforms</summary><div class="report-fields">${['x','y'].map(axis =>
-        field(`${axis.toUpperCase()} label / units`, curve[axis]?.label, `data-axis="${axis}" data-prop="label"`) +
-        field(`${axis.toUpperCase()} scale factor`, curve[axis]?.scale ?? 1, `type="number" step="any" data-number data-axis="${axis}" data-prop="scale"`) +
-        field(`${axis.toUpperCase()} offset`, curve[axis]?.offset ?? 0, `type="number" step="any" data-number data-axis="${axis}" data-prop="offset"`)).join('')}</div></details>
       ${check('Linear fit', curve.fit, 'data-prop="fit"')}
       ${overlay >= 0 ? '<button type="button" class="ghost-button" data-action="remove-overlay">Remove curve</button>' : ''}
     </div>`;
@@ -96,7 +95,8 @@
   function subHtml(sub, i) {
     const inherited = key => sub[key] ?? page()[key];
     return `<details class="report-subplot" data-sub="${i}" open><summary>Plot ${i+1}${sub.title ? ' · ' + esc(sub.title) : ''}</summary>
-      ${field('Plot title', sub.title, 'data-subprop="title"')}
+      ${metricControls(i)}
+      ${ReportMetrics.group(page(),i).length<subs().length ? field('Custom plot title',sub.title,'data-subprop="title"') : ''}
       ${curveHtml(sub)}
       ${(Array.isArray(sub.overlay) ? sub.overlay : sub.overlay ? [sub.overlay] : []).map((c,i)=>curveHtml(c,i)).join('')}
       <button class="ghost-button" type="button" data-action="add-overlay">Add overlay curve</button>
@@ -116,8 +116,8 @@
       if(!card.isConnected || signature!==pagePreviewKey(id)) return;
       picture.src=payload.image;picture.hidden=false;note.hidden=true;
       card.querySelector('[data-plot-targets]').innerHTML=(payload.axes||[]).map((box,i)=>
-        `<button type="button" class="report-plot-target" data-edit-sub="${i}" aria-label="Edit plot ${i+1}" title="Edit plot ${i+1}" style="left:${box.x*100}%;top:${box.y*100}%;width:${box.width*100}%;height:${box.height*100}%"><span>Edit plot ↗</span></button>`).join('')+(payload.labels||[]).map(box=>
-        `<button type="button" class="report-label-target" data-edit-label="${box.kind}" data-label-sub="${box.sub}" aria-label="Edit plot ${box.sub+1} ${box.kind==='title'?'title':box.kind.toUpperCase()+' signal and units'}" title="Edit ${box.kind==='title'?'title':box.kind.toUpperCase()+' signal and units'}" style="left:${box.x*100}%;top:${box.y*100}%;width:${Math.max(box.width*100,1)}%;height:${Math.max(box.height*100,1)}%"></button>`).join('');
+        `<button type="button" class="report-plot-target" data-edit-sub="${i}" aria-label="Edit plot ${i+1}" title="Edit plot ${i+1}" style="left:${box.x*100}%;top:${box.y*100}%;width:${box.width*100}%;height:${box.height*100}%"><span>Edit plot ↗</span></button>`).join('')+(payload.labels||[]).filter(box=>box.kind!=='title').map(box=>
+        `<button type="button" class="report-label-target" data-edit-label="${box.kind}" data-label-sub="${box.sub}" aria-label="Edit plot ${box.sub+1} ${box.kind==='title'?'title':box.kind.toUpperCase()+' signal and units'}" title="${box.kind.endsWith('-unit')?'Change units':box.kind==='x'?'Choose independent axis':'Choose metric'}" style="left:${box.x*100}%;top:${box.y*100}%;width:${Math.max(box.width*100,1)}%;height:${Math.max(box.height*100,1)}%"></button>`).join('');
     };
     if(previews.has(signature)) {place(previews.get(signature));return;}
     if(!editor.has_results) {note.textContent='Your recorded signals will appear here after the first run.';return;}
@@ -138,6 +138,7 @@
     const canvas=dialog.querySelector('[data-document]');
     const scroll=canvas.scrollTop;
     const entries=Object.entries(editor.plots);
+    entries.forEach(([,p])=>ReportMetrics.initialize(p,editor.metrics));
     canvas.innerHTML=entries.map(([id,p],i)=>`<article class="report-sheet ${p.enabled===false?'report-sheet-excluded':''} ${id===editor.selected?'selected':''}" data-report-page="${esc(id)}">
       <header class="report-sheet-head"><div class="report-sheet-name"><button class="report-drag-grip" draggable="true" data-drag-page="${esc(id)}" title="Drag to move page" aria-label="Move page">⠿</button><span class="report-page-number">${String(i+1).padStart(2,'0')}</span><input class="report-sheet-title" data-sheet-title aria-label="Page title" value="${esc(p.title||id)}"></div>
       <div class="report-sheet-actions"><select data-layout class="report-layout-select" aria-label="Page layout">${Object.keys(sizes).map(layout=>`<option value="${layout}" ${layout===(p.layout||'single')?'selected':''}>${layout}</option>`).join('')}</select>
@@ -151,28 +152,7 @@
     canvas.querySelectorAll('[data-report-page]').forEach(card=>previewPage(card.dataset.reportPage,card));
     canvas.scrollTop=scroll;
     if(editor.activeSub!==null || editor.pageTools) renderDetail();
-    dialog.querySelector('[data-report-count]').textContent=`${entries.filter(([,p])=>p.enabled!==false).length} pages · ${editor.signals.length} signals`;
-  }
-  function editTitle(card, target, index) {
-    editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
-    const plot=editor.plots[card.dataset.reportPage];
-    const sub=plot.subplots?.[index] || plot;
-    const input=document.createElement('input');
-    input.className='report-inline-title';input.setAttribute('aria-label','Subplot title');
-    input.value=sub.title || '';input.style.cssText=target.style.cssText;
-    input.style.fontSize=`${Math.max(12,target.offsetHeight*.85)}px`;
-    target.parentElement.append(input);
-    let cancelled=false;
-    input.addEventListener('keydown',event=>{
-      if(event.key==='Enter' || event.key==='Escape') {
-        event.preventDefault();event.stopPropagation();cancelled=event.key==='Escape';input.blur();
-      }
-    });
-    input.addEventListener('blur',()=>{
-      if(!cancelled && input.value!==sub.title) {sub.title=input.value;changed();}
-      input.remove();
-    },{once:true});
-    input.focus({preventScroll:true});input.select();
+    dialog.querySelector('[data-report-count]').textContent=`${entries.filter(([,p])=>p.enabled!==false).length} pages · ${new Set(editor.metrics.map(item=>item.metric)).size} metrics`;
   }
   function renderDetail() {
     dialog.querySelectorAll('.report-onplot-editor').forEach(el=>el.remove());
@@ -198,7 +178,7 @@
       panel.querySelector('header span').textContent=editor.activeLabel?`${editor.activeLabel.toUpperCase()} axis`:`Plot ${editor.activeSub+1}`;
       panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel ? axisHtml(sub,editor.activeLabel) : subHtml(sub,editor.activeSub);
       const preview=previews.get(pagePreviewKey(editor.selected));
-      const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel)) || preview?.axes?.[editor.activeSub];
+      const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel+(editor.editUnits?'-unit':''))) || preview?.axes?.[editor.activeSub];
       panel.style.left=`${Math.min((box?.x||.05)*100,48)}%`;
       panel.style.top=`${Math.min((box?.y||.05)*100,50)}%`;
       card.querySelector('.report-sheet-figure').append(panel);
@@ -209,9 +189,8 @@
     dialog.innerHTML=`<header class="report-editor-head"><div class="report-heading"><span class="report-eyebrow">RESULTS / REPORT</span><h2>${esc(editor.title)}</h2><span data-report-count></span></div>
       <div class="report-toolbar"><select data-new-layout aria-label="New page layout">${Object.keys(sizes).map(v=>`<option>${v}</option>`).join('')}</select><button type="button" class="ghost-button" data-action="add">＋ Add page</button><button type="button" class="ghost-button" data-action="save">Save</button><button type="button" class="primary-button" data-action="export" ${!editor.has_results?'disabled':''}>Export PDF ↗</button><button type="button" class="ghost-button" data-action="close">${editor.inline?'Files':'Close'}</button></div></header>
       <div class="report-editor-body"><section class="report-document" data-document aria-label="Interactive report pages"></section></div>
-      <datalist id="report-signals">${editor.signals.map(s=>`<option value="${esc(s.key)}">${s.grouped?'Grouped · ':''}${s.samples} samples</option>`).join('')}</datalist>
       <footer class="report-editor-foot"><div>${editor.can_reuse?check('Reuse layout for future runs',editor.context.from_setup||!editor.context.result_id,'data-reuse'):''}<span data-download></span></div><p data-status role="status"></p></footer>`;
-    message('Click titles or axis labels to edit. Click a plot for curve styling. Drag the page handle to reorder.');
+    message('Click an axis to choose a metric or view; click units to convert the group. Drag the page handle to reorder.');
     renderPages();renderDetail();
   }
   function changed() {
@@ -227,13 +206,13 @@
         card.querySelector('[data-sheet-enabled]').checked=p.enabled!==false;
         previewPage(card.dataset.reportPage,card);
       }
-      dialog.querySelector('[data-report-count]').textContent=`${Object.values(editor.plots).filter(p=>p.enabled!==false).length} pages · ${editor.signals.length} signals`;
+      dialog.querySelector('[data-report-count]').textContent=`${Object.values(editor.plots).filter(p=>p.enabled!==false).length} pages · ${new Set(editor.metrics.map(item=>item.metric)).size} metrics`;
     },350);
   }
   function newCurve() {
     const current=page();
     const source=current?.subplots?.[0] || current;
-    if(source?.x?.key && source?.y?.key) return {title:'',x:clone(source.x),y:clone(source.y)};
+    if(source?.x?.key && source?.y?.key) return {title:source.title || '',x:clone(source.x),y:clone(source.y),_metric_source:source._metric_source,_metric_member:0};
     const keys = editor.signals.map(s=>s.key);
     const x = keys.find(k=>k==='raw:time' || k==='time') || keys[0] || '';
     const y = keys.find(k=>k!==x) || x;
@@ -252,18 +231,6 @@
     if(!item || at<0) return;
     rest.splice(at+(after?1:0),0,item); editor.plots=Object.fromEntries(rest); changed(); renderPages(); renderDetail();
   }
-  dialog.addEventListener('input',event=>{
-    if(!event.target.hasAttribute('data-signal-filter')) return;
-    const picker=event.target.closest('.report-signal-picker');
-    const query=event.target.value.trim().toLowerCase();
-    const select=picker.querySelector('select');
-    const selected=select.value;
-    const keys=editor.signals.map(signal=>signal.key).filter(key=>key.toLowerCase().includes(query));
-    select.innerHTML=keys.map(key=>`<option value="${esc(key)}" ${key===selected?'selected':''}>${esc(key)}</option>`).join('');
-    // Filtering must not select or apply another signal on the user's behalf.
-    select.value=selected;
-    select.size=query?Math.min(6,Math.max(2,keys.length)):1;
-  });
   dialog.addEventListener('change', event => {
     const el=event.target;
     const card=el.closest('[data-report-page]');
@@ -281,10 +248,30 @@
       if(count<old.length && !confirm('This layout has fewer plots. Remove the extra subplots?')) { el.value=p.layout||'single';return; }
       p.layout=value;
       if(count===1) { const title=p.title; Object.assign(p,old[0]);p.title=title;delete p.subplots; }
-      else { p.subplots=Array.from({length:count},(_,i)=>old[i]||newCurve()); for(const key of ['x','y','overlay']) delete p[key]; }
+      else {
+        const source=editor.metrics.find(item=>item.id===old[0]?._metric_source);
+        const together=old.every(sub=>sub._metric_group===old[0]._metric_group);
+        p.subplots=count>old.length && together && source && source.count>=count
+          ? source.subplots.slice(0,count).map((sub,i)=>({...clone(sub),_metric_source:source.id,_metric_member:i,_metric_group:'expanded'}))
+          : Array.from({length:count},(_,i)=>old[i]||{...newCurve(),_metric_group:`extra-${i}`});
+        for(const key of ['x','y','overlay']) delete p[key];
+      }
       changed();renderDetail();return;
+    } else if(el.hasAttribute('data-metric-member')) {
+      const view=editor.metrics.find(item=>item.id===sub._metric_source);
+      const group=sub._metric_group;
+      if(view) {Object.assign(sub,clone(view.subplots[Number(value)]),{_metric_group:group,_metric_member:Number(value)});changed();renderDetail();}
+      return;
+    } else if(el.hasAttribute('data-metric-axis')) {
+      const index=Number(el.closest('[data-sub]').dataset.sub);
+      const current=editor.metrics.find(item=>item.id===sub._metric_source);
+      const candidates=editor.metrics.filter(item=>el.dataset.metricAxis==='x'
+        ? item.metric===current?.metric && item.view===value : item.metric===value);
+      const chosen=candidates.find(item=>item.view===current?.view) || candidates[0];
+      if(chosen) {editor.activeSub=ReportMetrics.apply(p,index,chosen);changed();renderDetail();}
+      return;
     } else if(el.hasAttribute('data-unit-axis')) {
-      convertAxis(sub,el.dataset.unitAxis,value);changed();renderDetail();return;
+      for(const member of ReportMetrics.group(page(),Number(el.closest('[data-sub]').dataset.sub))) convertAxis(member.sub,el.dataset.unitAxis,value);changed();renderDetail();return;
     } else if(el.hasAttribute('data-subprop')) sub[el.dataset.subprop]=value;
     else if(el.hasAttribute('data-limit')) {
       const axis=el.dataset.limit;
@@ -312,16 +299,16 @@
     const label=event.target.closest('[data-edit-label]');
     if(card && label) {
       editor.selected=card.dataset.reportPage;
-      if(label.dataset.editLabel==='title') {editTitle(card,label,Number(label.dataset.labelSub));return;}
       editor.activeSub=Number(label.dataset.labelSub);
-      editor.activeLabel=label.dataset.editLabel;editor.pageTools=false;renderDetail();return;
+      editor.editUnits=label.dataset.editLabel.endsWith('-unit');
+      editor.activeLabel=label.dataset.editLabel.split('-')[0];editor.pageTools=false;renderDetail();return;
     }
     const plot=event.target.closest('[data-edit-sub]');
     const sheetButton=event.target.closest('[data-sheet-action]');
     if(card && (plot || sheetButton)) {
       editor.selected=card.dataset.reportPage;
       if(plot || sheetButton.dataset.sheetAction==='edit') {
-        editor.activeLabel=null;editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
+        editor.activeLabel=null;editor.editUnits=false;editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
       }
       const action=sheetButton.dataset.sheetAction;
       if(action==='duplicate') {const p=clone(page());p.title=(p.title||'Page')+' copy';insertPage(p);return;}
@@ -332,14 +319,20 @@
     if(!button) return;
     const action=button.dataset.action;
     try {
+      if(action==='fill-metric') {const index=Number(button.closest('[data-sub]').dataset.sub);const view=editor.metrics.find(item=>item.id===subs()[index]._metric_source);if(view){subs().forEach(sub=>sub._metric_group='whole-page');editor.activeSub=ReportMetrics.apply(page(),0,view);changed();renderDetail();}return;}
+      if(action==='split-metric') {const sub=subs()[Number(button.closest('[data-sub]').dataset.sub)];sub._metric_group=`independent-${Date.now()}`;changed();renderDetail();return;}
       if(action==='close-controls') {editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();return;}
       if(action==='close') {if(!editor.dirty || confirm('Close without saving your report changes?')) {fileView=editor.key;dialog.close();document.querySelector('.archive-workspace').classList.remove('report-viewing');document.getElementById('study-preview').hidden=false;}return;}
       if(action==='add') {
         editor.activeSub=0;editor.activeLabel=null;editor.pageTools=false;
         const layout=dialog.querySelector('[data-new-layout]').value;
         const p={layout,title:'New page',enabled:true};
-        if(layout==='single') Object.assign(p,newCurve(),{title:'New page'});
-        else p.subplots=Array.from({length:sizes[layout]},newCurve);
+        const source=editor.metrics.find(item=>item.id===subs()?.[0]?._metric_source) || editor.metrics[0];
+        const values=Array.from({length:sizes[layout]},(_,i)=>source
+          ? {...clone(source.subplots[i%source.count]),_metric_source:source.id,_metric_member:i%source.count,_metric_group:`group-${Math.floor(i/source.count)}`}
+          : newCurve());
+        if(layout==='single') Object.assign(p,values[0],{title:source?.metric || 'New page'});
+        else p.subplots=values;
         insertPage(p);return;
       }
       if(action==='duplicate') {const p=clone(page());p.title=(p.title||'Page')+' copy';insertPage(p);return;}
@@ -379,6 +372,39 @@
       editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
     }
   });
+  // Ease discrete mouse-wheel steps; trackpads already provide their own momentum.
+  let wheelFrame=0, wheelCanvas=null, wheelTarget=0, wheelTime=0;
+  function stopWheel() {
+    cancelAnimationFrame(wheelFrame);wheelFrame=0;wheelCanvas=null;
+  }
+  dialog.addEventListener('wheel',event=>{
+    const canvas=event.target.closest('[data-document]');
+    if(!canvas || event.ctrlKey || event.shiftKey || Math.abs(event.deltaX)>Math.abs(event.deltaY)
+      || event.target.closest('.report-onplot-editor,select,textarea,input')
+      || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // Pixel streams with small steps are trackpad gestures; let the browser handle them.
+    if(event.deltaMode===0 && Math.abs(event.deltaY)<40) {stopWheel();return;}
+    const delta=event.deltaY*(event.deltaMode===1?20:event.deltaMode===2?canvas.clientHeight:1);
+    if(!delta) return;
+    const max=canvas.scrollHeight-canvas.clientHeight;
+    if((delta<0 && canvas.scrollTop<=0) || (delta>0 && canvas.scrollTop>=max)) {stopWheel();return;}
+    event.preventDefault();
+    if(wheelCanvas!==canvas || !wheelFrame) {stopWheel();wheelCanvas=canvas;wheelTarget=canvas.scrollTop;wheelTime=performance.now();}
+    wheelTarget=Math.max(0,Math.min(max,wheelTarget+delta));
+    if(wheelFrame) return;
+    const step=now=>{
+      if(!canvas.isConnected) {stopWheel();return;}
+      const gap=wheelTarget-canvas.scrollTop;
+      const fraction=1-Math.exp(-Math.min(now-wheelTime,50)/65);wheelTime=now;
+      canvas.scrollTop+=Math.sign(gap)*Math.max(1,Math.abs(gap)*fraction);
+      if(Math.abs(wheelTarget-canvas.scrollTop)<1) {canvas.scrollTop=wheelTarget;stopWheel();}
+      else wheelFrame=requestAnimationFrame(step);
+    };
+    wheelFrame=requestAnimationFrame(step);
+  },{passive:false});
+  dialog.addEventListener('pointerdown',stopWheel);
+  dialog.addEventListener('keydown',stopWheel);
+  dialog.addEventListener('close',stopWheel);
   let dragging=null;
   dialog.addEventListener('dragstart',event=>{const grip=event.target.closest('[data-drag-page]');if(grip){dragging=grip.dataset.dragPage;event.dataTransfer.setData('text/plain',dragging);event.dataTransfer.effectAllowed='move';}});
   function clearDrop(){dialog.querySelectorAll('.reorder-before,.reorder-after').forEach(n=>n.classList.remove('reorder-before','reorder-after'));}
@@ -401,7 +427,9 @@
     if(token!==opening) return;
     if(dialog.open) dialog.close();
     editor={...next,...data,loading:true,plots:clone(data.plots),dirty:false,activeSub:null,pageTools:false,selected:Object.keys(data.plots)[0]};
+    editor.metrics=ReportMetrics.catalog(data.defaults,data.signals);
     if(drafts.has(key)) Object.assign(editor,drafts.get(key),{dirty:true});
+    Object.values(editor.plots).forEach(p=>ReportMetrics.initialize(p,editor.metrics));
     dialog.classList.toggle('report-inline',inline);
     (inline?document.querySelector('.results-app-pane'):document.body).append(dialog);
     const host=document.getElementById('study-preview');

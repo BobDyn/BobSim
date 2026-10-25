@@ -5304,7 +5304,7 @@ summary:focus-visible {
 .report-editor .report-toolbar { gap: 8px; }
 .report-editor .report-toolbar > button, .report-editor .report-toolbar > select { font-size: 12px; padding: 9px 13px; border-radius: 7px; }
 .report-editor .report-editor-body, .report-editor:not(.editing) .report-editor-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.report-document { overflow: auto; flex: 1; min-width: 0; padding: 30px clamp(18px,4vw,64px) 64px; background: var(--surface-2); scroll-behavior: smooth; }
+.report-document { overflow: auto; flex: 1; min-width: 0; padding: 30px clamp(18px,4vw,64px) 64px; background: var(--surface-2); scroll-behavior: auto; }
 .report-sheet { position: relative; width: 100%; max-width: 1080px; margin: 0 auto 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 25px #0000000a; overflow: visible; transition: border-color .2s; }
 .report-sheet:hover { border-color: color-mix(in srgb,var(--blue) 35%,var(--line)); }
 .report-sheet.selected { border-color: color-mix(in srgb,var(--blue) 40%,var(--line)); }
@@ -5376,7 +5376,3 @@ summary:focus-visible {
 .report-label-editor { width:300px; }
 .report-label-editor .form-field { margin-bottom:12px; }
 .report-unit-note { font-size:12px; color:var(--text-muted); line-height:1.5; }
-
-.report-inline-title { position:absolute; z-index:12; box-sizing:content-box; min-width:120px; min-height:20px; padding:2px 6px; margin:-3px -7px; text-align:center; color:var(--ink); background:var(--surface); border:1px solid #4ea1ff; border-radius:3px; font-family:inherit; }
-.report-signal-picker { min-width:0; }
-.report-signal-picker select { width:100%; min-width:0; text-overflow:ellipsis; }
