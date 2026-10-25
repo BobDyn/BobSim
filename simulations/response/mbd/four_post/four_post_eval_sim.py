@@ -192,7 +192,7 @@ def _normalize_four_post_report_config(config: dict[str, Any]) -> dict[str, Any]
         if np.isclose(roll_magnitude, FOUR_POST_LEGACY_ROLL_MAGNITUDE_RAD):
             procedure_cfg["rollMagnitude"] = FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD
     plots_cfg = config.setdefault("plots", {})
-    if isinstance(plots_cfg, dict):
+    if isinstance(plots_cfg, dict) and not report_cfg.get("custom_plots"):
         for name, plot in (("jacking_roll", _four_post_jacking_roll_plot_config()),
                            ("fbrc_roll", _four_post_fbrc_roll_plot_config())):
             if "enabled" in plots_cfg.get(name, {}):
@@ -419,8 +419,10 @@ def _has_variation(
     return bool(float(np.nanmax(finite) - np.nanmin(finite)) > float(min_range_abs))
 
 
-def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
-    vehicle = _load_active_vehicle_yaml()
+def _configured_suspension_setup(
+    config: dict[str, Any], vehicle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    vehicle = _load_active_vehicle_yaml() if vehicle is None else vehicle
     front_side = _side_data(vehicle, "front")
     rear_side = _side_data(vehicle, "rear")
     front_vehicle_table = _side_spring_table(front_side)
@@ -1202,7 +1204,9 @@ class FourPostEvalSim:
             "n_failed_cases": 0,
         }
 
-    def summarize(self, result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    def summarize(
+        self, result: dict[str, Any], *, vehicle: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
         t = _plausible_array(result["time"])
 
         def sig(prefix: str, name: str) -> np.ndarray:
@@ -1508,9 +1512,9 @@ class FourPostEvalSim:
             max_abs=FOUR_POST_RATIO_ABS_LIMIT,
         )
 
-        vehicle = _load_active_vehicle_yaml()
+        vehicle = _load_active_vehicle_yaml() if vehicle is None else vehicle
         _, sprung_cg_m = _combine_sprung_mass(vehicle)
-        suspension_setup = _configured_suspension_setup(self.config)
+        suspension_setup = _configured_suspension_setup(self.config, vehicle)
         front_side = suspension_setup["front_side"]
         rear_side = suspension_setup["rear_side"]
         front_wc = np.asarray(_nested_value(front_side, "suspension", "wheel_center_m"), dtype=float)

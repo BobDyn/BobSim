@@ -115,6 +115,8 @@ class ReportEngine:
         print("[report] Writing report to:", output_path.resolve())
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        from common.reporting.editable import save_report_data
+        save_report_data(output_path, self.config, result)
         output_path.unlink(missing_ok=True)
 
         standard = self.config.get("standard") or report_cfg.get("standard")

@@ -2279,6 +2279,7 @@ function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
         <span>${escapeHtml(humanizeToken(group))}</span>${infoHint(`${humanizeToken(group)} information`, "Inputs, outputs, assumptions and design considerations for this section.", fields[0]?.docsUrl || sectionDocsUrl(SETUP_DOC_TOPICS[state.activeParamGroup] || "architecture"))}
       </div>
       ${settings.length ? `<div class="field-grid">${settings.map(fieldControl).join("")}</div>` : ""}
+      ${group === "Report" ? `<button type="button" class="ghost-button" data-edit-report="setup">Edit report layout</button>` : ""}
       ${pages.length ? `<details class="component-details report-page-picker">
         <summary>Pages <span data-report-page-count>${pages.filter(field => field.value).length} selected</span></summary>
         <div class="field-grid report-page-options">${pages.map(fieldControl).join("")}</div>
@@ -7002,10 +7003,11 @@ function renderSavedResultOutputs() {
     preview.innerHTML = `<div class="empty-state">Run a simulation to create downloadable archive files.</div>`;
     return;
   }
-  list.innerHTML = result.files.map(outputItem).join("");
+  list.innerHTML = `<button type="button" class="ghost-button" data-edit-report="results">Edit report</button>` + result.files.map(outputItem).join("");
   list.querySelectorAll("[data-file-path]").forEach((button) => {
     button.addEventListener("click", () => previewFile(button.dataset.filePath, button.dataset.fileKind, "study-preview"));
   });
+  if (window.openReportViewer && state.view === "studies" && !["signals", "lap"].includes(resultVisualization()?.kind)) { window.openReportViewer(result); return; }
   const first = result.files.find((file) => file.exists && file.path === preview.dataset.filePath)
     || result.files.find((file) => file.exists && file.kind === "pdf")
     || result.files.find((file) => file.exists && isPreviewableFile(file.kind));

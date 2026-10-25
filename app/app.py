@@ -1179,6 +1179,7 @@ def start_workflow(*args: Any, **kwargs: Any) -> Any:
 
 def _sync_server_runtime() -> None:
     _sync_actions_runtime()
+    _sync_data_services_runtime()
     app_server.ROOT = ROOT
     app_server.STATIC_ROOT = STATIC_ROOT
     app_server.JOBS = JOBS

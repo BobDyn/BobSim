@@ -1525,6 +1525,14 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             item["baseline_run_id"] = run_id
         else:
             result["comparison"] = _simulation_comparison(item, runs, payload.get("run_id"))
+    elif action == "report-layout":
+        from common.reporting.editable import validate_plots
+        if item is None:
+            raise ValueError("Simulation not found.")
+        config = yaml.safe_load(item["config_text"])
+        config["plots"] = validate_plots(payload.get("plots"))
+        config.setdefault("report", {})["custom_plots"] = True
+        item["config_text"] = yaml.safe_dump(config, sort_keys=False)
     elif action == "rename":
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
@@ -1678,7 +1686,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     _inherit_ggv_fidelity(items)
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
-    if action in {"move", "add-analysis", "remove-analysis", "create", "save", "rename", "delete",
+    if action in {"report-layout", "move", "add-analysis", "remove-analysis", "create", "save", "rename", "delete",
                   "duplicate", "set-baseline",
                   "set-ggv", "set-racing-line", "set-maneuver-model", "add-visualization", "delete-visualization",
                   "update-visualization", "rename-visualization"}:
@@ -2318,6 +2326,15 @@ def save_active_results(
                            if workflow_id in {"ggv", "racing-line"} else None),
             }
         )
+
+    for output, source in existing_outputs:
+        bundle = source.with_suffix(".report-data.json")
+        if output.kind == "pdf" and bundle.is_file() and (since is None or bundle.stat().st_mtime >= since):
+            target = files_dir / "report-data.json"
+            shutil.copy2(bundle, target)
+            file_entries.append({"label": "Report Data", "kind": "json", "source_path": "",
+                                 "path": target.relative_to(ROOT).as_posix()})
+            break
 
     vehicle_snapshot = None
     if vehicle_text is not None:

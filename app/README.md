@@ -277,3 +277,29 @@ highlighted horizontal bar marks the insertion point. The actions menus also
 provide Move up / Move down, disabled at the ends. Reordering preserves active
 setup edits, saved inputs, visualizations, and linked results. Dragging Results
 onto a QSS input still creates the existing GGV/racing-line connection.
+
+## Editable report canvas
+
+Results opens the saved run as a continuous report document after every plot page
+has preloaded. Click a plot to edit its signals, axes and styling inside the visual;
+there is no separate inspector pane. Edit a page title directly, or add
+single/dual/triple/quad pages.
+Page handles and up/down controls change page order. Curves select named X/Y
+signals and support overlays, display scales/offsets, fits, styles, axis limits,
+log axes and shared limits. Advanced YAML edits the same mapping consumed by
+`PlotEngine`. Disabled pages stay editable but are omitted from PDF export.
+
+`report_editor.py` reads archived inputs, caches processed plot data, and renders
+previews with BobSim's palette. Every page is preloaded; scrolling does not launch
+new render requests. Export renders the same definitions with print styling and
+writes a separate PDF and layout YAML. Original run files remain unchanged.
+`report_editor.js` owns document interaction and plot-local controls. Report viewing
+and exporting do not reserve the simulation execution workspace. Explicitly reusing
+a layout for future runs does reserve it, like other input changes.
+
+`ReportEngine` retains processed series in a `.report-data.json` sidecar, copied
+into saved runs. Older native Four Post runs can reconstruct plots using their
+archived vehicle, combined signals and native force curves. Other old runs expose
+recorded CSV signals and identify unavailable processed series. Layouts are saved
+per run; shared-engine simulation layouts can also be reused for subsequent runs.
+Custom Four Post layouts bypass automatic replacement of default plot definitions.

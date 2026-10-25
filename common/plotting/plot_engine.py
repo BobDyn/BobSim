@@ -26,6 +26,8 @@ class PlotEngine:
 
         for plot_name, fig in self.render(result):
             pdf.savefig(fig)
+            import matplotlib.pyplot as plt
+            plt.close(fig)
 
     def save_pngs(self, result, output_directory, *, dpi=200):
         """Render configured pages as inspectable standalone PNG files."""
@@ -37,6 +39,8 @@ class PlotEngine:
             path = output / f"{plot_name}.png"
             fig.savefig(path, dpi=dpi)
             paths.append(path)
+            import matplotlib.pyplot as plt
+            plt.close(fig)
         return paths
 
     def render(self, result):
@@ -93,4 +97,6 @@ class PlotEngine:
                 plotter = TYPE_REGISTRY[plot_type]()
                 fig = layout.render(plotter, result, p_cfg)
 
+            from common.reporting.editable import apply_page_options
+            apply_page_options(fig, p_cfg)
             yield plot_name, fig

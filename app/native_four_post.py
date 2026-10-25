@@ -32,6 +32,8 @@ GEOMETRY_REPORT_METRICS = {
 def report_plots(config: dict) -> dict:
     """Offer optional native geometry plots without mutating saved selections."""
     plots = copy.deepcopy(config.get("plots", {}))
+    if config.get("report", {}).get("custom_plots"):
+        return plots
     for name, (title, metric, label) in GEOMETRY_REPORT_METRICS.items():
         definition = {"enabled": False, "layout": "dual", "title": title,
             "subplots": [{"title": side.title(),
@@ -193,11 +195,11 @@ def run(vehicle: dict, config: dict, root: Path) -> dict:
     provenance = root / "app/user_data/results/four-post/provenance.json"
     provenance.write_text(json.dumps({"force_based": shares, "iterations": runner.runs}, indent=2))
     plots = simulation.config.get("plots", {})
-    if "jacking_roll" in plots:
+    if "jacking_roll" in plots and not config.get("report", {}).get("custom_plots"):
         plots["jacking_roll"]["title"] = "Force-Based Anti-Roll vs Roll"
         for subplot in plots["jacking_roll"]["subplots"]:
             subplot["y"]["label"] = "Force-based anti-roll (axle-normalized, %)"
-    if "jacking_heave" in plots:
+    if "jacking_heave" in plots and not config.get("report", {}).get("custom_plots"):
         for subplot in plots["jacking_heave"].get("subplots", []):
             subplot["y"]["label"] = ("Anti-dive (selected brake share, %)"
                                       if subplot["y"]["key"] == "fr_anti_vs_heave" else "Anti-squat (RWD, %)")

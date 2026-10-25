@@ -211,7 +211,8 @@ class BobSimHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         launches_job = path in {"/api/jobs", "/api/native/build", "/api/native/run"} or (
             path.startswith("/api/workflows/") and path.endswith("/run"))
-        read_only = path in {"/api/kinematics/travel", "/api/native/status", "/api/results/series",
+        read_only = path in {"/api/reports/editor", "/api/kinematics/travel", "/api/native/status",
+                             "/api/results/series",
                              "/api/kinematics/curves", "/api/tires/eval", "/api/tracks/preview"}
         cancels_job = path.startswith("/api/jobs/") and path.endswith("/cancel")
         if launches_job or cancels_job or read_only or path == "/api/simulations/visualization-settings":
@@ -312,6 +313,16 @@ class BobSimHandler(BaseHTTPRequestHandler):
                     str(body.get("vehicle_key", "")) or None,
                 )
                 self._send_json(payload)
+            elif parsed.path == "/api/reports/editor":
+                from app.report_editor import report_editor
+                if body.get("action") == "save" and body.get("reuse"):
+                    workspace_execution.reserve()
+                    try:
+                        self._send_json(report_editor(body))
+                    finally:
+                        workspace_execution.LOCK.release()
+                else:
+                    self._send_json(report_editor(body))
             elif parsed.path == "/api/results/series":
                 raw_signals = body.get("signals", [])
                 if not isinstance(raw_signals, list):
