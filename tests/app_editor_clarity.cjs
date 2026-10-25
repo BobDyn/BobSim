@@ -766,7 +766,7 @@ vm.runInContext(`
     },addEventListener(){},querySelector:()=>({addEventListener(){}})};
     window={innerWidth:1000,innerHeight:800,addEventListener(){}};
     workspaceAction=fn=>fn(); showSimulationCatalog=id=>{added=id;};
-    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'reduced-step-steer'},{id:'lap',workflow_id:'lap-qss'}]};
+    state.simulationWorkspace={simulations:[{id:'envelope',workflow_id:'ggv'},{id:'maneuver',workflow_id:'mbd-maneuver',supports_animation:true},{id:'lap',workflow_id:'lap-qss'}]};
     wireSimulationContextMenu();
     const rightClick=(group,id)=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
       closest:selector=>selector==='[data-simulation-results]' || selector==='.simulation-tree-runs' ? null : selector==='[data-simulation-branch]' ? (id ? {dataset:{simulationBranch:id},querySelector:()=>trigger} : null)
@@ -789,9 +789,7 @@ vm.runInContext(`
       closest:selector=>selector==='[data-simulation-results]' ? {dataset:{simulationResults:id},querySelector:()=>trigger} : null
     }});
     resultsClick('envelope');
-    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['replay','signals']);
-    assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,true);
-    assert.match(buttons.find(b=>b.dataset.action==='replay').title,/steady-state/);
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['signals']);
     resultsClick('maneuver');
     assert.equal(buttons.find(b=>b.dataset.action==='replay').disabled,false);
     state.simulationWorkspace.simulations.find(s=>s.id==='maneuver').visualizations=[{kind:'replay'}];
