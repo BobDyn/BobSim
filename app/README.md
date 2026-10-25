@@ -266,3 +266,7 @@ For a local BobDocs preview, set the webview's `localStorage` key
 page paths and exact anchors while using that local origin. Only HTTP(S)
 localhost/127.0.0.1 overrides are accepted. Remove the key to restore public
 links. This is a development preview setting, not a packaged-app default.
+
+Report page choices live in a collapsed Pages dropdown with a live selected
+count. Expanding it exposes the checkboxes and metric help; collapsing it does
+not change selections or omit them from saved configuration.

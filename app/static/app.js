@@ -2270,14 +2270,28 @@ function axleFieldBlock(axle, grouped) {
 }
 
 function fieldSubsectionHtml(group, fields, { nested = false } = {}) {
+  const pages = fields.filter(field => field.path?.[0] === "plots"
+    && field.path?.at(-1) === "enabled" && field.kind === "boolean");
+  const settings = fields.filter(field => !pages.includes(field));
   return `
     <section class="field-subsection expanded ${fieldGroupClass(group)}${nested ? " nested-subsection" : ""}">
       <div class="field-subsection-title">
         <span>${escapeHtml(humanizeToken(group))}</span>${infoHint(`${humanizeToken(group)} information`, "Inputs, outputs, assumptions and design considerations for this section.", fields[0]?.docsUrl || sectionDocsUrl(SETUP_DOC_TOPICS[state.activeParamGroup] || "architecture"))}
       </div>
-      <div class="field-grid">${fields.map(fieldControl).join("")}</div>
+      ${settings.length ? `<div class="field-grid">${settings.map(fieldControl).join("")}</div>` : ""}
+      ${pages.length ? `<details class="component-details report-page-picker">
+        <summary>Pages <span data-report-page-count>${pages.filter(field => field.value).length} selected</span></summary>
+        <div class="field-grid report-page-options">${pages.map(fieldControl).join("")}</div>
+      </details>` : ""}
     </section>
   `;
+}
+
+function updateReportPageCounts(form) {
+  form.querySelectorAll(".report-page-picker").forEach(picker => {
+    const count = picker.querySelectorAll('input[type="checkbox"]:checked').length;
+    picker.querySelector("[data-report-page-count]").textContent = `${count} selected`;
+  });
 }
 
 function fieldGroupAxle(group, fields) {
@@ -7200,10 +7214,12 @@ function renderStudyConfigForm() {
     : `<div class="empty-state">This study has no editable fields yet. Its YAML can still be wired into the backend.</div>`;
   form.oninput = () => {
     markStudyConfigDirty();
+    updateReportPageCounts(form);
     renderStudyDiagnostic(selectedStudyWorkflow());
   };
   form.onchange = () => {
     markStudyConfigDirty();
+    updateReportPageCounts(form);
     renderStudyDiagnostic(selectedStudyWorkflow());
   };
   form.onclick = handleArrayEditorClick;
@@ -7333,8 +7349,8 @@ function renderSimConfigForm() {
   if (busy) form.querySelectorAll("button, input, select, textarea").forEach(control => {
     control.title = "Simulation settings are locked while a run is active.";
   });
-  form.oninput = () => { markSimConfigDirty(); updateManeuverPreview(form); };
-  form.onchange = () => { markSimConfigDirty(); updateManeuverPreview(form); };
+  form.oninput = () => { markSimConfigDirty(); updateReportPageCounts(form); updateManeuverPreview(form); };
+  form.onchange = () => { markSimConfigDirty(); updateReportPageCounts(form); updateManeuverPreview(form); };
   if (["maneuver", "mbd-maneuver"].includes(selectedWorkflow()?.id)) renderManeuverSetup(form, busy);
   form.onclick = handleArrayEditorClick;
 }
