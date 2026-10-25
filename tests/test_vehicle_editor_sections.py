@@ -21,7 +21,7 @@ def test_aero_and_powertrain_editors_preserve_fields() -> None:
         "aeroSectionHtml", "aeroTableControl", "aeroSurfaceRowsFromTable", "aeroCellControl",
         "powertrainSubsystemFieldsHtml", "powertrainSubsystems", "powertrainFieldSubsystem",
         "arrayScalarControl", "arrayCellInputHtml", "numericDisplayAttrs", "numericDisplayValue",
-        "formatNumber", "escapeHtml", "infoIcon", "infoHint", "sectionDocsUrl",
+        "formatNumber", "escapeHtml", "infoIcon", "infoHint", "sectionDocsUrl", "documentationUrl",
     )
     helpers = []
     for name in names:
@@ -33,6 +33,7 @@ def test_aero_and_powertrain_editors_preserve_fields() -> None:
         helpers.append(source[start:source.index("\n];", start) + 3])
     script = "\n".join(helpers) + r'''
 const assert = require('node:assert/strict');
+const localStorage = {getItem: () => null};
 const payload = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
 const state = {vehiclePayload: payload};
 function fieldPathString(field) { return field.path.join('.'); }
