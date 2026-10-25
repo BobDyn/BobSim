@@ -753,3 +753,20 @@ def test_workspace_analysis_group_order_is_persistent(archive_workspace):
     assert app.simulation_workspace()["group_order"] == ["kinematic", "lap", *original[1:-1]]
     with pytest.raises(ValueError):
         app.simulation_workspace("move", {"scope": "group", "id": "missing", "direction": "up"})
+
+
+def test_native_capture_never_replaces_a_newer_runs_animation(archive_workspace, monkeypatch):
+    from app import visual
+
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    captures = []
+    monkeypatch.setattr(visual, "available_runs", lambda root: captures)
+    app.simulation_workspace("add-visualization", {"id": parent["id"], "kind": "replay"})
+    snapshot = app.capture_workflow_inputs("study")
+    snapshot["simulation"] = parent
+    first = app.save_active_results("study", input_snapshot=snapshot)["saved"]
+    captures.append({"id": "native-scene", "result_id": first["id"],
+                     "simulation_id": parent["id"], "vehicle_key": "original"})
+    assert app.simulation_workspace()["simulations"][0]["visualizations"][0]["run_id"] == "native-scene"
+    app.save_active_results("study", input_snapshot=snapshot)
+    assert app.simulation_workspace()["simulations"][0]["visualizations"][0]["run_id"] is None

@@ -358,10 +358,18 @@ def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
         data = config.with_suffix(".npz")
         if not data.is_file():
             continue
+        try:
+            scene_config = yaml.safe_load(config.read_text()) or {}
+            source = scene_config.get("source") or {}
+            if not isinstance(source, dict):
+                source = {}
+        except (OSError, ValueError, yaml.YAMLError, AttributeError):
+            source = {}
         runs.append(
             {
                 "id": config.stem,
-                "label": config.stem.replace("_visual", "").replace("_", " "),
+                **{key: str(source[key]) for key in ("simulation_id", "vehicle_key", "result_id") if source.get(key)},
+                "label": str(source.get("label") or config.stem.replace("_visual", "").replace("_", " ")),
                 "config": config.relative_to(base).as_posix(),
                 "data": data.relative_to(base).as_posix(),
                 "modified": str(int(data.stat().st_mtime)),

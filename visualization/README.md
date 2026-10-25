@@ -39,6 +39,23 @@ footprints use Fz, which is available in new runs. Wishbones and steering use ar
 corner travel and rack input. Chassis lines connect the inboard mounts. Actuation
 linkages are omitted in reduced replay. MBD replay uses captured linkage positions.
 
+## Saved native Four Post runs
+
+Capture the exact cached binaries and final calibration recorded by a saved run:
+
+```bash
+.venv/bin/python -m visualization.native_four_post app/user_data/workspaces/vehicles/<vehicle>/results/<run>
+```
+
+This adds geometry outputs without changing the calibration or rebuilding BobLib.
+The capture verifies every archived KnC measurement against the replay, joins the
+front and rear time coordinates, and uses rear traction before 60 seconds and rear
+braking thereafter, matching the report adapter. It writes a scene plus capture
+logs and provenance in `visualization/results/`. The source metadata associates
+the scene with that vehicle and simulation's Animation view. Cached original
+binaries and original native CSVs must still exist; a different binary is never
+silently substituted. Playback defaults to 4×; Export video uses the same rate.
+
 ## Scene Capture
 
 A scene has two inputs:
@@ -73,6 +90,7 @@ pair. Missing signal names are reported when a template is loaded.
 | `tire_state.py` | MF5.2 pure-slip peak friction, grip utilization, and axle load transfer |
 | `from_results.py` | Convert BobLib result frames to a scene |
 | `capture.py` | Run an evaluation with geometry capture and convert its output |
+| `native_four_post.py` | Capture an archived native Four Post run with its original binaries and calibration |
 | `demo.py` | Generate the synthetic scene |
 | `dynpy.py` | Build reduced replay geometry from archived response signals |
 | `visual_templates/` | Older templates |

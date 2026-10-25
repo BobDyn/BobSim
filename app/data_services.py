@@ -1716,6 +1716,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                 if child["kind"] == "replay":
                     child["run_id"] = next((run["id"] for run in captures
                         if run.get("simulation_id") == summary["id"] and run.get("vehicle_key") == key
+                        and (not run.get("result_id") or latest and run["result_id"] == latest["id"])
                         and (not run["id"].startswith("saved-")
                              or latest and run["id"] == "saved-" + latest["id"])), None)
                 else:
