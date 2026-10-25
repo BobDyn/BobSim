@@ -64,7 +64,7 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
     if not math.isfinite(stop) or not 0 < stop <= (120 if kind == "maneuver" else 832):
         raise ValueError("Duration must be between 0 and 120 seconds")
     encoded = artifacts.validate_overrides(manifest, overrides)
-    request = {"identity": manifest["identity"], "overrides": overrides, "settings": settings,
+    request = {"kind": kind, "identity": manifest["identity"], "overrides": overrides, "settings": settings,
                "stop": stop, "adapter": hashlib.sha256(Path(__file__).read_bytes()
                    + Path(__file__).with_name("native_knc.py").read_bytes()).hexdigest(),
                "plot_reference": {

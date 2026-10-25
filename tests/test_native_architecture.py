@@ -330,3 +330,59 @@ def test_missing_traction_binary_does_not_relabel_braking_as_anti_squat(monkeypa
     assert "bump_anti_squat_pct" not in payload["axles"]["rear"]["curves"]
     assert "bump_jacking_ratio" not in payload["axles"]["rear"]["curves"]
     assert "Rear anti-squat unavailable" in payload["warnings"][0]
+
+
+def test_knc_cache_depends_only_on_selected_axle_and_reaction_path():
+    selected = native.architecture({"architecture": {"front": "direct", "rear": "bellcrank_stabar"}})
+    reference = native.artifact_dir(selected, "knc-front")
+    other = {**selected, "rear": "bellcrank", "rear_brakes": "DifferentialInput",
+             "differential": "Locked", "rotor_effects": True}
+    assert native.artifact_dir(other, "knc-front") == reference
+    assert native.wrapper(other, "knc-front") == native.wrapper(selected, "knc-front")
+    assert native.artifact_dir({**other, "front_brakes": "Inboard"}, "knc-front") != reference
+    assert native.artifact_dir({**other, "front": "bellcrank"}, "knc-front") != reference
+    traction = native.artifact_dir(selected, "knc-rear-traction")
+    assert traction == native.artifact_dir({**selected, "rear_brakes": "DifferentialInput"}, "knc-rear")
+    assert native.wrapper(selected, "knc-rear-traction") == native.wrapper(
+        {**selected, "rear_brakes": "DifferentialInput"}, "knc-rear")
+
+
+def test_knc_catalog_covers_all_app_architectures_without_duplicates():
+    from itertools import product
+    from common.knc_catalog import entries
+    plan = entries()
+    keys = {native.artifact_dir(item["selection"], item["kind"]) for item in plan}
+    assert len(keys) == len(plan) == 15
+    for front, rear, diff, front_brake, rear_brake, rotor in product(
+            ("direct", "bellcrank", "stabar"), ("direct", "bellcrank", "stabar"),
+            ("Open", "ClutchLSD", "TorqueBiasing", "Locked"), ("Outboard", "Inboard"),
+            ("Outboard", "Inboard", "DifferentialInput"), (False, True)):
+        selection = {"front": front, "rear": rear, "differential": diff,
+                     "front_brakes": front_brake, "rear_brakes": rear_brake, "rotor_effects": rotor}
+        for kind in ("knc-front", "knc-rear", "knc-rear-traction"):
+            # Avoid fingerprinting all sources for every alias; canonical model
+            # identity must map to exactly one catalog entry.
+            canonical, compiled_kind = native.canonical_request(selection, kind)
+            assert any(item["selection"] == canonical and item["kind"] == compiled_kind for item in plan)
+
+
+def test_shared_rear_binary_keeps_brake_and_traction_results_separate():
+    import contextlib
+    import io
+    import os
+    import yaml
+    from app.native_runs import run
+
+    if os.environ.get("BOBSIM_NATIVE_INTEGRATION") != "1":
+        pytest.skip("Requires the precompiled KnC catalog")
+    vehicle = yaml.safe_load((native.ROOT / "vehicle.yml").read_text())
+    vehicle["architecture"]["rear_brakes"] = "DifferentialInput"
+    with contextlib.redirect_stdout(io.StringIO()):
+        brake = run(vehicle, "knc-rear", {"kinematics_only": True})
+        drive = run(vehicle, "knc-rear-traction", {"kinematics_only": True})
+    assert brake["identity"] == drive["identity"]
+    assert brake["csv"] != drive["csv"]
+    assert brake["kind"] == "knc-rear"
+    assert drive["kind"] == "knc-rear-traction"
+    assert "bump_anti_lift_pct" in brake["curves"]["curves"]
+    assert "bump_anti_squat_pct" in drive["curves"]["curves"]

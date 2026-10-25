@@ -64,11 +64,31 @@ def architecture(vehicle: dict) -> dict:
     return result
 
 
+def canonical_request(selection: dict, kind: str) -> tuple[dict, str]:
+    """Retain only structural choices used by this experiment.
+
+    Calibration is supplied before initialization. The unused axle has a fixed
+    record type; differential and spatial rotor choices do not enter the KnC rig.
+    Rear traction shares the locked differential-input brake reaction model.
+    """
+    if kind not in KINDS:
+        raise ValueError("Unknown native experiment")
+    if kind == "maneuver":
+        return dict(selection), kind
+    side = kind.split("-")[1]
+    canonical = {"front": "stabar", "rear": "stabar", "differential": "ClutchLSD",
+                 "front_brakes": "Outboard", "rear_brakes": "Outboard", "rotor_effects": False}
+    canonical[side] = selection[side]
+    canonical[side + "_brakes"] = "DifferentialInput" if kind.endswith("-traction") else selection[side + "_brakes"]
+    return canonical, "knc-" + side
+
+
 def identity(selection: dict, kind: str) -> dict:
     """Identify sources, experiment, architecture, and host ABI."""
     if kind not in KINDS:
         raise ValueError("Unknown native experiment")
-    builder = "native-v1:" + wrapper(selection, kind)[1] + exporter().FLAGS
+    selection, kind = canonical_request(selection, kind)
+    builder = ("native-v1:" if kind == "maneuver" else "native-v2:") + wrapper(selection, kind)[1] + exporter().FLAGS
     return {"architecture": selection, "kind": kind,
             "source": exporter().source_fingerprint(BOBLIB)["sha256"],
             "builder": hashlib.sha256(builder.encode()).hexdigest(),
@@ -114,6 +134,7 @@ def status(vehicle: dict) -> dict:
 
 def wrapper(selection: dict, kind: str) -> tuple[str, str]:
     """Create wrappers outside BobLib, keeping its checked-in models untouched."""
+    selection, kind = canonical_request(selection, kind)
     exp = exporter()
     base_name, base_source = exp.vehicle_model(**selection)
     name = base_name.replace("BobLibVehicle", "BobSim" + kind.title().replace("-", ""))
@@ -130,12 +151,12 @@ def wrapper(selection: dict, kind: str) -> tuple[str, str]:
                                 "transmission(gearRatio=nativeTransmissionRatio), "
                                 "driveline(inputRatio=nativeDifferentialInputRatio), ")
         return name, source
-    if kind not in ("knc-front", "knc-rear", "knc-rear-traction"):
+    if kind not in ("knc-front", "knc-rear"):
         raise ValueError("Unknown native experiment")
     axle = kind.split("-")[1]
     # Signed static differential-input torque drives through the shafts and
     # closes its housing reaction on the sprung frame, independent of brakes.
-    placement = "DifferentialInput" if kind.endswith("-traction") else selection[axle + "_brakes"]
+    placement = selection[axle + "_brakes"]
     tag_front, _ = exp.AXLES[selection["front"]]
     tag_rear, _ = exp.AXLES[selection["rear"]]
     _, axle_model = exp.AXLES[selection[axle]]
@@ -202,6 +223,7 @@ def parameter_contract(xml: Path) -> dict:
 
 def build(selection: dict, kind: str) -> Path:
     """Compile into a temporary bundle and publish only after initialization."""
+    selection, kind = canonical_request(selection, kind)
     expected = identity(selection, kind)
     destination = artifact_dir(selection, kind)
     if destination.exists():

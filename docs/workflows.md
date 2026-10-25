@@ -199,3 +199,43 @@ the image isn't built.
 simulation executables, reports, or caches. Windows and macOS release assets
 come from the `Release Builds` GitHub Actions workflow on a `v*` tag, not from a
 local build. Never commit `.exe`/`.app`/`.zip`/`.tar.gz` outputs.
+
+## Precompiled geometry catalog
+
+```bash
+make knc-catalog-plan RUN= PYTHON=.venv/bin/python
+make knc-catalog RUN= PYTHON=.venv/bin/python KNC_JOBS=2
+```
+
+The catalog uses the checked-out BobLib sources and builds **15** unique KnC
+artifacts: six steerable front rigs (three suspension types × two brake paths)
+and nine locked rear rigs (three types × three brake paths). Rear traction
+reuses the rear differential-input artifact. Opposite-axle choices, differential
+type, and rotor mechanics do not multiply the quasi-static catalog. Maneuver
+artifacts retain their complete vehicle-architecture identities.
+
+Successful builds are installed directly into `app/user_data/cache/native` for
+the app to reuse. Each build must initialize and pass the runtime-parameter
+contract and complete the full default sweep. Fresh-process probes then move an upper hardpoint and halve the heave
+amplitude, checking the solved frame and motion rather than only parameter names. The manifest records the source fingerprint, generated wrapper,
+platform, compiler, editable parameters, and runtime-file hashes. Failed builds
+are reported individually; rerunning skips valid compiled artifacts.
+
+`app/user_data/cache/knc_catalog/index.json` reports completion, per-artifact
+bytes, total bytes, and compressed bytes. Its `.tar.gz` bundles contain the
+hashed artifact directory and can be extracted under another matching host's
+`cache/native` directory. They require compatible OpenModelica shared runtime
+libraries; these archives are not standalone cross-platform installers. Logs,
+archives, and the index are generated data and stay out of Git.
+
+Use `python -m common.knc_catalog --build --jobs 2 --output PATH` to choose a
+packaging destination. `--jobs` bounds concurrent compiler processes; two is the
+default to limit compiler memory use.
+
+Calibration is set before initialization, not compiled into a separate artifact
+for each setup. Hardpoints, wheel geometry/alignment, actuation tables, tire
+vertical compliance, steering calibration, and protocol parameters follow the
+binary's validated setter contract. Derived values and structural choices are
+not independent setters. Spring/damper tables retain the existing 64-point
+capacity; increasing capacity or changing suspension/brake topology requires a
+new build. Quasi-static rigs intentionally omit dynamic inertia/damping effects.

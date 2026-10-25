@@ -214,3 +214,10 @@ the chosen lateral-force split. The old geometry-only RC/CG proxy remains an
 internal diagnostic, not the displayed anti-roll curve. Moment/applied force
 retains its documented rig-axis reference; the equivalent RC includes the
 steering support correction and contact-plane reference.
+
+KnC artifact selection uses only the chosen axle's suspension type and brake
+reaction path. The opposite axle, differential model, and spatial rotor setting
+cannot invalidate a KnC artifact. Rear traction aliases the locked rear
+DifferentialInput artifact, while its result processing still labels the run as
+traction. `make knc-catalog` prebuilds all 15 unique artifacts; see
+[the workflow](../docs/workflows.md#precompiled-geometry-catalog).

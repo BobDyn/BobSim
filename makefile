@@ -141,6 +141,8 @@ help:
 	  'Fidelity: REDUCED_DOF for transients, generation.model_dof for envelopes, LAP_DOF for laps.' \
 		'BobSim targets:' \
 		'' \
+		'  knc-catalog               Build/reuse and package all 15 axle KnC variants (KNC_JOBS=2)' \
+		'  knc-catalog-plan          List KnC variants without compiling' \
 		'  init                      Initialize submodules' \
 		'  docker-build              Build the Docker development image' \
 		'  docker-rebuild            Rebuild the Docker image from scratch' \
@@ -263,6 +265,14 @@ docker-rebuild:
 app:
 	$(if $(APP_RUN),@echo BobSim app in Docker. Open http://127.0.0.1:$(APP_PORT),)
 	$(APP_RUN) $(PYTHON) -m app.app $(if $(APP_RUN),--host 0.0.0.0 --port 8765,--port $(APP_PORT))
+
+KNC_JOBS ?= 2
+.PHONY: knc-catalog knc-catalog-plan
+knc-catalog:
+	$(RUN) $(PYTHON) -m common.knc_catalog --build --jobs $(KNC_JOBS)
+
+knc-catalog-plan:
+	$(RUN) $(PYTHON) -m common.knc_catalog
 
 # Normal evaluation CSVs have no geometry. This re-runs VISUAL_EVAL with the
 # suspension frames and converts the result to a scene.
