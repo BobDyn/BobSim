@@ -6,7 +6,6 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, replace
 from itertools import repeat
 import multiprocessing
-import math
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -15,23 +14,7 @@ if TYPE_CHECKING:
     from simulations.envelope.ggv.ggv_generation import GGVConfig, GGVEnvelope
 
 
-def automatic_vehicle_speed_grid(maximum_speed_mps: float) -> tuple[float, ...]:
-    """Sample the vehicle's positive speed range at nine uniform intervals.
-
-    Parameters
-    ----------
-    maximum_speed_mps : float
-        Finite positive drivetrain speed limit in meters per second.
-
-    Returns
-    -------
-    tuple[float, ...]
-        Nine ascending speeds from one ninth of the limit to the exact limit.
-        Zero speed is excluded because the steady cornering equations require motion.
-    """
-    if not math.isfinite(maximum_speed_mps) or maximum_speed_mps <= 0.0:
-        raise ValueError("Automatic GGV coverage requires a finite positive vehicle speed limit.")
-    return (*(maximum_speed_mps * (index / 9) for index in range(1, 9)), maximum_speed_mps)
+from simulations.envelope.speed_grid import automatic_vehicle_speed_grid
 
 
 def _generate_speed(vehicle_path: str, config: dict[str, Any]) -> list[GGVEnvelope]:

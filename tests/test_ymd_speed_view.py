@@ -26,7 +26,8 @@ def test_speed_export_retains_slices_and_breaks_invalid_grid_lines(tmp_path):
     assert np.genfromtxt(path, delimiter=",", names=True).size == 8
     assert view["y_extent"] == [0, 600]
     for item in view["slices"]:
-        assert len(item["x"]) == 12  # two line families, with separators
-        assert sum(x is not None for x in item["x"]) == 6
+        assert len(item["x"]) == 12 + 161  # carpet families plus sampled outer limits
+        assert len(item["series"]) == 4
+        assert sum(x is not None for x in item["x"][:12]) == 6
         assert all(len(series["values"]) == len(item["x"]) for series in item["series"])
-        assert all(item["speed"] * 20 not in series["values"] for series in item["series"])
+        assert all(item["speed"] * 20 not in series["values"] for series in item["series"][:2])

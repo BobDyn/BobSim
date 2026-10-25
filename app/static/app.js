@@ -5661,21 +5661,21 @@ function simulationMethodGuide(workflowId) {
   },
   "ymd": {
     "method": [
-      "A sideslip and nominal roadwheel-angle grid defines operating points at the selected speed and prescribed yaw rate. KinPy converts the steering command to rack displacement and individual wheel poses.",
+      "A sideslip and nominal roadwheel-angle grid defines operating points at nine automatic speeds up to the vehicle drivetrain speed limit and prescribed yaw rate. KinPy converts the steering command to rack displacement and individual wheel poses.",
       "Longitudinal and vertical equilibrium are solved at each point. Lateral acceleration and yaw moment remain outputs.",
       "Successful neighboring solutions provide initial guesses. Each point retains its convergence status.",
-      "Interpolated zero-yaw-moment crossings form a continuous trim branch. An enabled speed sweep adds maps at the other requested speeds."
+      "Interpolated zero-yaw-moment crossings form a continuous trim branch. Every run computes the full speed sweep and sampled outer yaw-moment limits."
     ],
     "inputs": [
       "Vehicle definition and the DynPy 14DOF equilibrium model, evaluated in Python.",
-      "Speed, sideslip and roadwheel-angle ranges, grid resolution and prescribed yaw rate.",
-      "Solver iteration and tolerance settings, tire-load-range enforcement, and optional speed sweep.",
+      "Automatic vehicle-speed coverage, sideslip and roadwheel-angle ranges, grid resolution and prescribed yaw rate.",
+      "Solver iteration and tolerance settings, tire-load-range enforcement, and automatic full-speed coverage.",
       "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
     ],
     "outputs": [
       "Lateral acceleration and yaw moment for each sideslip and steering pair, with convergence flags.",
       "Zero-yaw-moment trim curve, lateral and yaw-authority metrics, plots and a PDF report.",
-      "Speed-dependent maps and summary metrics when the speed sweep is enabled."
+      "Speed-dependent maps, sampled limit surfaces, and zero-yaw-moment trim metrics."
     ],
     "limits": [
       "Most map points intentionally have nonzero yaw moment. They are not all steady cornering equilibria.",
@@ -5891,7 +5891,7 @@ function simWorkflowMeta(workflow) {
       title: "Yaw moment diagram",
       summary: "Yaw moment and lateral acceleration across sideslip and steering.",
       sequence: ["Sideslip and steering grid"],
-      parameters: ["Speed, sideslip and steering grids"],
+      parameters: ["Automatic speed coverage; sideslip and steering grids"],
       outputs: ["Yaw moment CSV and PDF report"],
     },
     "reduced-step-steer": {
@@ -6049,7 +6049,7 @@ function studyMetrics(workflow, data) {
   }
   if (workflow?.id === "ymd") {
     return [
-      studyMetric("Speed", scalarLabel(configValue(data, "generation.speed_mps"), "m/s")),
+      studyMetric("Report reference", scalarLabel(configValue(data, "generation.speed_mps"), "m/s")),
       studyMetric("Beta", `${scalarLabel(configValue(data, "generation.beta_min_deg"), "deg")} to ${scalarLabel(configValue(data, "generation.beta_max_deg"), "deg")}`),
       studyMetric("Handwheel", `${scalarLabel(configValue(data, "generation.hwa_min_deg"), "deg")} to ${scalarLabel(configValue(data, "generation.hwa_max_deg"), "deg")}`),
     ];

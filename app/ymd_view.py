@@ -4,6 +4,10 @@ import math
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
+
+from simulations.envelope.ymd.surface import lateral_moment_limits
+
 
 def speed_slices(path: Path) -> dict:
     """Keep computed speeds and invalid-point gaps; never interpolate new physics."""
@@ -37,9 +41,27 @@ def speed_slices(path: Path) -> dict:
                 x.append(None)
                 beta_y.append(None)
                 steer_y.append(None)
+        series: list[dict] = [{"signal": "Constant sideslip", "unit": "N m", "values": beta_y},
+                  {"signal": "Constant steering", "unit": "N m", "values": steer_y}]
+        betas = sorted({r["beta_deg"] for r in rows})
+        steers = sorted({r["hwa_deg"] for r in rows})
+        bi, si = {v: i for i, v in enumerate(betas)}, {v: i for i, v in enumerate(steers)}
+        ay = np.full((len(betas), len(steers)), np.nan)
+        mz = np.full_like(ay, np.nan)
+        grid_valid = np.zeros(ay.shape, dtype=bool)
+        for row in rows:
+            index = bi[row["beta_deg"]], si[row["hwa_deg"]]
+            ay[index], mz[index], grid_valid[index] = row["ay_g"], row["mz_nm"], row["converged"] == 1
+        stations, low, high = lateral_moment_limits(ay, mz, grid_valid)
+        if len(stations):
+            offset = len(x)
+            x.extend(float(v) for v in stations)
+            for item in series:
+                item["values"].extend([None] * len(stations))
+            for label, values in (("Lower sampled limit", low), ("Upper sampled limit", high)):
+                series.append({"signal": label, "unit": "N m",
+                               "values": [None] * offset + [float(v) if np.isfinite(v) else None for v in values]})
         slices.append({"speed": speed, "x": x, "x_unit": "g", "x_label": "Lateral acceleration",
-                       "row_indices": list(range(len(x))),
-                       "series": [{"signal": "Constant sideslip", "unit": "N m", "values": beta_y},
-                                  {"signal": "Constant steering", "unit": "N m", "values": steer_y}]})
+                       "row_indices": list(range(len(x))), "series": series})
     return {"slices": slices, "x_extent": [min(all_x), max(all_x)] if all_x else [-1, 1],
             "y_extent": [min(all_y), max(all_y)] if all_y else [-1, 1]}

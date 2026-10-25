@@ -215,12 +215,30 @@ rather than a clipped envelope. Multistart follows failed continuation. Sideslip
 and roadwheel-steer limits remain model assumptions, recorded in lap summaries.
 
 
-Select the backend in `simulations/envelope/ggv/ggv_config.yml` or `simulations/envelope/ymd/ymd_config.yml`:
+Select the GGV backend in `simulations/envelope/ggv/ggv_config.yml`:
 
 ```yaml
 generation:
   model_dof: 6  # 3, 6, 10, or 14
 ```
+
+YMD is fixed to 14DOF. The file-backed YMD and GGV workflows share nine
+positive speed samples through the drivetrain speed ceiling. Zero speed is
+excluded because the slip-based quasi-static formulation is singular at rest.
+YMD evaluates a steering/sideslip carpet at every speed and reports sampled
+outer bounds in **speed, lateral acceleration, and yaw moment**, plus the
+zero-yaw-moment trim curve. This differs from GGV's speed/ax/ay surface.
+YMD holds the configured yaw rate; it does not solve a full combined-acceleration
+GGV surface or impose steady circular motion on every nonzero-moment point.
+
+Only accepted solutions contribute to the YMD surface: solver convergence,
+configured tire-load domain, and drivetrain/brake force and power limits are
+checked. Adjacent valid grid triangles define the sampled bounds; no convex
+hull closes rejected regions. Outer bounds do not encode internal gaps in yaw
+authority. Surface faces between recorded velocities are display interpolation.
+A speed with no accepted sampled states remains in the CSV and slider; that
+alone is not proof that no feasible state exists. Increase angular resolution
+or widen the steering/sideslip bounds when assessing boundary convergence.
 
 ## Transient runs and BobLib comparison
 

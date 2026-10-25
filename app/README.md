@@ -324,9 +324,19 @@ Post uses its archived binaries and calibration. Animation failures preserve the
 simulation results and are recorded on the saved run. Legacy results without
 geometry need a new run. Reduced Python states are not offered as animations.
 
-YMD uses 14DOF only. Its Raw CSV retains the reference map and every computed
-speed-sweep map. Signal Explorer defaults to yaw moment versus lateral
+YMD uses 14DOF only. Every run solves nine speeds from one ninth of the
+vehicle drivetrain speed limit through that limit, using up to four workers.
+The report reference speed selects the nearest accepted recorded slice; it
+does not restrict coverage. Legacy optional speed-sweep settings are ignored.
+Its Raw CSV retains every computed speed-sweep map. Signal Explorer defaults to yaw moment versus lateral
 acceleration, with a velocity slider through recorded speeds. Both constant
 sideslip and constant steering families retain gaps at rejected points. All
 slices are preloaded and use common axis limits; dragging never starts a solve.
 Older archives with one speed remain viewable at that speed.
+
+YMD exports the sampled outer yaw-moment limits versus lateral acceleration
+and speed as CSV, PNG, and a PDF page. The explorer overlays those limits on
+each recorded carpet. Invalid triangles and empty speed slices remain gaps.
+These are sampled bounds within the configured steer/sideslip grid, not a
+guarantee of a global optimum; internal gaps in yaw authority still require
+reading the carpet. Motor power/force and braking limits also gate acceptance.

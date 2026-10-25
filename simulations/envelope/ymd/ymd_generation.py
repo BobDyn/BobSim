@@ -31,7 +31,7 @@ from datetime import datetime
 import os
 from common.vehicle_io import repo_root
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Callable, Mapping, cast
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
@@ -477,6 +477,7 @@ def generate_ymd(
     vehicle: VehicleParams,
     config: YMDConfig,
     reduced_model: ReducedVehicleModel | None = None,
+    *, feasibility: Callable[[Any], bool] | None = None,
 ) -> YMDResult:
     """
     Generate a first-principles yaw moment diagram.
@@ -535,16 +536,20 @@ def generate_ymd(
                     hwa=hwa,
                 )
             else:
-                trim = solve_moment_state(
-                    reduced_model,
-                    speed_mps=config.speed,
-                    beta_rad=beta,
-                    steering_rad=hwa / vehicle.steering_ratio,
-                    yaw_rate_radps=config.yaw_rate,
-                    initial_unknowns=(row_seed or column_seeds[j]),
-                    max_nfev=max(50, config.max_iter * 6),
-                    tolerance=config.tol_ay,
-                )
+                try:
+                    trim = solve_moment_state(
+                        reduced_model,
+                        speed_mps=config.speed,
+                        beta_rad=beta,
+                        steering_rad=hwa / vehicle.steering_ratio,
+                        yaw_rate_radps=config.yaw_rate,
+                        initial_unknowns=(row_seed or column_seeds[j]),
+                        max_nfev=max(50, config.max_iter * 6),
+                        tolerance=config.tol_ay,
+                    )
+                except (ValueError, RuntimeError):
+                    # An infeasible trial must leave a gap, not abort other speeds.
+                    continue
                 velocity = trim.state[reduced_model.dof :]
                 ay = float(
                     trim.output.generalized_acceleration[1]
@@ -558,6 +563,7 @@ def generate_ymd(
                 )
                 converged = bool(
                     trim.success
+                    and (feasibility is None or feasibility(trim))
                     and (tire_domain_valid or not config.enforce_tire_load_range)
                 )
                 if converged:
@@ -1194,7 +1200,41 @@ def summarize_ymd(
 ) -> tuple[dict[str, float], list[dict[str, float]]]:
     valid = result.converged & np.isfinite(result.ay) & np.isfinite(result.mz)
     if not np.any(valid):
-        raise ValueError("No converged finite YMD points available for metrics.")
+        summary = dict.fromkeys([
+            'speed_mps',
+            'converged_fraction',
+            'peak_lateral_accel_mps2',
+            'peak_lateral_accel_g',
+            'peak_lateral_accel_abs_g',
+            'yaw_moment_at_peak_lateral_accel_nm',
+            'beta_at_peak_lateral_accel_deg',
+            'hwa_at_peak_lateral_accel_deg',
+            'peak_abs_yaw_moment_nm',
+            'yaw_moment_peak_signed_nm',
+            'lateral_accel_at_peak_yaw_moment_g',
+            'max_positive_yaw_moment_nm',
+            'max_negative_yaw_moment_nm',
+            'yaw_moment_range_nm',
+            'yaw_moment_balance',
+            'yaw_moment_hwa_gradient_nm_per_deg',
+            'yaw_moment_beta_gradient_nm_per_deg',
+            'trim_points_count',
+            'trim_peak_lateral_accel_mps2',
+            'trim_peak_lateral_accel_g',
+            'trim_peak_lateral_accel_abs_g',
+            'trim_beta_at_peak_lateral_accel_deg',
+            'trim_hwa_at_peak_lateral_accel_deg',
+            'trim_max_positive_lateral_accel_g',
+            'trim_max_negative_lateral_accel_g',
+            'trim_lateral_accel_range_g',
+            'trim_lateral_accel_balance',
+            'trim_steer_gradient_deg_per_g',
+            'trim_beta_gradient_deg_per_g',
+            'zero_input_lateral_accel_g',
+            'zero_input_yaw_moment_nm',
+        ], float("nan"))
+        summary.update(speed_mps=float(result.speed), converged_fraction=0.0, trim_points_count=0.0)
+        return summary, []
 
     valid_indices = np.argwhere(valid)
     ay_valid = result.ay[valid]
@@ -1262,8 +1302,8 @@ def summarize_ymd(
             trim_rows,
             y_key="beta_deg",
         ),
-        "zero_input_lateral_accel_g": float(result.ay[zero_idx] / G),
-        "zero_input_yaw_moment_nm": float(result.mz[zero_idx]),
+        "zero_input_lateral_accel_g": float(result.ay[zero_idx] / G) if valid[zero_idx] else float("nan"),
+        "zero_input_yaw_moment_nm": float(result.mz[zero_idx]) if valid[zero_idx] else float("nan"),
     }
     return summary, trim_rows
 
@@ -1444,6 +1484,10 @@ def build_ymd_report_pdf(
         _add_title_page(pdf, report_cfg)
         _add_ymd_summary_page(pdf, summary, projection_summary)
         if speed_sweep is not None:
+            from simulations.envelope.ymd.surface import limit_surface_figure
+            surface_fig = limit_surface_figure(speed_sweep)
+            pdf.savefig(surface_fig)
+            plt.close(surface_fig)
             _add_ymd_speed_extremes_wireframe_page(pdf, speed_sweep)
             _add_ymd_speed_extremes_page(pdf, speed_sweep)
         else:
@@ -1661,11 +1705,17 @@ def _plot_ymd_contour_axes(
     beta_deg = np.rad2deg(result.beta)
     hwa_deg = np.rad2deg(result.hwa)
     beta_grid, hwa_grid = np.meshgrid(beta_deg, hwa_deg, indexing="ij")
-    max_abs_mz = np.nanmax(np.abs(result.mz))
+    valid = result.converged & np.isfinite(result.mz) & np.isfinite(result.ay)
+    if not np.any(valid):
+        ax.set_title(f"V={result.speed:.1f} m/s")
+        ax.text(.5, .5, "No accepted sampled states", transform=ax.transAxes, ha="center")
+        return
+    max_abs_mz = max(float(np.max(np.abs(result.mz[valid]))), 1e-9)
     contour = ax.contourf(
         beta_grid,
         hwa_grid,
-        result.mz,
+        np.ma.masked_where(~valid, result.mz),
+        corner_mask=False,
         levels=np.linspace(-max_abs_mz, max_abs_mz, 33),
         cmap="coolwarm",
     )
@@ -1673,7 +1723,8 @@ def _plot_ymd_contour_axes(
     ay_contours = ax.contour(
         beta_grid,
         hwa_grid,
-        result.ay / G,
+        np.ma.masked_where(~valid, result.ay / G),
+        corner_mask=False,
         levels=12,
         colors="black",
         linewidths=0.75,
@@ -1739,11 +1790,13 @@ def _plot_ymd_wireframe_axes(
     beta_step = max(1, len(result.beta) // 10)
     hwa_step = max(1, len(result.hwa) // 10)
     for i in range(0, len(result.beta), beta_step):
-        mask = np.isfinite(ay_g[i, :]) & np.isfinite(result.mz[i, :])
-        ax.plot(ay_g[i, mask], result.mz[i, mask], color="blue", alpha=0.72, linewidth=1.0)
+        mask = result.converged[i, :] & np.isfinite(ay_g[i, :]) & np.isfinite(result.mz[i, :])
+        ax.plot(np.where(mask, ay_g[i, :], np.nan), np.where(mask, result.mz[i, :], np.nan),
+                color="blue", alpha=0.72, linewidth=1.0)
     for j in range(0, len(result.hwa), hwa_step):
-        mask = np.isfinite(ay_g[:, j]) & np.isfinite(result.mz[:, j])
-        ax.plot(ay_g[mask, j], result.mz[mask, j], color="red", alpha=0.72, linewidth=1.0)
+        mask = result.converged[:, j] & np.isfinite(ay_g[:, j]) & np.isfinite(result.mz[:, j])
+        ax.plot(np.where(mask, ay_g[:, j], np.nan), np.where(mask, result.mz[:, j], np.nan),
+                color="red", alpha=0.72, linewidth=1.0)
     ax.axhline(0.0, color="black", linewidth=0.8, alpha=0.55)
     ax.axvline(0.0, color="black", linewidth=0.8, alpha=0.55)
     ax.set_xlabel("lateral acceleration ay (g)")
@@ -2016,12 +2069,12 @@ def _ymd_wireframe_limits(
     results: list[YMDResult],
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
     ay_chunks = [
-        (result.ay[np.isfinite(result.ay)] / G).ravel()
+        (result.ay[result.converged & np.isfinite(result.ay)] / G).ravel()
         for result in results
         if np.any(np.isfinite(result.ay))
     ]
     mz_chunks = [
-        result.mz[np.isfinite(result.mz)].ravel()
+        result.mz[result.converged & np.isfinite(result.mz)].ravel()
         for result in results
         if np.any(np.isfinite(result.mz))
     ]
@@ -2066,7 +2119,7 @@ def _add_ymd_speed_sweep_carpet_page(
         hwa_step = max(1, len(result.hwa) // 10)
 
         for i in range(0, len(result.beta), beta_step):
-            mask = np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
+            mask = result.converged[i, :] & np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
             if np.any(mask):
                 ax.plot(
                     ay_g[i, mask],
@@ -2078,7 +2131,7 @@ def _add_ymd_speed_sweep_carpet_page(
                 )
 
         for j in range(0, len(result.hwa), hwa_step):
-            mask = np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
+            mask = result.converged[:, j] & np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
             if np.any(mask):
                 ax.plot(
                     ay_g[mask, j],
@@ -2153,10 +2206,10 @@ def _centerline_yaw_moment_gradient(result: YMDResult, *, axis: str) -> float:
     beta_idx, hwa_idx = _nearest_grid_index(result)
     if axis == "hwa":
         x = np.rad2deg(result.hwa)
-        y = result.mz[beta_idx, :]
+        y = np.where(result.converged[beta_idx, :], result.mz[beta_idx, :], np.nan)
     elif axis == "beta":
         x = np.rad2deg(result.beta)
-        y = result.mz[:, hwa_idx]
+        y = np.where(result.converged[:, hwa_idx], result.mz[:, hwa_idx], np.nan)
     else:
         raise ValueError(f"Unsupported YMD centerline axis: {axis}")
     return _local_linear_slope(x, y)
@@ -2337,7 +2390,7 @@ def plot_ymd_speed_sweep_3d(
             if i % beta_step != 0 and i not in (0, len(beta_deg) - 1):
                 continue
 
-            mask = np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
+            mask = result.converged[i, :] & np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
 
             if np.any(mask):
                 ax.plot(
@@ -2355,7 +2408,7 @@ def plot_ymd_speed_sweep_3d(
             if j % hwa_step != 0 and j not in (0, len(hwa_deg) - 1):
                 continue
 
-            mask = np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
+            mask = result.converged[:, j] & np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
 
             if np.any(mask):
                 ax.plot(
@@ -2438,7 +2491,7 @@ def plot_ymd_speed_sweep_surface(
         hwa_deg = np.rad2deg(result.hwa)
 
         beta_grid, hwa_grid = np.meshgrid(beta_deg, hwa_deg, indexing="ij")
-        speed_grid = np.full_like(beta_grid, result.speed, dtype=float)
+        speed_grid = np.where(result.converged, result.speed, np.nan)
 
         normalized_mz = 0.5 + 0.5 * result.mz / max_abs_mz
         normalized_mz = np.clip(normalized_mz, 0.0, 1.0)
@@ -2522,7 +2575,7 @@ def plot_ymd_speed_sweep_hull_surfaces(
         mz = result.mz
         speed_grid = np.full_like(result.ay, result.speed, dtype=float)
 
-        mask = np.isfinite(ay_g) & np.isfinite(mz) & np.isfinite(speed_grid)
+        mask = result.converged & np.isfinite(ay_g) & np.isfinite(mz) & np.isfinite(speed_grid)
 
         if np.any(mask):
             points = np.column_stack(
@@ -2682,7 +2735,7 @@ def plot_ymd_speed_sweep_hull_surfaces(
         speed_grid = np.full_like(result.ay, result.speed, dtype=float)
 
         for i in (0, len(result.beta) - 1):
-            mask = np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
+            mask = result.converged[i, :] & np.isfinite(ay_g[i, :]) & np.isfinite(mz[i, :])
             if np.any(mask):
                 ax.plot(
                     ay_g[i, mask],
@@ -2694,7 +2747,7 @@ def plot_ymd_speed_sweep_hull_surfaces(
                 )
 
         for j in (0, len(result.hwa) - 1):
-            mask = np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
+            mask = result.converged[:, j] & np.isfinite(ay_g[:, j]) & np.isfinite(mz[:, j])
             if np.any(mask):
                 ax.plot(
                     ay_g[mask, j],
@@ -2772,7 +2825,6 @@ def main() -> None:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    from engines.dynpy import Vehicle
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     config_path = DEFAULT_YMD_CONFIG
@@ -2819,10 +2871,11 @@ def main() -> None:
 
     config = config_to_ymd_config(ymd_report_config)
 
-    reduced_model = Vehicle.from_yaml(vehicle_path).model(config.model_dof)
-    print(f"  Engine: DynPy | {config.model_dof} DOF QSS | Runtime: Python")
-
-    result = generate_ymd(vehicle, config, reduced_model=reduced_model)
+    from simulations.envelope.ymd.parallel import generate_ymd_from_vehicle
+    sweep_result = generate_ymd_from_vehicle(vehicle_path, config)
+    valid_results = [item for item in sweep_result.results if np.any(item.converged)]
+    result = min(valid_results or sweep_result.results, key=lambda item: abs(item.speed - config.speed))
+    print(f"  Report reference slice: {result.speed:.2f} m/s", flush=True)
 
     report_cfg = ymd_report_config.get("report") or {}
     results_dir = ENVELOPE_DIR / "results"
@@ -2849,27 +2902,16 @@ def main() -> None:
 
     summary, trim_rows = summarize_ymd(result)
 
-    speed_sweep_cfg = ymd_report_config.get("speed_sweep") or {}
-    speed_sweep = np.array(
-        [float(v) for v in speed_sweep_cfg.get("speeds_mps", np.linspace(10.0, 25.0, 7))],
-        dtype=float,
-    )
-    sweep_result: YMDSpeedSweepResult | None = None
-    sweep_rows: list[dict[str, float]] = []
-
-    if bool(speed_sweep_cfg.get("enabled", True)):
-        sweep_result = generate_ymd_speed_sweep(
-            vehicle=vehicle,
-            base_config=config,
-            speeds=speed_sweep,
-            reduced_model=reduced_model,
-        )
-        sweep_summary, sweep_rows = summarize_ymd_speed_sweep(sweep_result)
-        summary.update(sweep_summary)
+    sweep_summary, sweep_rows = summarize_ymd_speed_sweep(sweep_result)
+    summary.update(sweep_summary)
+    trim_rows_all = [row for item in sweep_result.results for row in ymd_trim_curve(item)]
 
     save_ymd_csv(result, raw_output_path, speed_results=sweep_result.results if sweep_result else None)
+    from simulations.envelope.ymd.surface import save_limit_surface, plot_limit_surface
+    save_limit_surface(sweep_result, raw_output_path.with_name("ymd_limit_surface.csv"))
+    plot_limit_surface(sweep_result, raw_output_path.with_name("ymd_limit_surface.png"))
     save_metric_rows(ymd_metric_rows(summary), metrics_output_path)
-    save_trim_curve_csv(trim_rows, trim_output_path)
+    save_trim_curve_csv(trim_rows_all, trim_output_path)
     if bool(report_cfg.get("enabled", True)):
         build_ymd_report_pdf(
             result,
