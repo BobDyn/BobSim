@@ -66,10 +66,7 @@ def test_report_edit_preview_export_and_reuse_are_independent_of_recorded_inputs
     for label in preview["labels"]:
         assert 0 <= label["x"] < 1 and 0 <= label["y"] < 1
         assert label["width"] > 0 and label["height"] > 0
-    for index in range(2):
-        axis_label = next(label for label in preview["labels"] if label["sub"] == index and label["kind"] == "x")
-        unit_label = next(label for label in preview["labels"] if label["sub"] == index and label["kind"] == "x-unit")
-        assert axis_label["x"] + axis_label["width"] == pytest.approx(unit_label["x"])
+    assert {label["kind"] for label in preview["labels"]} == {"title", "x", "y"}
     report_editor({**context, "action": "save", "plots": plots, "reuse": True})
     assert report_editor(context)["plots"] == plots
     sim = json.loads((run_dir.parent.parent / "simulations.json").read_text())[0]
@@ -123,6 +120,7 @@ def test_all_layouts_apply_axis_limits_and_legend_options(layout, count):
             assert axis.get_ylim() == (-1, 5)
             assert axis.get_legend() is None
             assert len(axis.lines) == 3  # Base, overlay and overlay's fit.
+            assert any(text.get_text() == "Fit: y = 2 x + 0" for text in axis.texts)
     finally:
         plt.close(figures[0][1])
 
@@ -210,3 +208,16 @@ def test_report_browser_metric_logic(script):
     if node is None:
         pytest.skip("Node.js is not installed")
     subprocess.run([node, str(Path(__file__).with_name(script))], cwd=app.PACKAGE_ROOT, check=True)
+
+
+def test_fit_equation_uses_displayed_units_and_skips_constant_x():
+    from common.plotting.plot_types.signal_plot import SignalPlot
+    plotter = SignalPlot()
+    fig, ax = plt.subplots()
+    try:
+        plotter.draw_fit(ax, [0, 1000, 2000], [1, 3, 5], {}, color="blue")
+        assert ax.texts[0].get_text() == "Fit: y = 0.002 x + 1"
+        plotter.draw_fit(ax, [1, 1, 1], [1, 2, 3], {}, color="blue")
+        assert len(ax.texts) == 1
+    finally:
+        plt.close(fig)

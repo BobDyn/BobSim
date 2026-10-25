@@ -41,29 +41,40 @@
     return {name:match?.[1] ?? axis.label ?? axis.key ?? '', unit,
       group:unitGroups.find(group=>Object.hasOwn(group,unit))};
   }
-  function metricControls(index, axis='y') {
-    const current=subs()[index];
+  function metricControls(index, axis='y', target=page()) {
+    const plots=ReportMetrics.panels(target);
+    const current=plots[index];
     const selected=editor.metrics.find(item=>item.id===current._metric_source);
     const choices=axis==='x' ? editor.metrics.filter(item=>item.metric===selected?.metric) : editor.metrics;
     const unique=[...new Map(choices.map(item=>[axis==='x'?item.view:item.metric,item])).values()];
-    const members=ReportMetrics.group(page(),index);
+    const members=ReportMetrics.group(target,index);
     return `<div data-sub="${index}">
       ${select(axis==='x'?'Independent axis':'Metric',(axis==='x'?selected?.view:selected?.metric) || '',
         [...(!selected?[['','Choose a metric']]:[]),...unique.map(item=>[axis==='x'?item.view:item.metric, axis==='x'?item.view:`${item.metric} · ${item.count} values (up to ${Object.keys(sizes).find(key=>sizes[key]===item.count)})`])],`data-metric-axis="${axis}"`)}
       ${selected && members.length<selected.count ? select('Value for this plot',String(current._metric_member || 0),selected.subplots.map((sub,i)=>[String(i),sub.title || `Value ${i+1}`]),'data-metric-member') : ''}
       <p class="report-unit-note">Applies to ${members.length} plot${members.length===1?'':'s'} in this metric group.</p>
-      ${axis==='y' && members.length>1 && members.length<subs().length ? '<button type="button" class="ghost-button" data-action="split-metric">Edit this plot independently</button>' : ''}
-      ${members.length<subs().length ? '<button type="button" class="ghost-button" data-action="fill-metric">Apply this metric to the whole page</button>' : ''}
+      ${axis==='y' && members.length>1 && members.length<plots.length ? '<button type="button" class="ghost-button" data-action="split-metric">Edit this plot independently</button>' : ''}
+      ${members.length<plots.length ? '<button type="button" class="ghost-button" data-action="fill-metric">Apply this metric to the whole page</button>' : ''}
       </div>`;
   }
-  function axisHtml(sub, axis) {
-    if(!editor.editUnits) return metricControls(editor.activeSub,axis);
-    const cfg=sub[axis] || {}, info=axisUnit(cfg);
-    return `<div data-sub="${editor.activeSub}">
-      ${info.group ? select('Display units',info.unit,Object.keys(info.group),`data-unit-axis="${axis}"`) : '<p>This metric has no convertible display units.</p>'}
-      <p class="report-unit-note">Units apply to every plot in this metric group.</p></div>`;
+  function axisHtml() {
+    const draft=editor.axisDraft, sub=ReportMetrics.panels(draft.page)[draft.index];
+    const info=axisUnit(sub[draft.axis] || {});
+    return `${metricControls(draft.index,draft.axis,draft.page)}
+      <div data-sub="${draft.index}">
+      ${info.group ? select('Display units',info.unit,Object.keys(info.group),`data-unit-axis="${draft.axis}"`) : `<p class="report-unit-note">Units: ${esc(info.unit || 'dimensionless')}</p>`}
+      </div><div class="report-toolbar">
+      <button type="button" class="ghost-button" data-action="close-controls">Cancel</button>
+      <button type="button" class="primary-button" data-action="apply-axis">Apply</button></div>`;
   }
-  function convertAxis(sub, axis, unit) {
+  function refreshAxisForm() {
+    const panel=dialog.querySelector('.report-label-editor [data-page-form]');
+    if(panel) panel.innerHTML=axisHtml();
+  }
+  function closeAxis() {
+    editor.axisDraft=null;editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
+  }
+  function convertAxis(sub, axis, unit, parent=page()) {
     const info=axisUnit(sub[axis]);
     if(!info.group || !Object.hasOwn(info.group,unit)) return;
     const factor=info.group[info.unit]/info.group[unit];
@@ -74,7 +85,7 @@
       cfg.scale=(cfg.scale ?? 1)*factor;cfg.offset=(cfg.offset ?? 0)*factor;
     }
     sub[axis].label=`${info.name} (${unit})`;
-    const limits=sub[axis+'lim'] ?? page()[axis+'lim'];
+    const limits=sub[axis+'lim'] ?? parent[axis+'lim'];
     if(limits) sub[axis+'lim']=limits.map(value=>value*factor);
     const refs=Array.isArray(sub.reference)?sub.reference:sub.reference?[sub.reference]:[];
     for(const ref of refs) if(ref.type===(axis==='y'?'horizontal':'vertical') && typeof ref[axis]==='number') ref[axis]*=factor;
@@ -88,18 +99,16 @@
       ${select('Line', curve.linestyle || '-', [['-','Solid'],['--','Dashed'],[':','Dotted'],['-.','Dash-dot']], 'data-prop="linestyle"')}
       ${field('Line width', curve.linewidth ?? 2, 'type="number" min="0" step="0.25" data-number data-prop="linewidth"')}
       ${field('Opacity', curve.alpha ?? 1, 'type="number" min="0" max="1" step="0.1" data-number data-prop="alpha"')}</div>
-      ${check('Linear fit', curve.fit, 'data-prop="fit"')}
+      ${check('Linear fit · show equation', curve.fit, 'data-prop="fit"')}
       ${overlay >= 0 ? '<button type="button" class="ghost-button" data-action="remove-overlay">Remove curve</button>' : ''}
     </div>`;
   }
   function subHtml(sub, i) {
     const inherited = key => sub[key] ?? page()[key];
     return `<details class="report-subplot" data-sub="${i}" open><summary>Plot ${i+1}${sub.title ? ' · ' + esc(sub.title) : ''}</summary>
-      ${metricControls(i)}
       ${ReportMetrics.group(page(),i).length<subs().length ? field('Custom plot title',sub.title,'data-subprop="title"') : ''}
       ${curveHtml(sub)}
       ${(Array.isArray(sub.overlay) ? sub.overlay : sub.overlay ? [sub.overlay] : []).map((c,i)=>curveHtml(c,i)).join('')}
-      <button class="ghost-button" type="button" data-action="add-overlay">Add overlay curve</button>
       <details><summary>Axes and legend</summary><div class="report-fields">${['x','y'].map(axis =>
         select(`${axis.toUpperCase()} axis`, inherited(axis+'scale') || 'linear', ['linear','log','symlog'], `data-subprop="${axis}scale"`) +
         field(`${axis.toUpperCase()} minimum`, inherited(axis+'lim')?.[0], `type="number" step="any" data-limit="${axis}" data-end="0" placeholder="Automatic"`) +
@@ -176,9 +185,9 @@
       if(!sub) return;
       panel.classList.toggle('report-label-editor',Boolean(editor.activeLabel));
       panel.querySelector('header span').textContent=editor.activeLabel?`${editor.activeLabel.toUpperCase()} axis`:`Plot ${editor.activeSub+1}`;
-      panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel ? axisHtml(sub,editor.activeLabel) : subHtml(sub,editor.activeSub);
+      panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel ? axisHtml() : subHtml(sub,editor.activeSub);
       const preview=previews.get(pagePreviewKey(editor.selected));
-      const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel+(editor.editUnits?'-unit':''))) || preview?.axes?.[editor.activeSub];
+      const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel)) || preview?.axes?.[editor.activeSub];
       panel.style.left=`${Math.min((box?.x||.05)*100,48)}%`;
       panel.style.top=`${Math.min((box?.y||.05)*100,50)}%`;
       card.querySelector('.report-sheet-figure').append(panel);
@@ -190,7 +199,7 @@
       <div class="report-toolbar"><select data-new-layout aria-label="New page layout">${Object.keys(sizes).map(v=>`<option>${v}</option>`).join('')}</select><button type="button" class="ghost-button" data-action="add">＋ Add page</button><button type="button" class="ghost-button" data-action="save">Save</button><button type="button" class="primary-button" data-action="export" ${!editor.has_results?'disabled':''}>Export PDF ↗</button><button type="button" class="ghost-button" data-action="close">${editor.inline?'Files':'Close'}</button></div></header>
       <div class="report-editor-body"><section class="report-document" data-document aria-label="Interactive report pages"></section></div>
       <footer class="report-editor-foot"><div>${editor.can_reuse?check('Reuse layout for future runs',editor.context.from_setup||!editor.context.result_id,'data-reuse'):''}<span data-download></span></div><p data-status role="status"></p></footer>`;
-    message('Click an axis to choose a metric or view; click units to convert the group. Drag the page handle to reorder.');
+    message('Click an axis label to choose its metric, view and units. Drag the page handle to reorder.');
     renderPages();renderDetail();
   }
   function changed() {
@@ -239,6 +248,22 @@
     }
     if(card && el.hasAttribute('data-layout')) {editor.selected=card.dataset.reportPage;editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;}
     if(el.hasAttribute('data-signal-filter')) return;
+    if(editor.axisDraft && el.closest('.report-label-editor')) {
+      const draft=editor.axisDraft, sub=ReportMetrics.panels(draft.page)[draft.index];
+      if(el.hasAttribute('data-metric-axis')) {
+        const current=editor.metrics.find(item=>item.id===sub._metric_source);
+        const candidates=editor.metrics.filter(item=>draft.axis==='x'
+          ? item.metric===current?.metric && item.view===el.value : item.metric===el.value);
+        const chosen=candidates.find(item=>item.view===current?.view) || candidates[0];
+        if(chosen) draft.index=ReportMetrics.apply(draft.page,draft.index,chosen);
+      } else if(el.hasAttribute('data-unit-axis')) {
+        for(const member of ReportMetrics.group(draft.page,draft.index)) convertAxis(member.sub,draft.axis,el.value,draft.page);
+      } else if(el.hasAttribute('data-metric-member')) {
+        const view=editor.metrics.find(item=>item.id===sub._metric_source);
+        if(view) Object.assign(sub,clone(view.subplots[Number(el.value)]),{_metric_member:Number(el.value)});
+      }
+      refreshAxisForm();return;
+    }
     const p=page();if(!p)return;
     const sub=el.closest('[data-sub]') ? subs()[Number(el.closest('[data-sub]').dataset.sub)] : null;
     let value = el.type==='checkbox' ? el.checked : el.hasAttribute('data-number') ? Number(el.value) : el.value;
@@ -300,15 +325,17 @@
     if(card && label) {
       editor.selected=card.dataset.reportPage;
       editor.activeSub=Number(label.dataset.labelSub);
-      editor.editUnits=label.dataset.editLabel.endsWith('-unit');
-      editor.activeLabel=label.dataset.editLabel.split('-')[0];editor.pageTools=false;renderDetail();return;
+      editor.activeLabel=label.dataset.editLabel;editor.pageTools=false;
+      editor.axisDraft={page:clone(page()),index:editor.activeSub,axis:editor.activeLabel};
+      renderDetail();return;
     }
     const plot=event.target.closest('[data-edit-sub]');
     const sheetButton=event.target.closest('[data-sheet-action]');
     if(card && (plot || sheetButton)) {
+      if(sheetButton) {editor.axisDraft=null;editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;}
       editor.selected=card.dataset.reportPage;
       if(plot || sheetButton.dataset.sheetAction==='edit') {
-        editor.activeLabel=null;editor.editUnits=false;editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
+        editor.axisDraft=null;editor.activeLabel=null;editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
       }
       const action=sheetButton.dataset.sheetAction;
       if(action==='duplicate') {const p=clone(page());p.title=(p.title||'Page')+' copy';insertPage(p);return;}
@@ -319,9 +346,19 @@
     if(!button) return;
     const action=button.dataset.action;
     try {
+      if(action==='apply-axis') {editor.plots[editor.selected]=editor.axisDraft.page;closeAxis();changed();return;}
+      if(editor.axisDraft && ['fill-metric','split-metric'].includes(action)) {
+        const draft=editor.axisDraft, plots=ReportMetrics.panels(draft.page), sub=plots[draft.index];
+        if(action==='split-metric') sub._metric_group=`independent-${Date.now()}`;
+        else {
+          const view=editor.metrics.find(item=>item.id===sub._metric_source);
+          if(view) {plots.forEach(sub=>sub._metric_group='whole-page');draft.index=ReportMetrics.apply(draft.page,0,view);}
+        }
+        refreshAxisForm();return;
+      }
       if(action==='fill-metric') {const index=Number(button.closest('[data-sub]').dataset.sub);const view=editor.metrics.find(item=>item.id===subs()[index]._metric_source);if(view){subs().forEach(sub=>sub._metric_group='whole-page');editor.activeSub=ReportMetrics.apply(page(),0,view);changed();renderDetail();}return;}
       if(action==='split-metric') {const sub=subs()[Number(button.closest('[data-sub]').dataset.sub)];sub._metric_group=`independent-${Date.now()}`;changed();renderDetail();return;}
-      if(action==='close-controls') {editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();return;}
+      if(action==='close-controls') {closeAxis();return;}
       if(action==='close') {if(!editor.dirty || confirm('Close without saving your report changes?')) {fileView=editor.key;dialog.close();document.querySelector('.archive-workspace').classList.remove('report-viewing');document.getElementById('study-preview').hidden=false;}return;}
       if(action==='add') {
         editor.activeSub=0;editor.activeLabel=null;editor.pageTools=false;
@@ -369,7 +406,8 @@
     if(!event.target.closest('.report-onplot-editor')) return;
     if(event.key==='Escape' || (event.key==='Enter' && event.target.tagName==='INPUT')) {
       event.preventDefault();event.stopPropagation();event.target.blur();
-      editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
+      if(event.key==='Enter' && editor.axisDraft) dialog.querySelector('[data-action=apply-axis]')?.click();
+      else closeAxis();
     }
   });
   // Ease discrete mouse-wheel steps; trackpads already provide their own momentum.

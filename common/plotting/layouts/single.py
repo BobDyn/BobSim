@@ -58,17 +58,8 @@ class SingleLayout:
             if item.get("group") is not None and not item.get("match_color"):
                 group_colors.setdefault(item["group"], line.get_color())
 
-            fit = (plotter.compute_fit(x, y, {**p_cfg, "fit": True})
-                   if item.get("fit", p_cfg.get("fit", False)) else None)
-            if fit is not None:
-                ax.plot(
-                    x,
-                    fit,
-                    "--",
-                    linewidth=2,
-                    color=line.get_color(),
-                    alpha=0.85,
-                )
+            if item.get("fit", p_cfg.get("fit", False)):
+                plotter.draw_fit(ax, x, y, p_cfg, color=line.get_color(), label=label)
 
         refs = p_cfg.get("reference")
         if refs:

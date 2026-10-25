@@ -56,17 +56,8 @@ class QuadLayout:
                 if item.get("group") is not None and not item.get("match_color"):
                     group_colors.setdefault(item["group"], line.get_color())
 
-                fit = (plotter.compute_fit(x, y, {**sub, "fit": True})
-                       if item.get("fit", sub.get("fit", False)) else None)
-                if fit is not None:
-                    ax.plot(
-                        x,
-                        fit,
-                        "--",
-                        linewidth=2,
-                        color=line.get_color(),
-                        alpha=0.85,
-                    )
+                if item.get("fit", sub.get("fit", False)):
+                    plotter.draw_fit(ax, x, y, sub, color=line.get_color(), label=label)
 
             refs = sub.get("reference")
             if refs:

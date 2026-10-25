@@ -283,16 +283,18 @@ onto a QSS input still creates the existing GGV/racing-line connection.
 Results opens the saved run as a continuous report document after every plot page
 has preloaded. Axis labels select named metrics and independent views from the
 recorded report definitions. Changing a view replaces both X and Y data together,
-preserving corner-specific signs and conversions. Units have separate click targets
-and conversions apply to the metric group. Standard subplot titles identify the
+preserving corner-specific signs and conversions. The complete axis label opens one popup for the metric/view and display units.
+Edits remain pending until Apply, which updates the group and closes the popup;
+Cancel discards them without re-rendering the report. Standard subplot titles identify the
 provided values and are fixed. Metric choices show the number of values and maximum
 layout size; smaller layouts can select which values to display.
 
 Single/dual/triple/quad pages can combine independent metric groups. A dual metric
 and a single metric can occupy a triple page; edits affect only their own group.
 Plots may be split into independent groups or filled from one metric. Mixed pages
-allow custom subplot titles. Click a plot for styling, overlays, fits, limits and
-shared limits. Advanced YAML still edits the mapping consumed by `PlotEngine`.
+allow custom subplot titles. Clicking a graph opens appearance controls only: curve
+styles, legend, fits, limits and shared limits. Linear fits show their equations
+on the plot and in PDF exports, using displayed axis units. Advanced YAML still edits the mapping consumed by `PlotEngine`.
 Page handles reorder the document; disabled pages are omitted from PDF export.
 Mouse-wheel scrolling eases to rest; small trackpad gestures and reduced-motion
 settings retain native scrolling.

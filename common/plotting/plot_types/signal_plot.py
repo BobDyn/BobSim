@@ -132,3 +132,21 @@ class SignalPlot:
             return None
         coeffs = np.polyfit(x, y, 1)
         return np.polyval(coeffs, x)
+
+
+    def draw_fit(self, ax, x, y, cfg, *, color, label=None):
+        """Draw a linear fit and its equation in the displayed axis units."""
+        x, y = self._clean_xy(x, y, cfg)
+        if x.size < 2 or np.std(x) < 1e-12:
+            return
+        slope, intercept = np.polyfit(x, y, 1)
+        order = np.argsort(x)
+        ax.plot(x[order], slope * x[order] + intercept, "--", linewidth=2, color=color, alpha=.85)
+        if abs(intercept) < 1e-12 * max(1, float(np.max(np.abs(y)))):
+            intercept = 0.0
+        equation = f"y = {slope:.4g} x {'−' if intercept < 0 else '+'} {abs(intercept):.4g}"
+        count = sum(text.get_gid() == "linear-fit-equation" for text in ax.texts)
+        annotation = ax.text(.02, .98 - .065 * count, f"{label or 'Fit'}: {equation}",
+                             transform=ax.transAxes, ha="left", va="top", fontsize=8, color=color,
+                             bbox={"facecolor": "white", "edgecolor": "none", "alpha": .85, "pad": 2})
+        annotation.set_gid("linear-fit-equation")
