@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from app.native_runs import run
+from app.native_knc import sprung_cg_height
 from common.native_artifacts import ROOT
 
 
@@ -32,9 +33,17 @@ def test_native_lateral_split_preserves_longitudinal_probe_and_superposes(side):
             for wheel, expected in (("left", 1000 * share), ("right", 1000 * (1 - share))):
                 signal = f"{wheel}Load.worldForce.force[2]"
                 assert loaded[signal] - unloaded[signal] == pytest.approx(expected, abs=1e-5)
-        responses[share] = result["curves"]["curves"]["roll_force_rc_height_mm"]
+        responses[share] = result["curves"]["curves"]
+        for index, time in enumerate(range(66, 117, 5)):
+            height = sprung_cg_height(at(time), vehicle)
+            equivalent = responses[share]["roll_force_rc_height_mm"][index]
+            assert responses[share]["roll_force_anti_roll_pct"][index] == pytest.approx(
+                100 * equivalent / (1000 * height))
     for share in (.5, .75):
-        expected = [share * left + (1 - share) * right for left, right in zip(responses[1], responses[0])]
-        assert responses[share] == pytest.approx(expected, abs=1e-6)
+        for key in ("roll_force_rc_height_mm", "roll_jacking_ratio", "roll_reaction_per_fy_m",
+                    "roll_force_anti_roll_pct"):
+            expected = [share * left + (1 - share) * right
+                        for left, right in zip(responses[1][key], responses[0][key])]
+            assert responses[share][key] == pytest.approx(expected, abs=1e-6)
     with pytest.raises(ValueError, match="bound"):
         run(vehicle, "knc-" + side, {"lateralLeftShare": 1.1})

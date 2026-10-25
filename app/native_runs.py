@@ -189,6 +189,11 @@ def kinematic_curves_payload(vehicle: dict, sweep_m=None) -> dict:
                 if payload["axles"][side]["ok"]:
                     payload["axles"][side]["load_split"]["rc_" + wheel + "_mm"] = (
                         response["curves"]["curves"]["roll_force_rc_height_mm"])
+                    for prefix, curve in (("jacking", "roll_jacking_ratio"),
+                                          ("moment", "roll_reaction_per_fy_m"),
+                                          ("anti", "roll_force_anti_roll_pct")):
+                        payload["axles"][side]["load_split"][prefix + "_" + wheel] = (
+                            response["curves"]["curves"].get(curve, []))
             except (ValueError, RuntimeError, OSError) as exc:
                 payload["warnings"].append(f"{side.title()} {wheel}-load response unavailable: {exc}")
     payload["available"] = any(axle["ok"] for axle in payload["axles"].values())

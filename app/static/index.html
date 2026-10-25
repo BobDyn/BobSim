@@ -134,9 +134,8 @@
                     including front steering support, referenced to the contact plane. The default roll sweep uses equal lateral forces;
                     the force-share slider combines independently measured left/right lateral-load responses at each roll sample.</p>
                   <p>Jacking subtracts the unloaded response from a 1000 N contact-force pulse, with the stabilizer removed.
-                    Geometric anti-roll interprets the geometry as moment resistance under lateral load:
-                    RC height / posed sprung CG height above the same contact plane. It is a load-response
-                    percentage, rather than a purely geometric location;
+                    Force-based anti-roll is equivalent force-based RC height / posed sprung CG height,
+                    with both heights above the same contact plane and the selected lateral-force split;
                     negative values mean a below-ground RC. Net jacking can be zero while the roll moment is nonzero.
                     Anti plots apply the selected front/rear brake-force share to front anti-dive and rear anti-lift
                     at each heave sample; RWD anti-squat uses 100% rear drive.

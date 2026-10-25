@@ -34,7 +34,7 @@ def metadata() -> list[dict]:
                                 anti_squat_pct=("Rear anti-squat (RWD)", "%"))
         if phase == "roll":
             measurements.update(reaction_per_fy_m=("Moment / applied force", "m"),
-                                anti_roll_pct=("Geometric anti-roll (axle-normalized)", "%"))
+                                anti_roll_pct=("Force-based anti-roll (axle-normalized)", "%"))
         for key, (title, y_unit) in measurements.items():
             result.append({"id": phase + "_" + key, "label": title, "unit": y_unit,
                            "x_id": axis, "x_label": label, "x_unit": unit, "y_label": title})
@@ -225,6 +225,10 @@ def curves(rows: list[dict], vehicle: dict | None = None, side: str = "front", *
                     if rc_height is not None and cg_height is not None and cg_height > 1e-9 else None
                     for (rc_height, _), cg_height in zip(rc, heights)]
                 result["curves"]["roll_force_rc_height_mm"] = force_rc
+                result["curves"]["roll_force_anti_roll_pct"] = [
+                    100 * height / (1000 * cg_height)
+                    if height is not None and cg_height is not None and cg_height > 1e-9 else None
+                    for height, cg_height in zip(force_rc, heights)]
             else:
                 values = []
                 for r, tail in zip(ratio, sampled):

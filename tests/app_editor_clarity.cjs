@@ -1223,3 +1223,17 @@ vm.runInContext(`
   state.geometryPlotForceShares={};
 }
 `,ctx);
+
+vm.runInContext(`
+{
+  const payload={axles:{front:{load_split:{jacking_left:[1,2,null],jacking_right:[-1,-2,3],
+    moment_left:[.1,.2,.3],moment_right:[.3,.2,.1],anti_left:[10,20,30],anti_right:[30,20,10]}}}};
+  state.geometryPlotForceShares={roll_jacking_ratio:75,roll_reaction_per_fy_m:0,roll_anti_roll_pct:100};
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_jacking_ratio'),[.5,1,null]);
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_reaction_per_fy_m'),[.3,.2,.1]);
+  assert.deepEqual(kinematicPlotValues(payload,'front','roll_anti_roll_pct'),[10,20,30]);
+  for(const key of ['roll_jacking_ratio','roll_reaction_per_fy_m','roll_anti_roll_pct'])
+    assert.ok(geometryPlotPoseControl({id:key,label:key}).includes('Left (+) lateral-force share'));
+  state.geometryPlotForceShares={};
+}
+`,ctx);

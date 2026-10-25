@@ -12722,6 +12722,9 @@ function forceSplitControl(key) {
     bump_anti_lift_pct: {label: "Front brake-force share", default: 50},
     bump_anti_squat_pct: {label: "Rear drive-force share (RWD)", default: 100, fixed: true},
     roll_force_rc_height_mm: {label: "Left (+) lateral-force share", default: 50},
+    roll_jacking_ratio: {label: "Left (+) lateral-force share", default: 50},
+    roll_reaction_per_fy_m: {label: "Left (+) lateral-force share", default: 50},
+    roll_anti_roll_pct: {label: "Left (+) lateral-force share", default: 50},
   }[key];
 }
 
@@ -12742,8 +12745,14 @@ function kinematicPlotValues(payload, axle, key) {
       Number.isFinite(value) ? value * (axle === "front" ? share : 1 - share) : null);
   }
   if (key === "bump_anti_squat_pct") return axle === "rear" ? response.drive_anti_pct || [] : [];
-  const left = response.rc_left_mm || [];
-  const right = response.rc_right_mm || [];
+  const fields = {
+    roll_force_rc_height_mm: ["rc_left_mm", "rc_right_mm"],
+    roll_jacking_ratio: ["jacking_left", "jacking_right"],
+    roll_reaction_per_fy_m: ["moment_left", "moment_right"],
+    roll_anti_roll_pct: ["anti_left", "anti_right"],
+  }[key];
+  const left = response[fields[0]] || [];
+  const right = response[fields[1]] || [];
   return left.map((value, index) => {
     if (share === 1) return Number.isFinite(value) ? value : null;
     if (share === 0) return Number.isFinite(right[index]) ? right[index] : null;

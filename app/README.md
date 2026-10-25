@@ -189,7 +189,8 @@ compiled binaries expose this signal, so no BobLib rebuild is required.
 ### Force-split controls
 
 The existing heave and roll horizontal axes remain unchanged. Front anti-dive,
-rear anti-lift, rear anti-squat, and force-based equivalent RC height each have
+rear anti-lift, rear anti-squat, force-based equivalent RC height, lateral jacking /
+applied force, moment / applied force, and force-based anti-roll each have
 an independent force-share slider in their plot card and expanded view. Moving
 it changes the entire travel curve locally, without another simulation.
 
@@ -206,3 +207,10 @@ both lateral forces have the same sign. Invalid native samples remain missing.
 The KnC wrapper's `lateralLeftShare` setter changes only lateral-force gains;
 longitudinal probes remain symmetric. Compiled artifacts and independent native
 responses are cached and reused.
+
+The displayed anti-roll percentage uses `100 * h_equivalent / h_CG`, with both
+heights above the same contact plane. It is a force-response measure and follows
+the chosen lateral-force split. The old geometry-only RC/CG proxy remains an
+internal diagnostic, not the displayed anti-roll curve. Moment/applied force
+retains its documented rig-axis reference; the equivalent RC includes the
+steering support correction and contact-plane reference.
