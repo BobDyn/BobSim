@@ -2923,8 +2923,9 @@ function fieldDocsUrl(field) {
     if (/fbrc|roll_center|rc_height|rc_lateral/.test(plot)) return `${dynamics}#roll-centers`;
     if (/jacking|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
     if (/lltd|load_transfer/.test(plot)) return `${dynamics}#load-transfer`;
-    if (/trail|scrub/.test(plot)) return `${dynamics}#suspension-kinematics`;
-    if (/camber|toe|caster|kpi|motion_ratio/.test(plot)) return `${dynamics}#suspension-kinematics`;
+    if (/caster|kpi|trail|scrub/.test(plot)) return `${dynamics}#steering-geometry`;
+    if (/motion_ratio/.test(plot)) return `${dynamics}#suspension`;
+    if (/camber|toe/.test(plot)) return `${dynamics}#suspension-kinematics`;
   }
   if (/damp/.test(key)) return `${dynamics}#damping`;
   if (/tire/.test(key)) return `${dynamics}#tires`;
