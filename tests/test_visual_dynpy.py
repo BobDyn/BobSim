@@ -124,7 +124,7 @@ def test_reduced_scene_preserves_motion_and_fidelity(tmp_path, dof, monkeypatch)
 
 
 @pytest.mark.parametrize("workflow", ("reduced-step-steer", "reduced-ramp-steer", "lap-transient"))
-def test_archived_replay_uses_snapshots_and_rejects_paths_outside_root(tmp_path, workflow):
+def test_python_results_are_not_offered_as_animation(tmp_path, workflow):
     archive = tmp_path / "app/user_data/results/saved/run"
     archive.mkdir(parents=True)
     (archive / "signals.csv").write_text("time,x,y,yaw\n0,0,0,0\n1,1,0,0\n")
@@ -135,11 +135,5 @@ def test_archived_replay_uses_snapshots_and_rejects_paths_outside_root(tmp_path,
              "model": {"model_dofs": [6]}, "vehicle_snapshot": relative + "/vehicle.yml",
              "files": [{"label": "Signals", "path": relative + "/signals.csv"}]}
     manifest = archive / "manifest.json"
-    manifest.write_text(json.dumps(saved))
-    run = visual.available_runs(tmp_path)[0]
-    assert run["config"] == saved["vehicle_snapshot"]
-    assert run["data"] == saved["files"][0]["path"]
-    assert run["simulation_id"] == "step"
-    saved["vehicle_snapshot"] = "../outside.yml"
     manifest.write_text(json.dumps(saved))
     assert visual.available_runs(tmp_path) == []

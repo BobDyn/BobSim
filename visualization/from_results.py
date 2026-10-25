@@ -69,6 +69,15 @@ FRAME_MAP: dict[str, str] = {
     "ArmEnd": "{axle}.stabar.to{Side}ArmEnd.frame_b",
 }
 
+# Native BobLib rods expose pickup origins through their physical frames.
+FRAME_ALIASES = {
+    "lowerFrameToFore.frame_b": "lowerForeRod.frame_a",
+    "lowerFrameToAft.frame_b": "lowerAftRod.frame_a",
+    "upperFrameToFore.frame_b": "upperForeRod.frame_a",
+    "upperFrameToAft.frame_b": "upperAftRod.frame_a",
+}
+
+
 #: The frame whose orientation gives each wheel's spin axis and heading.
 WHEEL_FRAME = "{axle}.to{Side}WheelCenter.frame_b"
 
@@ -215,6 +224,9 @@ def variable_filter(extra: Iterable[str] = (), prefix: str = "") -> str:
     parts = ["time"]
     for path in sorted(set(frame_paths(prefix).values())):
         parts.append(re.escape(path) + r"\.r_0\[[123]\]")
+        for legacy, actual in FRAME_ALIASES.items():
+            if legacy in path:
+                parts.append(re.escape(path.replace(legacy, actual)) + r"\.r_0\[[123]\]")
     for path in sorted(set(wheel_frames(prefix).values())):
         parts.append(re.escape(path) + r"\.R\.T\[[123],[123]\]")
     parts.extend(re.escape(name) for name in sorted(set(tire_state_paths(prefix).values())))
@@ -339,6 +351,11 @@ def convert(
     prefix = detect_prefix(columns)
     for (corner, point), frame in frame_paths(prefix).items():
         r = _vector(columns, frame, "r_0")
+        if r is None:
+            for legacy, actual in FRAME_ALIASES.items():
+                if legacy in frame:
+                    r = _vector(columns, frame.replace(legacy, actual), "r_0")
+                    break
         name = f"{corner}_{point}"
         if r is None:
             missing.append(f"{name}  <-  {frame}.r_0[1..3]")

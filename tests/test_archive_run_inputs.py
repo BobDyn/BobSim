@@ -770,3 +770,50 @@ def test_native_capture_never_replaces_a_newer_runs_animation(archive_workspace,
     assert app.simulation_workspace()["simulations"][0]["visualizations"][0]["run_id"] == "native-scene"
     app.save_active_results("study", input_snapshot=snapshot)
     assert app.simulation_workspace()["simulations"][0]["visualizations"][0]["run_id"] is None
+
+
+@pytest.mark.parametrize("engine,kind", [("BobLib", "replay"), ("DynPy", "signals"), ("Track", "signals")])
+def test_output_defaults_follow_backend(archive_workspace, monkeypatch, engine, kind):
+    from dataclasses import replace
+    monkeypatch.setattr(app, "WORKFLOWS", (replace(app.WORKFLOWS[0], engine=engine),))
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    assert parent["visualizations"][0]["kind"] == kind
+    assert parent["supports_animation"] == (engine == "BobLib")
+    if engine != "BobLib":
+        with pytest.raises(ValueError, match="only for Modelica"):
+            app.simulation_workspace("add-visualization", {"id": parent["id"], "kind": "replay"})
+    child = parent["visualizations"][0]
+    app.simulation_workspace("delete-visualization", {"id": parent["id"], "child_id": child["id"]})
+    assert app.simulation_workspace()["simulations"][0]["visualizations"] == []
+
+
+def test_python_output_migration_replaces_replay_and_keeps_custom_explorer(archive_workspace):
+    import json
+    from app import data_services
+    parent = app.simulation_workspace("create", {"workflow_id": "study"})["simulation"]
+    path = data_services._vehicle_workspace_dir(data_services._active_vehicle_workspace_key()) / "simulations.json"
+    entries = json.loads(path.read_text())
+    entries[0].update(model={"engine": "DynPy"}, visualizations=[
+        {"id": "old", "kind": "replay", "name": "Animation"},
+        {"id": "custom", "kind": "signals", "name": "Custom", "run_id": None}])
+    path.write_text(json.dumps(entries))
+    result = app.simulation_workspace()["simulations"][0]
+    assert result["id"] == parent["id"]
+    assert [view["id"] for view in result["visualizations"]] == ["custom"]
+    assert json.loads(path.read_text())[0]["output_defaults_initialized"]
+
+
+def test_modelica_archive_automatically_captures_and_preserves_failed_visualization(archive_workspace, monkeypatch):
+    from dataclasses import replace
+    from visualization import saved_modelica
+    monkeypatch.setattr(app, "WORKFLOWS", (replace(app.WORKFLOWS[0], engine="BobLib"),))
+    seen = []
+    def capture(directory, *, root):
+        seen.append((directory, root))
+        raise ValueError("Missing geometry in the saved run")
+    monkeypatch.setattr(saved_modelica, "capture_saved", capture)
+    saved = app.save_active_results("study")["saved"]
+    assert seen[0][1] == archive_workspace[0]
+    assert seen[0][0].name == saved["id"]
+    assert saved["animation"] == {"status": "failed", "error": "Missing geometry in the saved run"}
+    assert (archive_workspace[0] / saved["vehicle_snapshot"]).is_file()

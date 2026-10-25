@@ -9,6 +9,7 @@ from itertools import islice
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import threading
 import time
 from typing import Any
@@ -1440,7 +1441,23 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         raise ValueError("The active vehicle changed. Reopen the simulation.")
     path = _vehicle_workspace_dir(key) / "simulations.json"
     items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+    outputs_migrated = False
     for entry in items:
+        model = entry.get("model") or {}
+        known_engine = bool(model.get("engine"))
+        modelica = model.get("engine") == "BobLib"
+        if known_engine:
+            entry["supports_animation"] = modelica
+        if known_engine and not entry.get("output_defaults_initialized"):
+            children = entry.setdefault("visualizations", [])
+            if not modelica:
+                children[:] = [child for child in children if child["kind"] != "replay"]
+            kind = "replay" if modelica else "signals"
+            if not any(child["kind"] == kind for child in children):
+                children.append({"id": uuid4().hex, "kind": kind,
+                                 "name": "Animation" if modelica else "Signal Explorer 1", "run_id": None})
+            entry["output_defaults_initialized"] = True
+            outputs_migrated = True
         children = entry.get("visualizations", [])
         for child in children:
             if child["kind"] == "replay":
@@ -1502,6 +1519,12 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                 "name": str(payload.get("name") or workflow.label).strip()[:120],
                 "model": workflow_model(workflow, root=ROOT),
                 "config_text": _config_file_path(spec).read_text(encoding="utf-8")}
+        modelica = item["model"].get("engine") == "BobLib"
+        item["supports_animation"] = modelica
+        if item["model"].get("engine"):
+            item["visualizations"] = [{"id": uuid4().hex, "kind": "replay" if modelica else "signals",
+                                       "name": "Animation" if modelica else "Signal Explorer 1", "run_id": None}]
+            item["output_defaults_initialized"] = True
         items.append(item)
     elif action in {"duplicate", "set-baseline", "comparison"}:
         if item is None:
@@ -1571,6 +1594,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         children = item.setdefault("visualizations", [])
         if action == "add-visualization":
             kind = payload.get("kind", "report")
+            if kind == "replay" and (item.get("model") or {}).get("engine") not in {None, "", "BobLib"}:
+                raise ValueError("Animation is available only for Modelica simulations. Use Signal Explorer.")
             if kind == "replay" and any(child["kind"] == "replay" for child in children):
                 raise ValueError("This simulation already has an animation.")
             default_name = "Animation" if kind == "replay" else "Visualization"
@@ -1686,7 +1711,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     _inherit_ggv_fidelity(items)
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
-    if action in {"report-layout", "move", "add-analysis", "remove-analysis", "create", "save", "rename", "delete",
+    if outputs_migrated or action in {"report-layout", "move", "add-analysis", "remove-analysis",
+                                     "create", "save", "rename", "delete",
                   "duplicate", "set-baseline",
                   "set-ggv", "set-racing-line", "set-maneuver-model", "add-visualization", "delete-visualization",
                   "update-visualization", "rename-visualization"}:
@@ -1714,6 +1740,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             latest = next((run for run in runs if (run.get("simulation") or {}).get("id") == summary["id"]), None)
             for child in summary.get("visualizations", []):
                 if child["kind"] == "replay":
+                    child["error"] = ((latest or {}).get("animation") or {}).get("error")
                     child["run_id"] = next((run["id"] for run in captures
                         if run.get("simulation_id") == summary["id"] and run.get("vehicle_key") == key
                         and (not run.get("result_id") or latest and run["result_id"] == latest["id"])
@@ -2441,6 +2468,15 @@ def save_active_results(
     if isinstance(workspace_manifest.get("analysis"), dict) and workspace_manifest["analysis"].get("archive_path"):
         workspace_manifest["analysis"]["archive_path"] = f"{workspace_rel}/files/signals.zip"
     (workspace_result_dir / "manifest.json").write_text(json.dumps(workspace_manifest, indent=2), encoding="utf-8")
+    if (inputs.get("model") or {}).get("engine") == "BobLib":
+        from visualization.saved_modelica import capture_saved
+        try:
+            capture_saved(workspace_result_dir, root=ROOT)
+            workspace_manifest["animation"] = {"status": "ready"}
+        except (ValueError, OSError, RuntimeError, KeyError, subprocess.SubprocessError) as exc:
+            # Preserve successful simulation outputs even if visualization fails.
+            workspace_manifest["animation"] = {"status": "failed", "error": str(exc)}
+        (workspace_result_dir / "manifest.json").write_text(json.dumps(workspace_manifest, indent=2), encoding="utf-8")
     return {
         "saved": _result_manifest_payload(workspace_result_dir / "manifest.json"),
         **saved_results_payload(),

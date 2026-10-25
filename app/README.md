@@ -316,3 +316,10 @@ archived vehicle, combined signals and native force curves. Other old runs expos
 recorded CSV signals and identify unavailable processed series. Layouts are saved
 per run; shared-engine simulation layouts can also be reused for subsequent runs.
 Custom Four Post layouts bypass automatic replacement of default plot definitions.
+
+Simulation results default to Animation for BobLib/Modelica and Signal Explorer
+for Python analyses, including YMD and GGV. Reports remain available for both.
+Modelica output archives trigger geometry conversion automatically; native Four
+Post uses its archived binaries and calibration. Animation failures preserve the
+simulation results and are recorded on the saved run. Legacy results without
+geometry need a new run. Reduced Python states are not offered as animations.

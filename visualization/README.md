@@ -22,9 +22,8 @@ These targets run in Docker by default.
 | `visual-demo` | Synthetic data, no simulation required |
 
 Each writes `<name>_visual.yml` and `<name>_visual.npz` to
-`visualization/results/`. Captured scenes lists these scenes and saved DynPy
-ramp-steer, step-steer and transient-lap runs with saved state signals. Reduced replay uses the run's archived signals and
-vehicle definition. The display settings button selects geometry and tire overlays.
+`visualization/results/`. Captured scenes lists these geometry captures. Python simulations open Signal
+Explorer; their reduced states are not presented as Modelica animations. The display settings button selects geometry and tire overlays.
 The Tires panel shows each corner on its peak-grip ellipse and percent utilization.
 
 The camera uses the geometry editor's orbit, pan and zoom gestures. Home restores

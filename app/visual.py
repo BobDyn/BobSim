@@ -24,7 +24,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import json
 import tempfile
 
 import yaml
@@ -343,7 +342,7 @@ def _metrics_rows(data: SimData) -> list[dict[str, str]]:
 
 
 def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
-    """Every visual run on disk, newest first.
+    """Captured simulation geometry on disk, newest first.
 
     A run is any visual config beside the signal file of the same name. Captures
     write ``<eval>_visual.yml``; the demo scene writes ``demo_step_steer.yml``.
@@ -376,28 +375,6 @@ def available_runs(root: str | Path | None = None) -> list[dict[str, str]]:
                 "modified": str(int(data.stat().st_mtime)),
             }
         )
-    for manifest in (base / "app/user_data/results/saved").glob("*/manifest.json"):
-        try:
-            saved = json.loads(manifest.read_text(encoding="utf-8"))
-            if saved.get("workflow", {}).get("id") not in {
-                    "maneuver", "reduced-step-steer", "reduced-ramp-steer", "lap-transient"}:
-                continue
-            dofs = (saved.get("model") or {}).get("model_dofs", [])
-            if len(dofs) != 1 or dofs[0] not in (3, 6, 10, 14):
-                continue
-            data_file = next(item["path"] for item in saved["files"] if item["label"] == "Signals")
-            vehicle_file = saved["vehicle_snapshot"]
-            paths = [(base / path).resolve() for path in (data_file, vehicle_file)]
-            if not all(path.is_relative_to(base.resolve()) and path.is_file() for path in paths):
-                continue
-            runs.append({"id": "saved-" + saved["id"],
-                         "label": f"{saved['label']} · {dofs[0]} DOF · {saved['created_label']}",
-                         "data": data_file, "config": vehicle_file, "dof": str(dofs[0]),
-                         "simulation_id": (saved.get("simulation") or {}).get("id", ""),
-                         "vehicle_key": saved.get("vehicle_key", ""),
-                         "modified": str(int(manifest.stat().st_mtime))})
-        except (OSError, ValueError, KeyError, TypeError, StopIteration):
-            continue
     runs.sort(key=lambda run: run["modified"], reverse=True)
     return runs
 

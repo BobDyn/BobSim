@@ -4610,6 +4610,7 @@ function openSimulationVisualization(child) {
   state.simModalOpen = false;
   state.simulationGgvEditor = false;
   if (child.kind === "replay") {
+    if (child.error && !child.run_id) { window.alert(child.error); return; }
     document.getElementById("replay-view").dataset.capture = child.run_id || `pending:${state.selectedSimulationId}`;
     setView("replay");
   } else {
@@ -4839,15 +4840,14 @@ function wireSimulationContextMenu() {
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
     const simulation = state.simulationWorkspace?.simulations?.find(item => item.id === id);
-    const envelope = ["ggv", "ymd", "racing-line"].includes(simulation?.workflow_id);
-    const lap = simulation?.workflow_id === "lap-qss";
+    const modelica = Boolean(simulation?.supports_animation);
     for (const button of menu.querySelectorAll("button")) {
       const actions = scope === "group" ? ["add", "move-up", "move-down"] : scope === "results" ? ["replay", "signals"] : ["move-up", "move-down", "duplicate", "delete"];
-      button.hidden = !actions.includes(button.dataset.action);
+      button.hidden = !actions.includes(button.dataset.action) || (button.dataset.action === "replay" && !modelica);
       const hasAnimation = Boolean(simulation?.visualizations?.some(child => child.kind === "replay"));
-      button.disabled = button.dataset.action === "replay" && (envelope || lap || hasAnimation);
+      button.disabled = button.dataset.action === "replay" && (!modelica || hasAnimation);
       button.title = button.disabled ? hasAnimation ? "This simulation already has an animation."
-        : "This analysis produces steady-state results, not an animation." : "";
+        : "Animation is available for Modelica simulations." : "";
     }
     const siblings = simulationSiblingIds(id, scope);
     const index = siblings.indexOf(id);

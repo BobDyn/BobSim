@@ -842,7 +842,12 @@ class ModelicaRunner:
 
         variable_filter = self.simulation.get("variable_filter")
         if variable_filter:
+            from visualization.from_results import variable_filter as geometry_filter
+            variable_filter += "|" + geometry_filter(prefix="chassis.detailedChassis.")
             cmd.append(f"-variableFilter={variable_filter}")
+        # Geometry is captured alongside scalar outputs for automatic replay.
+        if "-emit_protected" not in self.simulation.get("extra_args", []):
+            cmd.append("-emit_protected")
 
         if self.simulation.get("no_grid", False):
             cmd.append("-noEquidistantTimeGrid")
