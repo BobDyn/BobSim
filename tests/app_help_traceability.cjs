@@ -12,7 +12,7 @@ const common = ['Report','Force-based','Numerics','Execution','Closed loop','Fit
 for (const group of common) assert.ok(configGroupDocsUrl(group).includes('#'));
 assert.ok(configGroupDocsUrl('Report').endsWith('#report'));
 assert.ok(configGroupDocsUrl('Force-based').endsWith('#force-based'));
-assert.ok(fieldDocsUrl({path:['plots','moment_ratio_roll','enabled']}).endsWith('#jacking-and-anti-geometry'));
+assert.ok(fieldDocsUrl({path:['plots','moment_ratio_roll','enabled']}).endsWith('#moment-per-applied-force'));
 assert.ok(fieldDocsUrl({path:['simulation','tolerance'],docsUrl:sectionDocsUrl('numerics-and-execution')}).endsWith('#numerics-and-execution'));
 for (const id of ['mbd-maneuver','racing-line','four-post','ggv','lap-qss']) {
  const html = simulationMethodHtml({id});
@@ -25,5 +25,9 @@ if (process.argv[3]) {
   const topics = vm.runInContext('[...Object.values(SETUP_DOC_TOPICS), ...Object.values(WORKFLOW_DOC_TOPICS), "report", "force-based", "numerics-and-execution", "results-and-archive", "replay", "settings-and-files"]',ctx);
   const html = fs.readFileSync(process.argv[3]+'/bobsim/section-reference.html','utf8');
   for (const topic of topics) assert.ok(html.includes('id="'+topic+'"'), 'Missing built anchor: '+topic);
+  const dynamics = fs.readFileSync(process.argv[3]+'/reference/vehicle-dynamics.html','utf8');
+  for (const anchor of vm.runInContext('Object.values(PLOT_DOC_ANCHORS)',ctx)) {
+    assert.ok(dynamics.includes('id="'+anchor+'"'), 'Missing metric anchor: '+anchor);
+  }
 }
 console.log('Section and workflow help coverage passed');

@@ -2944,21 +2944,34 @@ function positionInfoPopup(popup) {
   popup.style.top = `${Math.max(8, top)}px`;
 }
 
+const PLOT_DOC_ANCHORS = {
+  camber_heave: "camber", camber_roll: "camber",
+  toe_heave: "toe", toe_roll: "toe",
+  caster_heave: "caster", caster_roll: "caster",
+  kpi_heave: "kingpin-inclination", kpi_roll: "kingpin-inclination",
+  trail_heave: "mechanical-trail", trail_roll: "mechanical-trail",
+  scrub_heave: "scrub-radius", scrub_roll: "scrub-radius",
+  motion_ratio: "spring-and-damper-motion-ratio",
+  stabar_motion_ratio: "anti-roll-bar-motion-ratio",
+  jacking_heave: "braking-and-acceleration",
+  jacking_roll: "force-based-anti-roll", fbrc_roll: "force-based-equivalent-rc-height",
+  lltd_roll: "lateral-load-transfer-distribution",
+  geometric_rc_height_roll: "geometric-rc-height",
+  geometric_rc_lateral_roll: "geometric-rc-lateral-position",
+  jacking_ratio_roll: "jacking-per-applied-force",
+  moment_ratio_roll: "moment-per-applied-force",
+  geometric_anti_roll: "geometric-anti-roll",
+};
+
 function fieldDocsUrl(field) {
   const path = field.path || [];
   const key = path.join(".").toLowerCase();
   const dynamics = "https://bobdyn.com/reference/vehicle-dynamics";
   if (path[0] === "force_based") {
-    return `${dynamics}#jacking-and-anti-geometry`;
+    return `${dynamics}#${path[1] === "front_brake_share" ? "front-anti-dive" : "choosing-the-lateral-force-split"}`;
   }
-  if (path[0] === "plots") {
-    const plot = path[1] || "";
-    if (/fbrc|roll_center|rc_height|rc_lateral/.test(plot)) return `${dynamics}#roll-centers`;
-    if (/jacking|moment_ratio|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
-    if (/lltd|load_transfer/.test(plot)) return `${dynamics}#load-transfer`;
-    if (/caster|kpi|trail|scrub/.test(plot)) return `${dynamics}#steering-geometry`;
-    if (/motion_ratio/.test(plot)) return `${dynamics}#suspension`;
-    if (/camber|toe/.test(plot)) return `${dynamics}#suspension-kinematics`;
+  if (path[0] === "plots" && PLOT_DOC_ANCHORS[path[1]]) {
+    return `${dynamics}#${PLOT_DOC_ANCHORS[path[1]]}`;
   }
   if (field.docsUrl) return field.docsUrl;
   if (/powertrain|^brake/.test(key)) return sectionDocsUrl("powertrain-and-brakes");
@@ -2966,7 +2979,9 @@ function fieldDocsUrl(field) {
   if (/tire/.test(key)) return `${dynamics}#tires`;
   if (/aero/.test(key)) return `${dynamics}#aero`;
   if (/mass|brake.*bias/.test(key)) return `${dynamics}#load-transfer`;
-  if (/spring|shock|stabar|suspension/.test(key)) return `${dynamics}#suspension`;
+  if (/stabar/.test(key)) return `${dynamics}#anti-roll-bar-motion-ratio`;
+  if (/spring|shock/.test(key)) return `${dynamics}#spring-and-damper-motion-ratio`;
+  if (/suspension/.test(key)) return sectionDocsUrl("geometry");
   return sectionDocsUrl(SETUP_DOC_TOPICS[state.activeParamGroup] || "settings-and-files");
 }
 
