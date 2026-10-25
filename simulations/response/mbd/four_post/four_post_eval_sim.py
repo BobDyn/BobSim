@@ -112,6 +112,19 @@ FOUR_POST_STATIC_BALANCE_AXLES = (
 FOUR_POST_EVAL_SIGNALS += static_balance.executed_signals(
     [(axle, actuator) for _, _, axle, actuator in FOUR_POST_STATIC_BALANCE_AXLES]
 )
+FOUR_POST_ANTI_PATH_POINTS = (("contact_patch", "CP"), ("wheel_center", "Tire.chassisFrame"))
+
+
+def _anti_path_x_signals(axle: str, point: str) -> list[str]:
+    return [f"{axle}.{side}{point}.r_0[1]" for side in ("left", "right")]
+
+
+FOUR_POST_EVAL_SIGNALS += [
+    signal
+    for _, _, axle, _ in FOUR_POST_STATIC_BALANCE_AXLES
+    for _, point in FOUR_POST_ANTI_PATH_POINTS
+    for signal in _anti_path_x_signals(axle, point)
+]
 
 # The filter is a regular expression, and the executed-signal names contain brackets.
 FOUR_POST_EVAL_VARIABLE_FILTER = "|".join(re.escape(signal) for signal in FOUR_POST_EVAL_SIGNALS)
@@ -372,6 +385,30 @@ def _sort_xy(x: Any, y: Any) -> tuple[np.ndarray, np.ndarray]:
     y_trimmed = y_arr[:size]
     idx = np.argsort(x_trimmed)
     return x_trimmed[idx], y_trimmed[idx]
+
+
+def _design_pose_jacking_coefficients(
+    cp_rise_m: Any,
+    cp_x_m: Any,
+    wc_x_m: Any,
+) -> tuple[float, float]:
+    """Kinematic dFz/dFx at zero CP rise for an Fx reacted through the upright and through the chassis.
+
+    cp_rise_m is the CP height relative to the body. The contact-patch path is -(dx_cp/ds)/(dz_cp/ds).
+    The wheel-center path is -(dx_wc/ds)/(dz_cp/ds).
+    """
+    s = np.asarray(cp_rise_m, dtype=float).reshape(-1)
+    cp_x = np.asarray(cp_x_m, dtype=float).reshape(-1)
+    wc_x = np.asarray(wc_x_m, dtype=float).reshape(-1)
+    mask = np.isfinite(s) & np.isfinite(cp_x) & np.isfinite(wc_x)
+    s, cp_x, wc_x = s[mask], cp_x[mask], wc_x[mask]
+    order = np.argsort(s)
+    s, cp_x, wc_x = s[order], cp_x[order], wc_x[order]
+    if s.size < 3 or np.any(np.diff(s) <= 0.0) or not s[0] < 0.0 < s[-1]:
+        return float("nan"), float("nan")
+    cp_slope = float(np.interp(0.0, s, np.gradient(cp_x, s)))
+    wc_slope = float(np.interp(0.0, s, np.gradient(wc_x, s)))
+    return -cp_slope, -wc_slope
 
 
 def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
@@ -1287,6 +1324,33 @@ class FourPostEvalSim:
         coverage("avg_anti_squat_pct", np.isfinite(rr_anti_heave), heave_count)
         coverage("avg_longitudinal_jacking_coeff_front", np.isfinite(fr_coeff_heave), heave_count)
         coverage("avg_longitudinal_jacking_coeff_rear", np.isfinite(rr_coeff_heave), heave_count)
+
+        # The fixture holds the CP height and the body moves, so the jounce is the CP rise relative to the body.
+        heave_pose_jounce = sample_at_times(heave, heave_sample_times)
+        anti_path_summary: dict[str, float] = {}
+        for axle_name, axle, anti_name, anti_sign in (
+            ("front", "frAxleDW", "anti_dive", -1.0),
+            ("rear", "rrAxleDW", "anti_squat", 1.0),
+        ):
+            point_x: list[np.ndarray] = []
+            for _, point in FOUR_POST_ANTI_PATH_POINTS:
+                names = _anti_path_x_signals(axle, point)
+                if all(name in result for name in names):
+                    sides = [sample_at_times(result[name], heave_sample_times) for name in names]
+                    point_x.append(np.mean(sides, axis=0))
+            available = len(point_x) == len(FOUR_POST_ANTI_PATH_POINTS)
+            coeffs = (
+                _design_pose_jacking_coefficients(heave_pose_jounce, *point_x)
+                if available
+                else (float("nan"), float("nan"))
+            )
+            for (path, _), coeff in zip(FOUR_POST_ANTI_PATH_POINTS, coeffs, strict=True):
+                coeff_key = f"longitudinal_jacking_coeff_{axle_name}_{path}_path"
+                anti_key = f"{anti_name}_{path}_path_pct"
+                anti_path_summary[coeff_key] = coeff
+                anti_path_summary[anti_key] = anti_sign * 100.0 * coeff / ref_long
+                for key in (coeff_key, anti_key):
+                    status[key] = "ok" if np.isfinite(coeff) else ("invalid" if available else "unavailable")
         coverage("avg_anti_roll_front_pct", np.isfinite(fr_anti_roll) & roll_contact_loaded, roll_count)
         coverage("avg_anti_roll_rear_pct", np.isfinite(rr_anti_roll) & roll_contact_loaded, roll_count)
         coverage("avg_lateral_jacking_coeff_front", np.isfinite(fr_coeff_roll), roll_count)
@@ -1612,6 +1676,7 @@ class FourPostEvalSim:
             "elastic_roll_stiffness_rear_Nm_per_rad": float(kphi_el_r),
             "heave_cp_tension_points": int(np.count_nonzero(heave_tension)),
             "anti_force_path": FOUR_POST_ANTI_FORCE_PATH,
+            **anti_path_summary,
         }
 
         series: dict[str, np.ndarray] = {

@@ -24,6 +24,9 @@ measure, and how a sample becomes invalid. The metrics are in
 | `avg_anti_dive_pct`, `avg_anti_squat_pct` | Anti from a CP force Fx that the upright reacts. Percent of h/L. |
 | `avg_longitudinal_jacking_coeff_<axle>` | The same response as a dimensional coefficient dFz/dFx (N/N). |
 | `anti_force_path` | `contact_patch_upright_reacted`. The force path of the three rows above. |
+| `longitudinal_jacking_coeff_<axle>_contact_patch_path` | Kinematic dFz/dFx (N/N) at the design pose for an Fx that the upright reacts. |
+| `longitudinal_jacking_coeff_<axle>_wheel_center_path` | Kinematic dFz/dFx (N/N) at the design pose for an Fx that the chassis reacts. |
+| `anti_dive_<path>_path_pct`, `anti_squat_<path>_path_pct` | The front and rear coefficients above in percent of h/L. `<path>` is `contact_patch` or `wheel_center`. |
 | `avg_anti_roll_<axle>_pct` | Legacy key. Net axle jacking J in percent of h/t. It is not geometric anti-roll. |
 | `avg_lateral_jacking_coeff_<axle>` | Net axle jacking J = (dFz_L + dFz_R) / Fy (N/N), from the chassis reaction. |
 | `avg_fbrc_differential_jacking_ratio_<axle>` | Differential jacking (dFz_R - dFz_L) / Fy. |
@@ -36,10 +39,39 @@ measure, and how a sample becomes invalid. The metrics are in
 ### Anti-dive and anti-squat force path
 
 The FourPost rig applies Fx at the CP. The wheel torque goes back through the
-upright, as with an outboard brake or a hub motor. The percent and the dFz/dFx
-coefficient are valid for that path only. An inboard drive or an inboard brake
-reacts its torque on the chassis. Its anti is different, and FourPost does not
-compute it.
+upright, as with an outboard brake or a hub motor. The `avg_` percent and the
+`avg_` dFz/dFx coefficient are valid for that path only.
+
+An inboard drive or an inboard brake reacts its torque on the chassis. The wheel
+then pushes on the upright at the wheel center (WC). FourPost computes both paths
+from the heave sweep kinematics at the design pose, where the jounce is 0:
+
+- Contact-patch path: `c_cp = -(dx_cp/ds) / (dz_cp/ds)`.
+- Wheel-center path: `c_wc = -(dx_wc/ds) / (dz_cp/ds)`.
+
+Here `x` is the side-view position, and `z_cp` is the CP height relative to the
+body. The fixture holds the CP height and the rig moves the body, so `dz_cp/ds`
+is 1 when `s` is the jounce. The run exports the x positions of
+`<axle>.{left,right}CP` and `<axle>.{left,right}Tire.chassisFrame` (the WC). The
+two sides are averaged. A positive coefficient lifts the body for a positive Fx.
+The percent uses the same h/L and the same signs as the `avg_` keys: anti-dive
+is `-100 c / (h/L)` and anti-squat is `100 c / (h/L)`.
+
+Use the path that matches the hardware. The BobSim default car,
+`EVBatInvMotDiff`, has one inboard motor and a differential. Its rear
+anti-squat is on the wheel-center path. A run without the position signals
+reports these keys as `unavailable`.
+
+On the default car at the design pose:
+
+| Axle | CP path (N/N) | WC path (N/N) | CP path (%) | WC path (%) |
+| --- | --- | --- | --- | --- |
+| Front (anti-dive) | +0.00514 | -0.00389 | -2.72 | +2.06 |
+| Rear (anti-squat) | -0.00895 | +0.00473 | -4.74 | +2.51 |
+
+The kinematic CP path agrees with the force pulses. The `avg_` coefficients over
+the 11 poses are +0.00525 front and -0.00881 rear. The rear anti-squat of the
+inboard drive is +2.5 %, not the -4.7 % of `avg_anti_squat_pct`.
 
 ### Net jacking is not geometric load transfer
 
@@ -137,6 +169,10 @@ Keys keep their names. Labels and the values below change.
   `avg_roll_rate_distribution_front_pct`. On the default car the two differ by
   0.008 points.
 - New keys: `heave_cp_tension_points` and `anti_force_path`.
+- New keys: `longitudinal_jacking_coeff_<axle>_<path>_path` and
+  `anti_dive_<path>_path_pct`, `anti_squat_<path>_path_pct`. The `avg_` anti keys
+  keep their names and values. The summary page shows the four percents under
+  "Anti by Force Path".
 - New CSV column: `status`.
 - Report labels: "Geometric Anti-Roll" is now "Net Axle Jacking". "LLTD (Front)"
   is now "Elastic Share". The anti-dive and anti-squat labels name the force

@@ -1328,3 +1328,97 @@ def test_four_post_metrics_csv_carries_a_status_column(tmp_path: Path) -> None:
     legacy.write_text("metric,value\na,1.0\n", encoding="utf-8")
     assert read_metric_status(legacy)["a"] == (1.0, "unknown")
     assert np.isnan(read_metrics(legacy)["a"])
+
+
+def _trailing_arm_x(cp_rise_m: np.ndarray, pivot_xz: tuple[float, float], point_z_m: float) -> np.ndarray:
+    """Side-view x of a point at height point_z_m above the CP on an arm that pivots at pivot_xz."""
+    theta = np.linspace(-0.3, 0.3, 20001)
+    rx, rz = -pivot_xz[0], point_z_m - pivot_xz[1]
+    cp_rz = -pivot_xz[1]
+    cp_rise = -pivot_xz[0] * np.sin(theta) + cp_rz * np.cos(theta) - cp_rz
+    x = pivot_xz[0] + rx * np.cos(theta) - rz * np.sin(theta) - (pivot_xz[0] + rx)
+    order = np.argsort(cp_rise)
+    return np.interp(cp_rise_m, cp_rise[order], x[order])
+
+
+def test_design_pose_jacking_coefficients_match_a_trailing_arm_instant_center() -> None:
+    pivot = (0.5, 0.40)
+    wheel_radius = 0.25
+    jounce = np.linspace(-0.03, 0.03, 11)
+
+    cp_coeff, wc_coeff = four_post_eval._design_pose_jacking_coefficients(
+        jounce,
+        _trailing_arm_x(jounce, pivot, 0.0),
+        _trailing_arm_x(jounce, pivot, wheel_radius),
+    )
+
+    assert cp_coeff == pytest.approx(pivot[1] / pivot[0], rel=1e-3)
+    assert wc_coeff == pytest.approx((pivot[1] - wheel_radius) / pivot[0], rel=1e-3)
+
+
+def _add_trailing_arm_path_signals(
+    result: dict[str, np.ndarray],
+    pivots: dict[str, tuple[float, float]],
+    wheel_radius_m: float,
+) -> None:
+    jounce = -result["frKnC.heave"]
+    for axle, pivot in pivots.items():
+        for side in ("left", "right"):
+            result[f"{axle}.{side}CP.r_0[1]"] = _trailing_arm_x(jounce, pivot, 0.0)
+            result[f"{axle}.{side}Tire.chassisFrame.r_0[1]"] = _trailing_arm_x(jounce, pivot, wheel_radius_m)
+
+
+def test_four_post_reports_anti_on_both_force_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    summary, _series = sim.summarize(result)
+    assert np.isnan(summary["anti_squat_wheel_center_path_pct"])
+    assert sim.metric_status["anti_squat_wheel_center_path_pct"] == "unavailable"
+
+    # Front pivot behind and rear pivot ahead of the wheel, both above it.
+    _add_trailing_arm_path_signals(result, {"frAxleDW": (-0.5, 0.40), "rrAxleDW": (0.5, 0.40)}, 0.25)
+    summary, _series = sim.summarize(result)
+
+    front = CornerKinematics.from_vehicle(vehicle, "front").wheel_center_initial
+    rear = CornerKinematics.from_vehicle(vehicle, "rear").wheel_center_initial
+    ref_long = 0.35 / abs(front[0] - rear[0])
+    expected = {
+        ("front", "contact_patch"): -0.8,
+        ("front", "wheel_center"): -0.3,
+        ("rear", "contact_patch"): 0.8,
+        ("rear", "wheel_center"): 0.3,
+    }
+    for (axle, path), coeff in expected.items():
+        assert summary[f"longitudinal_jacking_coeff_{axle}_{path}_path"] == pytest.approx(coeff, rel=1e-3)
+        assert sim.metric_status[f"longitudinal_jacking_coeff_{axle}_{path}_path"] == "ok"
+    # Braking Fx is negative, so a negative front coefficient lifts the front under braking.
+    assert summary["anti_dive_contact_patch_path_pct"] == pytest.approx(80.0 / ref_long, rel=1e-3)
+    assert summary["anti_dive_wheel_center_path_pct"] == pytest.approx(30.0 / ref_long, rel=1e-3)
+    assert summary["anti_squat_contact_patch_path_pct"] == pytest.approx(80.0 / ref_long, rel=1e-3)
+    assert summary["anti_squat_wheel_center_path_pct"] == pytest.approx(30.0 / ref_long, rel=1e-3)
+
+
+def test_four_post_reaction_path_change_leaves_the_contact_patch_anti_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _add_trailing_arm_path_signals(result, {"frAxleDW": (-0.5, 0.40), "rrAxleDW": (0.5, 0.40)}, 0.25)
+    before, _series = sim.summarize(result)
+
+    # Only the wheel-center path changes: the wheel center now moves with the CP.
+    for axle in ("frAxleDW", "rrAxleDW"):
+        for side in ("left", "right"):
+            result[f"{axle}.{side}Tire.chassisFrame.r_0[1]"] = result[f"{axle}.{side}CP.r_0[1]"].copy()
+    after, _series = sim.summarize(result)
+
+    for key in (
+        "anti_dive_contact_patch_path_pct",
+        "anti_squat_contact_patch_path_pct",
+        "avg_anti_dive_pct",
+        "avg_anti_squat_pct",
+        "avg_longitudinal_jacking_coeff_front",
+        "avg_longitudinal_jacking_coeff_rear",
+    ):
+        assert after[key] == pytest.approx(before[key], nan_ok=True)
+    assert after["anti_squat_wheel_center_path_pct"] == pytest.approx(after["anti_squat_contact_patch_path_pct"])
+    assert after["anti_squat_wheel_center_path_pct"] != pytest.approx(before["anti_squat_wheel_center_path_pct"])
