@@ -2083,10 +2083,27 @@ def test_four_post_setup_uses_vehicle_suspension(tmp_path: Path, monkeypatch: py
         assert fields[label]["display_scale"] == pytest.approx(scale)
     assert fields["Heave"]["value"] == pytest.approx(0.03)
     assert fields["Roll"]["value"] * fields["Roll"]["display_scale"] == pytest.approx(0.75)
-    assert {field["group"] for field in config["fields"]} == {"Procedure", "Report"}
+    assert {field["group"] for field in config["fields"]} == {"Procedure", "Force-based", "Report"}
     path, _, _ = app._load_yaml_config(spec)
     assert yaml.safe_load(path.read_text()) == config["data"] == yaml.safe_load(config["raw"])
     assert yaml.safe_load(seed.read_text()) == original
+    if "camber_heave" in original.get("plots", {}):
+        app.patch_config("four-post", {'["plots", "camber_heave", "enabled"]': False})
+        reloaded = app.config_payload("four-post")
+        choice = next(field for field in reloaded["fields"]
+                      if field["path"] == ["plots", "camber_heave", "enabled"])
+        assert choice["value"] is False
+        assert choice["group"] == "Report"
+        assert reloaded["data"]["plots"]["camber_heave"]["layout"] == "quad"
+        assert yaml.safe_load(seed.read_text()) == original
+    shared = app.patch_config("four-post", {'["force_based", "front_brake_share"]': .65})
+    share = next(field for field in shared["fields"] if field["path"] == ["force_based", "front_brake_share"])
+    assert share["value"] == .65
+    assert share["display_scale"] == 100
+    before_invalid = path.read_text()
+    with pytest.raises(ValueError, match="0% and 100%"):
+        app.patch_config("four-post", {'["force_based", "front_left_lateral_share"]': 1.2})
+    assert path.read_text() == before_invalid
     brand_only = yaml.safe_dump({"procedure": original["procedure"], "report": {"brand": "Legacy brand"}})
     assert "brand" not in app.save_raw_config("four-post", brand_only)["data"]["report"]
 

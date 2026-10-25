@@ -52,11 +52,26 @@ vehicle response no longer offers reduced-model selection. Performance envelopes
 retain DynPy fidelity selection, Track uses the local Python racing-line generator,
 and laptime retains its Python QSS/transient workflows. Historical reduced response
 results remain readable, but their configurations cannot be run or silently
-converted into Modelica handwheel-angle inputs. Native KnC/maneuver shortcuts live
-in the collapsed Quick run menu. Each overview shows inputs and results, with the
-method in a disclosure. QSS Lap connects to reusable GGV and racing-line analyses.
+converted into Modelica handwheel-angle inputs. Each overview shows inputs and
+results, with the method in a disclosure. QSS Lap connects to reusable GGV and racing-line analyses.
 Its Run action is available when both linked results are valid. Existing BobLib
 steady-state studies remain accessible under Vehicle response.
+
+Four Post runs the cached front/rear KnC and rear traction binaries directly;
+it does not generate a vehicle record or invoke OpenModelica. Missing or stale
+bundles disable Run and point to Architecture. Procedure amplitudes and the saved
+setup are applied at runtime. The adapter joins front/rear signals into the same
+four-corner report, retaining static balancing, contact-load validation, stiffness
+and frequency estimates, metrics and plot layouts. Setup → Report lets the user
+select individual plots; all existing plots are included by default. Rear heave
+force response uses shaft traction for anti-squat. Binary provenance and combined
+signals are archived alongside the report.
+Force-based settings specify front brake-force share and independent front/rear
+left lateral-force shares. Brake share weights anti-dive relative to total braking
+force; anti-squat remains rear-drive normalized. The per-axle probe magnitude is
+unchanged. Lateral shares are applied in the native rigs, and the report uses the
+same roll-axis reaction and posed-CG calculations as the geometry view. These
+inputs are applied force shares, not an Ay-derived vertical load-transfer model.
 
 Named simulations are stored in `workspaces/vehicles/<vehicle>/simulations.json`.
 Completed runs retain the simulation name, vehicle and config used at run time.
@@ -161,7 +176,8 @@ new architecture models with incompatible generated files.
 
 Ownership: `common/native_artifacts.py` builds and verifies bundles;
 `native_calibration.py` translates setup inputs; `native_runs.py` executes and
-converts results; `native_service.py` exposes them as app jobs.
+converts results; `native_four_post.py` adapts axle runs to the four-corner report;
+`native_service.py` exposes native build/run jobs.
 
 Geometry's **Travel** button opens heave, roll and front pinion sliders. They
 impose simultaneous displacements on the cached native KnC axle binaries through
@@ -227,3 +243,6 @@ cannot invalidate a KnC artifact. Rear traction aliases the locked rear
 DifferentialInput artifact, while its result processing still labels the run as
 traction. `make knc-catalog` prebuilds all 15 unique artifacts; see
 [the workflow](../docs/workflows.md#precompiled-geometry-catalog).
+
+Field help popups link to the relevant BobDocs Vehicle Dynamics section, or to
+the BobSim app guide for operational controls.

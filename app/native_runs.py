@@ -35,7 +35,8 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
     if not isinstance(kinematics_only, bool):
         raise ValueError("kinematics_only must be a boolean")
     if kind.startswith("knc-"):
-        if settings.keys() - {"forceMagnitude", "include_stabilizer", "lateralLeftShare"}:
+        if settings.keys() - {"forceMagnitude", "include_stabilizer", "lateralLeftShare",
+                              "heaveMagnitude", "rollMagnitude", "steerMagnitude"}:
             raise ValueError("Unknown KnC setting")
         # Geometry comes from unloaded plateaus; jacking uses the intervening
         # load pulses at the same poses. The editor keeps the stabilizer removed.
@@ -48,6 +49,21 @@ def run(vehicle: dict, kind: str, settings: dict | None = None) -> dict:
                           "stabilizerRate": rate if include_bar and not kinematics_only else 0.0,
                           "lateralLeftShare": settings.get("lateralLeftShare", .5)})
         stop = 832.0 if kind == "knc-front" else 118.0
+        for name in ("heaveMagnitude", "rollMagnitude"):
+            if name in settings:
+                value = float(settings[name])
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError(f"{name} must be positive and finite")
+                overrides[name] = value
+        if "steerMagnitude" in settings:
+            angle = float(settings["steerMagnitude"])
+            if not math.isfinite(angle):
+                raise ValueError("steerMagnitude must be finite")
+            if side == "front":
+                overrides.update({"angleCount": 1, "steeringAngles[1]": angle})
+                stop = 118.0
+            elif angle != 0:
+                raise ValueError("The rear KnC rig has locked steering")
         step = 0.1
         signals = ("time|knc.*|inputs.steer|steerPosition.flange.tau|chassisActuator.rollDOF.tau|"
                    "leftLoad.worldForce.force.*|rightLoad.worldForce.force.*|axle.(left|right)CP.r_0.*|"

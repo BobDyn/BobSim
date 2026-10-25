@@ -47,6 +47,8 @@ class PlotEngine:
         )
 
         for plot_name, p_cfg in self.config.get("plots", {}).items():
+            if not p_cfg.get("enabled", True):
+                continue
             if raw_plots_only and not plot_name.startswith("raw_"):
                 print(f"[plot] Skipping non-raw plot page: {plot_name}")
                 continue

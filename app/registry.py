@@ -896,9 +896,8 @@ def build_action_specs(root: Path, python: str, python_module_arg: str) -> dict[
             id="run-four-post",
             label="Run FourPostEval",
             argv=_python_module_argv(
-                python, python_module_arg, "simulations.response.mbd.four_post.four_post_eval_sim"
+                python, python_module_arg, "app.native_four_post"
             ),
-            requires_external_toolchain=True,
         ),
         **{
             f"run-{name}": ActionSpec(
@@ -1018,10 +1017,12 @@ def build_workflows() -> tuple[WorkflowSpec, ...]:
             group="standard",
             label="FourPostEval",
             config="simulations/response/mbd/four_post/four_post_eval_config.yml",
-            actions=("build-four-post", "run-four-post"),
+            actions=("run-four-post",),
             outputs=(
                 OutputSpec("Report", "simulations/mbd/generated_results/four_post_eval_report.pdf", "pdf"),
                 OutputSpec("Metrics", "simulations/mbd/generated_results/four_post_eval_report_metrics.csv", "csv"),
+                OutputSpec("Signals", "app/user_data/results/four-post/signals.csv", "csv"),
+                OutputSpec("Binary provenance", "app/user_data/results/four-post/provenance.json", "json"),
             ),
         ),
         WorkflowSpec(

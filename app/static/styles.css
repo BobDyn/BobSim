@@ -5191,13 +5191,6 @@ summary:focus-visible {
 #native-build-log { max-height:240px; overflow:auto; white-space:pre-wrap; }
 
 .simulation-header-actions { display:flex; align-items:flex-start; gap:12px; }
-.native-quick-runs { position:relative; }
-.native-quick-runs > summary { cursor:pointer; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); font-size:13px; }
-.native-experiments { position:absolute; z-index:20; right:0; top:calc(100% + 8px); width:min(420px, 85vw); padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); box-shadow:var(--shadow-overlay); }
-.native-run-details { margin-top:12px; font-size:12px; color:var(--muted); }
-.native-run-details p { margin:8px 0; }
-.native-experiment-actions { display:flex; flex-wrap:wrap; gap:12px; }
-#native-run-log { max-height:240px; overflow:auto; white-space:pre-wrap; }
 
 #native-artifacts { margin:0 0 16px; padding:12px 16px; border:1px solid var(--border); border-radius:12px; }
 .native-artifacts-head { display:flex; align-items:center; gap:16px; }
@@ -5232,3 +5225,5 @@ summary:focus-visible {
 .geometry-plot-pose input { grid-column: 1 / -1; width: 100%; margin: 0; }
 #kinematic-plot-pose { padding: 8px 24px; }
 .plot-card:has(#kinematic-plot-pose:not([hidden])) { grid-template-rows: auto auto minmax(0, 1fr); }
+
+.info-popup .info-docs-link { display: inline-block; margin-top: 12px; }

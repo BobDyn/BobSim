@@ -161,7 +161,6 @@ MODELICA_RUN_TARGETS_BY_ACTION = {
     "run-transient": MODELICA_BUILD_TARGETS["vehicle"],
     "run-mbd-step-steer": MODELICA_BUILD_TARGETS["vehicle"],
     "run-mbd-maneuver": MODELICA_BUILD_TARGETS["vehicle"],
-    "run-four-post": MODELICA_BUILD_TARGETS["four_post"],
 }
 WORKFLOWS = build_workflows()
 
@@ -286,11 +285,20 @@ def external_toolchain_payload() -> dict[str, Any]:
     return openmodelica_toolchain_payload()
 
 def action_available(action: ActionSpec) -> bool:
+    if action.id == "run-four-post":
+        return not unavailable_action_reason(action)
     return (action.id not in app_registry.LEGACY_RESPONSE_ACTIONS
             and (not action.requires_external_toolchain or external_toolchain_available()))
 
 
 def unavailable_action_reason(action: ActionSpec) -> str:
+    if action.id == "run-four-post":
+        from app.native_four_post import unavailable_reason
+        from common.vehicle_io import load_yaml
+        try:
+            return unavailable_reason(load_yaml(ROOT / "vehicle.yml"))
+        except (OSError, ValueError, TypeError):
+            return "Save a vehicle and build its KnC binaries in Architecture first."
     if action.id in app_registry.LEGACY_RESPONSE_ACTIONS:
         return app_registry.MODELICA_RESPONSE_REASON
     if action_available(action):

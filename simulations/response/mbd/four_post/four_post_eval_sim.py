@@ -193,8 +193,11 @@ def _normalize_four_post_report_config(config: dict[str, Any]) -> dict[str, Any]
             procedure_cfg["rollMagnitude"] = FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD
     plots_cfg = config.setdefault("plots", {})
     if isinstance(plots_cfg, dict):
-        plots_cfg["jacking_roll"] = copy.deepcopy(_four_post_jacking_roll_plot_config())
-        plots_cfg["fbrc_roll"] = copy.deepcopy(_four_post_fbrc_roll_plot_config())
+        for name, plot in (("jacking_roll", _four_post_jacking_roll_plot_config()),
+                           ("fbrc_roll", _four_post_fbrc_roll_plot_config())):
+            if "enabled" in plots_cfg.get(name, {}):
+                plot["enabled"] = plots_cfg[name]["enabled"]
+            plots_cfg[name] = copy.deepcopy(plot)
     return config
 
 
@@ -1115,12 +1118,12 @@ class FourPostEvalSim:
 
         return setup
 
-    def run(self) -> dict[str, Any]:
+    def run(self, runner: Any = None) -> dict[str, Any]:
         simulation_cfg = _as_mapping(self.config.get("simulation"), name="simulation")
         execution_cfg = _as_mapping(self.config.get("execution"), name="execution")
         report_cfg = _as_mapping(self.config.get("report"), name="report")
 
-        runner = ModelicaRunner(
+        runner = runner if runner is not None else ModelicaRunner(
             build_dir=simulation_cfg.get("build_dir", DEFAULT_BUILD_DIR),
             exec_name=simulation_cfg.get("exec_name", DEFAULT_EXEC_NAME),
             simulation={

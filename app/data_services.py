@@ -790,6 +790,29 @@ def _config_fields(spec: ConfigSpec, data: Any) -> list[dict[str, Any]]:
         fields.append(field)
     payloads = [_field_payload(field, data) for field in fields]
     if spec.id == "four-post":
+        from app.native_four_post import force_settings
+        vehicle_path = ROOT / "vehicle.yml"
+        vehicle = yaml.safe_load(vehicle_path.read_text()) if vehicle_path.is_file() else {}
+        shares = force_settings(vehicle, data)
+        labels = {"front_brake_share": "Front brake-force share",
+                  "front_left_lateral_share": "Front: left (+) lateral-force share",
+                  "rear_left_lateral_share": "Rear: left (+) lateral-force share"}
+        for name, label in labels.items():
+            payloads.append({**_field_payload(FieldSpec(
+                path=("force_based", name), label=label, kind="number", group="Force-based",
+                help_text=("Weights anti-dive by the front share of total braking force. Anti-squat assumes RWD."
+                           if name == "front_brake_share" else
+                           "Share of this axle's lateral force applied on the left (+Y). Not vertical load transfer."),
+            ), {"force_based": shares}), "display_unit": "%", "display_scale": 100})
+        for name, plot in data.get("plots", {}).items():
+            label = {"jacking_roll": "Force-based anti-roll vs roll",
+                     "fbrc_roll": "Force-based equivalent RC height vs roll",
+                     "jacking_heave": "Anti-dive / anti-squat vs heave"}.get(
+                         name, plot.get("title", _humanize_path_part(name)))
+            payloads.append(_field_payload(FieldSpec(
+                path=("plots", name, "enabled"), label=label,
+                kind="boolean", group="Report", help_text="Include this plot in the report.",
+            ), {"plots": {name: {"enabled": plot.get("enabled", True)}}}))
         for payload in payloads:
             display = {"m": ("mm", 1000), "rad": ("deg", 180 / math.pi)}.get(payload["unit"])
             if display:
@@ -962,6 +985,11 @@ def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
         data = _vehicle_with_powertrain_defaults(data)
         data = _vehicle_with_architecture_defaults(data, prune_inactive=True)
     _validate_model_dof(data)
+    if config_id == "four-post":
+        from app.native_four_post import force_settings
+        if not isinstance(data, dict):
+            raise ValueError("Four Post settings must be a mapping.")
+        force_settings({}, data)
     if config_id in {"maneuver", "mbd-maneuver"}:
         from simulations.response.maneuver import validate_maneuver
         if not isinstance(data, dict):
@@ -978,6 +1006,11 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     if not isinstance(data, (dict, list)):
         raise TypeError("Config must contain a YAML mapping or list")
     _validate_model_dof(data)
+    if config_id == "four-post":
+        from app.native_four_post import force_settings
+        if not isinstance(data, dict):
+            raise ValueError("Four Post settings must be a mapping.")
+        force_settings({}, data)
     if config_id in {"maneuver", "mbd-maneuver"}:
         from simulations.response.maneuver import validate_maneuver
         if not isinstance(data, dict):

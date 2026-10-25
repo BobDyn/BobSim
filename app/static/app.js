@@ -2881,12 +2881,12 @@ function infoIcon() {
 
 let infoHintId = 0;
 
-function infoHint(label, text) {
+function infoHint(label, text, docsUrl = "https://bobdyn.com/bobsim/app") {
   const id = `info-popup-${++infoHintId}`;
   const rows = Array.isArray(text) ? text : null;
   const plain = rows ? rows.map(([key, value]) => `${key}: ${value}`).join(". ") : text;
   const content = rows ? `<dl>${rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : `<p>${escapeHtml(text)}</p>`;
-  return `<span class="info-hint"><button type="button" class="info-button" data-info-popup="${id}" aria-controls="${id}" aria-haspopup="dialog" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><dialog id="${id}" class="info-popup" aria-label="${escapeHtml(label)}"><button type="button" class="info-close" aria-label="Close help">×</button>${content}</dialog>`;
+  return `<span class="info-hint"><button type="button" class="info-button" data-info-popup="${id}" aria-controls="${id}" aria-haspopup="dialog" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><dialog id="${id}" class="info-popup" aria-label="${escapeHtml(label)}"><button type="button" class="info-close" aria-label="Close help">×</button>${content}<a class="info-docs-link" href="${escapeHtml(docsUrl)}" target="_blank" rel="noopener noreferrer">Read in BobDocs ↗</a></dialog>`;
 }
 
 function handleInfoPopupClick(event) {
@@ -2911,10 +2911,33 @@ function positionInfoPopup(popup) {
   popup.style.top = `${Math.max(8, top)}px`;
 }
 
+function fieldDocsUrl(field) {
+  const path = field.path || [];
+  const key = path.join(".").toLowerCase();
+  const dynamics = "https://bobdyn.com/reference/vehicle-dynamics";
+  if (path[0] === "force_based") {
+    return `${dynamics}#${path[1] === "front_brake_share" ? "jacking-and-anti-geometry" : "load-transfer"}`;
+  }
+  if (path[0] === "plots") {
+    const plot = path[1] || "";
+    if (/fbrc|roll_center|rc_height|rc_lateral/.test(plot)) return `${dynamics}#roll-centers`;
+    if (/jacking|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
+    if (/lltd|load_transfer/.test(plot)) return `${dynamics}#load-transfer`;
+    if (/trail|scrub/.test(plot)) return `${dynamics}#tires`;
+    if (/camber|toe|caster|kpi|motion_ratio/.test(plot)) return `${dynamics}#suspension`;
+  }
+  if (/damp/.test(key)) return `${dynamics}#damping`;
+  if (/tire/.test(key)) return `${dynamics}#tires`;
+  if (/aero/.test(key)) return `${dynamics}#aero`;
+  if (/mass|brake.*bias/.test(key)) return `${dynamics}#load-transfer`;
+  if (/spring|shock|stabar|suspension/.test(key)) return `${dynamics}#suspension`;
+  return "https://bobdyn.com/bobsim/app";
+}
+
 function fieldHelpHtml(field) {
   const help = field.disabled ? field.placeholder : fieldHelpText(field);
   return help
-    ? infoHint(`${field.label} information`, help)
+    ? infoHint(`${field.label} information`, help, fieldDocsUrl(field))
     : "";
 }
 
@@ -5237,23 +5260,25 @@ function simulationMethodGuide(workflowId) {
     "inputs": [
       "Heave and roll amplitudes, handwheel angle and applied contact-patch force. The handwheel input drives the rack pinion through the vehicle C-factor.",
       "Vehicle hardpoints, masses, springs, anti-roll bars and tire vertical properties.",
-      "Spring and anti-roll-bar properties come from Setup. The runner handles static balancing and contact-load validation."
+      "Spring and anti-roll-bar properties come from Setup. The runner handles static balancing and contact-load validation.",
+      "Force-based settings specify front brake-force share and independent front/rear left lateral-force shares; these are not vertical load-transfer fractions."
     ],
     "outputs": [
       "Camber, toe, caster, kingpin inclination, trail and scrub through heave and roll.",
       "Motion ratios, wheel and roll stiffness, static loads and suspension frequency estimates.",
-      "Anti-dive, anti-squat, geometric anti-roll, load-transfer distribution and force-based roll-center height.",
+      "Anti-dive at the selected brake-force share, RWD anti-squat, force-based anti-roll, load-transfer distribution and equivalent roll-center height.",
       "PDF report and metrics CSV."
     ],
     "limits": [
       "Heave and roll are chassis actuator coordinates. Wheel travel is solved from the suspension and contact constraints. The imposed roll axis is global x through the world origin, distinct from the reported force-based roll center.",
       "The sweep schedule is built into the Modelica rig. Front and rear share heave and roll commands, so there is no independent pitch input.",
       "Contact loss can invalidate roll-force metrics and is rejected when contact validation is enabled.",
-      "This rig sets world gravity to zero and uses configured spring preload and applied test forces. It is not a free-running vehicle simulation. Vehicle changes must be present in the compiled model."
+      "This rig sets world gravity to zero and uses configured spring preload and applied test forces. It is not a free-running vehicle simulation. Saved calibration is applied to the cached architecture binaries at runtime."
     ],
     "sources": [
+      "app/native_four_post.py",
       "simulations/response/mbd/four_post/four_post_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialDoubleWishboneFourPost.mo",
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialKnC.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ChassisActuator.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ContactPatchFixture.mo"
     ]
@@ -5745,9 +5770,9 @@ function simWorkflowMeta(workflow) {
     "four-post": {
       title: "Four Post",
       summary: "Suspension response to heave, roll, and corner loads.",
-      sequence: ["FourPostSim build", "Fixed contact heights", "Chassis heave and roll", "Contact-patch test forces", "Suspension metrics"],
+      sequence: ["Cached front/rear KnC binaries", "Fixed contact heights", "Chassis heave and roll", "Contact-patch test forces", "Suspension metrics"],
       parameters: ["Chassis heave and roll amplitudes", "Contact-patch test forces", "Handwheel angle", "Report settings"],
-      outputs: ["Four-post PDF report", "Metrics CSV", "Build/run log"],
+      outputs: ["Four-post PDF report", "Metrics CSV", "Curves and binary provenance"],
     },
   }[workflow?.id] || fallback;
 }
@@ -7672,7 +7697,7 @@ function setView(view) {
   if (view === "setup" && (!state.activeParamGroup || state.activeParamGroup === "vehicle")) state.activeParamGroup = "hardpoints";
   renderMode();
   renderRailActions();
-  if (view === "standard") { renderStandard(); renderNativeExperiments(); }
+  if (view === "standard") renderStandard();
   if (view === "studies") renderStudies();
   if (["architecture", "setup"].includes(view)) renderSetup();
 }
@@ -14852,52 +14877,4 @@ async function refreshNativeArtifacts() {
   } catch (error) {
     panel.textContent = error.message;
   }
-}
-
-
-async function renderNativeExperiments() {
-  const panel = document.getElementById("native-experiments");
-  if (!panel || !state.vehiclePayload) return;
-  try {
-    const payload = await api("/api/native/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData()})});
-    panel.innerHTML = `<div class="native-experiment-actions">${payload.artifacts.map((item) => `<button type="button" class="ghost-button" data-native-run="${item.kind}" ${item.ready ? "" : "disabled"}>${escapeHtml(item.label)}${item.ready ? "" : " · build required"}</button>`).join("")}</div>
-      <label class="form-field"><span>KnC applied load (N)</span><input id="native-force" type="number" min="0" value="1000"></label>
-      <label><input id="native-stabilizer" type="checkbox"> Include the configured stabilizer in KnC</label>
-      <details class="native-run-details"><summary>Run details</summary><p>KnC sweeps heave, roll and lateral load; the front rig also sweeps steering. Rear traction measures anti-squat.</p><p>The maneuver uses ramp steering and the reference starting pose. Changed setups are not automatically re-equilibrated.</p></details>
-      <pre class="code-view" id="native-run-log" hidden></pre>`;
-    panel.querySelectorAll("[data-native-run]").forEach((button) => {
-      button.onclick = async () => {
-        const log = panel.querySelector("#native-run-log");
-        log.hidden = false;
-        log.textContent = "Starting experiment…";
-        button.disabled = true;
-        try {
-          const job = await api("/api/native/run", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData(),kind:button.dataset.nativeRun,settings:button.dataset.nativeRun.startsWith("knc-") ? {forceMagnitude:Number(document.getElementById("native-force").value),include_stabilizer:document.getElementById("native-stabilizer").checked} : {}})});
-          state.selectedJobId = job.id;
-          let latest = job;
-          while (["queued","running"].includes(latest.status)) {
-            await new Promise((resolve) => setTimeout(resolve,1000));
-            latest = await api(`/api/jobs/${job.id}`);
-            log.textContent = latest.log || "Running…";
-          }
-          if (latest.returncode !== 0) throw new Error(latest.log || "Experiment failed");
-          const marker = latest.log.split("\n").find((line) => line.startsWith("BOBSIM_NATIVE_RESULT="));
-          if (marker) {
-            const result = JSON.parse(marker.slice("BOBSIM_NATIVE_RESULT=".length));
-            const outcomes = ["Duration reached", "Settled", "Linearity limit", "Settling timeout", "Tire-load limit", "Sideslip limit"];
-            const summary = document.createElement("p");
-            summary.textContent = result.kind.startsWith("knc-") ? "KnC protocol completed. " : `${outcomes[result.termination_status] || "Unknown outcome"}. `;
-            const link = document.createElement("a");
-            link.href = `/files/${result.csv.split("/").map(encodeURIComponent).join("/")}`;
-            link.textContent = "Download signals";
-            link.setAttribute("download", "signals.csv");
-            summary.append(link);
-            log.before(summary);
-            log.hidden = true;
-          }
-        } catch (error) { log.textContent = error.message; }
-        finally { button.disabled = false; }
-      };
-    });
-  } catch (error) { panel.textContent = error.message; }
 }
