@@ -5667,7 +5667,7 @@ function simulationMethodGuide(workflowId) {
       "Interpolated zero-yaw-moment crossings form a continuous trim branch. An enabled speed sweep adds maps at the other requested speeds."
     ],
     "inputs": [
-      "Vehicle definition and selected DynPy 3, 6, 10 or 14 DOF model, evaluated in Python.",
+      "Vehicle definition and the DynPy 14DOF equilibrium model, evaluated in Python.",
       "Speed, sideslip and roadwheel-angle ranges, grid resolution and prescribed yaw rate.",
       "Solver iteration and tolerance settings, tire-load-range enforcement, and optional speed sweep.",
       "DynPy uses four tire contact patches. 3 DOF covers planar body motion, 6 adds heave, roll and pitch, 10 adds wheel rotation, and 14 adds unsprung vertical motion."
@@ -6221,8 +6221,13 @@ function renderResultComparisonControls() {
   select.onchange = event => workspaceAction(() => setSimulationBaseline(simulation.id, event.target.value));
   const toggle = document.getElementById("result-compare-baseline");
   toggle.checked = state.resultCompareBaseline;
-  toggle.disabled = !simulation.baseline_run_id;
-  toggle.title = toggle.disabled ? "No baseline run is selected." : "";
+  const ymdCarpet = Boolean(state.resultSourceDetail?.ymd && state.resultXAxis === "ay_g"
+    && state.resultSelectedSignals.length === 1 && state.resultSelectedSignals[0] === "mz_nm"
+    && !state.resultColorSignal);
+  toggle.disabled = !simulation.baseline_run_id || ymdCarpet;
+  if (ymdCarpet) toggle.checked = false;
+  toggle.title = ymdCarpet ? "Baseline overlay is unavailable for the YMD speed-slice view."
+    : toggle.disabled ? "No baseline run is selected." : "";
   toggle.onchange = async () => {
     state.resultCompareBaseline = toggle.checked;
     saveResultSettings();
@@ -6298,7 +6303,7 @@ function renderStudies() {
   if (signals) {
     const files = (selectedSavedResult()?.files || []).filter(file => file.kind === "csv");
     if (!files.some(file => file.path === state.selectedResultSourcePath)) {
-      state.selectedResultSourcePath = (files.find(file => file.label === resultVisualization()?.settings?.source_label) || files.find(file => file.label === "Signals") || files[0])?.path || null;
+      state.selectedResultSourcePath = (files.find(file => file.label === resultVisualization()?.settings?.source_label) || files.find(file => file.label === (selectedSimulation()?.workflow_id === "ymd" ? "Raw CSV" : "Signals")) || files[0])?.path || null;
       state.resultSourceDetail = null;
       state.resultPlotPayload = null;
       state.resultBaselinePayload = null;
@@ -6456,11 +6461,13 @@ async function loadResultSource(path = state.selectedResultSourcePath, saveSetti
 }
 
 function defaultResultXAxis(detail) {
+  if (detail?.ymd) return "ay_g";
   const candidates = detail?.x_candidates || [];
   return candidates[0] || "__index__";
 }
 
 function defaultResultSignals(detail) {
+  if (detail?.ymd) return ["mz_nm"];
   const xAxis = state.resultXAxis || defaultResultXAxis(detail);
   const preferred = ["value", "accY", "ay_mps2", "ax_accel_mps2", "roll", "yawVel", "speed_mps"];
   const numeric = (detail?.numeric_columns || []).filter((column) => column !== xAxis);
@@ -6474,6 +6481,7 @@ function defaultResultSignals(detail) {
 function renderResultExplorer() {
   const source = selectedResultSource();
   if (!source) {
+    document.getElementById("ymd-speed-control").hidden = true;
     renderResultSourceDiagnostic(null);
     renderResultControls(null);
     renderResultPlotCanvas();
@@ -6485,6 +6493,7 @@ function renderResultExplorer() {
   }
   renderResultSourceDiagnostic(detail || source);
   renderResultControls(detail);
+  showYmdSpeedSlice();
   renderResultPlotCanvas();
 }
 
@@ -6606,7 +6615,40 @@ function renderResultControls(detail) {
     : `<span class="mini-pill missing">No signals</span>`;
 }
 
+const ymdSpeedSelections = new Map();
+
+function showYmdSpeedSlice() {
+  const detail = state.resultSourceDetail;
+  const control = document.getElementById("ymd-speed-control");
+  const active = Boolean(detail?.ymd?.slices.length && !state.resultColorSignal && state.resultXAxis === "ay_g"
+    && state.resultSelectedSignals.length === 1 && state.resultSelectedSignals[0] === "mz_nm");
+  control.hidden = !active;
+  if (!active) return false;
+  const slices = detail.ymd.slices;
+  const slider = document.getElementById("ymd-speed-slider");
+  const index = Math.min(slices.length - 1, ymdSpeedSelections.get(detail.path)
+    ?? slices.reduce((best, slice, i) => Math.abs(slice.speed - 15) < Math.abs(slices[best].speed - 15) ? i : best, 0));
+  slider.max = String(slices.length - 1);
+  slider.value = String(index);
+  slider.disabled = slices.length === 1;
+  const show = () => {
+    const selected = Number(slider.value);
+    ymdSpeedSelections.set(detail.path, selected);
+    const slice = slices[selected];
+    document.getElementById("ymd-speed-value").textContent = `${formatNumber(slice.speed)} m/s${slices.length === 1 ? " · only recorded speed" : ""}`;
+    state.resultPlotPayload = {...slice, ymd: true, x_extent: detail.ymd.x_extent, y_extent: detail.ymd.y_extent};
+    state.resultBaselinePayload = null;
+    state.resultHoverIndex = null;
+    state.resultPlotStatus = "ready";
+    renderResultPlotCanvas();
+  };
+  slider.oninput = show;
+  show();
+  return true;
+}
+
 async function refreshResultPlot() {
+  if (showYmdSpeedSlice()) return;
   const detail = state.resultSourceDetail;
   const context = resultRequestContext();
   const selection = JSON.stringify([state.resultXAxis, state.resultColorSignal, state.resultSelectedSignals]);
@@ -6747,7 +6789,7 @@ function drawResultPlotPanel(canvas, payload, baseline) {
   const title = document.getElementById("result-plot-title");
   const subtitle = document.getElementById("result-plot-subtitle");
   const legend = document.getElementById("result-selected-signals");
-  if (title) title.textContent = isLapMap() ? "Lap map" : "Signals";
+  if (title) title.textContent = payload?.ymd ? `Yaw moment diagram · ${formatNumber(payload.speed)} m/s` : isLapMap() ? "Lap map" : "Signals";
   if (subtitle) {
     const detail = state.resultSourceDetail || selectedResultSource();
     subtitle.textContent = detail ? `X: ${state.resultXAxis === "__index__" ? "row index" : state.resultXAxis}` : "";
@@ -6773,9 +6815,9 @@ function drawResultPlotPanel(canvas, payload, baseline) {
     return;
   }
   const plot = { x: 58, y: 28, width: width - 78, height: height - 76 };
-  let xDomain = plotDomain([...payload.x, ...(baseline?.x || [])], { padFraction: 0.02 });
+  let xDomain = plotDomain(payload.x_extent || [...payload.x, ...(baseline?.x || [])], { padFraction: 0.02 });
   const yValues = [...payload.series, ...(baseline?.series || [])].flatMap((series) => series.values).filter((value) => value !== null && value !== undefined);
-  let yDomain = plotDomain(yValues, { padFraction: 0.1 });
+  let yDomain = plotDomain(payload.y_extent || yValues, { padFraction: 0.1 });
   if (isLapMap()) {
     const scale = Math.max((xDomain[1] - xDomain[0]) / plot.width, (yDomain[1] - yDomain[0]) / plot.height);
     const xc = (xDomain[0] + xDomain[1]) / 2, yc = (yDomain[0] + yDomain[1]) / 2;
@@ -6880,7 +6922,7 @@ function drawResultPlotPanel(canvas, payload, baseline) {
       + payload.series.map(series => `${series.signal}: ${series.values[hovered.index] === null ? "—" : formatNumber(series.values[hovered.index])}`).join(" | ")
       + (colorValues ? ` | ${payload.color.signal}: ${colorValues[hovered.index] === null ? "missing" : formatNumber(colorValues[hovered.index])}` : "");
   }
-  drawCanvasText(ctx, state.resultXAxis === "__index__" ? "row index" : `${state.resultXAxis} (${payload.x_unit || "unit unknown"})`, plot.x + plot.width / 2, height - 18, {
+  drawCanvasText(ctx, payload.x_label ? `${payload.x_label} (${payload.x_unit})` : state.resultXAxis === "__index__" ? "row index" : `${state.resultXAxis} (${payload.x_unit || "unit unknown"})`, plot.x + plot.width / 2, height - 18, {
     align: "center",
     size: 11,
     weight: 760,

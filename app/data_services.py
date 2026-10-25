@@ -238,7 +238,11 @@ def result_source_payload(raw_path: str) -> dict[str, Any]:
     path = _safe_repo_path(raw_path)
     if not _is_result_source_path(path):
         raise ValueError("Result source must be a CSV file under a results directory")
-    return _csv_source_summary(path)
+    source = _csv_source_summary(path)
+    if {"speed_mps", "beta_deg", "hwa_deg", "ay_g", "mz_nm", "converged"} <= set(source["columns"]):
+        from app.ymd_view import speed_slices
+        source["ymd"] = speed_slices(path)
+    return source
 
 
 def _extrema_rows(reader, columns: list[str], bucket_size: int):
@@ -986,6 +990,11 @@ def patch_config(config_id: str, values: dict[str, Any]) -> dict[str, Any]:
         data = _vehicle_with_powertrain_defaults(data)
         data = _vehicle_with_architecture_defaults(data, prune_inactive=True)
     _validate_model_dof(data)
+    if config_id == "ymd":
+        if not isinstance(data, dict):
+            raise ValueError("YMD settings must be a mapping.")
+        from simulations.envelope.ymd.ymd_generation import config_to_ymd_config
+        config_to_ymd_config(data)
     if config_id == "four-post":
         from app.native_four_post import force_settings
         if not isinstance(data, dict):
@@ -1007,6 +1016,11 @@ def save_raw_config(config_id: str, text: str) -> dict[str, Any]:
     if not isinstance(data, (dict, list)):
         raise TypeError("Config must contain a YAML mapping or list")
     _validate_model_dof(data)
+    if config_id == "ymd":
+        if not isinstance(data, dict):
+            raise ValueError("YMD settings must be a mapping.")
+        from simulations.envelope.ymd.ymd_generation import config_to_ymd_config
+        config_to_ymd_config(data)
     if config_id == "four-post":
         from app.native_four_post import force_settings
         if not isinstance(data, dict):
@@ -1443,6 +1457,13 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     items = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
     outputs_migrated = False
     for entry in items:
+        if entry["workflow_id"] == "ymd":
+            config = yaml.safe_load(entry["config_text"])
+            if config.setdefault("generation", {}).get("model_dof") != 14:
+                config["generation"]["model_dof"] = 14
+                entry["config_text"] = yaml.safe_dump(config, sort_keys=False)
+                entry.setdefault("model", {}).update(model_dofs=[14], fidelity="14 DOF QSS")
+                outputs_migrated = True
         model = entry.get("model") or {}
         known_engine = bool(model.get("engine"))
         modelica = model.get("engine") == "BobLib"

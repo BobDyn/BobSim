@@ -102,7 +102,7 @@ class VehicleParams:
 @dataclass(frozen=True)
 class YMDConfig:
     speed: float = 15.0  # m/s
-    model_dof: DOFModel = 3
+    model_dof: DOFModel = 14
 
     beta_min_deg: float = -12.0
     beta_max_deg: float = 12.0
@@ -993,7 +993,8 @@ def plot_ymd_contours(
         plt.show()
 
 
-def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
+def save_ymd_csv(result: YMDResult, output_path: str | Path, *,
+                 speed_results: list[YMDResult] | None = None) -> None:
     """
     Save YMD result to CSV.
 
@@ -1005,24 +1006,26 @@ def save_ymd_csv(result: YMDResult, output_path: str | Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     rows: list[list[float]] = []
 
-    for i, beta in enumerate(result.beta):
-        for j, hwa in enumerate(result.hwa):
-            ay = result.ay[i, j]
-            mz = result.mz[i, j]
+    unique = {float(item.speed): item for item in [result, *(speed_results or [])]}
+    for result in sorted(unique.values(), key=lambda item: item.speed):
+        for i, beta in enumerate(result.beta):
+            for j, hwa in enumerate(result.hwa):
+                ay = result.ay[i, j]
+                mz = result.mz[i, j]
 
-            rows.append(
-                [
-                    float(result.speed),
-                    float(beta),
-                    float(np.rad2deg(beta)),
-                    float(hwa),
-                    float(np.rad2deg(hwa)),
-                    float(ay),
-                    float(ay / G if np.isfinite(ay) else np.nan),
-                    float(mz),
-                    float(int(result.converged[i, j])),
-                ]
-            )
+                rows.append(
+                    [
+                        float(result.speed),
+                        float(beta),
+                        float(np.rad2deg(beta)),
+                        float(hwa),
+                        float(np.rad2deg(hwa)),
+                        float(ay),
+                        float(ay / G if np.isfinite(ay) else np.nan),
+                        float(mz),
+                        float(int(result.converged[i, j])),
+                    ]
+                )
 
     data = np.asarray(rows, dtype=float)
 
@@ -1047,8 +1050,8 @@ def load_ymd_config(path: str | Path = DEFAULT_YMD_CONFIG) -> dict[str, Any]:
 def config_to_ymd_config(config: dict[str, Any]) -> YMDConfig:
     generation = config.get("generation") or {}
     model_dof = int(generation.get("model_dof", YMDConfig.model_dof))
-    if model_dof not in {3, 6, 10, 14}:
-        raise ValueError(f"generation.model_dof must be 3, 6, 10, or 14; got {model_dof}.")
+    if model_dof != 14:
+        raise ValueError("YMD supports only 14DOF; set generation.model_dof to 14.")
     return YMDConfig(
         speed=float(generation.get("speed_mps", YMDConfig.speed)),
         model_dof=cast(DOFModel, model_dof),
@@ -2864,7 +2867,7 @@ def main() -> None:
         sweep_summary, sweep_rows = summarize_ymd_speed_sweep(sweep_result)
         summary.update(sweep_summary)
 
-    save_ymd_csv(result, raw_output_path)
+    save_ymd_csv(result, raw_output_path, speed_results=sweep_result.results if sweep_result else None)
     save_metric_rows(ymd_metric_rows(summary), metrics_output_path)
     save_trim_curve_csv(trim_rows, trim_output_path)
     if bool(report_cfg.get("enabled", True)):

@@ -749,8 +749,8 @@ BASE_CONFIG_SPECS: dict[str, ConfigSpec] = {
         workflow_id="ymd",
         fields=(
             _field("generation.model_dof", "Model DOF", kind="select", group="Model",
-                   choices=("3", "6", "10", "14"),
-                   help_text="DynPy generalized coordinates: 3, 6, 10, or 14."),
+                   choices=("14",), disabled=True,
+                   help_text="YMD uses the 14DOF equilibrium model."),
             _field("generation.speed_mps", "Speed", kind="number", group="Generation", unit="m/s"),
             _field("generation.beta_min_deg", "Min beta", kind="number", group="Generation", unit="deg"),
             _field("generation.beta_max_deg", "Max beta", kind="number", group="Generation", unit="deg"),

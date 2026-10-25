@@ -3,8 +3,8 @@ schema: bobsim.ymd.v1
 vehicle_template: ../../../vehicle.yml
 
 generation:
-  # Shared transient/QSS physics backend: 3, 6, 10, or 14 generalized DOF.
-  model_dof: 3
+  # YMD uses the 14DOF equilibrium model.
+  model_dof: 14
   speed_mps: 15.0
   beta_min_deg: -8.0
   beta_max_deg: 8.0

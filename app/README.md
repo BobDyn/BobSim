@@ -323,3 +323,10 @@ Modelica output archives trigger geometry conversion automatically; native Four
 Post uses its archived binaries and calibration. Animation failures preserve the
 simulation results and are recorded on the saved run. Legacy results without
 geometry need a new run. Reduced Python states are not offered as animations.
+
+YMD uses 14DOF only. Its Raw CSV retains the reference map and every computed
+speed-sweep map. Signal Explorer defaults to yaw moment versus lateral
+acceleration, with a velocity slider through recorded speeds. Both constant
+sideslip and constant steering families retain gaps at rejected points. All
+slices are preloaded and use common axis limits; dragging never starts a solve.
+Older archives with one speed remain viewable at that speed.

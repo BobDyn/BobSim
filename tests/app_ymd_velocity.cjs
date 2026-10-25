@@ -1,0 +1,25 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source=fs.readFileSync('app/static/app.js','utf8').split('\nwireEvents();')[0];
+const nodes=new Map();
+const ctx=vm.createContext({console,assert,localStorage:{getItem:()=>null},document:{compatMode:'CSS1Compat',body:{classList:{toggle(){}}},getElementById:id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id);}}});
+vm.runInContext(source,ctx);
+vm.runInContext(`
+renderResultPlotCanvas=()=>{};
+state.resultXAxis='ay_g'; state.resultSelectedSignals=['mz_nm'];
+state.resultSourceDetail={path:'saved/sweep.csv',ymd:{slices:[{speed:10,x:[1],series:[]},{speed:20,x:[2],series:[]}],x_extent:[0,3],y_extent:[-5,5]}};
+assert.equal(showYmdSpeedSlice(),true);
+const slider=document.getElementById('ymd-speed-slider');
+slider.value='1'; slider.oninput();
+assert.equal(state.resultPlotPayload.speed,20);
+assert.equal(state.resultXAxis,'ay_g');
+assert.deepEqual(state.resultPlotPayload.x_extent,[0,3]);
+assert.equal(document.getElementById('ymd-speed-control').hidden,false);
+showYmdSpeedSlice(); assert.equal(slider.value,'1');
+state.resultSelectedSignals=['beta_deg']; assert.equal(showYmdSpeedSlice(),false);
+assert.equal(document.getElementById('ymd-speed-control').hidden,true);
+state.resultSelectedSignals=['mz_nm'];state.resultSourceDetail.ymd.slices=[{speed:10,x:[],series:[]}];
+showYmdSpeedSlice(); assert.equal(slider.disabled,true);
+`,ctx);
+console.log('YMD velocity slice UI passed');
