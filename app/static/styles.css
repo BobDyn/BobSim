@@ -5242,3 +5242,21 @@ summary:focus-visible {
   overflow-y: auto;
   padding: 8px 4px 12px;
 }
+
+[data-reorder-id] { cursor: grab; }
+[data-reorder-id]:active { cursor: grabbing; }
+.simulation-analysis-group, .simulation-tree-branch { position: relative; }
+.reorder-before::before, .reorder-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--blue);
+  box-shadow: 0 0 6px var(--blue);
+  pointer-events: none;
+  z-index: 4;
+}
+.reorder-before::before { top: -2px; }
+.reorder-after::after { bottom: -2px; }

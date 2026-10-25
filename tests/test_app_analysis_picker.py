@@ -12,3 +12,10 @@ def test_analysis_picker_behavior() -> None:
     if node is None:
         pytest.skip("Node.js is not installed")
     subprocess.run([node, "tests/app_analysis_picker.cjs"], cwd=app.PACKAGE_ROOT, check=True)
+
+
+def test_workspace_reorder_behavior() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed")
+    subprocess.run([node, "tests/app_workspace_order.cjs"], cwd=app.PACKAGE_ROOT, check=True)

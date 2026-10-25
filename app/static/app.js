@@ -4748,12 +4748,83 @@ function wireSimulationSplitter() {
   new ResizeObserver(() => apply(width)).observe(workspace);
 }
 
+function orderedSimulationGroups() {
+  const ids = [...new Set([...(state.simulationWorkspace?.group_order || []), ...SIMULATION_GROUPS.map(group => group.id)])];
+  return ids.map(id => SIMULATION_GROUPS.find(group => group.id === id)).filter(Boolean);
+}
+
+function simulationSiblingIds(id, scope) {
+  if (scope === "group") return orderedSimulationGroups().map(group => group.id);
+  const items = state.simulationWorkspace?.simulations || [];
+  const item = items.find(item => item.id === id);
+  return item ? items.filter(other => simulationAnalysisGroup({id: other.workflow_id})
+    === simulationAnalysisGroup({id: item.workflow_id})).map(other => other.id) : [];
+}
+
+async function moveWorkspaceItem(id, scope, placement) {
+  const pane = document.querySelector(".simulation-tree-pane");
+  const scrollTop = pane.scrollTop;
+  await simulationRequest("move", {id, scope, ...placement});
+  renderSimulationWorkspace();
+  pane.scrollTop = scrollTop;
+  const attribute = scope === "group" ? "data-analysis-menu" : "data-simulation-menu";
+  [...document.querySelectorAll(`[${attribute}]`)].find(node => node.getAttribute(attribute) === id)?.focus({preventScroll: true});
+}
+
+function wireSimulationReorder() {
+  const tree = document.getElementById("simulation-tree");
+  const pane = document.querySelector(".simulation-tree-pane");
+  let source = null;
+  let insertion = null;
+  const clear = () => {
+    tree.querySelectorAll(".reorder-before, .reorder-after").forEach(node => node.classList.remove("reorder-before", "reorder-after"));
+    insertion = null;
+  };
+  tree.addEventListener("dragstart", event => {
+    const handle = event.target.closest("[data-reorder-id]");
+    if (!handle || state.simulationNavigating) return;
+    source = {id: handle.dataset.reorderId, scope: handle.dataset.reorderScope};
+    event.dataTransfer.setData("application/x-bobsim-order", JSON.stringify(source));
+    event.dataTransfer.effectAllowed = "move";
+    document.getElementById("simulation-context-menu").hidden = true;
+  });
+  tree.addEventListener("dragover", event => {
+    if (!source) return;
+    clear();
+    const bounds = pane.getBoundingClientRect();
+    if (event.clientY < bounds.top + 32) pane.scrollTop -= 16;
+    else if (event.clientY > bounds.bottom - 32) pane.scrollTop += 16;
+    const selector = source.scope === "group" ? "[data-analysis-group]" : "[data-simulation-branch]";
+    const target = event.target.closest(selector);
+    const id = source.scope === "group" ? target?.dataset.analysisGroup : target?.dataset.simulationBranch;
+    if (!id || id === source.id || !simulationSiblingIds(source.id, source.scope).includes(id)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const box = target.getBoundingClientRect();
+    const position = event.clientY < box.top + box.height / 2 ? "before" : "after";
+    target.classList.add(`reorder-${position}`);
+    insertion = {target_id: id, position};
+  });
+  tree.addEventListener("dragleave", event => { if (!tree.contains(event.relatedTarget)) clear(); });
+  tree.addEventListener("drop", event => {
+    if (!source || !insertion) return;
+    event.preventDefault();
+    const item = source, placement = insertion;
+    source = null;
+    clear();
+    workspaceAction(() => moveWorkspaceItem(item.id, item.scope, placement));
+  });
+  tree.addEventListener("dragend", () => { source = null; clear(); });
+  tree.addEventListener("keydown", event => { if (event.key === "Escape") { source = null; clear(); } });
+}
+
 function wireSimulationContextMenu() {
   const tree = document.getElementById("simulation-tree");
   const menu = document.getElementById("simulation-context-menu");
   const pane = document.querySelector(".simulation-tree-pane");
   let menuScrollTop = 0;
   let target = null;
+  let targetScope = "simulation";
   let trigger = null;
   const close = (restoreFocus = false) => {
     menu.hidden = true;
@@ -4762,6 +4833,7 @@ function wireSimulationContextMenu() {
   };
   const open = (id, x, y, element, scope = "simulation") => {
     target = id;
+    targetScope = scope;
     menuScrollTop = pane.scrollTop;
     trigger?.setAttribute("aria-expanded", "false");
     trigger = element;
@@ -4769,12 +4841,19 @@ function wireSimulationContextMenu() {
     const envelope = ["ggv", "ymd", "racing-line"].includes(simulation?.workflow_id);
     const lap = simulation?.workflow_id === "lap-qss";
     for (const button of menu.querySelectorAll("button")) {
-      const actions = scope === "group" ? ["add"] : scope === "results" ? ["replay", "signals"] : ["duplicate", "delete"];
+      const actions = scope === "group" ? ["add", "move-up", "move-down"] : scope === "results" ? ["replay", "signals"] : ["move-up", "move-down", "duplicate", "delete"];
       button.hidden = !actions.includes(button.dataset.action);
       const hasAnimation = Boolean(simulation?.visualizations?.some(child => child.kind === "replay"));
       button.disabled = button.dataset.action === "replay" && (envelope || lap || hasAnimation);
       button.title = button.disabled ? hasAnimation ? "This simulation already has an animation."
         : "This analysis produces steady-state results, not an animation." : "";
+    }
+    const siblings = simulationSiblingIds(id, scope);
+    const index = siblings.indexOf(id);
+    for (const [action, blocked] of [["move-up", index <= 0], ["move-down", index < 0 || index === siblings.length - 1]]) {
+      const button = menu.querySelector(`[data-action="${action}"]`);
+      button.disabled = blocked;
+      button.title = blocked ? "Already at the end of this group." : "";
     }
     menu.hidden = false;
     menu.style.left = `${clamp(x, 8, window.innerWidth - menu.offsetWidth - 8)}px`;
@@ -4799,20 +4878,24 @@ function wireSimulationContextMenu() {
     if (!branch && !group) return;
     event.preventDefault();
     if (branch) open(branch.dataset.simulationBranch, event.clientX, event.clientY, branch.querySelector("[data-simulation-menu]"));
-    else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-simulation-add-group]"), "group");
+    else open(group.dataset.analysisGroup, event.clientX, event.clientY, group.querySelector("[data-analysis-menu]"), "group");
   });
   tree.addEventListener("click", event => {
-    const button = event.target.closest("[data-simulation-menu]");
+    const button = event.target.closest("[data-simulation-menu], [data-analysis-menu]");
     if (!button) return;
     const rect = button.getBoundingClientRect();
-    open(button.dataset.simulationMenu, rect.left, rect.bottom, button);
+    open(button.dataset.simulationMenu || button.dataset.analysisMenu, rect.left, rect.bottom, button, button.dataset.analysisMenu ? "group" : "simulation");
   });
   menu.addEventListener("click", event => {
     const button = event.target.closest("[data-action]");
     const action = button?.dataset.action;
     if (!action || button.disabled) return;
-    const id = target;
+    const id = target, scope = targetScope;
     close();
+    if (action.startsWith("move-")) {
+      workspaceAction(() => moveWorkspaceItem(id, scope, {direction: action.slice(5)}));
+      return;
+    }
     workspaceAction(() => action === "duplicate" ? duplicateSimulation(id)
       : action === "add" ? showSimulationCatalog(id) : action === "delete" ? removeSimulation(id) : addSimulationVisualization(id, action));
   });
@@ -4827,7 +4910,7 @@ function wireSimulationContextMenu() {
     }
   });
   document.addEventListener("pointerdown", event => {
-    if (!menu.contains(event.target) && !event.target.closest("[data-simulation-menu]")) close();
+    if (!menu.contains(event.target) && !event.target.closest("[data-simulation-menu], [data-analysis-menu]")) close();
   });
   window.addEventListener("resize", () => close());
   pane.addEventListener("scroll", () => {
@@ -4856,6 +4939,7 @@ function mountSimulationWorkspace() {
   wireSimulationCatalog();
   wireSimulationSplitter();
   wireSimulationGgvDrag();
+  wireSimulationReorder();
   new ResizeObserver(drawSimulationGgvConnections).observe(document.getElementById("simulation-tree"));
   wireSimulationContextMenu();
   new ResizeObserver(renderResultPlotCanvas).observe(document.getElementById("result-plot-canvas"));
@@ -4984,14 +5068,15 @@ function renderSimulationWorkspace() {
   if (!tree || document.activeElement?.classList?.contains("simulation-tree-name")) return;
   const simulations = state.simulationWorkspace?.vehicle_key === activeVehicleKey()
     ? state.simulationWorkspace.simulations : [];
-  tree.innerHTML = `<button type="button" class="simulation-tree-root simulation-tree-item ${state.view === "standard" && !state.selectedSimulationId ? "active" : ""}" data-simulation-home title="Simulation workspace">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></button><div class="simulation-tree-children">` + SIMULATION_GROUPS.map(group => {
+  tree.innerHTML = `<button type="button" class="simulation-tree-root simulation-tree-item ${state.view === "standard" && !state.selectedSimulationId ? "active" : ""}" data-simulation-home title="Simulation workspace">${simulationTreeIcon("vehicle")}<strong title="${escapeHtml(activeVehicleName())}">${escapeHtml(activeVehicleName())}</strong></button><div class="simulation-tree-children">` + orderedSimulationGroups().map(group => {
     const groupId = `group:${group.id}`;
     const expanded = !state.collapsedSimulations.has(groupId);
     return `<section class="simulation-analysis-group" data-analysis-group="${group.id}">
       <div class="simulation-tree-row">
         <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${groupId}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${group.label}">${simulationTreeIcon("chevron")}</button>
-        <span class="simulation-tree-item simulation-analysis-label">${group.label}</span>
+        <span class="simulation-tree-item simulation-analysis-label" draggable="true" data-reorder-id="${group.id}" data-reorder-scope="group" title="Drag to reorder analysis groups">${group.label}</span>
         <button type="button" class="simulation-tree-add" data-simulation-add-group="${group.id}" aria-label="Add ${group.label.toLowerCase()} simulation" title="Add simulation">+</button>
+        <button type="button" class="simulation-tree-more" data-analysis-menu="${group.id}" aria-label="Actions for ${group.label}" aria-haspopup="menu" title="Analysis actions">⋮</button>
       </div>
       <div class="simulation-tree-children"${expanded ? "" : " hidden"}>${(simulations || []).filter(item => simulationAnalysisGroup({id: item.workflow_id}) === group.id).map(item => {
     const runs = savedResults().filter(run => run.vehicle_key === activeVehicleKey() && run.simulation?.id === item.id).slice(0, 1);
@@ -5004,7 +5089,7 @@ function renderSimulationWorkspace() {
     return `<div class="simulation-tree-branch" data-simulation-branch="${escapeHtml(item.id)}">
       <div class="simulation-tree-row">
         <button type="button" class="simulation-tree-toggle" data-simulation-toggle="${escapeHtml(item.id)}" aria-expanded="${expanded}" aria-label="${expanded ? "Collapse" : "Expand"} ${escapeHtml(item.name)}">${simulationTreeIcon("chevron")}</button>
-        <button type="button" data-simulation-id="${escapeHtml(item.id)}" data-simulation-overview="${escapeHtml(item.id)}" class="simulation-tree-item ${state.view === "standard" && state.simulationOverview?.id === item.id ? "active" : ""}" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
+        <button type="button" data-simulation-id="${escapeHtml(item.id)}" data-simulation-overview="${escapeHtml(item.id)}" draggable="true" data-reorder-id="${escapeHtml(item.id)}" data-reorder-scope="simulation" class="simulation-tree-item ${state.view === "standard" && state.simulationOverview?.id === item.id ? "active" : ""}" title="${escapeHtml(item.name)} · ${escapeHtml(model)}">
           ${simulationTreeIcon(icon)}<span class="simulation-tree-label">${escapeHtml(item.name)}</span><span class="simulation-tree-model">${escapeHtml(item.model?.model_dofs?.length ? item.model.model_dofs.join("/") + " DOF" : item.model?.fidelity || "")}</span>
         </button>
         <button type="button" class="simulation-tree-more" data-simulation-menu="${escapeHtml(item.id)}" aria-label="Actions for ${escapeHtml(item.name)}" aria-haspopup="menu" aria-expanded="false" title="Simulation actions">⋮</button>

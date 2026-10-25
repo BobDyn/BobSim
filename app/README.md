@@ -270,3 +270,10 @@ links. This is a development preview setting, not a packaged-app default.
 Report page choices live in a collapsed Pages dropdown with a live selected
 count. Expanding it exposes the checkboxes and metric help; collapsing it does
 not change selections or omit them from saved configuration.
+
+Simulation outline ordering is saved per vehicle. Drag an analysis title to
+reorder whole groups, or a simulation title to reorder within its group; a
+highlighted horizontal bar marks the insertion point. The actions menus also
+provide Move up / Move down, disabled at the ends. Reordering preserves active
+setup edits, saved inputs, visualizations, and linked results. Dragging Results
+onto a QSS input still creates the existing GGV/racing-line connection.

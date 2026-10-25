@@ -705,7 +705,9 @@ vm.runInContext(`
     const group=id=>html.split('data-analysis-group="'+id+'"')[1].split('</section>')[0];
     assert.match(group('steady-state'),/data-simulation-branch="ggv"/);
     assert.match(html,/draggable="true" data-ggv-source="ggv"/);
-    assert.equal((html.match(/draggable="true"/g)||[]).length,1);
+    assert.equal((html.match(/draggable="true" data-ggv-source=/g)||[]).length,1);
+    assert.equal((html.match(/data-reorder-scope="simulation"/g)||[]).length,4);
+    assert.equal((html.match(/data-reorder-scope="group"/g)||[]).length,5);
     assert.match(html,/simulation-drag-grip/);
     assert.equal(html.split('>Results</span>').length-1,4,'every simulation has Results');
     assert.match(html,/data-simulation-run="" data-owner="step" aria-haspopup="menu" disabled/);
@@ -721,7 +723,7 @@ vm.runInContext(`
     assert.match(group('transient'),/data-simulation-visualization="plot" data-owner="step"/);
     assert.match(group('kinematic'),/data-simulation-branch="rig"/);
     assert.doesNotMatch(html,/data-analysis-overview/);
-    assert.ok(html.includes('<span class="simulation-tree-item simulation-analysis-label">Performance envelopes</span>'));
+    assert.match(html, /class="simulation-tree-item simulation-analysis-label"[^>]*>Performance envelopes/);
     assert.doesNotMatch(html,/data-simulation-add-child/);
     assert.match(html,/data-simulation-results="ggv"/);
     assert.match(html,/data-simulation-id="lap" data-simulation-overview="lap"/);
@@ -749,7 +751,7 @@ vm.runInContext(`
   vm.runInContext(source,menuContext);
   vm.runInContext(`
     const events={}; let focused, added;
-    const buttons=['add','duplicate','replay','signals','delete'].map(action=>({
+    const buttons=['add','move-up','move-down','duplicate','replay','signals','delete'].map(action=>({
       dataset:{action},hidden:false,focus(){focused=action;}
     }));
     const menu={hidden:true,style:{},offsetWidth:200,offsetHeight:180,
@@ -775,14 +777,14 @@ vm.runInContext(`
       assert.equal(menu.hidden,false);
       rightClick(group);
       assert.equal(menu.hidden,false);
-      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add']);
+      assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['add','move-up','move-down']);
       events['menu:click']({target:{closest:()=>buttons[0]}});
       assert.equal(added,group);
       assert.equal(menu.hidden,true);
     }
     rightClick('steady-state','envelope');
     assert.equal(focused,'duplicate');
-    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['duplicate','delete']);
+    assert.deepEqual(buttons.filter(b=>!b.hidden).map(b=>b.dataset.action),['move-up','move-down','duplicate','delete']);
     const resultsClick=id=>events['tree:contextmenu']({clientX:40,clientY:50,preventDefault(){},target:{
       closest:selector=>selector==='[data-simulation-results]' ? {dataset:{simulationResults:id},querySelector:()=>trigger} : null
     }});

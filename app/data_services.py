@@ -1411,6 +1411,29 @@ def _simulation_analysis_group(workflow_id: str) -> str:
     return "transient"
 
 
+def _reorder_workspace_ids(order: list[str], selected: str, payload: dict[str, Any]) -> list[str]:
+    """Reorder siblings by one step or relative to a validated insertion target."""
+    if selected not in order:
+        raise ValueError("Workspace item not found.")
+    result = list(order)
+    index = result.index(selected)
+    if "direction" in payload:
+        direction = payload["direction"]
+        if direction not in {"up", "down"}:
+            raise ValueError("Choose up or down.")
+        destination = index + (-1 if direction == "up" else 1)
+        if 0 <= destination < len(result):
+            result[index], result[destination] = result[destination], result[index]
+    else:
+        target, position = payload.get("target_id"), payload.get("position")
+        if target not in result or position not in {"before", "after"}:
+            raise ValueError("Choose an insertion position within the same group.")
+        if target != selected:
+            result.remove(selected)
+            result.insert(result.index(target) + (position == "after"), selected)
+    return result
+
+
 def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     key = _active_vehicle_workspace_key()
     if payload.get("vehicle_key", key) != key:
@@ -1432,14 +1455,33 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                         number += 1
                     child["name"] = f"Signal Explorer {number}"
     groups_path = path.with_name("analysis_groups.json")
-    group_order = ("kinematic", "steady-state", "transient", "track", "lap")
+    group_order: tuple[str, ...] = ("kinematic", "steady-state", "transient", "track", "lap")
+    order_path = path.with_name("group_order.json")
+    saved_order = json.loads(order_path.read_text(encoding="utf-8")) if order_path.is_file() else []
+    group_order = tuple(dict.fromkeys([group for group in saved_order if group in group_order] + list(group_order)))
     saved_groups = json.loads(groups_path.read_text(encoding="utf-8")) if groups_path.is_file() else []
     groups = {group for group in saved_groups if isinstance(group, str) and group in group_order}
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     _inherit_ggv_fidelity(items)
     item = next((item for item in items if item["id"] == payload.get("id")), None)
     result: dict[str, Any] = {}
-    if action in {"add-analysis", "remove-analysis"}:
+    if action == "move":
+        scope = payload.get("scope", "simulation")
+        if scope == "group":
+            group_order = tuple(_reorder_workspace_ids(list(group_order), str(payload.get("id", "")), payload))
+        elif scope == "simulation":
+            if item is None:
+                raise ValueError("Simulation not found for this vehicle.")
+            group = _simulation_analysis_group(item["workflow_id"])
+            indices = [i for i, entry in enumerate(items)
+                       if _simulation_analysis_group(entry["workflow_id"]) == group]
+            siblings = {items[i]["id"]: items[i] for i in indices}
+            order = _reorder_workspace_ids(list(siblings), item["id"], payload)
+            for index, identity in zip(indices, order):
+                items[index] = siblings[identity]
+        else:
+            raise ValueError("Choose an analysis group or simulation.")
+    elif action in {"add-analysis", "remove-analysis"}:
         group = payload.get("group")
         if group not in group_order:
             raise ValueError("Choose Kinematics, Performance envelopes, Vehicle response, Track or Laptime.")
@@ -1636,7 +1678,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     _inherit_ggv_fidelity(items)
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
     analysis_groups = [group for group in group_order if group in groups]
-    if action in {"add-analysis", "remove-analysis", "create", "save", "rename", "delete", "duplicate", "set-baseline",
+    if action in {"move", "add-analysis", "remove-analysis", "create", "save", "rename", "delete",
+                  "duplicate", "set-baseline",
                   "set-ggv", "set-racing-line", "set-maneuver-model", "add-visualization", "delete-visualization",
                   "update-visualization", "rename-visualization"}:
         temporary = path.with_suffix(".tmp")
@@ -1645,6 +1688,10 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         temporary = groups_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(analysis_groups, indent=2), encoding="utf-8")
         temporary.replace(groups_path)
+        if action == "move" and payload.get("scope") == "group":
+            temporary = order_path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(group_order), encoding="utf-8")
+            temporary.replace(order_path)
     summaries = [{k: v for k, v in item.items() if k != "config_text"} for item in items]
     for summary, entry in zip(summaries, items):
         if entry["workflow_id"] == "lap-qss":
@@ -1665,7 +1712,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                              or latest and run["id"] == "saved-" + latest["id"])), None)
                 else:
                     child["run_id"] = latest["id"] if latest else None
-    result.update(vehicle_key=key, simulations=summaries, analysis_groups=analysis_groups)
+    result.update(vehicle_key=key, simulations=summaries, analysis_groups=analysis_groups,
+                  group_order=list(group_order))
     if item is not None and action != "delete":
         result["simulation"] = {k: v for k, v in item.items() if k != "config_text"}
     return result

@@ -705,3 +705,51 @@ def test_linked_ggv_requires_recorded_parameters(linked_ggv_workspace, monkeypat
     workspace = app.simulation_workspace('list')
     dependency = next(item['ggv_input'] for item in workspace['simulations'] if item['id'] == lap['id'])
     assert dependency['status'] == status
+
+
+def test_workspace_order_moves_only_siblings_and_preserves_configs(archive_workspace):
+    import json
+    from app import data_services
+    root, active = archive_workspace
+    created = [app.simulation_workspace("create", {"workflow_id": "study", "name": name})["simulation"]
+               for name in ("A", "B", "C")]
+    key = data_services._active_vehicle_workspace_key()
+    path = data_services._vehicle_workspace_dir(key) / "simulations.json"
+    items = json.loads(path.read_text())
+    other = {"id": "envelope", "workflow_id": "ggv", "name": "GGV", "config_text": "unrelated"}
+    items.insert(1, other)
+    path.write_text(json.dumps(items))
+    before = {item["id"]: item for item in items}
+    a, b, c = [item["id"] for item in created]
+    app.simulation_workspace("move", {"id": c, "direction": "up"})
+    assert [s["id"] for s in app.simulation_workspace()["simulations"]] == [a, "envelope", c, b]
+    app.simulation_workspace("move", {"id": b, "target_id": a, "position": "before"})
+    assert [s["id"] for s in app.simulation_workspace()["simulations"]] == [b, "envelope", a, c]
+    app.simulation_workspace("move", {"id": b, "direction": "up"})
+    app.simulation_workspace("move", {"id": b, "target_id": c, "position": "after"})
+    assert [s["id"] for s in app.simulation_workspace()["simulations"]] == [a, "envelope", c, b]
+    assert {item["id"]: item for item in json.loads(path.read_text())} == before
+    saved = path.read_text()
+    for payload in ({"id": a, "target_id": "envelope", "position": "before"},
+                    {"id": a, "direction": "sideways"}, {"id": "missing", "direction": "up"},
+                    {"id": a, "scope": "invalid", "direction": "up"},
+                    {"id": a, "vehicle_key": "other", "direction": "up"}):
+        with pytest.raises(ValueError):
+            app.simulation_workspace("move", payload)
+        assert path.read_text() == saved
+    assert active.read_text() == "simulation:\n  stop_time: 99\n"
+    (root / "vehicle.yml").write_text("vehicle:\n  name: Another\n")
+    assert app.simulation_workspace()["simulations"] == []
+
+
+def test_workspace_analysis_group_order_is_persistent(archive_workspace):
+    original = app.simulation_workspace()["group_order"]
+    app.simulation_workspace("move", {"scope": "group", "id": "lap",
+                                     "target_id": "kinematic", "position": "before"})
+    assert app.simulation_workspace()["group_order"] == ["lap", *original[:-1]]
+    app.simulation_workspace("move", {"scope": "group", "id": "lap", "direction": "down"})
+    assert app.simulation_workspace()["group_order"] == ["kinematic", "lap", *original[1:-1]]
+    app.simulation_workspace("create", {"workflow_id": "study"})
+    assert app.simulation_workspace()["group_order"] == ["kinematic", "lap", *original[1:-1]]
+    with pytest.raises(ValueError):
+        app.simulation_workspace("move", {"scope": "group", "id": "missing", "direction": "up"})
