@@ -12,7 +12,7 @@ from app import app, python_simulations
 from common import config_io
 
 
-PYTHON_WORKFLOWS = ("ggv", "ymd", "reduced-step-steer", "reduced-ramp-steer", "lap-qss", "lap-transient")
+PYTHON_WORKFLOWS = ("ggv", "ymd", "lap-qss", "lap-transient")
 
 
 def test_python_workflows_do_not_require_openmodelica(monkeypatch):
@@ -231,3 +231,16 @@ def test_app_kinematics_selection_is_automatic(tmp_path, monkeypatch, workflow_i
     payload = app.config_payload(workflow_id)
     assert payload['data']['kinematics_mode'] == 'lookup'
     assert all(field['path'] != ['kinematics_mode'] for field in payload['fields'])
+
+
+@pytest.mark.parametrize("workflow_id", ("maneuver", "reduced-step-steer", "reduced-ramp-steer"))
+def test_app_response_rejects_reduced_models_even_with_modelica_available(monkeypatch, workflow_id):
+    monkeypatch.setattr(app, "external_toolchain_available", lambda: True)
+    workflow = next(item for item in app.WORKFLOWS if item.id == workflow_id)
+    payload = app.workflow_payload(workflow)
+    assert not payload["available"]
+    assert "Modelica" in payload["unavailable_reason"]
+    with pytest.raises(RuntimeError, match="Modelica"):
+        app.start_workflow(workflow_id)
+    with pytest.raises(RuntimeError, match="Modelica"):
+        app.start_job(workflow.actions[-1])

@@ -4931,9 +4931,6 @@ function renderSimulationWorkspace() {
     button.setAttribute("aria-pressed", String(selected));
   }
   const overviewVisible = renderSimulationOverview();
-  const empty = document.getElementById("simulation-empty");
-  empty.querySelector("h3").textContent = "Simulation workspace";
-  empty.querySelector("p").textContent = "Analyses for the active vehicle.";
   document.getElementById("simulation-empty").hidden = state.view !== "standard" || state.simModalOpen || overviewVisible || state.simulationGgvEditor;
   renderSimulationCatalog();
   document.getElementById("simulation-detail").classList.toggle("scoped-run", Boolean(state.selectedSimulationId));
@@ -4964,40 +4961,20 @@ const RESPONSE_MODEL_VARIANTS = {
   "ramp-steer": ["reduced-ramp-steer", "ramp-steer"],
   "step-steer": ["reduced-step-steer", "mbd-step-steer"],
 };
-const responseModelSelections = {};
-const responseModelDofs = {};
-const responseModelErrors = {};
 
 function responseFamily(workflow) {
   return Object.keys(RESPONSE_MODEL_VARIANTS).find((family) => RESPONSE_MODEL_VARIANTS[family].includes(workflow.id));
 }
 
 function simulationCards() {
-  const workflows = standardWorkflows().filter(w => !["ramp-steer", "reduced-ramp-steer", "reduced-step-steer", "mbd-step-steer", "transient", "steady-state"].includes(w.id));
-  const emitted = new Set();
-  return workflows.flatMap((workflow) => {
-    const family = responseFamily(workflow);
-    if (!family) return [workflow];
-    if (emitted.has(family)) return [];
-    emitted.add(family);
-    const id = responseModelSelections[family] || RESPONSE_MODEL_VARIANTS[family][0];
-    return [workflows.find((item) => item.id === id) || workflow];
-  });
+  return standardWorkflows().filter(workflow => ![
+    "maneuver", "reduced-ramp-steer", "reduced-step-steer",
+    "ramp-steer", "mbd-step-steer", "transient", "steady-state",
+  ].includes(workflow.id));
 }
 
 function responseModelPicker(workflow) {
-  const family = responseFamily(workflow);
-  if (!family) return `<span class="model-label">${escapeHtml(workflowModelLabel(workflow))}</span>`;
-  const [reduced, mbd] = RESPONSE_MODEL_VARIANTS[family];
-  const current = workflow.id === mbd ? mbd : `${reduced}:${responseModelDofs[family] || workflow.model.model_dofs[0]}`;
-  const options = [3, 6, 10, 14].map((dof) => [`${reduced}:${dof}`, `DynPy · ${dof} DOF`]);
-  options.push([mbd, "BobLib · MBD"]);
-  return `<label class="simulation-model-picker">Model
-    <select data-response-model="${family}" aria-label="${escapeHtml(workflow.label)} model">
-      ${options.map(([value, label]) => `<option value="${value}"${value === current ? ' selected' : ''}>${label}</option>`).join('')}
-    </select><span class="card-meta">${escapeHtml(workflow.model.runtime)}</span>
-    ${responseModelErrors[family] ? `<span role="alert">${escapeHtml(responseModelErrors[family])}</span>` : ""}
-  </label>`;
+  return `<span class="model-label">${escapeHtml(workflow.model?.engine === "BobLib" ? "Modelica" : workflowModelLabel(workflow))}</span>`;
 }
 
 let activeSimulationGroup = "transient";
@@ -5024,6 +5001,7 @@ function renderWorkflows() {
     return index < 0 ? order.length : index;
   };
   const workflows = simulationCards().sort((a, b) => rank(a) - rank(b));
+  document.querySelector("#simulation-catalog .model-guide").hidden = !["steady-state", "lap"].includes(activeSimulationGroup);
   const grid = document.getElementById("workflow-grid");
   const expanded = new Set(Array.from(grid.querySelectorAll(".simulation-details[open]"),
     (details) => details.closest("[data-workflow]").dataset.workflow));
@@ -5031,15 +5009,6 @@ function renderWorkflows() {
   grid.innerHTML = workflows.filter(workflow => simulationAnalysisGroup(workflow) === activeSimulationGroup).map(workflowCard).join("");
   grid.querySelectorAll("[data-workflow]").forEach((card) => {
     card.querySelector(".simulation-details").open = expanded.has(card.dataset.workflow);
-  });
-  grid.querySelectorAll("[data-response-model]").forEach(select => {
-    select.addEventListener("change", () => {
-      const [workflowId, dof] = select.value.split(":");
-      responseModelSelections[select.dataset.responseModel] = workflowId;
-      if (dof) responseModelDofs[select.dataset.responseModel] = Number(dof);
-      renderWorkflows();
-      grid.querySelector(`[data-response-model="${select.dataset.responseModel}"]`)?.focus();
-    });
   });
   grid.querySelectorAll("[data-configure-workflow]").forEach(button => {
     button.addEventListener("click", event => {
@@ -5073,12 +5042,6 @@ async function configureSimulationWorkflow(workflowId) {
   await saveSimulationEdits();
   const workflow = standardWorkflows().find(item => item.id === workflowId);
   if (!workflow) return;
-  const family = responseFamily(workflow);
-  const dof = responseModelDofs[family];
-  if (family && dof && workflow.id === RESPONSE_MODEL_VARIANTS[family][0]) {
-    await api(`/api/configs/${workflowId}`, {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({values: {[JSON.stringify(["model_dof"])]: dof}})});
-  }
   const count = (state.simulationWorkspace?.simulations || []).filter(item => item.workflow_id === workflowId).length;
   const payload = await simulationRequest("create", {workflow_id: workflowId,
     name: `${simWorkflowMeta(workflow).title || workflow.label}${count ? ` ${count + 1}` : ""}`});
@@ -5702,7 +5665,7 @@ function simWorkflowMeta(workflow) {
   if (["maneuver", "mbd-maneuver"].includes(workflow?.id)) return {
     title: "Maneuver", summary: "Vehicle response to ramp, step or sinusoidal steering.",
     sequence: [workflow.id === "maneuver" ? "Initial straight-line trim" : "MBD initialization", "Steering input and speed control", "Time integration"],
-    parameters: ["Model fidelity, steering waveform and timing"], outputs: ["Report and response signals"]};
+    parameters: ["Speed, steering waveform and timing"], outputs: ["Report and response signals"]};
   if (workflow?.id === "mbd-step-steer") return {
     title: "Step steer", summary: "Step-steer response of the multibody vehicle.",
     sequence: ["MBD initialization", "Finite-rise steering step", "Vehicle response"],
@@ -7316,15 +7279,8 @@ function updateManeuverPreview(form) {
 function renderManeuverSetup(form, busy) {
   const section = document.createElement("section");
   section.className = "maneuver-setup";
-  const current = selectedWorkflow().id === "mbd-maneuver" ? "mbd" : String(state.simConfigPayload.data.model_dof);
-  section.innerHTML = `<label class="simulation-model-picker">Model fidelity <select aria-label="Model fidelity" ${busy ? "disabled" : ""}>${["3","6","10","14","mbd"].map(value => `<option value="${value}" ${value === current ? "selected" : ""}>${value === "mbd" ? "BobLib · MBD" : `DynPy · ${value} DOF`}</option>`).join("")}</select></label><div class="maneuver-preview"></div>`;
+  section.innerHTML = '<div class="maneuver-preview"></div>';
   form.prepend(section);
-  section.querySelector("select").oninput = e => e.stopPropagation();
-  section.querySelector("select").onchange = e => {
-    e.stopPropagation();
-    const model = e.target.value;
-    workspaceAction(async () => {await saveSimulationEdits(); await simulationRequest("set-maneuver-model", {id:state.selectedSimulationId, model}); await openSimulation(state.selectedSimulationId);});
-  };
   form.querySelectorAll('select[data-config-path] option').forEach(option => {
     if (["ramp","step","sine"].includes(option.value)) option.textContent = {ramp:"Ramp and hold",step:"Step",sine:"Sine"}[option.value];
   });
@@ -14904,11 +14860,10 @@ async function renderNativeExperiments() {
   if (!panel || !state.vehiclePayload) return;
   try {
     const payload = await api("/api/native/status", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({vehicle:currentVehicleFormData()})});
-    panel.innerHTML = `<h3>Native vehicle experiments</h3><p>Use the selected architecture and current setup.</p>
-      <div class="native-experiment-actions">${payload.artifacts.map((item) => `<button type="button" class="ghost-button" data-native-run="${item.kind}" ${item.ready ? "" : "disabled"}>${escapeHtml(item.label)}${item.ready ? "" : " · build required"}</button>`).join("")}</div>
-      <p>KnC runs heave, roll and contact-load sweeps, including front steering. Rear traction applies drive torque through the shafts for anti-squat; rear KnC retains the braking test. Maneuvers use the standard ramp-steer protocol.</p><p>Maneuvers inherit the reference starting pose; changed setups are not automatically re-equilibrated.</p>
+    panel.innerHTML = `<div class="native-experiment-actions">${payload.artifacts.map((item) => `<button type="button" class="ghost-button" data-native-run="${item.kind}" ${item.ready ? "" : "disabled"}>${escapeHtml(item.label)}${item.ready ? "" : " · build required"}</button>`).join("")}</div>
       <label class="form-field"><span>KnC applied load (N)</span><input id="native-force" type="number" min="0" value="1000"></label>
       <label><input id="native-stabilizer" type="checkbox"> Include the configured stabilizer in KnC</label>
+      <details class="native-run-details"><summary>Run details</summary><p>KnC sweeps heave, roll and lateral load; the front rig also sweeps steering. Rear traction measures anti-squat.</p><p>The maneuver uses ramp steering and the reference starting pose. Changed setups are not automatically re-equilibrated.</p></details>
       <pre class="code-view" id="native-run-log" hidden></pre>`;
     panel.querySelectorAll("[data-native-run]").forEach((button) => {
       button.onclick = async () => {

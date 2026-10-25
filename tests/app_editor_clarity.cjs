@@ -1237,3 +1237,16 @@ vm.runInContext(`
   state.geometryPlotForceShares={};
 }
 `,ctx);
+
+vm.runInContext(`
+{
+  const original=standardWorkflows;
+  standardWorkflows=()=>['four-post','maneuver','mbd-maneuver','reduced-ramp-steer','reduced-step-steer',
+    'ggv','ymd','racing-line','lap-qss','lap-transient'].map(id=>({id}));
+  assert.deepEqual(simulationCards().map(w=>w.id),
+    ['four-post','mbd-maneuver','ggv','ymd','racing-line','lap-qss','lap-transient']);
+  assert.ok(!responseModelPicker({id:'mbd-maneuver',model:{engine:'BobLib'}}).includes('<select'));
+  assert.ok(responseModelPicker({id:'mbd-maneuver',model:{engine:'BobLib'}}).includes('Modelica'));
+  standardWorkflows=original;
+}
+`,ctx);

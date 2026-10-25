@@ -286,10 +286,13 @@ def external_toolchain_payload() -> dict[str, Any]:
     return openmodelica_toolchain_payload()
 
 def action_available(action: ActionSpec) -> bool:
-    return not action.requires_external_toolchain or external_toolchain_available()
+    return (action.id not in app_registry.LEGACY_RESPONSE_ACTIONS
+            and (not action.requires_external_toolchain or external_toolchain_available()))
 
 
 def unavailable_action_reason(action: ActionSpec) -> str:
+    if action.id in app_registry.LEGACY_RESPONSE_ACTIONS:
+        return app_registry.MODELICA_RESPONSE_REASON
     if action_available(action):
         return ""
     return external_toolchain_payload()["reason"]
@@ -782,7 +785,8 @@ def workflow_payload(workflow: WorkflowSpec) -> dict[str, Any]:
         "model": app_data_services.workflow_model(workflow, root=ROOT),
         "requires_mbd": any(action.requires_external_toolchain for action in actions),
         "available": available,
-        "unavailable_reason": "" if available else external_toolchain_payload()["reason"],
+        "unavailable_reason": "" if available else next(
+            (unavailable_action_reason(action) for action in actions if not action_available(action)), ""),
         "config": _path_payload(workflow.config) if workflow.config else None,
         "config_id": workflow.id if workflow.id in specs else None,
         "actions": [

@@ -47,7 +47,13 @@ The app defaults to dark mode. The theme toggle saves `bobsim-theme` in
 in `static/app.js`.
 
 The outline groups simulations under Kinematics, Performance envelopes, Vehicle
-response, Track and Laptime. Each overview shows inputs and results, with the
+response, Track and Laptime. Kinematics and vehicle response use Modelica/BobLib;
+vehicle response no longer offers reduced-model selection. Performance envelopes
+retain DynPy fidelity selection, Track uses the local Python racing-line generator,
+and laptime retains its Python QSS/transient workflows. Historical reduced response
+results remain readable, but their configurations cannot be run or silently
+converted into Modelica handwheel-angle inputs. Native KnC/maneuver shortcuts live
+in the collapsed Quick run menu. Each overview shows inputs and results, with the
 method in a disclosure. QSS Lap connects to reusable GGV and racing-line analyses.
 Its Run action is available when both linked results are valid. Existing BobLib
 steady-state studies remain accessible under Vehicle response.

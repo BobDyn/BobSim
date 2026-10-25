@@ -60,25 +60,19 @@ vm.runInContext(`
 
   const calls = [];
   api = async (url, options) => { calls.push([url,JSON.parse(options.body)]); return {}; };
-  let selected;
-  const model = {value:'maneuver:14',dataset:{responseModel:'maneuver'},
-    addEventListener(type, callback){selected=callback;}};
-  element('workflow-grid').querySelectorAll = selector => selector === '[data-response-model]' ? [model] : [];
   renderWorkflows();
-  selected();
-  assert.equal(calls.length, 0, 'model previews must not mutate active config');
+  assert.doesNotMatch(element('workflow-grid').innerHTML, /data-response-model/);
+  assert.equal(calls.length, 0);
   assert.equal(state.selectedSimulationId, 'existing');
-  assert.equal(responseModelDofs['maneuver'],14);
   simulationRequest = async (action, values) => {
     calls.push([action,values]);return {simulation:{id:'new-sim'}};
   };
   let overview;
   openSimulationOverview = async id => {overview=id;};
-  await configureSimulationWorkflow('maneuver');
-  assert.equal(calls[0][0],'/api/configs/maneuver');
-  assert.equal(calls[0][1].values['["model_dof"]'],14);
-  assert.equal(calls[1][0],'create');
-  assert.equal(calls[1][1].workflow_id,'maneuver');
+  await configureSimulationWorkflow('mbd-maneuver');
+  assert.equal(calls.length,1,'creating a Modelica maneuver must not change a DynPy config');
+  assert.equal(calls[0][0],'create');
+  assert.equal(calls[0][1].workflow_id,'mbd-maneuver');
   assert.equal(overview,'new-sim');
   assert.equal(element('simulation-catalog').open,false);
   console.log('Analysis picker checks passed');

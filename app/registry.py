@@ -38,6 +38,13 @@ def _field(
     )
 
 
+# Retain legacy definitions for archived results and CLI workflows, but the app's
+# vehicle-response workspace runs Modelica only. Angle conventions differ, so
+# old reduced-model configurations must not be silently converted.
+LEGACY_RESPONSE_WORKFLOWS = frozenset({"maneuver", "reduced-ramp-steer", "reduced-step-steer"})
+LEGACY_RESPONSE_ACTIONS = frozenset({"run-maneuver", "run-reduced-ramp-steer", "run-reduced-step-steer"})
+MODELICA_RESPONSE_REASON = "Vehicle response uses Modelica. Create a new maneuver with handwheel-angle inputs."
+
 ARCHITECTURE_CHOICES = ("direct", "bellcrank", "bellcrank_stabar")
 SOLVER_CHOICES = ("dassl", "ida", "cvode", "euler")
 DIRECTION_CHOICES = ("left", "right")

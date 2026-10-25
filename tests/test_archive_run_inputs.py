@@ -520,7 +520,7 @@ def test_analysis_groups_are_explicit_unique_and_vehicle_owned(archive_workspace
     assert result['analysis_groups'] == ['kinematic', 'transient']
     assert result['simulations'] == []
     assert app.simulation_workspace()['analysis_groups'] == ['kinematic', 'transient']
-    with pytest.raises(ValueError, match='Choose Track, Kinematic'):
+    with pytest.raises(ValueError, match='Choose Kinematics'):
         app.simulation_workspace('add-analysis', {'group': 'unknown'})
     with pytest.raises(ValueError, match='active vehicle changed'):
         app.simulation_workspace('add-analysis', {'group': 'steady-state', 'vehicle_key': 'other'})
@@ -548,7 +548,8 @@ def test_existing_simulations_infer_groups_and_empty_group_survives_delete(archi
 
 
 @pytest.mark.parametrize('workflow,group', [('four-post', 'kinematic'), ('ggv', 'steady-state'),
-                                           ('lap-qss', 'steady-state'), ('reduced-ramp-steer', 'transient')])
+                                           ('lap-qss', 'lap'), ('lap-transient', 'lap'),
+                                           ('reduced-ramp-steer', 'transient')])
 def test_existing_analysis_group_mapping(archive_workspace, workflow, group):
     import json
 
@@ -631,7 +632,9 @@ def test_archive_retains_job_start_tires_after_library_changes(archive_workspace
     assert (archived.parent / 'tires/front.tir').read_text() == snapshot['tire_texts']['front']
 
 
-def test_maneuver_model_change_persists_without_losing_waveform(archive_workspace, monkeypatch):
+def test_maneuver_is_modelica_only_without_reinterpreting_saved_angles(archive_workspace, monkeypatch):
+    import json
+
     root, active = archive_workspace
     settings = {'model_dof': 6, 'maneuver': 'sine', 'frequency_hz': .75, 'amplitude_deg': 4.}
     active.write_text(yaml.safe_dump(settings))
@@ -641,16 +644,29 @@ def test_maneuver_model_change_persists_without_losing_waveform(archive_workspac
     monkeypatch.setattr(app, 'WORKFLOWS', workflows)
     monkeypatch.setattr(app, 'BASE_CONFIG_SPECS', {w.id: app.ConfigSpec(w.id, 'response', 'Maneuver',
         'sim.yml', workflow_id=w.id, relocatable=True) for w in workflows})
-    simulation = app.simulation_workspace('create', {'workflow_id': 'maneuver'})['simulation']
-    for model in ('14', 'mbd', '3'):
-        app.simulation_workspace('set-maneuver-model', {'id': simulation['id'], 'model': model})
-        loaded = app.simulation_workspace('load', {'id': simulation['id']})
-        assert loaded['simulation']['workflow_id'] == ('mbd-maneuver' if model == 'mbd' else 'maneuver')
-        data = yaml.safe_load(active.read_text())
-        assert data['frequency_hz'] == .75
-        assert data['amplitude_deg'] == 4.
-        if model != 'mbd':
-            assert data['model_dof'] == int(model)
+    with pytest.raises(ValueError, match='Modelica'):
+        app.simulation_workspace('create', {'workflow_id': 'maneuver'})
+    simulation = app.simulation_workspace('create', {'workflow_id': 'mbd-maneuver'})['simulation']
+    for model in ('14', '3'):
+        with pytest.raises(ValueError, match='Modelica'):
+            app.simulation_workspace('set-maneuver-model', {'id': simulation['id'], 'model': model})
+    app.simulation_workspace('set-maneuver-model', {'id': simulation['id'], 'model': 'mbd'})
+    loaded = app.simulation_workspace('load', {'id': simulation['id']})
+    assert loaded['simulation']['workflow_id'] == 'mbd-maneuver'
+    assert yaml.safe_load(active.read_text()) == settings
+
+    # Existing saved reduced results stay readable, but cannot silently acquire
+    # Modelica's handwheel-angle interpretation or start a reduced response run.
+    from app import data_services
+    path = data_services._vehicle_workspace_dir('original') / 'simulations.json'
+    items = json.loads(path.read_text())
+    items.append({**items[0], 'id': 'legacy', 'workflow_id': 'maneuver'})
+    path.write_text(json.dumps(items))
+    assert app.simulation_workspace('load', {'id': 'legacy'})['simulation']['workflow_id'] == 'maneuver'
+    with pytest.raises(ValueError, match='Modelica'):
+        app.simulation_workspace('prepare-run', {'id': 'legacy'})
+    with pytest.raises(ValueError, match='Modelica'):
+        app.simulation_workspace('set-maneuver-model', {'id': 'legacy', 'model': 'mbd'})
 
 
 def test_linked_lap_power_belongs_to_archived_ggv(linked_ggv_workspace):

@@ -5190,7 +5190,12 @@ summary:focus-visible {
 #native-artifacts { margin-top:24px; }
 #native-build-log { max-height:240px; overflow:auto; white-space:pre-wrap; }
 
-.native-experiments { padding:16px 24px; margin-bottom:16px; border:1px solid var(--border); border-radius:12px; }
+.simulation-header-actions { display:flex; align-items:flex-start; gap:12px; }
+.native-quick-runs { position:relative; }
+.native-quick-runs > summary { cursor:pointer; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius-sm); font-size:13px; }
+.native-experiments { position:absolute; z-index:20; right:0; top:calc(100% + 8px); width:min(420px, 85vw); padding:16px; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); box-shadow:var(--shadow-overlay); }
+.native-run-details { margin-top:12px; font-size:12px; color:var(--muted); }
+.native-run-details p { margin:8px 0; }
 .native-experiment-actions { display:flex; flex-wrap:wrap; gap:12px; }
 #native-run-log { max-height:240px; overflow:auto; white-space:pre-wrap; }
 
@@ -5204,7 +5209,7 @@ summary:focus-visible {
 
 #setup-view.architecture-view { grid-template-rows: auto auto minmax(0, 1fr); }
 #setup-view.architecture-view > .parameter-tabs { display:none; }
-#standard-view { grid-template-rows:auto auto minmax(0, 1fr); }
+#standard-view { grid-template-rows:auto minmax(0, 1fr); }
 #native-artifacts { min-height:0; max-height:36vh; overflow:auto; }
 
 .geometry-plot-notes { padding:8px 12px; font-size:11px; color:var(--muted); }

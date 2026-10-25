@@ -1371,8 +1371,10 @@ def _simulation_analysis_group(workflow_id: str) -> str:
         return "track"
     if workflow_id == "four-post":
         return "kinematic"
-    if workflow_id in {"steady-state", "ggv", "ymd", "lap-qss"}:
+    if workflow_id in {"ggv", "ymd"}:
         return "steady-state"
+    if workflow_id in {"lap-qss", "lap-transient"}:
+        return "lap"
     return "transient"
 
 
@@ -1397,7 +1399,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
                         number += 1
                     child["name"] = f"Signal Explorer {number}"
     groups_path = path.with_name("analysis_groups.json")
-    group_order = ("track", "kinematic", "steady-state", "transient")
+    group_order = ("kinematic", "steady-state", "transient", "track", "lap")
     saved_groups = json.loads(groups_path.read_text(encoding="utf-8")) if groups_path.is_file() else []
     groups = {group for group in saved_groups if isinstance(group, str) and group in group_order}
     groups.update(_simulation_analysis_group(entry["workflow_id"]) for entry in items)
@@ -1407,7 +1409,7 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     if action in {"add-analysis", "remove-analysis"}:
         group = payload.get("group")
         if group not in group_order:
-            raise ValueError("Choose Track, Kinematic, Steady state or Transient.")
+            raise ValueError("Choose Kinematics, Performance envelopes, Vehicle response, Track or Laptime.")
         if action == "remove-analysis":
             if any(_simulation_analysis_group(entry["workflow_id"]) == group for entry in items):
                 raise ValueError("Remove the simulations in this analysis first.")
@@ -1416,6 +1418,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
             groups.add(group)
     elif action == "create":
         workflow = _workflow_by_id(str(payload.get("workflow_id", "")))
+        if workflow.id in app_registry.LEGACY_RESPONSE_WORKFLOWS:
+            raise ValueError(app_registry.MODELICA_RESPONSE_REASON)
         if workflow.group not in {"standard", "response", "envelope", "lap", "track"}:
             raise ValueError("Choose a simulation workflow.")
         spec = _sim_config_spec(workflow.id)
@@ -1454,16 +1458,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
         if item is None or item["workflow_id"] not in {"maneuver", "mbd-maneuver"}:
             raise ValueError("Choose a maneuver analysis.")
         model = str(payload.get("model", ""))
-        if model not in {"3", "6", "10", "14", "mbd"}:
-            raise ValueError("Choose 3, 6, 10, 14 DOF or MBD.")
-        item["workflow_id"] = "mbd-maneuver" if model == "mbd" else "maneuver"
-        data = yaml.safe_load(item["config_text"])
-        if model != "mbd":
-            data["model_dof"] = int(model)
-        item["config_text"] = yaml.safe_dump(data, sort_keys=False)
-        item["model"] = workflow_model(_workflow_by_id(item["workflow_id"]), root=ROOT)
-        if model != "mbd":
-            item["model"].update(model_dofs=[int(model)], fidelity=f"{model} DOF Transient")
+        if model != "mbd" or item["workflow_id"] != "mbd-maneuver":
+            raise ValueError(app_registry.MODELICA_RESPONSE_REASON)
     elif action == "set-racing-line":
         if item is None or item["workflow_id"] != "lap-qss":
             raise ValueError("Racing-line connections require a QSS lap.")
@@ -1551,6 +1547,8 @@ def _simulation_workspace(action: str, payload: dict[str, Any]) -> dict[str, Any
     elif action in {"load", "prepare-run", "save", "delete"}:
         if item is None:
             raise ValueError("Simulation not found for this vehicle.")
+        if action == "prepare-run" and item["workflow_id"] in app_registry.LEGACY_RESPONSE_WORKFLOWS:
+            raise ValueError(app_registry.MODELICA_RESPONSE_REASON)
         if payload.get("workflow_id", item["workflow_id"]) != item["workflow_id"]:
             raise ValueError("Simulation workflow does not match.")
         spec = _sim_config_spec(item["workflow_id"])
