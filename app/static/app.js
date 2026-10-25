@@ -7007,7 +7007,11 @@ function renderSavedResultOutputs() {
   list.querySelectorAll("[data-file-path]").forEach((button) => {
     button.addEventListener("click", () => previewFile(button.dataset.filePath, button.dataset.fileKind, "study-preview"));
   });
-  if (window.openReportViewer && state.view === "studies" && !["signals", "lap"].includes(resultVisualization()?.kind)) { window.openReportViewer(result); return; }
+  if (window.openReportViewer && !["signals", "lap"].includes(resultVisualization()?.kind)) {
+    // Do not start a hidden legacy PDF viewer before entering the report canvas.
+    if (state.view === "studies") window.openReportViewer(result);
+    return;
+  }
   const first = result.files.find((file) => file.exists && file.path === preview.dataset.filePath)
     || result.files.find((file) => file.exists && file.kind === "pdf")
     || result.files.find((file) => file.exists && isPreviewableFile(file.kind));

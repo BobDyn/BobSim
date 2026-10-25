@@ -202,7 +202,8 @@ def test_preview_theme_does_not_change_pdf_style(report_workspace, monkeypatch):
     assert backgrounds[-1] == (1, 1, 1, 1)
 
 
-@pytest.mark.parametrize("script", ["report_metrics.cjs", "report_units.cjs", "report_scroll.cjs"])
+@pytest.mark.parametrize("script", [
+    "report_metrics.cjs", "report_units.cjs", "report_scroll.cjs", "report_loading.cjs"])
 def test_report_browser_metric_logic(script):
     node = shutil.which("node")
     if node is None:

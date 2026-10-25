@@ -410,35 +410,31 @@
       else closeAxis();
     }
   });
-  // Ease discrete mouse-wheel steps; trackpads already provide their own momentum.
-  let wheelFrame=0, wheelCanvas=null, wheelTarget=0, wheelTime=0;
+  // The browser animates scrolling; avoid a JavaScript layout/write loop per frame.
+  let wheelCanvas=null, wheelTarget=0, wheelReset=null, wheelDirection=0;
   function stopWheel() {
-    cancelAnimationFrame(wheelFrame);wheelFrame=0;wheelCanvas=null;
+    clearTimeout(wheelReset);
+    if(wheelCanvas) wheelCanvas.scrollTo({top:wheelCanvas.scrollTop,behavior:'auto'});
+    wheelCanvas=null;wheelDirection=0;
   }
   dialog.addEventListener('wheel',event=>{
     const canvas=event.target.closest('[data-document]');
     if(!canvas || event.ctrlKey || event.shiftKey || Math.abs(event.deltaX)>Math.abs(event.deltaY)
       || event.target.closest('.report-onplot-editor,select,textarea,input')
       || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    // Pixel streams with small steps are trackpad gestures; let the browser handle them.
     if(event.deltaMode===0 && Math.abs(event.deltaY)<40) {stopWheel();return;}
     const delta=event.deltaY*(event.deltaMode===1?20:event.deltaMode===2?canvas.clientHeight:1);
     if(!delta) return;
     const max=canvas.scrollHeight-canvas.clientHeight;
     if((delta<0 && canvas.scrollTop<=0) || (delta>0 && canvas.scrollTop>=max)) {stopWheel();return;}
     event.preventDefault();
-    if(wheelCanvas!==canvas || !wheelFrame) {stopWheel();wheelCanvas=canvas;wheelTarget=canvas.scrollTop;wheelTime=performance.now();}
+    const direction=Math.sign(delta);
+    if(wheelCanvas!==canvas || direction!==wheelDirection) wheelTarget=canvas.scrollTop;
+    wheelCanvas=canvas;wheelDirection=direction;
     wheelTarget=Math.max(0,Math.min(max,wheelTarget+delta));
-    if(wheelFrame) return;
-    const step=now=>{
-      if(!canvas.isConnected) {stopWheel();return;}
-      const gap=wheelTarget-canvas.scrollTop;
-      const fraction=1-Math.exp(-Math.min(now-wheelTime,50)/65);wheelTime=now;
-      canvas.scrollTop+=Math.sign(gap)*Math.max(1,Math.abs(gap)*fraction);
-      if(Math.abs(wheelTarget-canvas.scrollTop)<1) {canvas.scrollTop=wheelTarget;stopWheel();}
-      else wheelFrame=requestAnimationFrame(step);
-    };
-    wheelFrame=requestAnimationFrame(step);
+    canvas.scrollTo({top:wheelTarget,behavior:'smooth'});
+    clearTimeout(wheelReset);
+    wheelReset=setTimeout(()=>{wheelCanvas=null;wheelDirection=0;},600);
   },{passive:false});
   dialog.addEventListener('pointerdown',stopWheel);
   dialog.addEventListener('keydown',stopWheel);
@@ -461,6 +457,15 @@
     clearTimeout(timer);revision++;
     const token=++opening;
     const next={context,plots:{},key,inline};
+    if(dialog.open) dialog.close();
+    editor={...next,loading:true,dirty:false};
+    const host=document.getElementById('study-preview');
+    if(inline) {
+      host.collapsePdf?.();
+      delete host.dataset.filePath;
+      document.querySelector('.archive-workspace').classList.add('report-viewing');host.hidden=false;
+      host.innerHTML='<div class="report-loading"><span class="report-loading-orbit"></span><h2>Preparing your report</h2><p data-load-count>Loading saved plot data…</p></div>';
+    }
     const data=await api('/api/reports/editor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...context,action:'load'})});
     if(token!==opening) return;
     if(dialog.open) dialog.close();
@@ -470,11 +475,6 @@
     Object.values(editor.plots).forEach(p=>ReportMetrics.initialize(p,editor.metrics));
     dialog.classList.toggle('report-inline',inline);
     (inline?document.querySelector('.results-app-pane'):document.body).append(dialog);
-    const host=document.getElementById('study-preview');
-    if(inline) {
-      document.querySelector('.archive-workspace').classList.add('report-viewing');host.hidden=false;
-      host.innerHTML='<div class="report-loading"><span class="report-loading-orbit"></span><h2>Preparing your report</h2><p data-load-count>Loading saved plot data…</p></div>';
-    }
     const entries=Object.entries(editor.plots);let complete=0;
     if(!entries.length && run && !forceEditor) {
       const original=run.files?.find(file=>file.kind==='pdf'&&file.exists);

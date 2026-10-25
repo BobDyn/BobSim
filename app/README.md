@@ -296,8 +296,10 @@ allow custom subplot titles. Clicking a graph opens appearance controls only: cu
 styles, legend, fits, limits and shared limits. Linear fits show their equations
 on the plot and in PDF exports, using displayed axis units. Advanced YAML still edits the mapping consumed by `PlotEngine`.
 Page handles reorder the document; disabled pages are omitted from PDF export.
-Mouse-wheel scrolling eases to rest; small trackpad gestures and reduced-motion
-settings retain native scrolling.
+Mouse-wheel scrolling uses the browser's smooth-scroll animation instead of
+per-frame JavaScript position updates; small trackpad gestures and reduced-motion
+settings retain native scrolling. Loading replaces the old preview before the
+first request, and hidden Results views do not instantiate a legacy PDF viewer.
 `report_metrics.js` maps named metric views onto the underlying plot definitions.
 
 `report_editor.py` reads archived inputs, caches processed plot data, and renders
