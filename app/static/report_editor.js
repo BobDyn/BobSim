@@ -32,6 +32,46 @@
   function signal(label, axis, cfg) {
     return field(label, cfg?.key, `data-axis="${axis}" data-prop="key" list="report-signals" placeholder="Find a signal"`);
   }
+  const unitGroups = [
+    {m:1, cm:.01, mm:.001, in:.0254}, {rad:1, deg:Math.PI/180},
+    {'rad/s':1, 'deg/s':Math.PI/180}, {N:1, kN:1000},
+    {'N·m':1, Nm:1, 'kN·m':1000}, {'m/s²':1, 'm/s^2':1, g:9.80665},
+    {'m/s':1, 'km/h':1/3.6, mph:.44704}, {s:1, ms:.001}, {'%':.01, '1':1},
+  ];
+  function axisUnit(axis) {
+    const match = (axis.label || '').match(/^(.*?)\s*[([]([^()[\]]+)[)\]]\s*$/);
+    const unit = match?.[2] || '';
+    return {name:match?.[1] ?? axis.label ?? axis.key ?? '', unit,
+      group:unitGroups.find(group=>Object.hasOwn(group,unit))};
+  }
+  function axisHtml(sub, axis) {
+    const cfg=sub[axis] || {}, info=axisUnit(cfg);
+    return `<div data-sub="${editor.activeSub}"><div data-curve="-1">
+      ${signal('Signal',axis,cfg)}
+      ${field('Axis label',cfg.label || cfg.key,`data-axis="${axis}" data-prop="label"`)}
+      ${info.group ? select('Display units',info.unit,Object.keys(info.group),`data-unit-axis="${axis}"`) : ''}
+      <details><summary>Custom units and conversion</summary>
+      <p class="report-unit-note">Values = signal × scale + offset. Include custom units in the axis label.</p>
+      ${field('Scale',cfg.scale ?? 1,`type="number" step="any" data-number data-axis="${axis}" data-prop="scale"`)}
+      ${field('Offset',cfg.offset ?? 0,`type="number" step="any" data-number data-axis="${axis}" data-prop="offset"`)}</details>
+      </div></div>`;
+  }
+  function convertAxis(sub, axis, unit) {
+    const info=axisUnit(sub[axis]);
+    if(!info.group || !Object.hasOwn(info.group,unit)) return;
+    const factor=info.group[info.unit]/info.group[unit];
+    const original=clone(sub[axis]);
+    const overlays=Array.isArray(sub.overlay)?sub.overlay:sub.overlay?[sub.overlay]:[];
+    for(const curve of [sub,...overlays]) {
+      const cfg=curve[axis] ||= clone(original);
+      cfg.scale=(cfg.scale ?? 1)*factor;cfg.offset=(cfg.offset ?? 0)*factor;
+    }
+    sub[axis].label=`${info.name} (${unit})`;
+    const limits=sub[axis+'lim'] ?? page()[axis+'lim'];
+    if(limits) sub[axis+'lim']=limits.map(value=>value*factor);
+    const refs=Array.isArray(sub.reference)?sub.reference:sub.reference?[sub.reference]:[];
+    for(const ref of refs) if(ref.type===(axis==='y'?'horizontal':'vertical') && typeof ref[axis]==='number') ref[axis]*=factor;
+  }
   function curveHtml(curve, overlay = -1) {
     return `<div class="report-curve" data-curve="${overlay}">
       <div class="report-fields">${signal('X signal', 'x', curve.x)}${signal('Y signal', 'y', curve.y)}
@@ -72,7 +112,8 @@
       if(!card.isConnected || signature!==pagePreviewKey(id)) return;
       picture.src=payload.image;picture.hidden=false;note.hidden=true;
       card.querySelector('[data-plot-targets]').innerHTML=(payload.axes||[]).map((box,i)=>
-        `<button type="button" class="report-plot-target" data-edit-sub="${i}" aria-label="Edit plot ${i+1}" title="Edit plot ${i+1}" style="left:${box.x*100}%;top:${box.y*100}%;width:${box.width*100}%;height:${box.height*100}%"><span>Edit plot ↗</span></button>`).join('');
+        `<button type="button" class="report-plot-target" data-edit-sub="${i}" aria-label="Edit plot ${i+1}" title="Edit plot ${i+1}" style="left:${box.x*100}%;top:${box.y*100}%;width:${box.width*100}%;height:${box.height*100}%"><span>Edit plot ↗</span></button>`).join('')+(payload.labels||[]).map(box=>
+        `<button type="button" class="report-label-target" data-edit-label="${box.kind}" data-label-sub="${box.sub}" aria-label="Edit plot ${box.sub+1} ${box.kind==='title'?'title':box.kind.toUpperCase()+' signal and units'}" title="Edit ${box.kind==='title'?'title':box.kind.toUpperCase()+' signal and units'}" style="left:${box.x*100}%;top:${box.y*100}%;width:${Math.max(box.width*100,1)}%;height:${Math.max(box.height*100,1)}%"></button>`).join('');
     };
     if(previews.has(signature)) {place(previews.get(signature));return;}
     if(!editor.has_results) {note.textContent='Your recorded signals will appear here after the first run.';return;}
@@ -128,11 +169,17 @@
     } else {
       const sub=subs()[editor.activeSub];
       if(!sub) return;
-      panel.querySelector('[data-page-form]').innerHTML=subHtml(sub,editor.activeSub);
-      const box=previews.get(pagePreviewKey(editor.selected))?.axes?.[editor.activeSub];
+      panel.classList.toggle('report-label-editor',Boolean(editor.activeLabel));
+      panel.querySelector('header span').textContent=editor.activeLabel==='title'?'Plot title':editor.activeLabel?`${editor.activeLabel.toUpperCase()} axis`:`Plot ${editor.activeSub+1}`;
+      panel.querySelector('[data-page-form]').innerHTML=editor.activeLabel==='title'
+        ? `<div data-sub="${editor.activeSub}">${field('Title',sub.title,'data-subprop="title"')}</div>`
+        : editor.activeLabel ? axisHtml(sub,editor.activeLabel) : subHtml(sub,editor.activeSub);
+      const preview=previews.get(pagePreviewKey(editor.selected));
+      const box=(editor.activeLabel && preview?.labels?.find(b=>b.sub===editor.activeSub && b.kind===editor.activeLabel)) || preview?.axes?.[editor.activeSub];
       panel.style.left=`${Math.min((box?.x||.05)*100,48)}%`;
       panel.style.top=`${Math.min((box?.y||.05)*100,50)}%`;
       card.querySelector('.report-sheet-figure').append(panel);
+      if(editor.activeLabel) {const input=panel.querySelector('input');input?.focus({preventScroll:true});input?.select();}
     }
   }
   function render() {
@@ -141,7 +188,7 @@
       <div class="report-editor-body"><section class="report-document" data-document aria-label="Interactive report pages"></section></div>
       <datalist id="report-signals">${editor.signals.map(s=>`<option value="${esc(s.key)}">${s.grouped?'Grouped · ':''}${s.samples} samples</option>`).join('')}</datalist>
       <footer class="report-editor-foot"><div>${editor.can_reuse?check('Reuse layout for future runs',editor.context.from_setup||!editor.context.result_id,'data-reuse'):''}<span data-download></span></div><p data-status role="status"></p></footer>`;
-    message('Click any plot to edit. Drag the page handle to reorder.');
+    message('Click titles or axis labels to edit. Click a plot for curve styling. Drag the page handle to reorder.');
     renderPages();renderDetail();
   }
   function changed() {
@@ -188,7 +235,7 @@
     if(card && (el.hasAttribute('data-sheet-title')||el.hasAttribute('data-sheet-enabled'))) {
       editor.plots[card.dataset.reportPage][el.hasAttribute('data-sheet-title')?'title':'enabled']=el.hasAttribute('data-sheet-title')?el.value:el.checked;changed();return;
     }
-    if(card && el.hasAttribute('data-layout')) {editor.selected=card.dataset.reportPage;editor.activeSub=null;editor.pageTools=false;}
+    if(card && el.hasAttribute('data-layout')) {editor.selected=card.dataset.reportPage;editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;}
     const p=page();if(!p)return;
     const sub=el.closest('[data-sub]') ? subs()[Number(el.closest('[data-sub]').dataset.sub)] : null;
     let value = el.type==='checkbox' ? el.checked : el.hasAttribute('data-number') ? Number(el.value) : el.value;
@@ -200,6 +247,8 @@
       if(count===1) { const title=p.title; Object.assign(p,old[0]);p.title=title;delete p.subplots; }
       else { p.subplots=Array.from({length:count},(_,i)=>old[i]||newCurve()); for(const key of ['x','y','overlay']) delete p[key]; }
       changed();renderDetail();return;
+    } else if(el.hasAttribute('data-unit-axis')) {
+      convertAxis(sub,el.dataset.unitAxis,value);changed();renderDetail();return;
     } else if(el.hasAttribute('data-subprop')) sub[el.dataset.subprop]=value;
     else if(el.hasAttribute('data-limit')) {
       const axis=el.dataset.limit;
@@ -214,17 +263,27 @@
       const target=el.dataset.axis?(curve[el.dataset.axis] ||= {}):curve;
       if(value==='' && !['key','label'].includes(el.dataset.prop)) delete target[el.dataset.prop];
       else target[el.dataset.prop]=value;
+      if(el.dataset.prop==='key' && el.dataset.axis) {
+        target.label=value;delete target.scale;delete target.offset;
+        delete sub[el.dataset.axis+'lim'];
+      }
+      if(editor.activeLabel && ['key','label'].includes(el.dataset.prop)) {changed();renderDetail();return;}
     } else return;
     changed();
   });
   dialog.addEventListener('click', async event => {
     const card=event.target.closest('[data-report-page]');
+    const label=event.target.closest('[data-edit-label]');
+    if(card && label) {
+      editor.selected=card.dataset.reportPage;editor.activeSub=Number(label.dataset.labelSub);
+      editor.activeLabel=label.dataset.editLabel;editor.pageTools=false;renderDetail();return;
+    }
     const plot=event.target.closest('[data-edit-sub]');
     const sheetButton=event.target.closest('[data-sheet-action]');
     if(card && (plot || sheetButton)) {
       editor.selected=card.dataset.reportPage;
       if(plot || sheetButton.dataset.sheetAction==='edit') {
-        editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
+        editor.activeLabel=null;editor.activeSub=plot?Number(plot.dataset.editSub):null;editor.pageTools=!plot;renderDetail();return;
       }
       const action=sheetButton.dataset.sheetAction;
       if(action==='duplicate') {const p=clone(page());p.title=(p.title||'Page')+' copy';insertPage(p);return;}
@@ -235,10 +294,10 @@
     if(!button) return;
     const action=button.dataset.action;
     try {
-      if(action==='close-controls') {editor.activeSub=null;editor.pageTools=false;renderDetail();return;}
+      if(action==='close-controls') {editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();return;}
       if(action==='close') {if(!editor.dirty || confirm('Close without saving your report changes?')) {fileView=editor.key;dialog.close();document.querySelector('.archive-workspace').classList.remove('report-viewing');document.getElementById('study-preview').hidden=false;}return;}
       if(action==='add') {
-        editor.activeSub=0;editor.pageTools=false;
+        editor.activeSub=0;editor.activeLabel=null;editor.pageTools=false;
         const layout=dialog.querySelector('[data-new-layout]').value;
         const p={layout,title:'New page',enabled:true};
         if(layout==='single') Object.assign(p,newCurve(),{title:'New page'});
@@ -274,6 +333,13 @@
         message('PDF exported from recorded signals.');
       }
     } catch(e) {message(e.message);} finally {button.disabled=false;}
+  });
+  dialog.addEventListener('keydown',event=>{
+    if(!event.target.closest('.report-onplot-editor')) return;
+    if(event.key==='Escape' || (event.key==='Enter' && event.target.tagName==='INPUT')) {
+      event.preventDefault();event.stopPropagation();event.target.blur();
+      editor.activeSub=null;editor.activeLabel=null;editor.pageTools=false;renderDetail();
+    }
   });
   let dragging=null;
   dialog.addEventListener('dragstart',event=>{const grip=event.target.closest('[data-drag-page]');if(grip){dragging=grip.dataset.dragPage;event.dataTransfer.setData('text/plain',dragging);event.dataTransfer.effectAllowed='move';}});

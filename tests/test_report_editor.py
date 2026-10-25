@@ -59,6 +59,11 @@ def test_report_edit_preview_export_and_reuse_are_independent_of_recorded_inputs
         "x": {"key": "time"}, "y": {"key": "ay", "scale": .5}, "label": "Overlay"}
     preview = report_editor({**context, "action": "preview", "plots": plots, "page": "response"})
     assert preview["image"].startswith("data:image/png;base64,iVBOR")
+    assert [(label["sub"], label["kind"]) for label in preview["labels"]] == [
+        (i, kind) for i in range(2) for kind in ("title", "x", "y")]
+    for label in preview["labels"]:
+        assert 0 <= label["x"] < 1 and 0 <= label["y"] < 1
+        assert label["width"] > 0 and label["height"] > 0
     report_editor({**context, "action": "save", "plots": plots, "reuse": True})
     assert report_editor(context)["plots"] == plots
     sim = json.loads((run_dir.parent.parent / "simulations.json").read_text())[0]

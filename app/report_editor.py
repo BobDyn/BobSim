@@ -187,13 +187,22 @@ def report_editor(body: dict) -> dict:
                     theme = body.get("theme")
                     if theme in {"dark", "light"}:
                         _preview_theme(fig, theme)
+                    fig.set_dpi(125)
+                    fig.canvas.draw()
+                    renderer = fig.canvas.get_renderer()
+                    labels = []
+                    for index, ax in enumerate(fig.axes):
+                        for kind, label in (("title", ax.title), ("x", ax.xaxis.label), ("y", ax.yaxis.label)):
+                            bounds = label.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+                            labels.append({"sub": index, "kind": kind, "x": bounds.x0, "y": 1 - bounds.y1,
+                                           "width": bounds.width, "height": bounds.height})
                     buffer = BytesIO()
                     fig.savefig(buffer, format="png", dpi=125)
                     boxes = [{"x": ax.get_position().x0, "y": 1 - ax.get_position().y1,
                               "width": ax.get_position().width, "height": ax.get_position().height}
                              for ax in fig.axes]
                     return {"image": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode(),
-                            "axes": boxes}
+                            "axes": boxes, "labels": labels}
                 output_dir = directory / "report-exports" / uuid4().hex
                 output_dir.mkdir(parents=True)
                 target = output_dir / "report.pdf"

@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const source=fs.readFileSync('app/static/report_editor.js','utf8');
+const context=vm.createContext({Math,Object,clone:x=>JSON.parse(JSON.stringify(x)),page:()=>({xlim:[0,100]})});
+vm.runInContext(source.slice(source.indexOf('  const unitGroups'),source.indexOf('  function curveHtml'))+';this.convertAxis=convertAxis;',context);
+const sub={x:{key:'travel',label:'Travel (mm)',scale:1000,offset:10},overlay:[{x:{key:'other',scale:1000}}],reference:[{type:'vertical',x:50}]};
+context.convertAxis(sub,'x','m');
+assert.equal(sub.x.scale,1);assert.equal(sub.x.offset,.01);assert.equal(sub.overlay[0].x.scale,1);assert.equal(sub.xlim[1],.1);assert.equal(sub.reference[0].x,.05);assert.equal(sub.x.label,'Travel (m)');
+context.convertAxis(sub,'x','mm');assert.equal(sub.x.scale,1000);assert.equal(sub.x.offset,10);assert.equal(sub.xlim[1],100);
+const angle={y:{key:'angle',label:'Camber [deg]'}};
+context.convertAxis(angle,'y','rad');assert.equal(angle.y.scale,Math.PI/180);
+console.log('Unit conversions, offsets, overlays, limits and references passed');
