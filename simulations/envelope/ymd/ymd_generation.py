@@ -504,7 +504,7 @@ def generate_ymd(
     converged_grid = np.zeros((config.beta_points, config.hwa_points), dtype=bool)
 
     diagnostics = {name: np.full(ay_grid.shape, np.nan) for name in (
-        "equilibrium_converged", "tire_state_valid", "tire_load_valid", "actuator_valid",
+        "equilibrium_converged", "tire_state_valid", "tire_load_valid", "actuator_valid", "solver_attempts",
         "minimum_tire_load_n", "maximum_tire_load_n", "tire_fit_minimum_load_n", "tire_fit_maximum_load_n",
     )}
     if config.verbose:
@@ -557,10 +557,11 @@ def generate_ymd(
                     # An infeasible trial must leave a gap, not abort other speeds.
                     continue
                 velocity = trim.state[reduced_model.dof :]
-                ay = float(
-                    trim.output.generalized_acceleration[1]
-                    + config.yaw_rate * velocity[0]
-                )
+                # State velocities are body-resolved; yaw_rate is a world-axis
+                # rate. Use the complete transport term at nonzero roll/pitch.
+                transport_y = (velocity[2] * velocity[0] if reduced_model.dof == 3
+                               else np.cross(velocity[3:6], velocity[:3])[1])
+                ay = float(trim.output.generalized_acceleration[1] + transport_y)
                 mz = float(trim.output.body_moment_nm[2])
                 loads = np.asarray(trim.output.normal_loads_n, dtype=float)
                 tire_domain_valid = bool(
@@ -571,6 +572,7 @@ def generate_ymd(
                 equilibrium = getattr(trim, "equilibrium_converged", None)
                 tire_state = getattr(trim, "tire_state_valid", None)
                 for name, value in {
+                    "solver_attempts": getattr(trim, "solver_attempts", 1),
                     "equilibrium_converged": trim.success if equilibrium is None else equilibrium,
                     "tire_state_valid": trim.success if tire_state is None else tire_state,
                     "tire_load_valid": tire_domain_valid,

@@ -1120,3 +1120,35 @@ def test_coupled_load_closure_preserves_explicit_slip_constraints(parameters, mo
     balance = model.algebraic_residual(controls, output)
     np.testing.assert_allclose(balance[:4], 0., atol=1e-5)
     assert np.linalg.norm(balance[4:]) > 1.
+
+
+def test_moment_solver_recovers_from_wrong_wheel_slip_branch(parameters):
+    model = create_model(14, parameters)
+    settings = dict(speed_mps=42.05399833619569, beta_rad=np.deg2rad(3.),
+                    steering_rad=np.deg2rad(-7.), tolerance=1e-5)
+    cold = solve_moment_state(model, **{**settings, 'tolerance': 1e-8})
+    result = solve_moment_state(model, initial_unknowns={'slip_rl': .9, 'slip_rr': .9}, **settings)
+    assert cold.success, cold.message
+    assert result.success, result.message
+    assert result.solver_attempts == 2
+    assert result.equilibrium_converged and result.tire_state_valid
+    np.testing.assert_allclose(result.state, cold.state, atol=1e-9)
+
+
+def test_moment_solver_keeps_real_slip_limit_rejections(parameters):
+    model = create_model(14, parameters)
+    result = solve_moment_state(model, speed_mps=15., beta_rad=np.deg2rad(-8.),
+                                steering_rad=np.deg2rad(8.), tolerance=1e-5)
+    assert result.solver_attempts <= 4
+    assert not result.success
+    assert not result.tire_state_valid
+    assert 'Outside tire slip fit' in result.message
+
+
+def test_moment_solver_uses_neutral_pose_to_escape_invalid_slip_branch(parameters):
+    model = create_model(14, parameters)
+    result = solve_moment_state(model, speed_mps=42.05399833619569,
+                                beta_rad=np.deg2rad(-8.), steering_rad=np.deg2rad(-5.5), tolerance=1e-8)
+    assert result.success, result.message
+    assert result.solver_attempts == 3  # cold target, neutral seed, seeded target
+    assert result.equilibrium_converged and result.tire_state_valid

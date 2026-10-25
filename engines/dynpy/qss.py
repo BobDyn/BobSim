@@ -37,6 +37,7 @@ class QSSResult:
     yaw_rate_radps: float
     equilibrium_converged: bool | None = None
     tire_state_valid: bool | None = None
+    solver_attempts: int = 1
 
     @property
     def lateral_acceleration_mps2(self) -> float:
@@ -359,6 +360,71 @@ def solve_moment_state(
     max_nfev: int = 300,
     tolerance: float = 1e-8,
 ) -> QSSResult:
+    """Solve a moment state with bounded, independent starting points.
+
+    Parameters
+    ----------
+    model : ReducedVehicleModel
+        Shared vehicle equations; no fit limits are relaxed during retries.
+    speed_mps, beta_rad, steering_rad, yaw_rate_radps : float
+        Imposed operating condition.
+    initial_unknowns : Mapping or None
+        Optional continuation seed. Rejected states also try a cold seed and
+        a solved neutral state at the same speed and prescribed yaw rate.
+    max_nfev : int
+        Evaluation limit per solve.
+    tolerance : float
+        Initial optimizer tolerance; retries use at most 1e-8.
+
+    Returns
+    -------
+    QSSResult
+        First admissible solution, or best rejected attempt. ``solver_attempts``
+        includes the neutral seed solve (at most four equation solves).
+    """
+    def attempt(beta: float, steer: float, seed: Mapping[str, float] | None, tol: float) -> QSSResult:
+        return _solve_moment_state_once(
+            model, speed_mps=speed_mps, beta_rad=beta, steering_rad=steer,
+            yaw_rate_radps=yaw_rate_radps, max_nfev=max_nfev, initial_unknowns=seed, tolerance=tol,
+        )
+
+    result = attempt(beta_rad, steering_rad, initial_unknowns, tolerance)
+    if result.success:
+        return result
+    candidates = [result]
+    attempts = 1
+    tighter = min(tolerance, 1e-8)
+    if initial_unknowns is not None or tolerance > tighter:
+        result = attempt(beta_rad, steering_rad, None, tighter)
+        candidates.append(result)
+        attempts += 1
+        if result.success:
+            return replace(result, solver_attempts=attempts)
+    if beta_rad != 0.0 or steering_rad != 0.0:
+        neutral = attempt(0.0, 0.0, None, tighter)
+        attempts += 1
+        if neutral.success:
+            result = attempt(beta_rad, steering_rad, neutral.unknowns, tighter)
+            candidates.append(result)
+            attempts += 1
+            if result.success:
+                return replace(result, solver_attempts=attempts)
+    best = max(candidates, key=lambda item: (bool(item.equilibrium_converged),
+                                            bool(item.tire_state_valid), -item.residual_norm))
+    return replace(best, solver_attempts=attempts)
+
+
+def _solve_moment_state_once(
+    model: ReducedVehicleModel,
+    *,
+    speed_mps: float,
+    beta_rad: float,
+    steering_rad: float,
+    yaw_rate_radps: float = 0.0,
+    initial_unknowns: Mapping[str, float] | None = None,
+    max_nfev: int = 300,
+    tolerance: float = 1e-8,
+) -> QSSResult:
     """Solve vertical/longitudinal QSS while leaving lateral force and yaw moment free.
 
     This is the operating condition needed by a yaw-moment diagram: sideslip
@@ -436,7 +502,7 @@ def solve_moment_state(
     output = model.evaluate(state, inputs)
     physical_residual = moment_residual(state, output)
     tire_error = _tire_state_error(model, inputs, output)
-    return QSSResult(
+    result = QSSResult(
         success=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5
                      and not tire_error),
         equilibrium_converged=bool(solution.success and np.linalg.norm(solution.fun) <= 1e-5),
@@ -454,6 +520,8 @@ def solve_moment_state(
         speed_mps=float(speed_mps),
         yaw_rate_radps=float(yaw_rate_radps),
     )
+
+    return result
 
 
 def _trim_state_and_inputs(

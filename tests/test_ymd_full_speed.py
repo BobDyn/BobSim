@@ -102,3 +102,26 @@ def test_load_extrapolation_remains_visible_and_is_tagged(monkeypatch, tmp_path)
     assert info['shown_points'] == info['extrapolated_points'] == 4
     assert info['maximum_load_n'] == 1900.
     assert info['fit_maximum_load_n'] == 1800.
+
+
+def test_lateral_acceleration_uses_body_rates_at_nonzero_attitude(monkeypatch):
+    from dataclasses import replace
+    from scipy.spatial.transform import Rotation
+    from simulations.envelope.ymd import ymd_generation as ymd
+    rotation = Rotation.from_euler('xyz', [.2, .1, 0.]).as_matrix()
+    velocity = rotation.T @ np.array([20., 0., 0.])
+    omega = rotation.T @ np.array([0., 0., .6])
+    physical = rotation.T @ np.array([0., 5., 0.])
+    state = np.zeros(28)
+    state[3:6] = [.2, .1, 0.]
+    state[14:17], state[17:20] = velocity, omega
+    acceleration = np.zeros(14)
+    acceleration[:3] = physical - np.cross(omega, velocity)
+    trim = SimpleNamespace(success=True, state=state, unknowns={}, output=SimpleNamespace(
+        generalized_acceleration=acceleration, body_moment_nm=np.zeros(3), normal_loads_n=np.ones(4)*500))
+    monkeypatch.setattr(ymd, 'solve_moment_state', lambda *args, **kwargs: trim)
+    cfg = replace(YMDConfig(), yaw_rate=.6, beta_points=2, hwa_points=2,
+                  verbose=False, warn_tire_load_range=False)
+    vehicle = SimpleNamespace(steering_ratio=1., fz_min_valid=100., fz_max_valid=1800.)
+    result = ymd.generate_ymd(vehicle, cfg, SimpleNamespace(dof=14))
+    np.testing.assert_allclose(result.ay, physical[1], atol=1e-12)

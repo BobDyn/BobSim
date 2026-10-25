@@ -237,7 +237,14 @@ loads remain visible and are tagged as extrapolated, with actual loads and fit
 bounds exported per point. File-backed YMD disables the legacy load rejection
 switch; the low-level generator retains it for strict validation studies.
 Equation convergence, tire-slip validity and tire-load validity are recorded
-separately, so exceeding the fit range is not mislabeled solver failure. Adjacent valid grid triangles define the sampled bounds; no convex
+separately, so exceeding the fit range is not mislabeled solver failure.
+A rejected moment-state solve receives independent cold and neutral-state retries with a tighter
+optimizer tolerance. This avoids treating a bad continuation guess or an
+inadmissible slip branch as proof that the operating point is impossible.
+Residual acceptance and tire-fit bounds are unchanged; `solver_attempts` records
+the attempts (at most four equation solves including the neutral seed). Successful first attempts are retained. YMD's reported body-lateral
+acceleration uses the full body-rate transport term, including roll/pitch,
+instead of substituting the prescribed world yaw rate. Adjacent valid grid triangles define the sampled bounds; no convex
 hull closes rejected regions. Outer bounds do not encode internal gaps in yaw
 authority. Surface faces between recorded velocities are display interpolation.
 A speed with no accepted sampled states remains in the CSV and slider; that

@@ -348,3 +348,5 @@ hover text gives the load range. Surface images/PDFs label extrapolation, and
 surface CSVs include a per-slice extrapolation flag. Legacy `converged` means
 accepted for display; `equilibrium_converged` distinguishes numerical closure.
 The low-level generator can still enforce load validity for strict comparisons.
+Rejected moment-state solves get bounded cold and neutral-state retries; CSV `solver_attempts` records
+this separately from convergence and fit-validity flags.
