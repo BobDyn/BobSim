@@ -260,3 +260,9 @@ height and lateral position, jacking/applied force, moment/applied force, and
 the geometric anti-roll proxy. They default off, retain undefined measurements,
 and reuse the Geometry view's processed native values. Axle quantities use
 front/rear panels; existing corner-alignment plots retain their quad layouts.
+
+For a local BobDocs preview, set the webview's `localStorage` key
+`bobsim-docs-origin` to `http://127.0.0.1:5173` and reload. Help links retain
+page paths and exact anchors while using that local origin. Only HTTP(S)
+localhost/127.0.0.1 overrides are accepted. Remove the key to restore public
+links. This is a development preview setting, not a packaged-app default.

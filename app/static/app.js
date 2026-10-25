@@ -342,11 +342,26 @@ const WORKFLOW_DOC_TOPICS = {
   "vehicle-review": "studies-and-vehicle-review", "standard-sens": "studies-and-vehicle-review",
   "envelope-sens": "studies-and-vehicle-review",
 };
+function documentationUrl(url) {
+  const preview = localStorage.getItem("bobsim-docs-origin") || "";
+  // A local preview override never redirects unrelated links or permits script URLs.
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::[0-9]{1,5})?$/.test(preview)
+      && url.startsWith("https://bobdyn.com/")) {
+    return preview + url.slice("https://bobdyn.com".length);
+  }
+  return url;
+}
+function configureDocumentationLinks() {
+  document.querySelectorAll('a[href^="https://bobdyn.com/"]').forEach(link => {
+    link.href = documentationUrl(link.href);
+  });
+}
+
 function sectionDocsUrl(topic) {
-  return `https://bobdyn.com/bobsim/section-reference#${topic}`;
+  return documentationUrl(`https://bobdyn.com/bobsim/section-reference#${topic}`);
 }
 function docsLink(url, label = "Read in BobDocs ↗") {
-  return `<a class="info-docs-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+  return `<a class="info-docs-link" href="${escapeHtml(documentationUrl(url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
 }
 function workflowDocsUrl(id) {
   return sectionDocsUrl(WORKFLOW_DOC_TOPICS[id] || "numerics-and-execution");
@@ -2919,7 +2934,7 @@ function infoHint(label, text, docsUrl = "https://bobdyn.com/bobsim/app") {
   const rows = Array.isArray(text) ? text : null;
   const plain = rows ? rows.map(([key, value]) => `${key}: ${value}`).join(". ") : text;
   const content = rows ? `<dl>${rows.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>` : `<p>${escapeHtml(text)}</p>`;
-  return `<span class="info-hint"><button type="button" class="info-button" data-info-popup="${id}" aria-controls="${id}" aria-haspopup="dialog" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><dialog id="${id}" class="info-popup" aria-label="${escapeHtml(label)}"><button type="button" class="info-close" aria-label="Close help">×</button>${content}<a class="info-docs-link" href="${escapeHtml(docsUrl)}" target="_blank" rel="noopener noreferrer">Read in BobDocs ↗</a></dialog>`;
+  return `<span class="info-hint"><button type="button" class="info-button" data-info-popup="${id}" aria-controls="${id}" aria-haspopup="dialog" aria-label="${escapeHtml(label)}" title="${escapeHtml(plain)}">${infoIcon()}</button></span><dialog id="${id}" class="info-popup" aria-label="${escapeHtml(label)}"><button type="button" class="info-close" aria-label="Close help">×</button>${content}<a class="info-docs-link" href="${escapeHtml(documentationUrl(docsUrl))}" target="_blank" rel="noopener noreferrer">Read in BobDocs ↗</a></dialog>`;
 }
 
 function handleInfoPopupClick(event) {
@@ -2966,7 +2981,7 @@ const PLOT_DOC_ANCHORS = {
 function fieldDocsUrl(field) {
   const path = field.path || [];
   const key = path.join(".").toLowerCase();
-  const dynamics = "https://bobdyn.com/reference/vehicle-dynamics";
+  const dynamics = documentationUrl("https://bobdyn.com/reference/vehicle-dynamics");
   if (path[0] === "force_based") {
     return `${dynamics}#${path[1] === "front_brake_share" ? "front-anti-dive" : "choosing-the-lateral-force-split"}`;
   }
@@ -14602,6 +14617,7 @@ function resetPreviewCamera() {
 }
 
 function wireEvents() {
+  configureDocumentationLinks();
   mountSimulationWorkspace();
   document.addEventListener("click", handleInfoPopupClick);
   document.getElementById("config-form").addEventListener("focusin", (event) => cacheUndoBaseline(event.target));

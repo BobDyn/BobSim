@@ -20,6 +20,16 @@ for (const id of ['mbd-maneuver','racing-line','four-post','ggv','lap-qss']) {
  assert.ok(html.includes('rel="noopener noreferrer"'));
 }
 `, ctx);
+ctx.localStorage.getItem = () => 'http://127.0.0.1:5173';
+vm.runInContext(`
+assert.equal(fieldDocsUrl({path:['plots','moment_ratio_roll','enabled']}), 'http://127.0.0.1:5173/reference/vehicle-dynamics#moment-per-applied-force');
+assert.ok(docsLink('https://bobdyn.com/bobsim/app#setup').includes('http://127.0.0.1:5173/bobsim/app#setup'));
+assert.ok(infoHint('Help', 'Text').includes('http://127.0.0.1:5173/bobsim/app'));
+assert.equal(documentationUrl('https://example.com/'), 'https://example.com/');
+`, ctx);
+ctx.localStorage.getItem = () => 'javascript:alert(1)';
+vm.runInContext(`assert.equal(documentationUrl('https://bobdyn.com/bobsim/app'), 'https://bobdyn.com/bobsim/app')`, ctx);
+ctx.localStorage.getItem = () => null;
 // A docs checkout is optional in CI; maintainers pass its built directory for anchor validation.
 if (process.argv[3]) {
   const topics = vm.runInContext('[...Object.values(SETUP_DOC_TOPICS), ...Object.values(WORKFLOW_DOC_TOPICS), "report", "force-based", "numerics-and-execution", "results-and-archive", "replay", "settings-and-files"]',ctx);
