@@ -2916,15 +2916,15 @@ function fieldDocsUrl(field) {
   const key = path.join(".").toLowerCase();
   const dynamics = "https://bobdyn.com/reference/vehicle-dynamics";
   if (path[0] === "force_based") {
-    return `${dynamics}#${path[1] === "front_brake_share" ? "jacking-and-anti-geometry" : "load-transfer"}`;
+    return `${dynamics}#jacking-and-anti-geometry`;
   }
   if (path[0] === "plots") {
     const plot = path[1] || "";
     if (/fbrc|roll_center|rc_height|rc_lateral/.test(plot)) return `${dynamics}#roll-centers`;
     if (/jacking|anti/.test(plot)) return `${dynamics}#jacking-and-anti-geometry`;
     if (/lltd|load_transfer/.test(plot)) return `${dynamics}#load-transfer`;
-    if (/trail|scrub/.test(plot)) return `${dynamics}#tires`;
-    if (/camber|toe|caster|kpi|motion_ratio/.test(plot)) return `${dynamics}#suspension`;
+    if (/trail|scrub/.test(plot)) return `${dynamics}#suspension-kinematics`;
+    if (/camber|toe|caster|kpi|motion_ratio/.test(plot)) return `${dynamics}#suspension-kinematics`;
   }
   if (/damp/.test(key)) return `${dynamics}#damping`;
   if (/tire/.test(key)) return `${dynamics}#tires`;
