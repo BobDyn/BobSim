@@ -20,8 +20,7 @@ from common.vehicle_io import load_yaml, parse_tir, tire_template_name
 class ArchitectureSpec:
     token: str
     record_type: str
-    front_model: str
-    rear_model: str
+    model: str
     description: str
     has_bellcrank: bool = False
     has_stabar: bool = False
@@ -42,7 +41,15 @@ class ModelicaGenerationResult:
     vehicle_template_name: str
     four_post_template_name: str
     files: tuple[GeneratedModelicaFile, ...]
-    package_orders: tuple[Path, ...]
+    package_orders: tuple[tuple[Path, str], ...]
+
+
+@dataclass(frozen=True)
+class UnboundInput:
+    """A vehicle.yml input that the generated records do not carry, and why."""
+
+    path: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,7 @@ class ModelicaStackPlan:
     boblib_root: Path
     initialization_error: str | None = None
     front_brake_bias: float | None = None
+    unbound: tuple[UnboundInput, ...] = ()
 
 
 class BobLibRootError(ValueError):
@@ -63,7 +71,22 @@ BUILD_BOBLIB_DIR = "engines/boblib/BobLib"
 
 FRONT_BRAKE_BIAS_UNSET_NOTE = (
     "brake.front_bias is not set. The VehicleSim template binds no front brake bias, "
-    "so BobLib BasicVCUBrakes keeps its own frontBrakeBias default."
+    "so pVehicle.brakes.frontBrakeBias keeps the BobLib BrakeRecord default."
+)
+
+# Generated templates live here because BobLib removed its Templates packages.
+TEMPLATE_PACKAGE = "BobSimTemplates"
+TEMPLATE_PACKAGE_DIR = f"Experiments/Standards/{TEMPLATE_PACKAGE}"
+
+# The record that BobLib's own VehicleSim uses when it does not redeclare VehicleRecord.
+BOBLIB_DEFAULT_VEHICLE_RECORD = "EVBatInvMotDiff_DWBCStabar_DWBCStabarRecord"
+
+# vehicle.yml has no brake placement input. These are the selections of BobLib's own VehicleSim.
+FRONT_BRAKE_PLACEMENT = "Outboard"
+REAR_BRAKE_PLACEMENT = "Inboard"
+BRAKE_PLACEMENT_NOTE = (
+    "vehicle.yml has no brake placement input. The VehicleSim template selects front Outboard and "
+    "rear Inboard brakes, the BobLib VehicleSim default."
 )
 
 
@@ -86,39 +109,34 @@ class SemicolonMatrix:
 ARCHITECTURES: dict[str, ArchitectureSpec] = {
     "direct": ArchitectureSpec(
         token="DWDirect",
-        record_type="Axle.AxleDW_DirectRecord",
-        front_model="BobLib.Chassis.Suspension.FrAxleDW_Direct",
-        rear_model="BobLib.Chassis.Suspension.RrAxleDW_Direct",
+        record_type="BobLib.Records.VehicleRecord.Chassis.Suspension.DoubleWishboneDirectRecord",
+        model="BobLib.Chassis.Suspension.DoubleWishboneDirect",
         description="direct-acting double wishbone suspension",
     ),
     "bellcrank": ArchitectureSpec(
         token="DWBC",
-        record_type="Axle.AxleDW_BCRecord",
-        front_model="BobLib.Chassis.Suspension.FrAxleDW_BC",
-        rear_model="BobLib.Chassis.Suspension.RrAxleDW_BC",
+        record_type="BobLib.Records.VehicleRecord.Chassis.Suspension.DoubleWishboneBellcrankRecord",
+        model="BobLib.Chassis.Suspension.DoubleWishboneBellcrank",
         description="bellcrank-actuated double wishbone suspension",
         has_bellcrank=True,
     ),
     "bellcrank_stabar": ArchitectureSpec(
         token="DWBCStabar",
-        record_type="Axle.AxleDW_BC_StabarRecord",
-        front_model="BobLib.Chassis.Suspension.FrAxleDW_BC_Stabar",
-        rear_model="BobLib.Chassis.Suspension.RrAxleDW_BC_Stabar",
+        record_type="BobLib.Records.VehicleRecord.Chassis.Suspension.DoubleWishboneBellcrankStabarRecord",
+        model="BobLib.Chassis.Suspension.DoubleWishboneBellcrankStabar",
         description="bellcrank-actuated double wishbone suspension with a stabilizer bar",
         has_bellcrank=True,
         has_stabar=True,
     ),
 }
 
-TIRE_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+TIRE_RECORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "fxCombined",
-        "TireModel.CombinedSlip.FxCombinedRecord",
         ("RBX1", "RBX2", "RCX1", "REX1", "REX2", "RHX1"),
     ),
     (
         "fxPure",
-        "TireModel.PureSlip.FxPureRecord",
         (
             "LFZO",
             "LGAX",
@@ -148,7 +166,6 @@ TIRE_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "fyCombined",
-        "TireModel.CombinedSlip.FyCombinedRecord",
         (
             "RBY1",
             "RBY2",
@@ -168,7 +185,6 @@ TIRE_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "fyPure",
-        "TireModel.PureSlip.FyPureRecord",
         (
             "LFZO",
             "LGAY",
@@ -200,18 +216,16 @@ TIRE_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             "LVYKA",
         ),
     ),
-    ("mxCombined", "TireModel.CombinedSlip.MxCombinedRecord", ()),
-    ("mxPure", "TireModel.PureSlip.MxPureRecord", ("QSX1", "QSX2", "QSX3", "LMX", "LVMX")),
-    ("myCombined", "TireModel.CombinedSlip.MyCombinedRecord", ()),
-    ("myPure", "TireModel.PureSlip.MyPureRecord", ("QSY1", "QSY2", "QSY3", "QSY4", "Vref", "LMY")),
+    ("mxCombined", ()),
+    ("mxPure", ("QSX1", "QSX2", "QSX3", "LMX", "LVMX")),
+    ("myCombined", ()),
+    ("myPure", ("QSY1", "QSY2", "QSY3", "QSY4", "Vref", "LMY")),
     (
         "mzCombined",
-        "TireModel.CombinedSlip.MzCombinedRecord",
         ("SSZ1", "SSZ2", "SSZ3", "SSZ4", "RVY1", "RVY2", "RVY3", "RVY4", "RVY5", "RVY6", "LS", "LVYKA"),
     ),
     (
         "mzPure",
-        "TireModel.PureSlip.MzPureRecord",
         (
             "QBZ1",
             "QBZ2",
@@ -247,28 +261,74 @@ TIRE_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "relaxation",
-        "TireModel.RelaxationRecord",
         ("FNOMIN", "UNLOADED_RADIUS", "LFZO", "PTX1", "PTX2", "PTX3", "PTY1", "PTY2", "PKY3", "LSGKP", "LSGAL"),
     ),
-    ("setup", "TireModel.SetupRecord", ("FNOMIN", "FZMIN", "FZMAX", "UNLOADED_RADIUS")),
+    ("setup", ("FNOMIN", "FZMIN", "FZMAX", "UNLOADED_RADIUS")),
 )
 
 TIR_KEY_ALIASES = {
     "Vref": "LONGVL",
 }
 
-POWERTRAIN_RECORDS: tuple[tuple[str, str], ...] = (
-    ("pBattery", "EnergyStorage.BatteryPackRecord"),
-    ("pVCU", "Controllers.VCURecord"),
-    ("pInverter", "PowerElectronics.InverterDCRecord"),
-    ("pMotor", "ElectricDrives.MotorRecord"),
-    ("pDriveline", "Drivelines.RearFinalDriveDifferentialRecord"),
+# vehicle.yml powertrain key, record type, record name in the BobLib vehicle record, and its description.
+POWERTRAIN_RECORDS: tuple[tuple[str, str, str, str], ...] = (
+    ("pBattery", "EnergyStorage.BatteryPackRecord", "battery",
+     "Battery cell, pack and state-of-charge calibration"),
+    ("pVCU", "Controllers.VCURecord", "controller",
+     "Vehicle control unit limits and pedal-to-torque calibration"),
+    ("pInverter", "PowerElectronics.InverterDCRecord", "inverter",
+     "DC conversion, voltage, current and efficiency calibration"),
+    ("pMotor", "ElectricDrives.MotorRecord", "motor",
+     "Motor torque, power, loss and rotor calibration"),
 )
+
+# BobLib derives the controller ratio and the brake links from the other records. vehicle.yml must not set them.
+CONTROLLER_FINAL_DRIVE_RATIO = "transmission.gearRatio*driveline.inputRatio"
+BRAKE_RECORD_LINKS: tuple[tuple[str, str], ...] = (
+    ("differentialBrakeRatio", "driveline.inputRatio"),
+    ("maxTorque", "controller.mechanicalBrakeTorqueLimit"),
+)
+
+# Old RearFinalDriveDifferentialRecord field -> new field, from the driveline table in BobLib MIGRATION.md.
+# finalDriveRatio maps to the gear ratio because driveline.inputRatio keeps its default of 1.
+DRIVELINE_FIELD_MAP: dict[str, str] = {
+    "finalDriveRatio": "transmission.gearRatio",
+    "diffInputRotorJ": "driveline.inputInertia",
+    "diff_T_preload": "driveline.differential.preloadTorque",
+    "diff_driveSideTorqueSign": "driveline.differential.driveSideTorqueSign",
+    "diff_lockFractionAccel": "driveline.differential.driveLockingFraction",
+    "diff_lockFractionDecel": "driveline.differential.coastLockingFraction",
+    "diff_kineticFrictionRatio": "driveline.differential.slidingFrictionRatio",
+    "halfshaftLeftC": "driveline.halfshaft.stiffness",
+    "halfshaftRightC": "driveline.halfshaft.stiffness",
+    "halfshaftLeftD": "driveline.halfshaft.damping",
+    "halfshaftRightD": "driveline.halfshaft.damping",
+    "diff_use_lsd": "differentialArchitecture",
+}
+
+_NO_INERTIA_ALIAS = (
+    "BobLib has no behavior-preserving alias. driveline.halfshaft.inertia is now real rotating inertia, "
+    "not a damping input. It keeps the BobLib default."
+)
+_NO_CLUTCH_FIELD = (
+    "The BobLib ClutchLSD law has no field for this input. Recalibrate the differential. No value was invented."
+)
+DRIVELINE_UNBOUND: dict[str, str] = {
+    "diff_T_capacity_max": _NO_CLUTCH_FIELD,
+    "diff_clutchEffectiveRadius": _NO_CLUTCH_FIELD,
+    "diff_w_transition": _NO_CLUTCH_FIELD,
+    "diff_c_viscous": _NO_CLUTCH_FIELD,
+    "halfshaftLeftJEquivalent": _NO_INERTIA_ALIAS,
+    "halfshaftRightJEquivalent": _NO_INERTIA_ALIAS,
+}
+
+DIFFERENTIAL_ARCHITECTURE = "BobLib.Drivelines.Types.DifferentialArchitecture"
+BRAKE_PLACEMENT = "BobLib.Brakes.Types.Placement"
 
 VEHICLE_OMC_OPTIONS = (
     "--matchingAlgorithm=PFPlusExt --indexReductionMethod=dynamicStateSelection "
     "-d=initialization,NLSanalyticJacobian,disableStartCalc "
-    "--maxSizeLinearTearing=5000 --generateDynamicJacobian=none"
+    "--maxSizeLinearTearing=5000 --generateDynamicJacobian=none --homotopyApproach=equidistantLocal"
 )
 
 FOUR_POST_OMC_OPTIONS = (
@@ -277,8 +337,9 @@ FOUR_POST_OMC_OPTIONS = (
 )
 
 VEHICLE_VARIABLE_FILTER = (
-    "time|frSteerCmd|accX|accY|handwheelAngle|steerExcess|handwheelTorque|Fz_.*|leftSteerAngle|"
-    "rightSteerAngle|roll|sideslip|velX|velY|yawVel|steadyState.*|linearity.*|minTireNormalLoad"
+    "time|terminationStatus|frSteerCmd|accX|accY|handwheelAngle|steerExcess|handwheelTorque|Fz_.*|"
+    "leftSteerAngle|rightSteerAngle|roll|sideslip|velX|velY|yawVel|steadyState.*|linearity.*|"
+    "minTireNormalLoad|chassis.(front|rear)(Left|Right)SpringLength"
 )
 
 TARGET_SIGNATURE_KINDS: dict[str, tuple[str, ...]] = {
@@ -292,15 +353,11 @@ def generate_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None
     if plan.initialization_error:
         raise ValueError(plan.initialization_error)
     _require_inside_boblib_root(
-        plan.boblib_root, [path for path, _ in plan.contents] + list(plan.result.package_orders)
+        plan.boblib_root, [path for path, _ in plan.contents] + [path for path, _ in plan.result.package_orders]
     )
     for path, text in plan.contents:
         _write_text(path, text)
-    for path, entry in (
-        (plan.result.package_orders[0], plan.result.record_name),
-        (plan.result.package_orders[1], plan.result.vehicle_template_name),
-        (plan.result.package_orders[2], plan.result.four_post_template_name),
-    ):
+    for path, entry in plan.result.package_orders:
         _ensure_package_order_entry(path, entry)
     return plan.result
 
@@ -327,19 +384,18 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
     _require_boblib_package_root(boblib_root, repo_root)
     tire_root = _tire_root(data, repo_root)
 
+    template_dir = boblib_root / TEMPLATE_PACKAGE_DIR
+    template_package = f"BobLib.Experiments.Standards.{TEMPLATE_PACKAGE}"
     record_path = boblib_root / "Records/VehicleDefn" / f"{record_name}.mo"
-    vehicle_template_path = (
-        boblib_root / "Experiments/Standards/Templates/Vehicle" / f"{vehicle_template_name}.mo"
-    )
-    four_post_template_path = (
-        boblib_root / "Experiments/Standards/Templates/FourPost" / f"{four_post_template_name}.mo"
-    )
+    vehicle_template_path = template_dir / f"{vehicle_template_name}.mo"
+    four_post_template_path = template_dir / f"{four_post_template_name}.mo"
+    template_package_path = template_dir / "package.mo"
     vehicle_entry_path = boblib_root / "Experiments/Standards/VehicleSim.mo"
     four_post_entry_path = boblib_root / "Experiments/Standards/FourPostSim.mo"
 
     record_order = boblib_root / "Records/VehicleDefn/package.order"
-    vehicle_template_order = boblib_root / "Experiments/Standards/Templates/Vehicle/package.order"
-    four_post_template_order = boblib_root / "Experiments/Standards/Templates/FourPost/package.order"
+    template_order = template_dir / "package.order"
+    standards_order = boblib_root / "Experiments/Standards/package.order"
 
     files = (
         GeneratedModelicaFile(
@@ -352,13 +408,13 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
             kind="vehicle_template",
             path=vehicle_template_path,
             class_name=vehicle_template_name,
-            package="BobLib.Experiments.Standards.Templates.Vehicle",
+            package=template_package,
         ),
         GeneratedModelicaFile(
             kind="four_post_template",
             path=four_post_template_path,
             class_name=four_post_template_name,
-            package="BobLib.Experiments.Standards.Templates.FourPost",
+            package=template_package,
         ),
         GeneratedModelicaFile(
             kind="vehicle_entrypoint",
@@ -379,33 +435,36 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         vehicle_template_name=vehicle_template_name,
         four_post_template_name=four_post_template_name,
         files=files,
-        package_orders=(record_order, vehicle_template_order, four_post_template_order),
+        package_orders=(
+            (record_order, record_name),
+            (template_order, vehicle_template_name),
+            (template_order, four_post_template_name),
+            (standards_order, TEMPLATE_PACKAGE),
+        ),
     )
-    record_text = _vehicle_record_text(data, tire_root, vehicle_name, record_name, front_arch, rear_arch)
+    driveline = _driveline_mapping(data)
+    record_text = _vehicle_record_text(data, tire_root, vehicle_name, record_name, front_arch, rear_arch, driveline)
     initialization_error = None
     try:
-        initialization = _preserved_initialization(record_path, record_text, data)
-        if (initialization is None and data.get("modelica_initialization") != "legacy"
-                and vehicle_entry_path.is_file()
-                and "pQSSInitialization" in vehicle_entry_path.read_text(encoding="utf-8")):
-            raise ValueError("The active VehicleSim uses a calibrated QSS pose. Recalibrate this vehicle "
-                             "or explicitly set modelica_initialization: legacy before replacing it.")
+        initialization = _preserved_initialization(record_path, record_text, vehicle_entry_path, record_name, data)
     except ValueError as exc:
         initialization = None
         initialization_error = str(exc)
-    if initialization:
-        record_text = record_text.replace("  annotation(", initialization + "\n\n  annotation(", 1)
     contents = (
         (record_path, record_text),
+        (template_package_path, _template_package_text()),
         (
             vehicle_template_path,
-            _vehicle_template_text(vehicle_template_name, record_name, front_arch, rear_arch, front_brake_bias),
+            _vehicle_template_text(
+                vehicle_template_name, record_name, front_arch, rear_arch, front_brake_bias,
+                driveline.differential_architecture,
+            ),
         ),
         (
             four_post_template_path,
             _four_post_template_text(four_post_template_name, record_name, front_arch, rear_arch),
         ),
-        (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name, calibrated=bool(initialization))),
+        (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name, initialization)),
         (four_post_entry_path, _four_post_entry_text(four_post_template_name)),
     )
     return ModelicaStackPlan(
@@ -414,6 +473,7 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         boblib_root=boblib_root,
         initialization_error=initialization_error,
         front_brake_bias=front_brake_bias,
+        unbound=driveline.unbound,
     )
 
 
@@ -443,24 +503,50 @@ def _canonical_parameter(text: str) -> str:
     while re.search(product, text):
         text = re.sub(product, lambda m: format(float(m[1]) * float(m[2]), ".12g"), text)
     text = re.sub(rf"(?<![\w.]){number}(?![\w.])", lambda m: format(float(m[0]), ".12g"), text)
+    # Descriptions do not change the physics.
+    text = re.sub(r'"(?:[^"\\]|\\.)*"\s*;\s*$', ";", text)
     return re.sub(r"\s+", "", text)
 
 
-def _preserved_initialization(path: Path, generated: str, data: Mapping[str, Any]) -> str | None:
-    """Retain a calibrated pose only when its complete physical record matches.
+def _entry_record_name(entry: str) -> str | None:
+    """Name the vehicle record that an existing VehicleSim entry point simulates."""
+    template = re.search(rf"\bextends\s+{TEMPLATE_PACKAGE}\.VehicleSim_(\w+)", entry)
+    if template:
+        return f"{template[1]}Record"
+    redeclared = re.search(r"\bredeclare\s+record\s+VehicleRecord\s*=\s*BobLib\.Records\.VehicleDefn\.(\w+)", entry)
+    if redeclared:
+        return redeclared[1]
+    if re.search(r"\bextends\s+(?:BobLib\.Experiments\.Standards\.)?BaseClasses\.PartialVehicleSim\b", entry):
+        return BOBLIB_DEFAULT_VEHICLE_RECORD
+    return None
 
-    Never transplant a solved pose onto a changed car. An explicit legacy mode
-    permits the existing BobLib settling initialization for a new study instead.
+
+def _preserved_initialization(
+    record_path: Path, generated: str, entry_path: Path, record_name: str, data: Mapping[str, Any]
+) -> str | None:
+    """Retain the active VehicleSim pose only when it was solved for this exact physical record.
+
+    BobLib keeps the pose in VehicleSim.pInitialization, beside the record it was
+    solved for. Never transplant a solved pose onto a changed car. An explicit
+    legacy mode permits the BobLib settling initialization for a new study instead.
     """
     mode = data.get("modelica_initialization", "preserve")
     if mode not in {"preserve", "legacy"}:
         raise ValueError("modelica_initialization must be 'preserve' or 'legacy'")
-    if mode == "legacy" or not path.is_file():
+    if mode == "legacy" or not entry_path.is_file():
         return None
-    existing = _record_parameters(path.read_text(encoding="utf-8"))
-    initialization = existing.pop("pQSSInitialization", None)
+    entry = entry_path.read_text(encoding="utf-8")
+    initialization = _record_parameters(entry).get("pInitialization")
     if initialization is None:
         return None
+    solved_for = _entry_record_name(entry)
+    if solved_for != record_name or not record_path.is_file():
+        raise ValueError(
+            f"The active VehicleSim uses a calibrated QSS pose solved for {solved_for or 'an unknown record'}, "
+            f"not {record_name}. Recalibrate this vehicle or explicitly set "
+            "modelica_initialization: legacy before replacing it. No Modelica files were written."
+        )
+    existing = _record_parameters(record_path.read_text(encoding="utf-8"))
     expected = _record_parameters(generated)
     if {key: _canonical_parameter(value) for key, value in existing.items()} != {
         key: _canonical_parameter(value) for key, value in expected.items()
@@ -492,7 +578,7 @@ def modelica_generation_payload(result: ModelicaGenerationResult, repo_root: str
             }
             for item in result.files
         ],
-        "package_orders": [_display_path(path, root) for path in result.package_orders],
+        "package_orders": list(dict.fromkeys(_display_path(path, root) for path, _ in result.package_orders)),
     }
 
 
@@ -501,10 +587,8 @@ def modelica_stack_status_payload(vehicle_path: str | Path, repo_root: str | Pat
     plan = plan_modelica_stack(vehicle_path, root=root)
     expected_contents = dict(plan.contents)
     files = [_file_status_payload(item, expected_contents.get(item.path), root) for item in plan.result.files]
-    package_orders = (
-        _package_order_status_payload(plan.result.package_orders[0], plan.result.record_name, root),
-        _package_order_status_payload(plan.result.package_orders[1], plan.result.vehicle_template_name, root),
-        _package_order_status_payload(plan.result.package_orders[2], plan.result.four_post_template_name, root),
+    package_orders = tuple(
+        _package_order_status_payload(path, entry, root) for path, entry in plan.result.package_orders
     )
     files_current = all(item["current"] for item in files)
     orders_current = all(item["contains_entry"] for item in package_orders)
@@ -527,6 +611,13 @@ def modelica_stack_status_payload(vehicle_path: str | Path, repo_root: str | Pat
             "source": "boblib_default" if plan.front_brake_bias is None else "brake.front_bias",
             "note": FRONT_BRAKE_BIAS_UNSET_NOTE if plan.front_brake_bias is None else None,
         },
+        "brake_placement": {
+            "front": FRONT_BRAKE_PLACEMENT,
+            "rear": REAR_BRAKE_PLACEMENT,
+            "source": "boblib_default",
+            "note": BRAKE_PLACEMENT_NOTE,
+        },
+        "unbound_inputs": [{"path": item.path, "reason": item.reason} for item in plan.unbound],
         "files": files,
         "package_orders": list(package_orders),
     }
@@ -606,35 +697,38 @@ def _vehicle_record_text(
     record_name: str,
     front_arch: ArchitectureSpec,
     rear_arch: ArchitectureSpec,
+    driveline: DrivelineMapping,
 ) -> str:
+    axles = []
+    for side_name, arch in (("front", front_arch), ("rear", rear_arch)):
+        side = _mapping(data.get(side_name), side_name)
+        assignments = _axle_record_assignments(data, tire_root, side_name, side, arch)
+        axles.append((f"{side_name}Axle", ModelicaCall("", assignments)))
     sections: list[str] = [
         "within BobLib.Records.VehicleDefn;",
         "",
         f"record {record_name}",
         "",
-        "  import BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.MassRecord;",
+        "  import BobLib.Records.VehicleRecord.Aero;",
+        "  import BobLib.Records.VehicleRecord.Controllers;",
+        "  import BobLib.Records.VehicleRecord.Drivelines;",
+        "  import BobLib.Records.VehicleRecord.ElectricDrives;",
+        "  import BobLib.Records.VehicleRecord.EnergyStorage;",
+        "  import BobLib.Records.VehicleRecord.PowerElectronics;",
         "",
-        "  import Aero = BobLib.Records.VehicleRecord.Aero;",
-        "  import EnergyStorage = BobLib.Records.VehicleRecord.EnergyStorage;",
-        "  import Controllers = BobLib.Records.VehicleRecord.Controllers;",
-        "  import PowerElectronics = BobLib.Records.VehicleRecord.PowerElectronics;",
-        "  import ElectricDrives = BobLib.Records.VehicleRecord.ElectricDrives;",
-        "  import Drivelines = BobLib.Records.VehicleRecord.Drivelines;",
-        "  import TireModel = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Tire.MF52;",
-        "  import Wheel = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Tire;",
-        "  import Rack = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.SteeringRack;",
-        "  import Stabar = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.Stabar;",
-        "  import DW = BobLib.Records.VehicleRecord.Chassis.Suspension.Templates.DoubleWishbone;",
-        "  import Axle = BobLib.Records.VehicleRecord.Chassis.Suspension;",
+        "  record ChassisRecord = BobLib.Records.VehicleRecord.Chassis.ChassisRecord(",
+        f"    redeclare record FrontAxleRecord = {front_arch.record_type},",
+        f"    redeclare record RearAxleRecord = {rear_arch.record_type});",
+        "",
+        _format_parameter(
+            "ChassisRecord",
+            "chassis",
+            (*axles, ("frame", ModelicaCall("", _frame_assignments(data)))),
+            "Sprung frame, front axle and rear axle calibration",
+        ),
         "",
     ]
-
-    for side_name, prefix, arch in (("front", "Fr", front_arch), ("rear", "Rr", rear_arch)):
-        side = _mapping(data.get(side_name), side_name)
-        sections.extend(_axle_sections(data, tire_root, side_name, prefix, side, arch))
-
-    sections.extend(_powertrain_sections(data))
-    sections.extend(_vehicle_mass_sections(data))
+    sections.extend(_powertrain_sections(data, driveline))
     sections.append(_aero_section(data))
     sections.extend(
         (
@@ -657,77 +751,49 @@ def _vehicle_record_text(
     return "\n".join(sections)
 
 
-def _axle_sections(
+def _axle_record_assignments(
     vehicle_data: Mapping[str, Any],
     tire_root: Path,
     side_name: str,
-    prefix: str,
     side: Mapping[str, Any],
     arch: ArchitectureSpec,
-) -> list[str]:
+) -> tuple[tuple[str, Any], ...]:
     tire_path = tire_root / f"{tire_template_name(vehicle_data, side)}.tir"
     if not tire_path.is_file():
         raise FileNotFoundError(f"Missing tire template for {side_name}: {tire_path}")
     tire_values = parse_tir(tire_path)
-    axle_prefix = f"p{prefix}"
-    sections = [
-        _format_parameter(arch.record_type, f"{axle_prefix}AxleDW", _axle_assignments(side_name, side, arch)),
-        "",
+    aero = _mapping(vehicle_data.get("aero"), "aero")
+    ride_height_key = "front_left_ride_height_ref_m" if side_name == "front" else "rear_left_ride_height_ref_m"
+    assignments: list[tuple[str, Any]] = [
+        ("rideHeightReference", _required_vector(aero, ride_height_key, "aero")),
+        ("actuation", ModelicaCall("", _axle_assignments(side_name, side, arch))),
     ]
     if arch.has_stabar:
-        sections.extend(
-            (
-                _format_parameter(
-                    "Stabar.StabarRecord",
-                    f"{axle_prefix}Stabar",
-                    _stabar_assignments(side_name, side),
-                ),
-                "",
-            )
-        )
-    sections.extend(
+        assignments.append(("stabilizer", ModelicaCall("", _stabar_assignments(side_name, side))))
+    wheel = (
+        ("geometry", ModelicaCall("", _wheel_assignments(side_name, side))),
+        ("rotation", ModelicaCall("", _tire_y_assignments(side_name, side))),
+        ("vertical", ModelicaCall("", _tire_z_assignments(side_name, side))),
+    )
+    radius = f"chassis.{side_name}Axle.tire.wheel.geometry.R0"
+    assignments.extend(
         (
-            _format_parameter(
-                "Wheel.Templates.PartialWheelRecord",
-                f"{axle_prefix}PartialWheel",
-                _wheel_assignments(side_name, side),
+            (
+                "tire",
+                ModelicaCall(
+                    "",
+                    (
+                        ("wheel", ModelicaCall("", wheel)),
+                        ("force", ModelicaCall("", _tire_model_assignments(tire_values, radius, tire_path))),
+                    ),
+                ),
             ),
-            "",
-            _format_parameter("Rack.RackAndPinionRecord", f"{axle_prefix}Rack", _rack_assignments(side_name, side)),
-            "",
-            _format_parameter(
-                "DW.WishboneUprightLoopRecord",
-                f"{axle_prefix}DW",
-                _wishbone_assignments(side_name, side),
-            ),
-            "",
-            _format_parameter(
-                "Axle.Templates.AxleMassRecord",
-                f"{axle_prefix}AxleMass",
-                _axle_mass_assignments(side_name, side),
-            ),
-            "",
-            _format_parameter(
-                "Wheel.Wheel1DOF_YRecord",
-                f"{axle_prefix}Tire1DOF_YParams",
-                _tire_y_assignments(side_name, side),
-            ),
-            "",
-            _format_parameter(
-                "Wheel.Wheel1DOF_ZRecord",
-                f"{axle_prefix}Tire1DOF_ZParams",
-                _tire_z_assignments(side_name, side),
-            ),
-            "",
-            _format_parameter(
-                "TireModel.MF52Record",
-                f"{axle_prefix}TireModel",
-                _tire_model_assignments(tire_values, f"{axle_prefix}PartialWheel.R0", tire_path),
-            ),
-            "",
+            ("steering", ModelicaCall("", _rack_assignments(side_name, side))),
+            ("geometry", ModelicaCall("", _wishbone_assignments(side_name, side))),
+            ("masses", ModelicaCall("", _axle_mass_assignments(side_name, side))),
         )
     )
-    return sections
+    return tuple(assignments)
 
 
 def _axle_assignments(side_name: str, side: Mapping[str, Any], arch: ArchitectureSpec) -> tuple[tuple[str, Any], ...]:
@@ -855,7 +921,7 @@ def _tire_model_assignments(
     tire_path: Path,
 ) -> tuple[tuple[str, Any], ...]:
     assignments: list[tuple[str, Any]] = []
-    for name, type_name, keys in TIRE_RECORDS:
+    for name, keys in TIRE_RECORDS:
         values: list[tuple[str, Any]] = []
         for key in keys:
             if key == "UNLOADED_RADIUS":
@@ -863,41 +929,118 @@ def _tire_model_assignments(
             else:
                 tir_key = TIR_KEY_ALIASES.get(key, key)
                 values.append((key, _tir_number(tire_values, tir_key, tire_path, key)))
-        assignments.append((name, ModelicaCall(type_name, tuple(values))))
+        assignments.append((name, ModelicaCall("", tuple(values))))
     return tuple(assignments)
 
 
-def _powertrain_sections(data: Mapping[str, Any]) -> list[str]:
+def _powertrain_sections(data: Mapping[str, Any], driveline: DrivelineMapping) -> list[str]:
     powertrain = data.get("powertrain")
-    if not isinstance(powertrain, Mapping):
-        return [
-            _format_parameter(record_type, record_name, ())
-            for record_name, record_type in POWERTRAIN_RECORDS
-        ] + [""]
+    powertrain = powertrain if isinstance(powertrain, Mapping) else {}
     sections: list[str] = []
-    for record_name, record_type in POWERTRAIN_RECORDS:
-        values = powertrain.get(record_name, {})
-        assignments = tuple((str(key), value) for key, value in values.items()) if isinstance(values, Mapping) else ()
-        sections.extend((_format_parameter(record_type, record_name, assignments), ""))
+    for key, record_type, name, description in POWERTRAIN_RECORDS:
+        values = powertrain.get(key, {})
+        assignments = [(str(field), value) for field, value in values.items()] if isinstance(values, Mapping) else []
+        if name == "controller":
+            if any(field == "finalDriveRatio" for field, _ in assignments):
+                raise ValueError(
+                    "powertrain.pVCU.finalDriveRatio cannot be set. BobLib derives controller.finalDriveRatio "
+                    f"from {CONTROLLER_FINAL_DRIVE_RATIO}. Set powertrain.pDriveline.finalDriveRatio instead."
+                )
+            assignments.insert(0, ("finalDriveRatio", ModelicaExpression(CONTROLLER_FINAL_DRIVE_RATIO)))
+        sections.extend((_format_parameter(record_type, name, assignments, description), ""))
+    sections.extend(
+        (
+            _format_parameter(
+                "BobLib.Records.VehicleRecord.Transmissions.FixedRatioRecord",
+                "transmission",
+                driveline.transmission,
+                "Transmission ratio and efficiency calibration",
+            ),
+            "",
+            _format_parameter(
+                "BobLib.Records.VehicleRecord.Brakes.BrakeRecord",
+                "brakes",
+                tuple((field, ModelicaExpression(link)) for field, link in BRAKE_RECORD_LINKS),
+                "Friction brake torque and actuation calibration",
+            ),
+            "",
+            _format_parameter(
+                "Drivelines.RearFinalDriveDifferentialRecord",
+                "driveline",
+                driveline.driveline,
+                "Differential and halfshaft calibration",
+            ),
+            "",
+        )
+    )
     return sections
 
 
-def _vehicle_mass_sections(data: Mapping[str, Any]) -> list[str]:
+@dataclass(frozen=True)
+class DrivelineMapping:
+    transmission: tuple[tuple[str, Any], ...]
+    driveline: tuple[tuple[str, Any], ...]
+    differential_architecture: str | None
+    unbound: tuple[UnboundInput, ...]
+
+
+def _driveline_mapping(data: Mapping[str, Any]) -> DrivelineMapping:
+    """Map the old flat pDriveline fields onto the BobLib transmission and driveline records."""
+    powertrain = data.get("powertrain")
+    raw = powertrain.get("pDriveline", {}) if isinstance(powertrain, Mapping) else {}
+    values = _mapping(raw or {}, "powertrain.pDriveline")
+    unknown = sorted(str(key) for key in values if key not in DRIVELINE_FIELD_MAP and key not in DRIVELINE_UNBOUND)
+    if unknown:
+        raise ValueError(
+            f"powertrain.pDriveline has fields with no BobLib mapping: {', '.join(unknown)}. "
+            "Remove them or add a mapping. No Modelica files were written."
+        )
+    bound: dict[str, Any] = {}
+    unbound: list[UnboundInput] = []
+    for key, value in values.items():
+        if key in DRIVELINE_UNBOUND:
+            unbound.append(UnboundInput(f"powertrain.pDriveline.{key}", DRIVELINE_UNBOUND[key]))
+            continue
+        target = DRIVELINE_FIELD_MAP[key]
+        if target in bound and _number(bound[target], target) != _number(value, f"powertrain.pDriveline.{key}"):
+            raise ValueError(
+                f"powertrain.pDriveline sets different left and right values for {target}. BobLib uses one "
+                "record for both halfshafts. Use a custom driveline for independent calibration. "
+                "No Modelica files were written."
+            )
+        bound[target] = value
+
+    architecture = None
+    if "differentialArchitecture" in bound:
+        lsd = bound.pop("differentialArchitecture")
+        if not isinstance(lsd, bool):
+            raise TypeError("Expected powertrain.pDriveline.diff_use_lsd to be true or false")
+        architecture = "ClutchLSD" if lsd else "Open"
+
+    transmission: tuple[tuple[str, Any], ...] = ()
+    if "transmission.gearRatio" in bound:
+        transmission = (("gearRatio", bound.pop("transmission.gearRatio")),)
+    nested: dict[str, list[tuple[str, Any]]] = {"differential": [], "halfshaft": []}
+    driveline: list[tuple[str, Any]] = []
+    for target, value in bound.items():
+        parts = target.split(".")[1:]
+        if len(parts) == 1:
+            driveline.append((parts[0], value))
+        else:
+            nested[parts[0]].append((parts[1], value))
+    driveline.extend((name, ModelicaCall("", tuple(items))) for name, items in nested.items() if items)
+    return DrivelineMapping(transmission, tuple(driveline), architecture, tuple(unbound))
+
+
+def _frame_assignments(data: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
     sprung = _mapping(data.get("sprung_mass"), "sprung_mass")
     driver = _mapping(data.get("driver_mass"), "driver_mass")
     body = _mapping(data.get("body"), "body")
-    torsional_stiff = _format_mo(_required_number(body, "torsional_stiff_n_m_per_rad", "body"))
-    return [
-        _format_parameter("MassRecord", "pBaseSprungMass", _mass_record_assignments(sprung, "sprung_mass")),
-        "",
-        _format_parameter("MassRecord", "pDriverMass", _mass_record_assignments(driver, "driver_mass")),
-        "",
-        f"  parameter Modelica.Units.SI.RotationalSpringConstant pTorsionalStiff = {torsional_stiff};",
-        "",
-        "  parameter MassRecord pSprungMass = "
-        "BobLib.Utilities.Mechanics.Functions.combineMassRecords({pBaseSprungMass, pDriverMass});",
-        "",
-    ]
+    return (
+        ("baseMass", ModelicaCall("", _mass_record_assignments(sprung, "sprung_mass"))),
+        ("driverMass", ModelicaCall("", _mass_record_assignments(driver, "driver_mass"))),
+        ("torsionalStiffness", _required_number(body, "torsional_stiff_n_m_per_rad", "body")),
+    )
 
 
 def _aero_section(data: Mapping[str, Any]) -> str:
@@ -905,8 +1048,6 @@ def _aero_section(data: Mapping[str, Any]) -> str:
     assignments = (
         ("referenceSpeed", _required_number(aero, "reference_speed_m_per_s", "aero")),
         ("aeroRef", _required_vector(aero, "aero_ref_m", "aero")),
-        ("FL_RideHeightRef", _required_vector(aero, "front_left_ride_height_ref_m", "aero")),
-        ("RL_RideHeightRef", _required_vector(aero, "rear_left_ride_height_ref_m", "aero")),
         ("frontRideHeightGrid", _required_vector(aero, "front_ride_height_grid_m", "aero")),
         ("rearRideHeightGrid", _required_vector(aero, "rear_ride_height_grid_m", "aero")),
         ("dragTable", _required_table(aero, "drag_table_n", "aero")),
@@ -915,7 +1056,12 @@ def _aero_section(data: Mapping[str, Any]) -> str:
         ("myTable", _required_table(aero, "my_table_nm", "aero")),
         ("mzTable", _required_table(aero, "mz_table_nm", "aero")),
     )
-    return _format_parameter("Aero.CFDAeroMapRecord", "pAero", assignments)
+    return _format_parameter(
+        "Aero.CFDAeroMapRecord",
+        "aero",
+        assignments,
+        "Aerodynamic force and moment maps and their load reference point",
+    )
 
 
 def _front_brake_bias(data: Mapping[str, Any]) -> float | None:
@@ -931,7 +1077,7 @@ def _front_brake_bias(data: Mapping[str, Any]) -> float | None:
 
 def _mass_record(parent: Mapping[str, Any], key: str, path: str) -> ModelicaCall:
     mass = _mapping(parent.get(key), f"{path}.{key}")
-    return ModelicaCall("MassRecord", _mass_record_assignments(mass, f"{path}.{key}"))
+    return ModelicaCall("", _mass_record_assignments(mass, f"{path}.{key}"))
 
 
 def _mass_record_assignments(mass: Mapping[str, Any], path: str) -> tuple[tuple[str, Any], ...]:
@@ -942,43 +1088,58 @@ def _mass_record_assignments(mass: Mapping[str, Any], path: str) -> tuple[tuple[
     )
 
 
+def _template_package_text() -> str:
+    return "\n".join(
+        (
+            "within BobLib.Experiments.Standards;",
+            "",
+            f'package {TEMPLATE_PACKAGE} "VehicleSim and FourPostSim templates that BobSim generates from vehicle.yml"',
+            "",
+            "  extends Modelica.Icons.Package;",
+            "",
+            f"end {TEMPLATE_PACKAGE};",
+            "",
+        )
+    )
+
+
 def _vehicle_template_text(
     template_name: str,
     record_name: str,
     front_arch: ArchitectureSpec,
     rear_arch: ArchitectureSpec,
     front_brake_bias: float | None,
+    differential_architecture: str | None,
 ) -> str:
-    chassis_assignments: list[tuple[str, Any]] = [
-        ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
-        ("redeclare model FrAxleModel", ModelicaExpression(front_arch.front_model)),
-        ("redeclare model RrAxleModel", ModelicaExpression(rear_arch.rear_model)),
-    ]
-    if front_arch.has_stabar:
-        chassis_assignments.append(
-            ("pFrStabar", _stabar_passthrough_call("pFrStabar", bar_rate="pVehicle.pFrStabar.barRate"))
-        )
-    if rear_arch.has_stabar:
-        chassis_assignments.append(
-            ("pRrStabar", _stabar_passthrough_call("pRrStabar", bar_rate="pVehicle.pRrStabar.barRate"))
-        )
-    chassis_assignments.extend(
-        (
-            ("headless", ModelicaExpression("headless")),
-            ("initialLongitudinalVelocity", ModelicaExpression("initialVel")),
-            ("pVehicle", ModelicaExpression("pVehicle")),
-        )
+    record = f"BobLib.Records.VehicleDefn.{record_name}"
+    chassis_assignments: tuple[tuple[str, Any], ...] = (
+        ("redeclare record ChassisRecord", ModelicaExpression(f"{record}.ChassisRecord")),
+        ("redeclare model FrAxleModel", ModelicaExpression(front_arch.model)),
+        ("redeclare model RrAxleModel", ModelicaExpression(rear_arch.model)),
+        ("headless", ModelicaExpression("headless")),
+        ("initialLongitudinalVelocity", ModelicaExpression("initialVel")),
+        ("pChassis", ModelicaExpression("pVehicle.chassis")),
     )
     extends_assignments: list[tuple[str, Any]] = [
-        ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
-        ("redeclare BobLib.Chassis.Chassis_DW chassis", ModelicaCall("", tuple(chassis_assignments))),
+        ("redeclare record VehicleRecord", ModelicaExpression(record)),
+        ("redeclare BobLib.Chassis.DoubleWishbone chassis", ModelicaCall("", chassis_assignments)),
+        ("frontBrakePlacement", ModelicaExpression(f"{BRAKE_PLACEMENT}.{FRONT_BRAKE_PLACEMENT}")),
+        ("rearBrakePlacement", ModelicaExpression(f"{BRAKE_PLACEMENT}.{REAR_BRAKE_PLACEMENT}")),
     ]
+    if differential_architecture is not None:
+        extends_assignments.append(
+            ("differentialArchitecture", ModelicaExpression(f"{DIFFERENTIAL_ARCHITECTURE}.{differential_architecture}"))
+        )
     if front_brake_bias is not None:
-        # BaseVehicleSim binds only maxTorque, so BasicVCUBrakes would otherwise use its own default bias.
-        extends_assignments.append(("brakes", ModelicaCall("", (("frontBrakeBias", front_brake_bias),))))
-    extends_call = ModelicaCall("BaseVehicleSim", tuple(extends_assignments))
+        # Bound here, not in the record, so a bias change leaves the FourPostSim build current.
+        extends_assignments.append(
+            ("pVehicle", ModelicaCall("", (("brakes", ModelicaCall("", (("frontBrakeBias", front_brake_bias),))),)))
+        )
+    extends_call = ModelicaCall(
+        "BobLib.Experiments.Standards.BaseClasses.PartialVehicleSim", tuple(extends_assignments)
+    )
     lines = [
-        "within BobLib.Experiments.Standards.Templates.Vehicle;",
+        f"within BobLib.Experiments.Standards.{TEMPLATE_PACKAGE};",
         "",
         f"model {template_name}",
         "",
@@ -997,29 +1158,31 @@ def _four_post_template_text(
 ) -> str:
     assignments: list[tuple[str, Any]] = [
         ("redeclare record VehicleRecord", ModelicaExpression(f"BobLib.Records.VehicleDefn.{record_name}")),
-        ("redeclare model FrAxleModel", ModelicaExpression(front_arch.front_model)),
-        ("redeclare model RrAxleModel", ModelicaExpression(rear_arch.rear_model)),
+        ("redeclare model FrAxleModel", ModelicaExpression(front_arch.model)),
+        ("redeclare model RrAxleModel", ModelicaExpression(rear_arch.model)),
     ]
-    if front_arch.has_stabar:
-        assignments.extend(
-            (
-                ("frAxleDW", ModelicaCall("", (("pStabar", ModelicaExpression("pFrStabar")),))),
-                ("pFrStabar", _stabar_passthrough_call("pFrStabar", bar_rate="0")),
+    # The rig bars are the top-level p{Fr,Rr}Stabar records. The vehicle record's bar rates do not reach them.
+    for axle, instance, rig_bar, arch in (
+        ("frontAxle", "frAxleDW", "pFrStabar", front_arch),
+        ("rearAxle", "rrAxleDW", "pRrStabar", rear_arch),
+    ):
+        if arch.has_stabar:
+            stabilizer = ModelicaCall("", (("stabilizer", ModelicaExpression(rig_bar)),))
+            assignments.extend(
+                (
+                    (instance, ModelicaCall("", (("pAxle", stabilizer),))),
+                    (rig_bar, _stabar_passthrough_call(f"pVehicle.chassis.{axle}.stabilizer", bar_rate="0")),
+                )
             )
-        )
-    if rear_arch.has_stabar:
-        assignments.extend(
-            (
-                ("rrAxleDW", ModelicaCall("", (("pStabar", ModelicaExpression("pRrStabar")),))),
-                ("pRrStabar", _stabar_passthrough_call("pRrStabar", bar_rate="0")),
-            )
-        )
+    extends_call = ModelicaCall(
+        "BobLib.Experiments.Standards.BaseClasses.PartialDoubleWishboneFourPost", tuple(assignments)
+    )
     lines = [
-        "within BobLib.Experiments.Standards.Templates.FourPost;",
+        f"within BobLib.Experiments.Standards.{TEMPLATE_PACKAGE};",
         "",
         f"model {template_name}",
         "",
-        _extends_line(ModelicaCall("BaseFourPostSim", tuple(assignments))),
+        _extends_line(extends_call),
         "  annotation(",
         '    Documentation(info = "<html>',
         "<p>",
@@ -1033,24 +1196,25 @@ def _four_post_template_text(
     return "\n".join(lines)
 
 
-def _vehicle_entry_text(vehicle_template_name: str, *, calibrated: bool = False) -> str:
-    initialization = (
+def _vehicle_entry_text(vehicle_template_name: str, initialization: str | None = None) -> str:
+    modifier = (
         "(chassis(\n"
-        "      chassisReferencePosition = pVehicle.pQSSInitialization.chassisReferencePosition,\n"
-        "      chassisReferenceAngles = pVehicle.pQSSInitialization.chassisReferenceAngles,\n"
+        "      chassisReferencePosition = pInitialization.chassisReferencePosition,\n"
+        "      chassisReferenceAngles = pInitialization.chassisReferenceAngles,\n"
         "      fixInitialSuspensionAngles = true,\n"
-        "      initialFrontLeftLowerArmAngle = pVehicle.pQSSInitialization.frontLeftLowerArmAngle,\n"
-        "      initialFrontRightLowerArmAngle = pVehicle.pQSSInitialization.frontRightLowerArmAngle,\n"
-        "      initialRearLeftLowerArmAngle = pVehicle.pQSSInitialization.rearLeftLowerArmAngle,\n"
-        "      initialRearRightLowerArmAngle = pVehicle.pQSSInitialization.rearRightLowerArmAngle))"
-        if calibrated else ""
+        "      initialFrontLeftLowerArmAngle = pInitialization.frontLeftLowerArmAngle,\n"
+        "      initialFrontRightLowerArmAngle = pInitialization.frontRightLowerArmAngle,\n"
+        "      initialRearLeftLowerArmAngle = pInitialization.rearLeftLowerArmAngle,\n"
+        "      initialRearRightLowerArmAngle = pInitialization.rearRightLowerArmAngle))"
+        if initialization else ""
     )
+    pose = f"{initialization}\n\n" if initialization else ""
     check = (
         "initial equation\n"
-        "  assert(abs(initialVel - pVehicle.pQSSInitialization.referenceVelocity) < 1e-6,\n"
+        "  assert(abs(initialVel - pInitialization.referenceVelocity) < 1e-6,\n"
         '    "VehicleSim QSS initialization was solved at a different initial velocity",\n'
         "    AssertionLevel.warning);\n"
-        if calibrated else ""
+        if initialization else ""
     )
     return "\n".join(
         (
@@ -1059,10 +1223,10 @@ def _vehicle_entry_text(vehicle_template_name: str, *, calibrated: bool = False)
             "model VehicleSim",
             "",
             "  \"VehicleInterfaces-aligned BobLib vehicle simulation entrypoint\"",
-            f"  extends Templates.Vehicle.{vehicle_template_name}{initialization};",
+            f"  extends {TEMPLATE_PACKAGE}.{vehicle_template_name}{modifier};",
             "  extends BobLib.Icons.SimulationIcon;",
             "",
-            check,
+            pose + check,
             "  annotation(",
             "    experiment(StartTime = 0.0, StopTime = 10, Tolerance = 1e-06, Interval = 0.002),",
             f'    __OpenModelica_commandLineOptions = "{VEHICLE_OMC_OPTIONS}",',
@@ -1087,7 +1251,7 @@ def _four_post_entry_text(four_post_template_name: str) -> str:
             "",
             "model FourPostSim",
             "",
-            f"  extends Templates.FourPost.{four_post_template_name};",
+            f"  extends {TEMPLATE_PACKAGE}.{four_post_template_name};",
             "  extends BobLib.Icons.SimulationIcon;",
             "",
             "  annotation(",
@@ -1095,6 +1259,7 @@ def _four_post_entry_text(four_post_template_name: str) -> str:
             f'    __OpenModelica_commandLineOptions = "{FOUR_POST_OMC_OPTIONS}",',
             "    __OpenModelica_simulationFlags(",
             '      jacobian = "internalNumerical",',
+            '      nls = "kinsol",',
             '      lv = "LOG_STDOUT,LOG_ASSERT,LOG_STATS",',
             '      s = "dassl",',
             '      variableFilter = ".*"),',
@@ -1105,12 +1270,12 @@ def _four_post_entry_text(four_post_template_name: str) -> str:
     )
 
 
-def _stabar_passthrough_call(name: str, *, bar_rate: str) -> ModelicaCall:
+def _stabar_passthrough_call(source: str, *, bar_rate: str) -> ModelicaCall:
     return ModelicaCall(
         "",
         (
-            ("leftArmEnd", ModelicaExpression(f"pVehicle.{name}.leftArmEnd")),
-            ("leftBarEnd", ModelicaExpression(f"pVehicle.{name}.leftBarEnd")),
+            ("leftArmEnd", ModelicaExpression(f"{source}.leftArmEnd")),
+            ("leftBarEnd", ModelicaExpression(f"{source}.leftBarEnd")),
             ("barRate", ModelicaExpression(bar_rate)),
         ),
     )
@@ -1124,11 +1289,13 @@ def _extends_line(call: ModelicaCall) -> str:
     return "\n".join(lines)
 
 
-def _format_parameter(type_name: str, name: str, assignments: Iterable[tuple[str, Any]]) -> str:
+def _format_parameter(
+    type_name: str, name: str, assignments: Iterable[tuple[str, Any]], description: str | None = None
+) -> str:
     text = _format_call(ModelicaCall(f"parameter {type_name} {name}", tuple(assignments)), indent=2)
     lines = text.splitlines()
     lines[0] = f"  {lines[0]}"
-    lines[-1] = f"{lines[-1]};"
+    lines[-1] = f'{lines[-1]} "{description}";' if description else f"{lines[-1]};"
     return "\n".join(lines)
 
 
@@ -1398,7 +1565,14 @@ def _display_path(path: Path, repo_root: Path) -> str:
 def _cli_status_lines(status: Mapping[str, Any]) -> list[str]:
     brake = status["front_brake_bias"]
     brake_line = brake["note"] or f"frontBrakeBias = {brake['value']} from brake.front_bias"
-    lines = [f"vehicle:  {status['vehicle_name']}", f"state:    {status['state']}", f"brake:    {brake_line}", ""]
+    lines = [
+        f"vehicle:  {status['vehicle_name']}",
+        f"state:    {status['state']}",
+        f"brake:    {brake_line}",
+        f"brakes:   {status['brake_placement']['note']}",
+    ]
+    lines.extend(f"unbound:  {item['path']}. {item['reason']}" for item in status["unbound_inputs"])
+    lines.append("")
     for item in status["files"]:
         if not item["exists"]:
             mark = "missing"
