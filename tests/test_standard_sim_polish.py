@@ -438,12 +438,12 @@ def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     exec_name = "Model"
     names = (
         "initialVel",
-        "vcu.targetAy",
-        "vcu.useMode",
-        "vcu.steerStart",
-        "vcu.handwheelRampRate",
-        "vcu.velGain",
-        "vcu.velTi",
+        "driver.targetAy",
+        "driver.useMode",
+        "driver.steerStart",
+        "driver.handwheelRampRate",
+        "driver.velGain",
+        "driver.velTi",
     )
     (tmp_path / exec_name).write_text("exe", encoding="utf-8")
     (tmp_path / f"{exec_name}_init.xml").write_text(
@@ -479,13 +479,13 @@ def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     lines = set(override_path.read_text(encoding="utf-8").splitlines())
 
     assert "initialVel=12.5" in lines
-    assert "vcu.targetVel=12.5" not in lines
-    assert "vcu.targetAy=18.0" in lines
-    assert "vcu.useMode=0" in lines
-    assert "vcu.steerStart=2.0" in lines
-    assert "vcu.handwheelRampRate=0.06" in lines
-    assert "vcu.velGain=100.0" in lines
-    assert "vcu.velTi=2.0" in lines
+    assert "driver.targetVel=12.5" not in lines
+    assert "driver.targetAy=18.0" in lines
+    assert "driver.useMode=0" in lines
+    assert "driver.steerStart=2.0" in lines
+    assert "driver.handwheelRampRate=0.06" in lines
+    assert "driver.velGain=100.0" in lines
+    assert "driver.velTi=2.0" in lines
     assert not any(line.startswith("_") for line in lines)
     assert not any(line.startswith("startTime=") for line in lines)
     assert not any(line.startswith("stopTime=") for line in lines)

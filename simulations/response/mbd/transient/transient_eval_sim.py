@@ -747,10 +747,9 @@ class TransientEvalSim:
                             step_time=step_time,
                         )
 
-                        # StandardVCU computes stepDuration from frRampSteerDuration.
                         case.update({
                             "frRampSteerHeight": steer_step,
-                            "frRampSteerDuration": ramp_duration,
+                            "stepDuration": ramp_duration,
                             "stopTime": stop_time_case,
                         })
 

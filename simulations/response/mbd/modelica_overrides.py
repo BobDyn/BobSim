@@ -23,28 +23,27 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 MODELICA_OVERRIDE_ALIASES = {
-    # VCU targetVel derives from initialVel. Override the source so chassis, driveline, and VCU move together.
+    # driver.targetVel derives from initialVel. Override the source so chassis, driveline, and driver move together.
     "targetVel": "initialVel",
-    "targetAy": "vcu.targetAy",
-    "useMode": "vcu.useMode",
-    "steerStart": "vcu.steerStart",
-    "linearitySlopeSamplePeriod": "vcu.linearitySlopeSamplePeriod",
-    "handwheelRampRate": "vcu.handwheelRampRate",
-    "handwheelRampStopDuration": "vcu.handwheelRampStopDuration",
-    "enableNormalLoadSteerLimiter": "vcu.enableNormalLoadSteerLimiter",
-    "tireNormalLoadMin": "vcu.tireNormalLoadMin",
-    "steadyStateAyRampRate": "vcu.steadyStateAyRampRate",
-    "steadyStateMaxHandwheel": "vcu.steadyStateMaxHandwheel",
-    "steadyStateAyGain": "vcu.steadyStateAyGain",
-    "steadyStateAyTi": "vcu.steadyStateAyTi",
-    "steadyStateSteerTimeConstant": "vcu.steadyStateSteerTimeConstant",
-    "frRampSteerHeight": "vcu.frRampSteerHeight",
-    "frRampSteerDuration": "vcu.frRampSteerDuration",
-    "stepDuration": "vcu.stepDuration",
-    "steerAmp": "vcu.steerAmp",
-    "steerFreq": "vcu.steerFreq",
-    "velGain": "vcu.velGain",
-    "velTi": "vcu.velTi",
+    "targetAy": "driver.targetAy",
+    "useMode": "driver.useMode",
+    "steerStart": "driver.steerStart",
+    "linearitySlopeSamplePeriod": "driver.linearitySlopeSamplePeriod",
+    "handwheelRampRate": "driver.handwheelRampRate",
+    "handwheelRampStopDuration": "driver.handwheelRampStopDuration",
+    "enableNormalLoadSteerLimiter": "driver.enableNormalLoadSteerLimiter",
+    "tireNormalLoadMin": "driver.tireNormalLoadMin",
+    "steadyStateAyRampRate": "driver.steadyStateAyRampRate",
+    "steadyStateMaxHandwheel": "driver.steadyStateMaxHandwheel",
+    "steadyStateAyGain": "driver.steadyStateAyGain",
+    "steadyStateAyTi": "driver.steadyStateAyTi",
+    "steadyStateSteerTimeConstant": "driver.steadyStateSteerTimeConstant",
+    "frRampSteerHeight": "driver.frRampSteerHeight",
+    "stepDuration": "driver.stepDuration",
+    "steerAmp": "driver.steerAmp",
+    "steerFreq": "driver.steerFreq",
+    "velGain": "driver.velGain",
+    "velTi": "driver.velTi",
 }
 
 # The runner reads these case keys itself. They never go to the override file.
