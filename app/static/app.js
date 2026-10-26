@@ -5256,7 +5256,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/four_post/four_post_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo",
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialDoubleWishboneFourPost.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ChassisActuator.mo",
       "engines/boblib/BobLib/Utilities/Mechanics/MultiBody/Actuators/ContactPatchFixture.mo"
     ]
@@ -5286,8 +5286,8 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/steady_state/steady_state_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialVehicleSim.mo",
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "ramp-steer": {
@@ -5315,8 +5315,8 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/ramp_steer/ramp_steer_eval_sim.py",
-      "engines/boblib/BobLib/Experiments/Standards/Templates/Vehicle/BaseVehicleSim.mo",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Experiments/Standards/BaseClasses/PartialVehicleSim.mo",
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "mbd-step-steer": {
@@ -5345,7 +5345,7 @@ function simulationMethodGuide(workflowId) {
     "sources": [
       "simulations/response/mbd/transient/transient_eval_sim.py",
       "simulations/response/mbd/transient/step_steer_config.yml",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "transient": {
@@ -5373,7 +5373,7 @@ function simulationMethodGuide(workflowId) {
     ],
     "sources": [
       "simulations/response/mbd/transient/transient_eval_sim.py",
-      "engines/boblib/BobLib/Controllers/StandardVCU.mo"
+      "engines/boblib/BobLib/Drivers/StandardDriver.mo"
     ]
   },
   "reduced-ramp-steer": {

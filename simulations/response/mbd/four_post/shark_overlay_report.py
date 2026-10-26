@@ -818,12 +818,12 @@ BOBLIB_PACKAGE = ROOT / "engines/boblib/BobLib"
 # Generated areas inside BobLib. Whole directories are snapshotted to catch created files.
 BOBLIB_GENERATED_DIRS = (
     "Records/VehicleDefn",
-    "Experiments/Standards/Templates/Vehicle",
-    "Experiments/Standards/Templates/FourPost",
+    "Experiments/Standards/BobSimTemplates",
 )
 BOBLIB_GENERATED_FILES = (
     "Experiments/Standards/VehicleSim.mo",
     "Experiments/Standards/FourPostSim.mo",
+    "Experiments/Standards/package.order",
 )
 
 
