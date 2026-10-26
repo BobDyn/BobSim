@@ -10,14 +10,14 @@ variables:
   range:
   - 144.576
   - 176.704
-  block: pBaseSprungMass
+  block: chassis.frame.baseMass
   param: m
   label: sprung mass
 - path: sprung_mass.cg_m.x
   range:
   - -0.97
   - -0.87
-  block: pBaseSprungMass
+  block: chassis.frame.baseMass
   param: rCM
   label: sprung CG x
   index:
@@ -26,7 +26,7 @@ variables:
   range:
   - 0.2
   - 0.3
-  block: pBaseSprungMass
+  block: chassis.frame.baseMass
   param: rCM
   label: sprung CG z
   index:
@@ -35,14 +35,14 @@ variables:
   range:
   - 59.193821
   - 72.348003
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: m
   label: driver mass
 - path: driver_mass.cg_m.x
   range:
   - -0.591837
   - -0.491837
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: rCM
   label: driver CG x
   index:
@@ -51,7 +51,7 @@ variables:
   range:
   - 0.345782
   - 0.445782
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: rCM
   label: driver CG z
   index:
@@ -60,7 +60,7 @@ variables:
   range:
   - 2.017789
   - 2.466187
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: inertia
   label: driver Ixx
   index:
@@ -70,7 +70,7 @@ variables:
   range:
   - 6.859248
   - 8.383526
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: inertia
   label: driver Iyy
   index:
@@ -80,7 +80,7 @@ variables:
   range:
   - 6.074138
   - 7.423946
-  block: pDriverMass
+  block: chassis.frame.driverMass
   param: inertia
   label: driver Izz
   index:
@@ -90,27 +90,28 @@ variables:
   range:
   - 150000
   - 450000
-  block: pTorsionalStiff
+  block: chassis.frame
+  param: torsionalStiffness
   label: body torsional stiffness
 - path: front.wheel.toe_deg
   range:
   - -0.25
   - 0.25
-  block: pFrPartialWheel
+  block: chassis.frontAxle.tire.wheel.geometry
   param: staticAlpha
   label: front toe
 - path: rear.wheel.toe_deg
   range:
   - -0.25
   - 0.25
-  block: pRrPartialWheel
+  block: chassis.rearAxle.tire.wheel.geometry
   param: staticAlpha
   label: rear toe
 - path: front.wheel.camber_deg
   range:
   - -2.0
   - 0.0
-  block: pFrPartialWheel
+  block: chassis.frontAxle.tire.wheel.geometry
   param: staticGamma
   label: front camber
   scale: -1.0
@@ -118,7 +119,7 @@ variables:
   range:
   - -2.0
   - 0.0
-  block: pRrPartialWheel
+  block: chassis.rearAxle.tire.wheel.geometry
   param: staticGamma
   label: rear camber
   scale: -1.0
@@ -128,12 +129,12 @@ variables:
   - 31522.8303
   label: front spring package
   targets:
-  - block: pFrAxleDW
+  - block: chassis.frontAxle.actuation
     param: springTable
     index:
     - 1
     - 1
-  - block: pFrAxleDW
+  - block: chassis.frontAxle.actuation
     param: springFreeLength
     operation: static_balance_free_length
     axle: front
@@ -143,13 +144,13 @@ variables:
   - 1020
   label: front damper rate
   targets:
-  - block: pFrAxleDW
+  - block: chassis.frontAxle.actuation
     param: damperTable
     index:
     - 0
     - 1
     scale: -1
-  - block: pFrAxleDW
+  - block: chassis.frontAxle.actuation
     param: damperTable
     index:
     - 2
@@ -163,14 +164,14 @@ variables:
   - 231.500884
   - 276.68381
   - 295.74279
-  block: pFrStabar
+  block: chassis.frontAxle.stabilizer
   param: barRate
   label: front anti-roll bar rate
 - path: front.masses.unsprung.mass_kg
   range:
   - 6.258146248
   - 9.387219372
-  block: pFrAxleMass
+  block: chassis.frontAxle.masses
   param: unsprungMass
   label: front unsprung mass
   field_path:
@@ -181,12 +182,12 @@ variables:
   - 52538.0505
   label: rear spring package
   targets:
-  - block: pRrAxleDW
+  - block: chassis.rearAxle.actuation
     param: springTable
     index:
     - 1
     - 1
-  - block: pRrAxleDW
+  - block: chassis.rearAxle.actuation
     param: springFreeLength
     operation: static_balance_free_length
     axle: rear
@@ -196,13 +197,13 @@ variables:
   - 1560
   label: rear damper rate
   targets:
-  - block: pRrAxleDW
+  - block: chassis.rearAxle.actuation
     param: damperTable
     index:
     - 0
     - 1
     scale: -1
-  - block: pRrAxleDW
+  - block: chassis.rearAxle.actuation
     param: damperTable
     index:
     - 2
@@ -216,14 +217,14 @@ variables:
   - 447.762538
   - 748.484186
   - 961.495352
-  block: pRrStabar
+  block: chassis.rearAxle.stabilizer
   param: barRate
   label: rear anti-roll bar rate
 - path: rear.masses.unsprung.mass_kg
   range:
   - 5.881760576
   - 8.822640864
-  block: pRrAxleMass
+  block: chassis.rearAxle.masses
   param: unsprungMass
   label: rear unsprung mass
   field_path:
@@ -235,19 +236,19 @@ variables:
   label: aero load scale
   baseline: 1.0
   targets:
-  - block: pAero
+  - block: aero
     param: dragTable
     operation: scale
-  - block: pAero
+  - block: aero
     param: downforceTable
     operation: scale
-  - block: pAero
+  - block: aero
     param: mxTable
     operation: scale
-  - block: pAero
+  - block: aero
     param: myTable
     operation: scale
-  - block: pAero
+  - block: aero
     param: mzTable
     operation: scale
 sampling:

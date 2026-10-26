@@ -22,11 +22,11 @@ from optimization.response.pipeline.generator import resolve_targets  # noqa: E4
 
 # (name, runtime-changeable, compiled-in start value or None for "has none")
 INIT_SCALARS = [
-    ("pVehicle.pRrStabar.barRate", True, 535.0),
-    ("pVehicle.pFrAxleDW.springTable[2,2]", True, 26000.0),
-    ("pVehicle.pFrAxleDW.damperTable[1,2]", True, -850.0),
-    ("pVehicle.pFrAxleDW.damperTable[3,2]", True, 850.0),
-    ("pVehicle.pAero.downforceTable[1,1]", True, 10.0),
+    ("pVehicle.chassis.rearAxle.stabilizer.barRate", True, 535.0),
+    ("pVehicle.chassis.frontAxle.actuation.springTable[2,2]", True, 26000.0),
+    ("pVehicle.chassis.frontAxle.actuation.damperTable[1,2]", True, -850.0),
+    ("pVehicle.chassis.frontAxle.actuation.damperTable[3,2]", True, 850.0),
+    ("pVehicle.aero.downforceTable[1,1]", True, 10.0),
     ("pVehicle.pFrozen.value", False, 1.0),
     ("pVehicle.pNoStart.value", True, None),
 ]
@@ -42,25 +42,25 @@ INIT_XML = (
 )
 
 VARIABLES: dict[str, dict[str, Any]] = {
-    "rear.stabar": {"path": "rear.stabar", "block": "pRrStabar", "param": "barRate"},
+    "rear.stabar": {"path": "rear.stabar", "block": "chassis.rearAxle.stabilizer", "param": "barRate"},
     "front.spring": {
         "path": "front.spring",
-        "targets": [{"block": "pFrAxleDW", "param": "springTable", "index": [1, 1]}],
+        "targets": [{"block": "chassis.frontAxle.actuation", "param": "springTable", "index": [1, 1]}],
     },
     "front.damper": {
         "path": "front.damper",
         "targets": [
-            {"block": "pFrAxleDW", "param": "damperTable", "index": [0, 1], "scale": -1},
-            {"block": "pFrAxleDW", "param": "damperTable", "index": [2, 1]},
+            {"block": "chassis.frontAxle.actuation", "param": "damperTable", "index": [0, 1], "scale": -1},
+            {"block": "chassis.frontAxle.actuation", "param": "damperTable", "index": [2, 1]},
         ],
     },
     "aero.load_scale": {
         "path": "aero.load_scale",
-        "targets": [{"block": "pAero", "param": "downforceTable", "operation": "scale"}],
+        "targets": [{"block": "aero", "param": "downforceTable", "operation": "scale"}],
     },
     "frozen": {"path": "frozen", "block": "pFrozen", "param": "value"},
     "no_start": {"path": "no_start", "block": "pNoStart", "param": "value"},
-    "typo": {"path": "typo", "block": "pRrStabar", "param": "barRat"},
+    "typo": {"path": "typo", "block": "chassis.rearAxle.stabilizer", "param": "barRat"},
 }
 
 
@@ -72,10 +72,10 @@ def init_parameters(tmp_path: Path) -> dict[str, overrides.InitParameter]:
 
 
 def test_doe_indices_are_zero_based_and_modelica_is_one_based() -> None:
-    target = {"block": "pFrAxleDW", "param": "springTable", "index": [1, 1]}
-    assert overrides.override_name(target) == "pVehicle.pFrAxleDW.springTable[2,2]"
-    assert overrides.override_name({"block": "pRrStabar", "param": "barRate"}) == (
-        "pVehicle.pRrStabar.barRate"
+    target = {"block": "chassis.frontAxle.actuation", "param": "springTable", "index": [1, 1]}
+    assert overrides.override_name(target) == "pVehicle.chassis.frontAxle.actuation.springTable[2,2]"
+    assert overrides.override_name({"block": "chassis.rearAxle.stabilizer", "param": "barRate"}) == (
+        "pVehicle.chassis.rearAxle.stabilizer.barRate"
     )
 
 
@@ -87,10 +87,10 @@ def test_one_value_fans_out_to_every_target_with_its_scale(init_parameters) -> N
         init_parameters,
     )
     assert result == {
-        "pVehicle.pRrStabar.barRate": 700.0,
-        "pVehicle.pFrAxleDW.springTable[2,2]": 30000.0,
-        "pVehicle.pFrAxleDW.damperTable[1,2]": -900.0,
-        "pVehicle.pFrAxleDW.damperTable[3,2]": 900.0,
+        "pVehicle.chassis.rearAxle.stabilizer.barRate": 700.0,
+        "pVehicle.chassis.frontAxle.actuation.springTable[2,2]": 30000.0,
+        "pVehicle.chassis.frontAxle.actuation.damperTable[1,2]": -900.0,
+        "pVehicle.chassis.frontAxle.actuation.damperTable[3,2]": 900.0,
     }
 
 
