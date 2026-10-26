@@ -86,6 +86,12 @@ Observed on the BobSim default car at `fe03bab` (BobLib `1bd6d78`, OpenModelica
 - The cause is unknown. The default car therefore fails the closure check. The
   gate stays at 1e-4.
 
+At BobLib `7363fc1` the drift is gone. BobLib #48 (`093952a`) made the rig
+quasi-static and smoothed its heave and roll tables. On the default car the
+largest force residual is 1.6e-12 N, the relative residual is 1.4e-15, and the
+default car passes the closure check. The largest target error is 0.90 N
+(0.15 %). The gate did not change.
+
 On design rows, the front left and right contact loads also drift apart, by
 about 0.35 N at t = 92 s. At t = 118 s the split is 13.8 N. That row ends a roll
 ramp and has a nonzero roll rate, so the split is probably a damper load. That

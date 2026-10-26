@@ -88,16 +88,16 @@ The tests `test_four_post_anti_roll_key_is_net_jacking_with_zero_net_and_nonzero
 and `test_four_post_fbrc_height_is_set_by_the_differential_and_not_by_net_jacking`
 show both cases.
 
-On the BobSim default car, `avg_anti_roll_front_pct` is 0.032 %. Read it as
-zero:
+On the BobSim default car, `avg_anti_roll_front_pct` is -5e-13 % at BobLib
+`7363fc1`. Read it as zero:
 
 - J is odd in roll. Per pose it goes from +8.1e-3 N/N at -0.75 deg to -7.9e-3
   N/N at +0.75 deg. The mean over the symmetric sweep cancels. The per-pose
   values are in the `fr_anti_vs_roll` series.
-- The mean, 7.7e-5 N/N, is the size of the measurement resolution. At a fixed
-  pose, the chassis reaction drifts about 0.026 N/s on the default car. Over the
-  3 s between the pulse and the dead tail, that is about 0.08 N on a 1000 N
-  pulse, or 8e-5 N/N (0.03 % of h/t).
+- At BobLib `1bd6d78` the mean was 0.032 %, or 7.7e-5 N/N. At a fixed pose the
+  chassis reaction of that rig drifted about 0.026 N/s. Over the 3 s between
+  the pulse and the dead tail, that is about 0.08 N on a 1000 N pulse, or 8e-5
+  N/N (0.03 % of h/t). BobLib #48 removed the drift.
 
 ### Elastic share
 
@@ -151,7 +151,7 @@ reports the contact Fz clamped at 0 N. The chassis reaction shows the pull. The
 per-pose residual, contact Fz sum plus the jacking force signal, is in the
 `fr_tension_residual_vs_heave` and `rr_tension_residual_vs_heave` series. It is
 about 291 N and 742 N front and 219 N and 564 N rear at those poses. At the
-other poses it is below 1.2 N, the time drift of the rig.
+other poses it was below 1.2 N at BobLib `1bd6d78`, the time drift of that rig.
 
 These poses are rig-only geometry. `heave_cp_tension_points` counts them. The
 `<corner>_fz_vs_heave` series shows NaN there, not 0 N. The anti records keep
