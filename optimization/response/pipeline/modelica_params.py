@@ -34,13 +34,18 @@ def scale_value(text: str, spec: dict[str, Any], factor: float) -> str:
 
 
 def locate_value_span(text: str, spec: dict[str, Any]) -> tuple[int, int]:
-    block = str(spec["block"])
+    # A dotted block such as chassis.frontAxle.actuation names nested record modifications.
+    record, *nested = str(spec["block"]).split(".")
     param = spec.get("param")
 
-    if param is None:
-        start, end = _locate_scalar_parameter_value(text, block)
+    if param is None and not nested:
+        start, end = _locate_scalar_parameter_value(text, record)
     else:
-        block_start, block_end = _locate_parameter_call_body(text, block)
+        block_start, block_end = _locate_parameter_call_body(text, record)
+        for name in nested:
+            block_start, block_end = _locate_named_value(text, block_start, block_end, name)
+        if param is None:
+            raise ValueError(f"Block {spec['block']!r} names a nested record. Give a param.")
         start, end = _locate_named_value(text, block_start, block_end, str(param))
 
     for field in spec.get("field_path", []):
@@ -104,6 +109,10 @@ def _locate_named_value(
     for item_start, item_end in _split_top_level(text, body_start, body_end, ","):
         eq = _find_top_level_char(text, item_start, item_end, "=")
         if eq == -1:
+            # A modification such as `actuation(springFreeLength = 0.2)`: return its body.
+            paren = text.find("(", item_start, item_end)
+            if paren != -1 and text[item_start:paren].strip() == name and text[item_end - 1] == ")":
+                return paren + 1, item_end - 1
             continue
         key_start, key_end = _trim_span(text, item_start, eq)
         if text[key_start:key_end] == name:
