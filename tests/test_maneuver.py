@@ -62,9 +62,9 @@ def test_mbd_waveform_mapping(settings, kind, amplitude):
     else:
         assert case['frRampSteerHeight'] == pytest.approx(np.deg2rad(amplitude))
         duration = 3. if kind == 'ramp' else settings['rise_time_s']
-        # StandardVCU derives stepDuration from frRampSteerDuration, so only the latter is an override.
-        assert case['frRampSteerDuration'] == duration
-        assert 'stepDuration' not in case
+        # BobLib StandardDriver takes stepDuration directly. frRampSteerDuration no longer exists.
+        assert case['stepDuration'] == duration
+        assert 'frRampSteerDuration' not in case
         assert metadata['stepDuration'] == duration
     assert config['simulation']['stop_time'] == settings['stop_time_s']
     assert config['test']['analyze_cycles_after'] == seed['test']['analyze_cycles_after']
