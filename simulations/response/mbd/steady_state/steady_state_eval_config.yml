@@ -27,8 +27,6 @@ simulation:
 
     steadyStateAyRampRate: 10.0
     steadyStateMaxHandwheel: 3.141592653589793
-    steadyStateAyGain: 0.05
-    steadyStateAyTi: 1.0
     steadyStateSteerTimeConstant: 0.15
 
     steadyHoldDuration: 0.5
