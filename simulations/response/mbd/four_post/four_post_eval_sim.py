@@ -906,12 +906,11 @@ class FourPostEvalSim:
         overrides: dict[str, float] = {
             "pVehicle.pFrAxleDW.springFreeLength": float(setup["front_spring_free_length"]),
             "pVehicle.pRrAxleDW.springFreeLength": float(setup["rear_spring_free_length"]),
-            "pVehicle.pFrStabar.barRate": front_stabar_rate,
-            "pVehicle.pRrStabar.barRate": rear_stabar_rate,
-            # Templates zero the bars for pure K&C. Set them for the load-transfer pass.
-            "pFrStabar.barRate": front_stabar_rate,
-            "pRrStabar.barRate": rear_stabar_rate,
         }
+        # The rig binds p{Fr,Rr}Stabar, not pVehicle.p{Fr,Rr}Stabar. Its templates zero the bars for pure K&C.
+        for tag, axle_name, bar_rate in (("Fr", "front", front_stabar_rate), ("Rr", "rear", rear_stabar_rate)):
+            if _side_has_stabar(setup[f"{axle_name}_side"]):
+                overrides[f"p{tag}Stabar.barRate"] = bar_rate
         overrides.update(
             _indexed_table_overrides(
                 "pVehicle.pFrAxleDW.springTable",
