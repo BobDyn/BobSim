@@ -54,15 +54,20 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+FOUR_POST_BASE_CLASSES = ROOT / "engines/boblib/BobLib/Experiments/Standards/BaseClasses"
+
+
 def _four_post_model_text() -> str:
-    return (
-        ROOT / "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
-    ).read_text(encoding="utf-8")
+    # PartialFourPostRig binds its schedule tables to the KnCInputs constants.
+    return "\n".join(
+        (FOUR_POST_BASE_CLASSES / name).read_text(encoding="utf-8")
+        for name in ("PartialFourPostRig.mo", "KnCInputs.mo")
+    )
 
 
 def _four_post_table(name: str) -> list[tuple[float, float]]:
     match = re.search(
-        rf"final parameter Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
+        rf"constant Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
         _four_post_model_text(),
         flags=re.S,
     )
@@ -225,7 +230,7 @@ def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:
 def test_four_post_model_tables_match_report_sampling_schedule() -> None:
     text = _four_post_model_text()
     assert "heaveCommandTable" not in text
-    assert "heaveSource(table = heaveTable)" in text
+    assert re.search(r"heaveSource\(\s*table = heaveTable,", text)
 
     heave_table = dict(_four_post_table("heaveTable"))
     roll_table = dict(_four_post_table("rollTable"))
@@ -359,8 +364,9 @@ def test_four_post_eval_spring_free_lengths_ignore_a_previous_metrics_csv(
 
     overrides = FourPostEvalSim(config).build_model_setup_overrides()
 
-    assert overrides["pVehicle.pFrAxleDW.springFreeLength"] == vehicle["front"]["actuation"]["shock"]["free_length_m"]
-    assert overrides["pVehicle.pRrAxleDW.springFreeLength"] == vehicle["rear"]["actuation"]["shock"]["free_length_m"]
+    for axle in ("front", "rear"):
+        name = f"pVehicle.chassis.{axle}Axle.actuation.springFreeLength"
+        assert overrides[name] == vehicle[axle]["actuation"]["shock"]["free_length_m"]
 
 
 def test_signal_plots_filter_implausible_numeric_spikes() -> None:
@@ -438,12 +444,12 @@ def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     exec_name = "Model"
     names = (
         "initialVel",
-        "vcu.targetAy",
-        "vcu.useMode",
-        "vcu.steerStart",
-        "vcu.handwheelRampRate",
-        "vcu.velGain",
-        "vcu.velTi",
+        "driver.targetAy",
+        "driver.useMode",
+        "driver.steerStart",
+        "driver.handwheelRampRate",
+        "driver.velGain",
+        "driver.velTi",
     )
     (tmp_path / exec_name).write_text("exe", encoding="utf-8")
     (tmp_path / f"{exec_name}_init.xml").write_text(
@@ -479,13 +485,13 @@ def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     lines = set(override_path.read_text(encoding="utf-8").splitlines())
 
     assert "initialVel=12.5" in lines
-    assert "vcu.targetVel=12.5" not in lines
-    assert "vcu.targetAy=18.0" in lines
-    assert "vcu.useMode=0" in lines
-    assert "vcu.steerStart=2.0" in lines
-    assert "vcu.handwheelRampRate=0.06" in lines
-    assert "vcu.velGain=100.0" in lines
-    assert "vcu.velTi=2.0" in lines
+    assert "driver.targetVel=12.5" not in lines
+    assert "driver.targetAy=18.0" in lines
+    assert "driver.useMode=0" in lines
+    assert "driver.steerStart=2.0" in lines
+    assert "driver.handwheelRampRate=0.06" in lines
+    assert "driver.velGain=100.0" in lines
+    assert "driver.velTi=2.0" in lines
     assert not any(line.startswith("_") for line in lines)
     assert not any(line.startswith("startTime=") for line in lines)
     assert not any(line.startswith("stopTime=") for line in lines)

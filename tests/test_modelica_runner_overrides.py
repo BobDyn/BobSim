@@ -56,15 +56,15 @@ INIT_XML = (
     '<fmiModelDescription modelName = "Model">\n'
     "  <ModelVariables>\n"
     + _scalar("initialVel", "15.0")
-    + _scalar("vcu.targetAy", "0.0")
-    + _scalar("vcu.useMode", "0", kind="Integer")
-    + _scalar("vcu.steerStart", "1.0")
-    + _scalar("vcu.velGain", "100.0")
+    + _scalar("driver.targetAy", "0.0")
+    + _scalar("driver.useMode", "0", kind="Integer")
+    + _scalar("driver.steerStart", "1.0")
+    + _scalar("driver.velGain", "100.0")
     + _scalar("enableLinearityTermination", "true", kind="Boolean")
-    + _scalar("pVehicle.pFrStabar.barRate", "257.62")
-    + _scalar("pVehicle.pFrAxleDW.springFreeLength", "0.1997")
-    + _scalar("frAxleDW.pAxle.springFreeLength", None, causality="calculatedParameter", changeable=False)
-    + _scalar("frAxleDW.pAxle.barRate", "257.62", causality="calculatedParameter", changeable=False)
+    + _scalar("pVehicle.chassis.frontAxle.stabilizer.barRate", "257.62")
+    + _scalar("pVehicle.chassis.frontAxle.actuation.springFreeLength", "0.1997")
+    + _scalar("frAxleDW.pAxle.actuation.springFreeLength", None, causality="calculatedParameter", changeable=False)
+    + _scalar("frAxleDW.pAxle.stabilizer.barRate", "257.62", causality="calculatedParameter", changeable=False)
     + _scalar("pVehicle.pNoStart.value", None)
     + "  </ModelVariables>\n"
     "</fmiModelDescription>\n"
@@ -72,13 +72,13 @@ INIT_XML = (
 
 REFUSED_CALCULATED = (
     "LOG_STDOUT        | warning | It is not possible to override the following quantity: "
-    "pVehicle.pFrStabar.barRate\n"
+    "pVehicle.chassis.frontAxle.stabilizer.barRate\n"
     "|                 | |       | It seems to be structural, final, protected or evaluated "
     "or has a non-constant binding.\n"
 )
 REFUSED_UNKNOWN = (
     "LOG_STDOUT        | warning | simulation_input_xml.c: override variable name not found "
-    "in model: pVehicle.pFrStabar.barRate\n"
+    "in model: pVehicle.chassis.frontAxle.stabilizer.barRate\n"
 )
 
 
@@ -138,19 +138,19 @@ def _manifests(build_dir: Path) -> list[dict[str, Any]]:
 def test_load_init_variables_reads_the_start_value_from_the_child_element(build_dir: Path) -> None:
     variables = load_init_variables(build_dir / f"{EXEC_NAME}_init.xml")
 
-    free_length = variables["pVehicle.pFrAxleDW.springFreeLength"]
+    free_length = variables["pVehicle.chassis.frontAxle.actuation.springFreeLength"]
     assert free_length.start == "0.1997"
     assert free_length.causality == "parameter"
     assert free_length.variability == "parameter"
     assert free_length.changeable is True
 
-    calculated = variables["frAxleDW.pAxle.springFreeLength"]
+    calculated = variables["frAxleDW.pAxle.actuation.springFreeLength"]
     assert calculated.start is None
     assert calculated.causality == "calculatedParameter"
     assert calculated.changeable is False
-    assert variables["vcu.useMode"].start == "0"
+    assert variables["driver.useMode"].start == "0"
     assert variables["enableLinearityTermination"].start == "true"
-    assert [variables[name].kind for name in ("vcu.velGain", "vcu.useMode", "enableLinearityTermination")] == [
+    assert [variables[name].kind for name in ("driver.velGain", "driver.useMode", "enableLinearityTermination")] == [
         "Real",
         "Integer",
         "Boolean",
@@ -179,7 +179,7 @@ def test_an_unknown_name_fails_before_any_process_starts(
 def test_one_error_lists_every_rejection_of_every_case(runner: ModelicaRunner) -> None:
     cases = [
         {"velGian": 1.0, "_case_label": "first"},
-        {"pVehicle.pNoStart.value": 2.0, "frAxleDW.pAxle.springFreeLength": 0.25, "_case_label": "second"},
+        {"pVehicle.pNoStart.value": 2.0, "frAxleDW.pAxle.actuation.springFreeLength": 0.25, "_case_label": "second"},
     ]
 
     with pytest.raises(OverrideError) as excinfo:
@@ -188,7 +188,7 @@ def test_one_error_lists_every_rejection_of_every_case(runner: ModelicaRunner) -
     assert _reasons(excinfo.value) == [
         ("velGian", "unknown_name"),
         ("pVehicle.pNoStart.value", "no_start_value"),
-        ("frAxleDW.pAxle.springFreeLength", "not_changeable"),
+        ("frAxleDW.pAxle.actuation.springFreeLength", "not_changeable"),
     ]
     assert [rejection.detail.split(":")[0] for rejection in excinfo.value.rejections] == [
         "case 1 (first)",
@@ -200,9 +200,9 @@ def test_one_error_lists_every_rejection_of_every_case(runner: ModelicaRunner) -
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("frAxleDW.pAxle.springFreeLength", 300.0),
-        ("frAxleDW.pAxle.barRate", 300.0),
-        ("frAxleDW.pAxle.barRate", 257.62),
+        ("frAxleDW.pAxle.actuation.springFreeLength", 300.0),
+        ("frAxleDW.pAxle.stabilizer.barRate", 300.0),
+        ("frAxleDW.pAxle.stabilizer.barRate", 257.62),
     ],
     ids=["no-start", "with-start", "equal-to-start"],
 )
@@ -245,7 +245,7 @@ def test_a_value_of_the_right_kind_is_written_in_that_kind(build_dir: Path) -> N
 
     plan = plan_overrides({"useMode": 2.0, "enableLinearityTermination": "False", "velGain": "120"}, variables)
 
-    assert plan.written == {"vcu.useMode": "2", "enableLinearityTermination": "false", "vcu.velGain": "120"}
+    assert plan.written == {"driver.useMode": "2", "enableLinearityTermination": "false", "driver.velGain": "120"}
 
 
 def test_a_value_equal_to_the_compiled_start_is_recorded_and_not_written(build_dir: Path) -> None:
@@ -253,21 +253,21 @@ def test_a_value_equal_to_the_compiled_start_is_recorded_and_not_written(build_d
 
     plan = plan_overrides(
         {
-            "pVehicle.pFrAxleDW.springFreeLength": 0.1997,
+            "pVehicle.chassis.frontAxle.actuation.springFreeLength": 0.1997,
             "useMode": 0,
             "enableLinearityTermination": True,
-            "pVehicle.pFrStabar.barRate": 390.0,
+            "pVehicle.chassis.frontAxle.stabilizer.barRate": 390.0,
         },
         variables,
     )
 
     assert plan.already_compiled == {
-        "pVehicle.pFrAxleDW.springFreeLength": "0.1997",
-        "vcu.useMode": "0",
+        "pVehicle.chassis.frontAxle.actuation.springFreeLength": "0.1997",
+        "driver.useMode": "0",
         "enableLinearityTermination": "true",
     }
-    assert plan.written == {"pVehicle.pFrStabar.barRate": "390.0"}
-    assert plan.file_text() == "pVehicle.pFrStabar.barRate=390.0\n"
+    assert plan.written == {"pVehicle.chassis.frontAxle.stabilizer.barRate": "390.0"}
+    assert plan.file_text() == "pVehicle.chassis.frontAxle.stabilizer.barRate=390.0\n"
 
 
 def test_aliases_that_disagree_are_rejected_and_aliases_that_agree_write_one_line(build_dir: Path) -> None:
@@ -298,7 +298,7 @@ def test_runner_flags_and_metadata_are_not_overrides(build_dir: Path) -> None:
     )
 
     assert plan.requested == {"steerStart": 2.0}
-    assert plan.file_text() == "vcu.steerStart=2.0\n"
+    assert plan.file_text() == "driver.steerStart=2.0\n"
 
 
 def test_a_missing_init_xml_is_an_override_error(runner: ModelicaRunner, build_dir: Path) -> None:
@@ -328,7 +328,7 @@ def test_the_manifest_records_what_was_requested_written_and_read_back(
     results = runner.run(
         signals=["sig"],
         mode="last",
-        cases=[{"targetVel": 12.0, "targetAy": 4.0, "pVehicle.pFrAxleDW.springFreeLength": 0.1997}],
+        cases=[{"targetVel": 12.0, "targetAy": 4.0, "pVehicle.chassis.frontAxle.actuation.springFreeLength": 0.1997}],
         execution={"parallel": False},
     )
 
@@ -339,14 +339,14 @@ def test_the_manifest_records_what_was_requested_written_and_read_back(
     assert overrides["requested"] == {
         "targetVel": 12.0,
         "targetAy": 4.0,
-        "pVehicle.pFrAxleDW.springFreeLength": 0.1997,
+        "pVehicle.chassis.frontAxle.actuation.springFreeLength": 0.1997,
     }
-    assert overrides["written"] == {"initialVel": "12.0", "vcu.targetAy": "4.0"}
-    assert overrides["already_compiled"] == {"pVehicle.pFrAxleDW.springFreeLength": "0.1997"}
+    assert overrides["written"] == {"initialVel": "12.0", "driver.targetAy": "4.0"}
+    assert overrides["already_compiled"] == {"pVehicle.chassis.frontAxle.actuation.springFreeLength": "0.1997"}
     assert overrides["rejected"] == []
     assert overrides["readback"] == {
         "initialVel": {"requested": "12.0", "observed": "12.0", "status": "match"},
-        "vcu.targetAy": {"requested": "4.0", "observed": "4.0", "status": "match"},
+        "driver.targetAy": {"requested": "4.0", "observed": "4.0", "status": "match"},
     }
     assert overrides["file_sha256"] == hashlib.sha256(override_file.read_bytes()).hexdigest()
     assert manifest["argv"] == fake.calls[0]
@@ -362,14 +362,14 @@ def test_a_run_log_refusal_fails_with_not_applied_and_keeps_the_run_dir(
         runner.run(
             signals=["sig"],
             mode="last",
-            cases=[{"pVehicle.pFrStabar.barRate": 390.0}],
+            cases=[{"pVehicle.chassis.frontAxle.stabilizer.barRate": 390.0}],
             execution={"parallel": False, "cleanup": True},
         )
 
     rejection = excinfo.value.rejections[0]
     assert (rejection.key, rejection.modelica_name, rejection.reason) == (
-        "pVehicle.pFrStabar.barRate",
-        "pVehicle.pFrStabar.barRate",
+        "pVehicle.chassis.frontAxle.stabilizer.barRate",
+        "pVehicle.chassis.frontAxle.stabilizer.barRate",
         "not_applied",
     )
     (manifest,) = _manifests(build_dir)
@@ -388,7 +388,10 @@ def test_not_applied_stops_a_parallel_run_instead_of_failing_one_case(
         runner.run(
             signals=["sig"],
             mode="last",
-            cases=[{"pVehicle.pFrStabar.barRate": 390.0}, {"pVehicle.pFrStabar.barRate": 400.0}],
+            cases=[
+                {"pVehicle.chassis.frontAxle.stabilizer.barRate": 390.0},
+                {"pVehicle.chassis.frontAxle.stabilizer.barRate": 400.0},
+            ],
             execution={"parallel": True, "max_workers": 1},
         )
 
@@ -404,7 +407,7 @@ def test_a_readback_that_differs_from_the_request_is_not_applied(
         runner.run(
             signals=["sig"],
             mode="last",
-            cases=[{"pVehicle.pFrStabar.barRate": 390.0}],
+            cases=[{"pVehicle.chassis.frontAxle.stabilizer.barRate": 390.0}],
             execution={"parallel": False},
         )
 
@@ -422,15 +425,19 @@ def test_a_missing_readback_line_is_not_applied(
         runner.run(
             signals=["sig"],
             mode="last",
-            cases=[{"pVehicle.pFrStabar.barRate": 390.0}],
+            cases=[{"pVehicle.chassis.frontAxle.stabilizer.barRate": 390.0}],
             execution={"parallel": False},
         )
 
-    assert _reasons(excinfo.value) == [("pVehicle.pFrStabar.barRate", "not_applied")]
+    assert _reasons(excinfo.value) == [("pVehicle.chassis.frontAxle.stabilizer.barRate", "not_applied")]
     (manifest,) = _manifests(build_dir)
     assert manifest["status"] == "failed"
     assert manifest["overrides"]["readback"] == {
-        "pVehicle.pFrStabar.barRate": {"requested": "390.0", "observed": None, "status": "unavailable"},
+        "pVehicle.chassis.frontAxle.stabilizer.barRate": {
+            "requested": "390.0",
+            "observed": None,
+            "status": "unavailable",
+        },
     }
 
 
@@ -443,14 +450,16 @@ def test_read_override_log_parses_the_lines_of_a_real_four_post_run() -> None:
         "LOG_SOLVER        | info    | override heaveMagnitude = 0.03\n"
         "LOG_SOLVER        | info    | override pFrStabar.barRate = 390.0\n"
         "LOG_SOLVER        | info    | override done!\n"
-        + REFUSED_CALCULATED.replace("pVehicle.pFrStabar.barRate", "frAxleDW.pAxle.springFreeLength")
-        + REFUSED_UNKNOWN.replace("pVehicle.pFrStabar.barRate", "notARealName.x")
+        + REFUSED_CALCULATED.replace(
+            "pVehicle.chassis.frontAxle.stabilizer.barRate", "frAxleDW.pAxle.actuation.springFreeLength"
+        )
+        + REFUSED_UNKNOWN.replace("pVehicle.chassis.frontAxle.stabilizer.barRate", "notARealName.x")
     )
 
     parsed = read_override_log(log)
 
     assert parsed.applied == {"heaveMagnitude": "0.03", "pFrStabar.barRate": "390.0"}
-    assert set(parsed.refused) == {"frAxleDW.pAxle.springFreeLength", "notARealName.x"}
+    assert set(parsed.refused) == {"frAxleDW.pAxle.actuation.springFreeLength", "notARealName.x"}
 
 
 def test_the_command_always_asks_for_the_override_readback_stream(build_dir: Path) -> None:
@@ -505,12 +514,12 @@ def test_a_typo_in_ramp_steer_init_parameters_fails_before_any_case_runs(
     assert _reasons(excinfo.value) == [("velGian", "unknown_name"), ("velGian", "unknown_name")]
 
 
-def test_transient_cases_plan_cleanly_against_a_vcu_with_a_derived_step_duration(
+def test_transient_step_cases_set_the_driver_step_duration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from simulations.response.mbd.transient.transient_eval_sim import TransientEvalSim
 
-    # BobLib StandardVCU binds stepDuration = frRampSteerDuration, so it is a calculated parameter.
+    # BobLib StandardDriver has its own stepDuration. frRampSteerDuration no longer exists.
     init_xml = tmp_path / "VehicleSim_init.xml"
     init_xml.write_text(
         "<fmiModelDescription><ModelVariables>\n"
@@ -518,15 +527,14 @@ def test_transient_cases_plan_cleanly_against_a_vcu_with_a_derived_step_duration
             _scalar(name, "-1.0")
             for name in (
                 "initialVel",
-                "vcu.useMode",
-                "vcu.steerStart",
-                "vcu.frRampSteerHeight",
-                "vcu.frRampSteerDuration",
-                "vcu.steerAmp",
-                "vcu.steerFreq",
+                "driver.useMode",
+                "driver.steerStart",
+                "driver.frRampSteerHeight",
+                "driver.stepDuration",
+                "driver.steerAmp",
+                "driver.steerFreq",
             )
         )
-        + _scalar("vcu.stepDuration", None, causality="calculatedParameter", changeable=False)
         + "</ModelVariables></fmiModelDescription>",
         encoding="utf-8",
     )
@@ -539,8 +547,25 @@ def test_transient_cases_plan_cleanly_against_a_vcu_with_a_derived_step_duration
 
     assert step_cases
     for case in cases:
-        plan_overrides(case, variables)
-    assert {case["frRampSteerDuration"] for case in step_cases} == {config["test"]["stepDuration"]}
+        plan = plan_overrides(case, variables)
+        assert "frRampSteerDuration" not in case
+        if "stepDuration" in case:
+            assert plan.modelica_names["stepDuration"] == "driver.stepDuration"
+    assert {case["stepDuration"] for case in step_cases} == {config["test"]["stepDuration"]}
+
+
+def test_the_removed_ramp_duration_name_fails_loudly(tmp_path: Path) -> None:
+    init_xml = tmp_path / "VehicleSim_init.xml"
+    init_xml.write_text(
+        "<fmiModelDescription><ModelVariables>\n"
+        + _scalar("driver.stepDuration", "0.001")
+        + "</ModelVariables></fmiModelDescription>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(OverrideError) as excinfo:
+        plan_overrides({"frRampSteerDuration": 0.02}, load_init_variables(init_xml))
+    assert _reasons(excinfo.value) == [("frRampSteerDuration", "unknown_name")]
 
 
 def test_optsim_reads_the_init_xml_with_the_runner_loader(build_dir: Path) -> None:
@@ -551,6 +576,8 @@ def test_optsim_reads_the_init_xml_with_the_runner_loader(build_dir: Path) -> No
     parameters = overrides.load_init_parameters(init_xml)
 
     assert set(parameters) == set(load_init_variables(init_xml))
-    assert parameters["pVehicle.pFrStabar.barRate"] == overrides.InitParameter(start=257.62, changeable=True)
-    assert parameters["frAxleDW.pAxle.springFreeLength"] == overrides.InitParameter(start=None, changeable=False)
+    bar_rate = parameters["pVehicle.chassis.frontAxle.stabilizer.barRate"]
+    assert bar_rate == overrides.InitParameter(start=257.62, changeable=True)
+    free_length = parameters["frAxleDW.pAxle.actuation.springFreeLength"]
+    assert free_length == overrides.InitParameter(start=None, changeable=False)
     assert parameters["enableLinearityTermination"].start is None
