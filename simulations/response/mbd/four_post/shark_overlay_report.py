@@ -973,7 +973,7 @@ def run_four_post(vehicle_path: Path, label: str, *, skip_build: bool) -> dict[s
         config = fp.load_config(fp.DEFAULT_CONFIG_PATH)
         report_cfg = config.setdefault("report", {})
         report_cfg["enabled"] = False
-        # Separate CSV: the canonical one is the regression baseline and seeds spring free lengths.
+        # Separate CSV: the canonical one is the regression baseline.
         slug = "baseline" if label == BASELINE_LABEL else "variant"
         report_cfg["metrics_csv_path"] = str(OUT_DIR / f"shark_overlay_metrics_{slug}.csv")
         result = fp.FourPostEvalSim(config).run()

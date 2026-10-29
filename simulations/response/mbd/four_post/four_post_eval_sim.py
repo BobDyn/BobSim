@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import copy
+import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence, cast
@@ -13,6 +14,7 @@ from common import config_io
 from common.vehicle_io import repo_root
 from common.reporting.report_engine import ReportEngine
 from simulations.response.mbd._modelica_runner import ModelicaRunner
+from simulations.response.mbd.four_post import static_balance
 
 
 SEED_CONFIG_PATH = Path("simulations/response/mbd/four_post/four_post_eval_config.yml")
@@ -99,8 +101,16 @@ FOUR_POST_EVAL_SIGNALS = [
     "rrKnC.jackingForce",
     "rrKnC.stabarAngle",
 ]
+FOUR_POST_STATIC_BALANCE_AXLES = (
+    ("front", "frKnC", "frAxleDW", "frChassisActuator"),
+    ("rear", "rrKnC", "rrAxleDW", "rrChassisActuator"),
+)
+FOUR_POST_EVAL_SIGNALS += static_balance.executed_signals(
+    [(axle, actuator) for _, _, axle, actuator in FOUR_POST_STATIC_BALANCE_AXLES]
+)
 
-FOUR_POST_EVAL_VARIABLE_FILTER = "|".join(FOUR_POST_EVAL_SIGNALS)
+# The filter is a regular expression, and the executed-signal names contain brackets.
+FOUR_POST_EVAL_VARIABLE_FILTER = "|".join(re.escape(signal) for signal in FOUR_POST_EVAL_SIGNALS)
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -475,7 +485,6 @@ def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
         if _configured_optional_float(rear_cfg, ("spring_rate_n_per_m", "spring_rate")) is not None
         else rear_vehicle_table
     )
-    corner_loads = _sprung_corner_loads(vehicle)
 
     return {
         "front_side": front_side,
@@ -484,36 +493,11 @@ def _configured_suspension_setup(config: dict[str, Any]) -> dict[str, Any]:
         "rear_spring_rate": rear_spring_rate,
         "front_spring_table": front_spring_table,
         "rear_spring_table": rear_spring_table,
-        "front_spring_free_length": _configured_spring_free_length(
-            config,
-            front_cfg,
-            "front",
-            front_side,
-            front_spring_table,
-            corner_loads["front"],
-        ),
-        "rear_spring_free_length": _configured_spring_free_length(
-            config,
-            rear_cfg,
-            "rear",
-            rear_side,
-            rear_spring_table,
-            corner_loads["rear"],
-        ),
+        "front_spring_free_length": _configured_spring_free_length(front_cfg, front_side),
+        "rear_spring_free_length": _configured_spring_free_length(rear_cfg, rear_side),
         "front_stabar_rate": front_stabar_rate,
         "rear_stabar_rate": rear_stabar_rate,
     }
-
-
-def _side_installed_spring_length(side: dict[str, Any]) -> float:
-    actuation = _nested_value(side, "actuation")
-    shock_mount = np.asarray(_nested_value(actuation, "shock", "mount_m"), dtype=float)
-    if "bellcrank" in actuation:
-        shock_pickup = np.asarray(_nested_value(actuation, "bellcrank", "pickups_m", "shock"), dtype=float)
-        return float(np.linalg.norm(shock_mount - shock_pickup))
-
-    rod_mount = np.asarray(_nested_value(actuation, "rod_mount_m"), dtype=float)
-    return float(np.linalg.norm(shock_mount - rod_mount))
 
 
 def _sprung_corner_loads(vehicle: dict[str, Any]) -> dict[str, tuple[float, float]]:
@@ -551,80 +535,13 @@ def _sprung_corner_loads(vehicle: dict[str, Any]) -> dict[str, tuple[float, floa
     }
 
 
-def _static_contact_load_n(sprung_corner_load_n: float, unsprung_corner_mass_kg: float) -> float:
-    return float(sprung_corner_load_n + unsprung_corner_mass_kg * GRAVITY_MPS2)
-
-
-def _metrics_csv_value(config: dict[str, Any], metric: str) -> float:
-    report_cfg = _as_mapping(config.get("report"), name="report")
-    metrics_path = Path(str(report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH)))
-    if not metrics_path.is_absolute():
-        metrics_path = REPO_ROOT / metrics_path
-    if not metrics_path.exists():
-        return float("nan")
-
-    with metrics_path.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("metric") != metric:
-                continue
-            try:
-                return float(row.get("value", "nan"))
-            except ValueError:
-                return float("nan")
-    return float("nan")
-
-
-def _computed_motion_ratio(config: dict[str, Any], axle_name: str) -> float:
-    for metric in (
-        f"static_motion_ratio_{axle_name}",
-        f"avg_motion_ratio_{axle_name}",
-    ):
-        value = _metrics_csv_value(config, metric)
-        if np.isfinite(value) and abs(value) > 1e-12:
-            return value
-    return float("nan")
-
-
-def _static_balance_free_length(
-    side: dict[str, Any],
-    spring_table: np.ndarray,
-    motion_ratio: float,
-    sprung_corner_loads_n: tuple[float, float],
-) -> float:
-    if not np.isfinite(motion_ratio) or abs(motion_ratio) <= 1e-12:
-        return float("nan")
-
-    compressions = [_force_to_deflection(spring_table, load_n * motion_ratio) for load_n in sprung_corner_loads_n]
-    compression = float(np.nanmean(np.asarray(compressions, dtype=float)))
-    if not np.isfinite(compression):
-        return float("nan")
-    return _side_installed_spring_length(side) + compression
-
-
-def _configured_spring_free_length(
-    config: dict[str, Any],
-    axle_cfg: dict[str, Any],
-    axle_name: str,
-    side: dict[str, Any],
-    spring_table: np.ndarray,
-    sprung_corner_loads_n: tuple[float, float],
-) -> float:
+def _configured_spring_free_length(axle_cfg: dict[str, Any], side: dict[str, Any]) -> float:
     explicit = _configured_optional_float(
         axle_cfg,
         ("spring_free_length_m", "free_length_m", "spring_free_length"),
     )
     if explicit is not None:
         return explicit
-
-    motion_ratio = _computed_motion_ratio(config, axle_name)
-    balanced = _static_balance_free_length(
-        side,
-        spring_table,
-        motion_ratio,
-        sprung_corner_loads_n,
-    )
-    if np.isfinite(balanced):
-        return balanced
     return _side_spring_free_length(side)
 
 
@@ -640,72 +557,30 @@ def _static_balance_tolerances(config: dict[str, Any]) -> tuple[float, float]:
     )
 
 
-def _static_balance_iterations(config: dict[str, Any]) -> int:
-    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
-    suspension_cfg = _as_mapping(
-        model_overrides.get("suspension"),
-        name="model_overrides.suspension",
-    )
-    return max(1, int(suspension_cfg.get("static_balance_iterations", 4)))
-
-
-def _static_balance_convergence_n(config: dict[str, Any]) -> float:
-    model_overrides = _as_mapping(config.get("model_overrides"), name="model_overrides")
-    suspension_cfg = _as_mapping(
-        model_overrides.get("suspension"),
-        name="model_overrides.suspension",
-    )
-    return max(0.0, float(suspension_cfg.get("static_balance_convergence_n", 0.01)))
-
-
-def _series_value_at(
-    series: dict[str, np.ndarray],
-    x_key: str,
-    y_key: str,
-    x_value: float,
-) -> float:
-    x = np.asarray(series.get(x_key, []), dtype=float).reshape(-1)
-    y = np.asarray(series.get(y_key, []), dtype=float).reshape(-1)
-    if x.size != y.size or x.size < 2:
-        return float("nan")
-    return _interp_with_extrap(float(x_value), x, y)
-
-
 def _static_balance_summary(setup: dict[str, Any]) -> dict[str, Any]:
-    errors_n: list[float] = []
-    errors_pct: list[float] = []
-    passes: list[bool] = []
+    balance = setup["static_balance"]
+    verdict = {"pass": True, "fail": False}
     static_motion_ratios: dict[str, list[float]] = {"front": [], "rear": []}
-
     for axle_name in ("front", "rear"):
-        axle = setup.get(axle_name, {})
-        if not isinstance(axle, dict):
-            continue
-        axle_errors_n: list[float] = []
-        axle_errors_pct: list[float] = []
         for side_name in ("left", "right"):
-            corner = axle.get(side_name, {})
-            if not isinstance(corner, dict):
-                continue
-            error_n = float(corner.get("static_fz_error_N", float("nan")))
-            error_pct = float(corner.get("static_fz_error_pct", float("nan")))
-            if np.isfinite(error_n):
-                axle_errors_n.append(error_n)
-            if np.isfinite(error_pct):
-                axle_errors_pct.append(error_pct)
-            static_mr = float(corner.get("motion_ratio", float("nan")))
+            static_mr = float(setup[axle_name][side_name].get("motion_ratio", float("nan")))
             if np.isfinite(static_mr):
                 static_motion_ratios[axle_name].append(static_mr)
-            passes.append(bool(corner.get("static_balance_ok", False)))
-        if axle_errors_n:
-            errors_n.append(abs(float(np.mean(axle_errors_n))))
-        if axle_errors_pct:
-            errors_pct.append(abs(float(np.mean(axle_errors_pct))))
 
+    closure = balance["closure_pass"]
     return {
-        "static_balance_max_abs_fz_error_n": max(errors_n) if errors_n else float("nan"),
-        "static_balance_max_abs_fz_error_pct": max(errors_pct) if errors_pct else float("nan"),
-        "static_balance_pass": bool(passes and all(passes)),
+        "static_balance_pass": verdict.get(balance["status"], float("nan")),
+        "static_balance_status": balance["status"],
+        "static_balance_reason": balance["reason"],
+        "static_balance_max_abs_fz_error_n": balance["max_abs_fz_error_n"],
+        "static_balance_max_abs_fz_error_pct": balance["max_abs_fz_error_pct"],
+        "static_equilibrium_pass": float("nan") if closure is None else closure,
+        "static_equilibrium_max_force_residual_n": balance["max_force_residual_n"],
+        "static_equilibrium_max_moment_residual_nm": balance["max_moment_residual_nm"],
+        "static_equilibrium_max_relative_residual": balance["max_relative_residual"],
+        "static_equilibrium_worst_time_s": balance["worst_time_s"],
+        "static_equilibrium_rows": balance["zero_command_rows"],
+        "static_spring_max_residual_n": balance["max_spring_residual_n"],
         "static_motion_ratio_front": (
             float(np.mean(static_motion_ratios["front"])) if static_motion_ratios["front"] else float("nan")
         ),
@@ -713,43 +588,6 @@ def _static_balance_summary(setup: dict[str, Any]) -> dict[str, Any]:
             float(np.mean(static_motion_ratios["rear"])) if static_motion_ratios["rear"] else float("nan")
         ),
     }
-
-
-def _static_balance_corrected_overrides(
-    overrides: dict[str, float],
-    setup: dict[str, Any],
-) -> dict[str, float]:
-    corrected = dict(overrides)
-    for axle_name, override_key in (
-        ("front", "pVehicle.pFrAxleDW.springFreeLength"),
-        ("rear", "pVehicle.pRrAxleDW.springFreeLength"),
-    ):
-        axle = setup.get(axle_name, {})
-        if not isinstance(axle, dict) or override_key not in corrected:
-            continue
-
-        length_corrections: list[float] = []
-        for side_name in ("left", "right"):
-            corner = axle.get(side_name, {})
-            if not isinstance(corner, dict):
-                continue
-
-            error_n = float(corner.get("static_fz_error_N", float("nan")))
-            motion_ratio = float(corner.get("motion_ratio", float("nan")))
-            spring_rate = float(corner.get("spring_rate_N_per_m", float("nan")))
-            if (
-                np.isfinite(error_n)
-                and np.isfinite(motion_ratio)
-                and np.isfinite(spring_rate)
-                and abs(motion_ratio) > 1e-12
-                and spring_rate > 0.0
-            ):
-                length_corrections.append(error_n * motion_ratio / spring_rate)
-
-        if length_corrections:
-            corrected[override_key] = float(corrected[override_key] - np.mean(length_corrections))
-
-    return corrected
 
 
 def _indexed_table_overrides(prefix: str, table: np.ndarray) -> dict[str, float]:
@@ -784,13 +622,6 @@ def _interp_with_extrap(x: float, xp: np.ndarray, fp: np.ndarray) -> float:
         return float(fp[-1] + slope * (x - xp[-1]))
 
     return float(np.interp(x, xp, fp))
-
-
-def _force_to_deflection(spring_table: Any, force_n: float) -> float:
-    table = _table_array(spring_table)
-    deflection = table[:, 0]
-    force = table[:, 1]
-    return _interp_with_extrap(force_n, force, deflection)
 
 
 def _spring_rate_at_deflection(spring_table: Any, deflection_m: float) -> float:
@@ -848,7 +679,8 @@ def _quarter_car_frequencies(
     wheel_rate_n_per_m: float,
     tire_rate_n_per_m: float,
 ) -> tuple[float, float]:
-    if sprung_mass_kg <= 0.0 or unsprung_mass_kg <= 0.0 or wheel_rate_n_per_m <= 0.0 or tire_rate_n_per_m <= 0.0:
+    values = (sprung_mass_kg, unsprung_mass_kg, wheel_rate_n_per_m, tire_rate_n_per_m)
+    if not all(np.isfinite(value) and value > 0.0 for value in values):
         return float("nan"), float("nan")
 
     m = np.array([[sprung_mass_kg, 0.0], [0.0, unsprung_mass_kg]], dtype=float)
@@ -925,7 +757,12 @@ class FourPostEvalSim:
         )
         return overrides
 
-    def build_setup(self, summary: dict[str, Any], series: dict[str, np.ndarray]) -> dict[str, Any]:
+    def build_setup(
+        self,
+        summary: dict[str, Any],
+        series: dict[str, np.ndarray],
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
         vehicle = _load_active_vehicle_yaml()
         sprung_mass_kg, sprung_cg_m = _combine_sprung_mass(vehicle)
         suspension_setup = _configured_suspension_setup(self.config)
@@ -987,69 +824,57 @@ class FourPostEvalSim:
         def tire_rate(side: dict[str, Any]) -> float:
             return float(_nested_value(side, "tire", "vertical_stiffness_n_per_m"))
 
+        target_loads = _sprung_corner_loads(vehicle)
+        balance = static_balance.evaluate(
+            result,
+            [
+                static_balance.AxleSpec(
+                    name=axle_name,
+                    knc=knc,
+                    axle=mbd_axle,
+                    actuator=actuator,
+                    free_length_m=float(suspension_setup[f"{axle_name}_spring_free_length"]),
+                    spring_table=np.asarray(suspension_setup[f"{axle_name}_spring_table"], dtype=float),
+                    target_load_n=target_loads[axle_name],
+                )
+                for axle_name, knc, mbd_axle, actuator in FOUR_POST_STATIC_BALANCE_AXLES
+            ],
+            target_tol_n=static_balance_tol_n,
+            target_tol_pct=static_balance_tol_pct,
+        )
         corners: dict[str, dict[str, Any]] = {}
 
         for axle_name, axle in axle_specs.items():
             side = axle["side"]
             axle_fraction = float(axle["axle_fraction"])
             axle_unsprung_mass = corner_unsprung_mass(side)
-            axle_installed_length_m = _side_installed_spring_length(side)
             axle_tire_rate = tire_rate(side)
-            axle_spring_table = (
-                suspension_setup["front_spring_table"]
-                if axle_name == "front"
-                else suspension_setup["rear_spring_table"]
-            )
+            axle_spring_table = suspension_setup[f"{axle_name}_spring_table"]
+            free_length_m = float(suspension_setup[f"{axle_name}_spring_free_length"])
             motion_ratio_key = "avg_motion_ratio_front" if axle_name == "front" else "avg_motion_ratio_rear"
-            axle_sprung_loads = {
-                "left": sprung_mass_kg * axle_fraction * left_fraction * GRAVITY_MPS2,
-                "right": sprung_mass_kg * axle_fraction * right_fraction * GRAVITY_MPS2,
-            }
 
             for corner_name, corner_key in axle["corner_pairs"]:
                 corner_fraction = axle_fraction * (left_fraction if corner_name == "left" else right_fraction)
                 sprung_corner_mass = sprung_mass_kg * corner_fraction
-                sprung_corner_load = float(axle_sprung_loads[corner_name])
-                static_balance_target_load = sprung_corner_load
-                static_contact_load = _static_contact_load_n(
-                    sprung_corner_load,
-                    axle_unsprung_mass,
-                )
-
+                measured = balance["axles"][axle_name][corner_name]
                 static_mr = _static_motion_ratio(
                     series,
                     corner_key,
                     float(summary.get(motion_ratio_key, float("nan"))),
                 )
-                spring_force = static_balance_target_load * static_mr
+                spring_force = float(measured["spring_force_n"])
                 spring_wheel_load = (
                     spring_force / static_mr if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
                 )
-                spring_compression_m = _force_to_deflection(axle_spring_table, spring_force)
-                spring_rate = _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
-                wheel_rate = (
-                    spring_rate / (static_mr**2) if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
-                )
-                free_length_m = axle_installed_length_m + spring_compression_m
-                fixture_static_fz_n = _series_value_at(
-                    series,
-                    "heave",
-                    f"{corner_key}_fz_vs_heave",
-                    0.0,
-                )
-                static_fz_n = static_contact_load
-                static_fz_error_n = spring_wheel_load - static_balance_target_load
-                static_fz_error_pct = (
-                    100.0 * static_fz_error_n / static_balance_target_load
-                    if abs(static_balance_target_load) > 1e-12
+                spring_length_m = float(measured["spring_length_m"])
+                spring_compression_m = free_length_m - spring_length_m
+                spring_rate = (
+                    _spring_rate_at_deflection(axle_spring_table, spring_compression_m)
+                    if np.isfinite(spring_compression_m)
                     else float("nan")
                 )
-                static_balance_limit_n = max(
-                    static_balance_tol_n,
-                    abs(static_balance_target_load) * static_balance_tol_pct / 100.0,
-                )
-                static_balance_ok = bool(
-                    np.isfinite(static_fz_error_n) and abs(static_fz_error_n) <= static_balance_limit_n
+                wheel_rate = (
+                    spring_rate / (static_mr**2) if np.isfinite(static_mr) and abs(static_mr) > 1e-12 else float("nan")
                 )
                 sprung_mode_hz, unsprung_mode_hz = _quarter_car_frequencies(
                     sprung_corner_mass,
@@ -1067,28 +892,28 @@ class FourPostEvalSim:
                     }[corner_key],
                     "sprung_mass_kg": float(sprung_corner_mass),
                     "unsprung_mass_kg": float(axle_unsprung_mass),
-                    "sprung_load_N": float(sprung_corner_load),
-                    "static_balance_target_load_N": float(static_balance_target_load),
+                    "sprung_load_N": float(measured["target_load_n"]),
+                    "static_balance_target_load_N": float(measured["target_load_n"]),
                     "motion_ratio": float(static_mr),
                     "spring_rate_N_per_m": float(spring_rate),
-                    "spring_force_N": float(spring_force),
+                    "spring_force_N": spring_force,
+                    "spring_force_from_table_N": float(measured["spring_force_from_table_n"]),
                     "spring_wheel_load_N": float(spring_wheel_load),
                     "spring_compression_m": float(spring_compression_m),
-                    "spring_installed_length_m": float(axle_installed_length_m),
-                    "spring_free_length_m": float(free_length_m),
-                    "static_fixture_fz_N": float(fixture_static_fz_n),
-                    "static_fz_N": float(static_fz_n),
-                    "static_fz_error_N": float(static_fz_error_n),
-                    "static_fz_error_pct": float(static_fz_error_pct),
-                    "static_balance_limit_N": float(static_balance_limit_n),
-                    "static_balance_ok": static_balance_ok,
+                    "spring_installed_length_m": spring_length_m,
+                    "spring_free_length_m": free_length_m,
+                    "static_fz_N": float(measured["contact_fz_n"]),
+                    "static_fz_error_N": float(measured["fz_error_n"]),
+                    "static_fz_error_pct": float(measured["fz_error_pct"]),
+                    "static_balance_limit_N": float(measured["limit_n"]),
+                    "static_balance_ok": measured["target_ok"],
                     "wheel_rate_N_per_m": float(wheel_rate),
                     "sprung_frequency_hz": float(sprung_mode_hz),
                     "unsprung_frequency_hz": float(unsprung_mode_hz),
                 }
 
         setup = {
-            "subtitle": "Static spring setup from the active vehicle pose and FourPost motion ratios.",
+            "subtitle": "Measured design-pose loads and springs against the target sprung corner loads.",
             "vehicle": {
                 "sprung_mass_kg": float(sprung_mass_kg),
                 "sprung_cg_m": [float(v) for v in sprung_cg_m],
@@ -1110,6 +935,7 @@ class FourPostEvalSim:
                 "left": corners["rr_l"],
                 "right": corners["rr_r"],
             },
+            "static_balance": balance,
         }
 
         return setup
@@ -1131,55 +957,33 @@ class FourPostEvalSim:
             },
         )
 
-        base_overrides = self.build_overrides()
-        setup_overrides = self.build_model_setup_overrides()
-        max_static_balance_iterations = _static_balance_iterations(self.config)
-        static_balance_convergence_n = _static_balance_convergence_n(self.config)
-        results: list[dict[str, Any]] = []
-        summary: dict[str, Any] = {}
-        series: dict[str, np.ndarray] = {}
-        setup: dict[str, Any] = {}
+        results = runner.run(
+            signals=FOUR_POST_EVAL_SIGNALS,
+            mode="raw",
+            cases=[
+                {
+                    **self.build_overrides(),
+                    **self.build_model_setup_overrides(),
+                    "_case_label": "four post",
+                }
+            ],
+            execution=execution_cfg,
+        )
 
-        for iteration_idx in range(max_static_balance_iterations):
-            results = runner.run(
-                signals=FOUR_POST_EVAL_SIGNALS,
-                mode="raw",
-                cases=[
-                    {
-                        **base_overrides,
-                        **setup_overrides,
-                        "_case_label": f"static balance {iteration_idx + 1}",
-                    }
-                ],
-                execution=execution_cfg,
+        if not results:
+            raise RuntimeError("FourPostEval returned no cases.")
+
+        result = results[0]
+        if result.get("_status") != "ok":
+            raise RuntimeError(
+                "FourPostEval simulation failed:\n"
+                f"{result.get('_error', 'unknown error')}\n"
+                f"{result.get('_traceback', '')}"
             )
 
-            if not results:
-                raise RuntimeError("FourPostEval returned no cases.")
-
-            result = results[0]
-            if result.get("_status") != "ok":
-                raise RuntimeError(
-                    "FourPostEval simulation failed:\n"
-                    f"{result.get('_error', 'unknown error')}\n"
-                    f"{result.get('_traceback', '')}"
-                )
-
-            summary, series = self.summarize(result)
-            setup = self.build_setup(summary, series)
-            summary.update(_static_balance_summary(setup))
-            summary["static_balance_iterations"] = iteration_idx + 1
-            max_abs_error_n = float(summary.get("static_balance_max_abs_fz_error_n", float("nan")))
-            if np.isfinite(max_abs_error_n) and max_abs_error_n <= static_balance_convergence_n:
-                break
-
-            corrected_overrides = _static_balance_corrected_overrides(
-                setup_overrides,
-                setup,
-            )
-            if corrected_overrides == setup_overrides:
-                break
-            setup_overrides = corrected_overrides
+        summary, series = self.summarize(result)
+        setup = self.build_setup(summary, series, result)
+        summary.update(_static_balance_summary(setup))
 
         metrics_csv_path = write_metrics_csv(
             summary,

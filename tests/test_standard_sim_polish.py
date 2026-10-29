@@ -23,8 +23,6 @@ from simulations.response.mbd.four_post.four_post_eval_sim import (
     FOUR_POST_STOP_TIME_S,
     FourPostEvalSim,
     _normalize_four_post_report_config,
-    _static_balance_iterations,
-    _static_balance_convergence_n,
 )
 from simulations.response.mbd._modelica_runner import ModelicaRunner
 from simulations.response.mbd.ramp_steer.ramp_steer_eval_sim import RampSteerEvalSim
@@ -345,10 +343,11 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
     ]
 
 
-def test_four_post_eval_passes_static_balanced_spring_free_lengths(
+def test_four_post_eval_spring_free_lengths_ignore_a_previous_metrics_csv(
     tmp_path: Path,
 ) -> None:
     config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
+    vehicle = _load_yaml(Path("vehicle.yml"))
     metrics_path = tmp_path / "four_post_metrics.csv"
     metrics_path.write_text(
         "metric,value\nstatic_motion_ratio_front,1.0053063275855492\nstatic_motion_ratio_rear,1.2386785254222528\n",
@@ -358,10 +357,8 @@ def test_four_post_eval_passes_static_balanced_spring_free_lengths(
 
     overrides = FourPostEvalSim(config).build_model_setup_overrides()
 
-    assert _static_balance_iterations(config) == 4
-    assert _static_balance_convergence_n(config) == pytest.approx(0.01)
-    assert overrides["pVehicle.pFrAxleDW.springFreeLength"] == pytest.approx(0.199700878416)
-    assert overrides["pVehicle.pRrAxleDW.springFreeLength"] == pytest.approx(0.263423049137)
+    assert overrides["pVehicle.pFrAxleDW.springFreeLength"] == vehicle["front"]["actuation"]["shock"]["free_length_m"]
+    assert overrides["pVehicle.pRrAxleDW.springFreeLength"] == vehicle["rear"]["actuation"]["shock"]["free_length_m"]
 
 
 def test_signal_plots_filter_implausible_numeric_spikes() -> None:

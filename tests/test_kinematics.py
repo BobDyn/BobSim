@@ -670,43 +670,6 @@ def test_four_post_kinematic_curves_match_unit_validated_frontend_calcs(
         assert summary[metric] == pytest.approx(expected, abs=1e-8), metric
 
 
-def test_four_post_static_setup_uses_computed_contact_load_when_fixture_fz_is_zero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    vehicle = _four_post_unit_vehicle()
-    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
-    heave_sweep = np.linspace(
-        -0.03,
-        0.03,
-        four_post_eval.FOUR_POST_HEAVE_POSE_COUNT,
-    )
-    roll_sweep_deg = np.linspace(
-        -1.25,
-        1.25,
-        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
-    )
-    result = _four_post_result_from_kinematics(vehicle, heave_sweep, roll_sweep_deg)
-    for key in (
-        "frKnC.leftFz",
-        "frKnC.rightFz",
-        "rrKnC.leftFz",
-        "rrKnC.rightFz",
-    ):
-        result[key] = np.zeros_like(result[key])
-
-    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
-    summary, series = sim.summarize(result)
-    setup = sim.build_setup(summary, series)
-
-    front_left = setup["front"]["left"]
-    expected_static_fz = front_left["sprung_load_N"] + (front_left["unsprung_mass_kg"] * four_post_eval.GRAVITY_MPS2)
-    assert front_left["static_fixture_fz_N"] == pytest.approx(0.0)
-    assert front_left["static_fz_N"] == pytest.approx(expected_static_fz)
-    assert front_left["static_fz_error_N"] == pytest.approx(0.0, abs=1e-9)
-    assert front_left["static_balance_ok"] is True
-
-
 def test_four_post_summary_filters_implausible_samples(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

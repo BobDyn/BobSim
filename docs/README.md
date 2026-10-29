@@ -7,6 +7,7 @@ Documentation for this checkout. The public documentation is at
 | --- | --- |
 | [architecture.md](architecture.md) | Engines, workflows, and data flow |
 | [simulation-entrypoints.md](simulation-entrypoints.md) | Model fidelity and simulation entry points |
+| [four-post-static-balance.md](four-post-static-balance.md) | FourPost static balance checks, tolerances and limits |
 | [workflows.md](workflows.md) | App, simulation, optimization, and test commands |
 | [doe-reverse-engineering.md](doe-reverse-engineering.md) | Parameter sweeps, target-metric solving, and vehicle comparisons |
 | [reduced-order-dynamics.md](reduced-order-dynamics.md) | 3/6/10/14DOF dynamics, QSS envelopes, and BobLib correlation |

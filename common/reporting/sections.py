@@ -14,17 +14,17 @@ class FourPostCornerSummary(TypedDict):
     motion_ratio: float
     spring_rate_N_per_m: float
     spring_force_N: float
+    spring_force_from_table_N: float
     spring_wheel_load_N: float
     spring_compression_m: float
     spring_installed_length_m: float
     spring_free_length_m: float
     static_balance_target_load_N: float
-    static_fixture_fz_N: float
     static_fz_N: float
     static_fz_error_N: float
     static_fz_error_pct: float
     static_balance_limit_N: float
-    static_balance_ok: bool
+    static_balance_ok: bool | None
     wheel_rate_N_per_m: float
     sprung_frequency_hz: float
     unsprung_frequency_hz: float
@@ -149,16 +149,16 @@ def add_four_post_setup_page(
         rows = [
             ("Sprung mass", "sprung_mass_kg", "kg", "{:.1f}", 1.0),
             ("Unsprung mass", "unsprung_mass_kg", "kg", "{:.1f}", 1.0),
-            ("Sprung load", "sprung_load_N", "N", "{:.0f}", 1.0),
             ("Motion ratio", "motion_ratio", "wheel/spring", "{:.3f}", 1.0),
             ("Spring rate", "spring_rate_N_per_m", "N/m", "{:.0f}", 1.0),
-            ("Spring force", "spring_force_N", "N", "{:.0f}", 1.0),
-            ("Installed length", "spring_installed_length_m", "mm", "{:.1f}", 1000.0),
+            ("Spring force", "spring_force_N", "N", "{:.1f}", 1.0),
+            ("Spring force / MR", "spring_wheel_load_N", "N", "{:.1f}", 1.0),
+            ("Spring length", "spring_installed_length_m", "mm", "{:.1f}", 1000.0),
             ("Compression", "spring_compression_m", "mm", "{:.1f}", 1000.0),
             ("Free length", "spring_free_length_m", "mm", "{:.1f}", 1000.0),
-            ("Spring target", "static_balance_target_load_N", "N", "{:.1f}", 1.0),
-            ("Static Fz", "static_fz_N", "N", "{:.1f}", 1.0),
-            ("Spring target error", "static_fz_error_N", "N", "{:+.1f}", 1.0),
+            ("Target load", "static_balance_target_load_N", "N", "{:.1f}", 1.0),
+            ("Contact Fz", "static_fz_N", "N", "{:.1f}", 1.0),
+            ("Fz minus target", "static_fz_error_N", "N", "{:+.1f}", 1.0),
             ("Wheel rate", "wheel_rate_N_per_m", "N/m", "{:.0f}", 1.0),
             ("Sprung freq", "sprung_frequency_hz", "Hz", "{:.2f}", 1.0),
             ("Unsprung freq", "unsprung_frequency_hz", "Hz", "{:.2f}", 1.0),
@@ -193,7 +193,7 @@ def add_four_post_setup_page(
         row_step = 0.043
 
         def corner_value_color(corner: FourPostCornerSummary, key: str) -> str:
-            if key in {"static_fz_N", "static_fz_error_N"} and not corner.get("static_balance_ok", True):
+            if key in {"static_fz_N", "static_fz_error_N"} and corner.get("static_balance_ok") is False:
                 return "#b91c1c"
             return "#111827"
 
@@ -204,8 +204,8 @@ def add_four_post_setup_page(
             row_fails = (
                 key in {"static_fz_N", "static_fz_error_N"}
                 and (
-                    not left_corner.get("static_balance_ok", True)
-                    or not right_corner.get("static_balance_ok", True)
+                    left_corner.get("static_balance_ok") is False
+                    or right_corner.get("static_balance_ok") is False
                 )
             )
             label_color = "#b91c1c" if row_fails else "#20242b"
@@ -443,10 +443,14 @@ def add_knc_summary_page(
         ])
 
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
-        "Setup Check", [
-            ("Max Spring Target Error", "static_balance_max_abs_fz_error_n", "N", "{:.1f}"),
-            ("Max Spring Target Error", "static_balance_max_abs_fz_error_pct", "%", "{:.2f}"),
-        ], section_color="#b91c1c")
+        "Static Balance (measured)", [
+            ("Result", "static_balance_status", "", "{}"),
+            ("Max Fz error", "static_balance_max_abs_fz_error_n", "N", "{:.2f}"),
+            ("Max Fz error", "static_balance_max_abs_fz_error_pct", "%", "{:.2f}"),
+            ("Closure/load", "static_equilibrium_max_relative_residual", "-", "{:.1e}"),
+            ("Worst at", "static_equilibrium_worst_time_s", "s", "{:.1f}"),
+            ("Spring error", "static_spring_max_residual_n", "N", "{:.1e}"),
+        ], section_color={"fail": "#b91c1c", "unavailable": "#b45309"}.get(str(summary.get("static_balance_status"))))
 
     y_right = y_top
 
