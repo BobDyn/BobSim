@@ -982,10 +982,10 @@ def run_four_post(vehicle_path: Path, label: str, *, skip_build: bool) -> dict[s
 
 # Jacking-geometry percentages: load transfer reacted through the links. Not roll stiffness.
 SCALAR_METRICS = (
-    ("avg_anti_dive_pct", "Front anti-dive geometry (%)"),
-    ("avg_anti_squat_pct", "Rear anti-squat geometry (%)"),
-    ("avg_anti_roll_front_pct", "Front geometric anti-roll / lateral jacking (%)"),
-    ("avg_anti_roll_rear_pct", "Rear geometric anti-roll / lateral jacking (%)"),
+    ("avg_anti_dive_pct", "Front anti-dive, CP Fx upright-reacted (%)"),
+    ("avg_anti_squat_pct", "Rear anti-squat, CP Fx upright-reacted (%)"),
+    ("avg_anti_roll_front_pct", "Front net axle jacking, legacy anti-roll key (%)"),
+    ("avg_anti_roll_rear_pct", "Rear net axle jacking, legacy anti-roll key (%)"),
 )
 
 _MISSING = object()

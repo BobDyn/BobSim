@@ -548,9 +548,9 @@ def test_small_doe_generates_variants(
     # Stub the FourPostEval motion ratios so this test does not simulate.
     metrics_csv = tmp_path / "four_post_eval_report_metrics.csv"
     metrics_csv.write_text(
-        "metric,value\n"
-        "static_motion_ratio_front,0.62\n"
-        "static_motion_ratio_rear,0.71\n"
+        "metric,value,status\n"
+        "static_motion_ratio_front,0.62,ok\n"
+        "static_motion_ratio_rear,0.71,ok\n"
     )
     monkeypatch.setattr(
         generator, "FOUR_POST_METRICS_CANDIDATES", (metrics_csv,), raising=True

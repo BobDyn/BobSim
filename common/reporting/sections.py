@@ -369,6 +369,7 @@ def add_knc_summary_page(
     summary,
     title="KnC Metrics Summary",
     unit_overrides: Mapping[str, object] | None = None,
+    status: Mapping[str, str] | None = None,
 ):
 
     import matplotlib.pyplot as plt
@@ -411,8 +412,12 @@ def add_knc_summary_page(
             val = summary.get(key, None)
             unit, scale = _resolve_unit(unit_overrides, key, unit)
             val_str = _format_table_value(val, fmt, scale)
+            key_status = (status or {}).get(key, "ok")
 
             color = section_color or metric_color(key)
+            if key_status != "ok":
+                unit = f"{unit} ({key_status})"
+                color = "#b45309"
             plt.text(x_label, y, label, fontsize=11, color=color)
             plt.text(x_val, y, val_str, fontsize=11, ha="right", color=color)
             plt.text(x_unit, y, unit, fontsize=11, color=color)
@@ -434,12 +439,14 @@ def add_knc_summary_page(
         ])
 
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
-        "Anti Metrics", [
+        "Jacking (CP force, upright)", [
             ("Anti-Dive", "avg_anti_dive_pct", "%", "{:.1f}"),
             ("Anti-Squat", "avg_anti_squat_pct", "%", "{:.1f}"),
-            ("Front Anti-Roll", "avg_anti_roll_front_pct", "%", "{:.1f}"),
-            ("Rear Anti-Roll", "avg_anti_roll_rear_pct", "%", "{:.1f}"),
-            ("LLTD (Front)", "avg_lltd_front_pct", "%", "{:.1f}"),
+            ("dFz/dFx Front", "avg_longitudinal_jacking_coeff_front", "N/N", "{:.4f}"),
+            ("dFz/dFx Rear", "avg_longitudinal_jacking_coeff_rear", "N/N", "{:.4f}"),
+            ("Net Jacking Fr", "avg_anti_roll_front_pct", "%", "{:.2f}"),
+            ("Net Jacking Rr", "avg_anti_roll_rear_pct", "%", "{:.2f}"),
+            ("Elastic Share Fr", "avg_lltd_front_pct", "%", "{:.1f}"),
         ])
 
     y_left = add_section(x_left_label, x_left_val, x_left_unit, y_left,
