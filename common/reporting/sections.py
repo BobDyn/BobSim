@@ -489,6 +489,15 @@ def add_knc_summary_page(
             ("Total Rear", "elastic_roll_stiffness_rear_Nm_per_rad", "Nm/rad", "{:.0f}"),
         ])
 
+    if any(key.endswith("_path_pct") for key in summary):
+        y_right = add_section(x_right_label, x_right_val, x_right_unit, y_right,
+            "Anti by Force Path (design pose)", [
+                ("Anti-Dive CP", "anti_dive_contact_patch_path_pct", "%", "{:.2f}"),
+                ("Anti-Dive WC", "anti_dive_wheel_center_path_pct", "%", "{:.2f}"),
+                ("Anti-Squat CP", "anti_squat_contact_patch_path_pct", "%", "{:.2f}"),
+                ("Anti-Squat WC", "anti_squat_wheel_center_path_pct", "%", "{:.2f}"),
+            ])
+
     pdf.savefig(fig)
     plt.close(fig)
 
