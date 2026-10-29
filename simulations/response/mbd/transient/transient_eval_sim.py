@@ -747,10 +747,10 @@ class TransientEvalSim:
                             step_time=step_time,
                         )
 
+                        # StandardVCU computes stepDuration from frRampSteerDuration.
                         case.update({
                             "frRampSteerHeight": steer_step,
                             "frRampSteerDuration": ramp_duration,
-                            "stepDuration": ramp_duration,
                             "stopTime": stop_time_case,
                         })
 
@@ -833,10 +833,11 @@ class TransientEvalSim:
         Build the runner-facing case dictionary.
 
         IMPORTANT:
-        This dictionary is passed to ModelicaRunner, and ModelicaRunner appears
-        to push most case keys into the -override string. Therefore, this must
-        contain only real VehicleModel parameters, plus runner-special keys
-        added later such as stopTime.
+        This dictionary is passed to ModelicaRunner. The runner writes every
+        key that does not start with "_" as an override. It rejects a key that
+        the compiled model cannot take before any case runs. Therefore, this
+        must contain only changeable VehicleModel parameters, plus
+        runner-special keys added later such as stopTime.
 
         Do NOT include report metadata here:
           mode

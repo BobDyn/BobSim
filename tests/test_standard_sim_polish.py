@@ -436,24 +436,46 @@ def test_ramp_steer_eval_uses_open_loop_ramp_mode() -> None:
 def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     tmp_path: Path,
 ) -> None:
-    runner = ModelicaRunner.__new__(ModelicaRunner)
+    exec_name = "Model"
+    names = (
+        "initialVel",
+        "vcu.targetAy",
+        "vcu.useMode",
+        "vcu.steerStart",
+        "vcu.handwheelRampRate",
+        "vcu.velGain",
+        "vcu.velTi",
+    )
+    (tmp_path / exec_name).write_text("exe", encoding="utf-8")
+    (tmp_path / f"{exec_name}_init.xml").write_text(
+        "<fmiModelDescription><ModelVariables>"
+        + "".join(
+            f'<ScalarVariable name="{name}" isValueChangeable="true"><Real start="-1.0"/></ScalarVariable>'
+            for name in names
+        )
+        + "</ModelVariables></fmiModelDescription>",
+        encoding="utf-8",
+    )
+    runner = ModelicaRunner(build_dir=tmp_path, exec_name=exec_name, simulation={})
     override_path = tmp_path / "case.override"
 
-    runner._write_override_file(
-        override_path,
-        {
-            "_testVel": 12.5,
-            "targetVel": 12.5,
-            "targetAy": 18.0,
-            "useMode": 0,
-            "steerStart": 2.0,
-            "handwheelRampRate": 0.06,
-            "velGain": 100.0,
-            "velTi": 2.0,
-            "startTime": 0.0,
-            "stopTime": 45.0,
-        },
+    (plan,) = runner.plan_cases(
+        [
+            {
+                "_testVel": 12.5,
+                "targetVel": 12.5,
+                "targetAy": 18.0,
+                "useMode": 0,
+                "steerStart": 2.0,
+                "handwheelRampRate": 0.06,
+                "velGain": 100.0,
+                "velTi": 2.0,
+                "startTime": 0.0,
+                "stopTime": 45.0,
+            }
+        ]
     )
+    runner._write_override_file(override_path, plan)
 
     lines = set(override_path.read_text(encoding="utf-8").splitlines())
 
