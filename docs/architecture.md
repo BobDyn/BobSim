@@ -45,6 +45,19 @@ BobLib studies read generated records under `engines/boblib/BobLib/Records/Vehic
 Those records can drift from the YAML. `make sync-vehicle` checks them and
 `make sync-vehicle-write` regenerates them deliberately.
 
+When the vehicle file sets `brake.front_bias`, the generated VehicleSim
+template binds `brakes.frontBrakeBias` to it. This value is the front share of
+mechanical brake torque, from 0 to 1. The generator stops when the value is not
+a number or is outside 0 to 1. When the key is missing, the template binds
+nothing. BobLib `BasicVCUBrakes` then uses its own default, 0.55 at the pinned
+BobLib. `make sync-vehicle` prints which case applies.
+
+DynPy and the envelope use the same value when the key is set. The two tiers
+describe the same split only when the VCU `regenBrakeBlend` is 0, the default.
+The Modelica bias splits the mechanical brake torque only, and regen acts on
+the rear axle. When the key is missing, DynPy and the envelope use 0.84, not the
+BobLib default. This difference is a known gap.
+
 The vehicle writer keeps vectors and table rows on one line. The schema and
 physical values are unchanged by the directory migration.
 
