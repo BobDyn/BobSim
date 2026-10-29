@@ -1154,11 +1154,15 @@ def test_app_can_switch_direct_vehicle_to_bellcrank_actuation_defaults(
 def test_app_can_generate_modelica_payload_from_active_vehicle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     template_path = app.ROOT / "common/vehicle_templates/DWBCStabar_DWBCStabarRecord.yml"
     data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
-    data["paths"] = {"boblib": "BobLib", "tire_templates": "tires"}
+    data["paths"] = {"boblib": "engines/boblib/BobLib", "tire_templates": "tires"}
     tire_name = data["aero"].get("tire_template") or data["front"]["tire"]["template"]
     tire_root = tmp_path / "tires"
     tire_root.mkdir()
     shutil.copy(app.ROOT / "common/tire_templates" / f"{tire_name}.tir", tire_root / f"{tire_name}.tir")
+    (tmp_path / "engines/boblib/BobLib").mkdir(parents=True)
+    (tmp_path / "engines/boblib/BobLib/package.mo").write_text(
+        "within ;\npackage BobLib\nend BobLib;\n", encoding="utf-8"
+    )
     (tmp_path / "vehicle.yml").write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     monkeypatch.setattr(app, "ROOT", tmp_path)
 
@@ -1890,6 +1894,31 @@ def test_failed_rebuild_cannot_certify_previous_executable(tmp_path, monkeypatch
     assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) != 0
     assert not (build_dir / target.exec_name).exists()
     assert not (build_dir / app.BUILD_METADATA_FILENAME).exists()
+
+
+def test_bad_boblib_root_stops_the_app_build(tmp_path, monkeypatch):
+    from app import modelica_build as builds
+    from app.jobs import JobStore
+    from app.modelica_generator import BobLibRootError
+
+    target = app.MODELICA_BUILD_TARGETS['vehicle']
+    monkeypatch.setattr(builds, '_safe_repo_path', lambda path: tmp_path / path)
+    jobs = JobStore(10000)
+    job = jobs.create('build', 'Build', [])
+    monkeypatch.setattr(builds, 'JOBS', jobs)
+
+    def bad_root(*_args):
+        raise BobLibRootError('paths.boblib does not name the BobLib package that the Modelica builds load.')
+
+    monkeypatch.setattr(builds, 'modelica_stack_status_payload', bad_root)
+    compiled = []
+    monkeypatch.setattr(builds, '_run_subprocess_action', lambda *args: compiled.append(args) or 0)
+
+    assert builds._run_modelica_build_action(app.ACTION_SPECS['build-vehicle'], target, job['id']) == 1
+    assert compiled == []
+    log = jobs.get(job['id'])['log']
+    assert 'paths.boblib does not name the BobLib package' in log
+    assert 'Build cache unavailable' not in log
 
 
 def test_architecture_defaults_read_templates_once(monkeypatch):

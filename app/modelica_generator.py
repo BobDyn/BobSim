@@ -9,6 +9,7 @@ from typing import Any
 import hashlib
 import math
 import re
+import sys
 
 import numpy as np
 
@@ -48,7 +49,16 @@ class ModelicaGenerationResult:
 class ModelicaStackPlan:
     result: ModelicaGenerationResult
     contents: tuple[tuple[Path, str], ...]
+    boblib_root: Path
     initialization_error: str | None = None
+
+
+class BobLibRootError(ValueError):
+    """paths.boblib does not name the BobLib package the builds load, or a write would leave it."""
+
+
+# simulations/response/mbd/build_*_sim.mos load this package.
+BUILD_BOBLIB_DIR = "engines/boblib/BobLib"
 
 
 @dataclass(frozen=True)
@@ -275,6 +285,9 @@ def generate_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None
     plan = plan_modelica_stack(vehicle_path, root=root)
     if plan.initialization_error:
         raise ValueError(plan.initialization_error)
+    _require_inside_boblib_root(
+        plan.boblib_root, [path for path, _ in plan.contents] + list(plan.result.package_orders)
+    )
     for path, text in plan.contents:
         _write_text(path, text)
     for path, entry in (
@@ -304,6 +317,7 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
     front_arch = _architecture(str(architecture.get("front", "direct")), "architecture.front")
     rear_arch = _architecture(str(architecture.get("rear", "direct")), "architecture.rear")
     boblib_root = _boblib_root(data, repo_root)
+    _require_boblib_package_root(boblib_root, repo_root)
     tire_root = _tire_root(data, repo_root)
 
     record_path = boblib_root / "Records/VehicleDefn" / f"{record_name}.mo"
@@ -384,7 +398,12 @@ def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = N
         (vehicle_entry_path, _vehicle_entry_text(vehicle_template_name, calibrated=bool(initialization))),
         (four_post_entry_path, _four_post_entry_text(four_post_template_name)),
     )
-    return ModelicaStackPlan(result=result, contents=contents, initialization_error=initialization_error)
+    return ModelicaStackPlan(
+        result=result,
+        contents=contents,
+        boblib_root=boblib_root,
+        initialization_error=initialization_error,
+    )
 
 
 
@@ -1258,8 +1277,7 @@ def _tir_number(values: Mapping[str, float | str], tir_key: str, tire_path: Path
 
 def _boblib_root(data: Mapping[str, Any], repo_root: Path) -> Path:
     paths = data.get("paths", {})
-    default = "engines/boblib/BobLib"
-    raw_path = paths.get("boblib", default) if isinstance(paths, Mapping) else default
+    raw_path = paths.get("boblib", BUILD_BOBLIB_DIR) if isinstance(paths, Mapping) else BUILD_BOBLIB_DIR
     return _resolve_path(repo_root, str(raw_path))
 
 
@@ -1273,6 +1291,33 @@ def _tire_root(data: Mapping[str, Any], repo_root: Path) -> Path:
 def _resolve_path(repo_root: Path, raw_path: str) -> Path:
     path = Path(raw_path)
     return path if path.is_absolute() else (repo_root / path).resolve()
+
+
+def _require_boblib_package_root(boblib_root: Path, repo_root: Path) -> None:
+    build_root = (repo_root / BUILD_BOBLIB_DIR).resolve()
+    package_mo = build_root / "package.mo"
+    if boblib_root.resolve() != build_root:
+        problem = f"It resolves to {boblib_root.resolve()}."
+    elif not package_mo.is_file():
+        problem = f"{package_mo} does not exist. Initialize the BobLib submodule."
+    else:
+        return
+    raise BobLibRootError(
+        f"paths.boblib does not name the BobLib package that the Modelica builds load ({build_root}). "
+        f"{problem} Relative paths resolve against {repo_root}. "
+        f"Set paths.boblib to {BUILD_BOBLIB_DIR}, or remove the key to use that default. "
+        "No Modelica files were written."
+    )
+
+
+def _require_inside_boblib_root(boblib_root: Path, paths: Iterable[Path]) -> None:
+    root = boblib_root.resolve()
+    for path in paths:
+        if not path.resolve().is_relative_to(root):
+            raise BobLibRootError(
+                f"Refusing to write {path}. It resolves to {path.resolve()}, "
+                f"outside the BobLib package root {root}. No Modelica files were written."
+            )
 
 
 def _modelica_identifier(raw_name: str) -> str:
@@ -1356,7 +1401,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
-    status = modelica_stack_status_payload(args.vehicle, root)
+    try:
+        status = modelica_stack_status_payload(args.vehicle, root)
+    except BobLibRootError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     if not args.write:
         print("\n".join(_cli_status_lines(status)))
