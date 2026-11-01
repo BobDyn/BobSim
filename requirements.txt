@@ -15,6 +15,7 @@ matplotlib==3.10.9
 ruff==0.15.12
 mypy==1.20.2
 pytest==9.1.0
+pytest-xdist==3.6.1
 
 # FMU interface
 # fmpy

@@ -320,7 +320,7 @@ typecheck:
 		--exclude '(^|/)($(BOBLIB_PATH)|common/deploy/(build|dist))/'
 
 test:
-	$(RUN) $(PYTHON) -m pytest tests
+	$(RUN) $(PYTHON) -m pytest -n auto tests
 
 regression-invariants:
 	$(RUN) $(PYTHON) -m pytest tests/test_simulation_regression.py
