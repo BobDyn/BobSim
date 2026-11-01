@@ -98,7 +98,7 @@ POWERTRAIN_DEFAULTS: dict[str, dict[str, Any]] = {
             "diff_lockFractionDecel": 0.15,
             "diff_T_capacity_max": 1000,
             "diff_clutchEffectiveRadius": 1.0,
-            "diff_kineticFrictionRatio": 0.85,
+            "diff_kineticFrictionRatio": 1.0,
             "diff_w_transition": 1.0,
             "diff_c_viscous": 0.05,
             "halfshaftLeftC": 15_000,

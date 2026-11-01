@@ -734,22 +734,22 @@ class FourPostEvalSim:
         rear_stabar_rate = float(setup["rear_stabar_rate"])
 
         overrides: dict[str, float] = {
-            "pVehicle.pFrAxleDW.springFreeLength": float(setup["front_spring_free_length"]),
-            "pVehicle.pRrAxleDW.springFreeLength": float(setup["rear_spring_free_length"]),
+            "pVehicle.chassis.frontAxle.actuation.springFreeLength": float(setup["front_spring_free_length"]),
+            "pVehicle.chassis.rearAxle.actuation.springFreeLength": float(setup["rear_spring_free_length"]),
         }
-        # The rig binds p{Fr,Rr}Stabar, not pVehicle.p{Fr,Rr}Stabar. Its templates zero the bars for pure K&C.
+        # The rig binds p{Fr,Rr}Stabar, not pVehicle.chassis.*.stabilizer. Its templates zero the bars for pure K&C.
         for tag, axle_name, bar_rate in (("Fr", "front", front_stabar_rate), ("Rr", "rear", rear_stabar_rate)):
             if _side_has_stabar(setup[f"{axle_name}_side"]):
                 overrides[f"p{tag}Stabar.barRate"] = bar_rate
         overrides.update(
             _indexed_table_overrides(
-                "pVehicle.pFrAxleDW.springTable",
+                "pVehicle.chassis.frontAxle.actuation.springTable",
                 front_spring_table,
             )
         )
         overrides.update(
             _indexed_table_overrides(
-                "pVehicle.pRrAxleDW.springTable",
+                "pVehicle.chassis.rearAxle.actuation.springTable",
                 rear_spring_table,
             )
         )
