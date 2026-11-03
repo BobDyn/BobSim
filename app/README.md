@@ -79,5 +79,8 @@ Removing a simulation keeps its saved runs.
 - `tracks.py`: track CSV import and boundary previews.
 - `tire_eval.py`: MF52 tire-load and curve payload generation for the UI.
 - `modelica_generator.py`: vehicle YAML to BobLib Modelica generation.
+  `plan_modelica_stack` plans the files without writing. `write_modelica_plan`
+  writes a plan into BobLib, or into a staged copy of BobLib so a consumer
+  such as an FMU export can build without touching the submodule.
 - `desktop.py`: desktop/webview wrapper for packaged builds.
 - `static/`: `index.html`, `app.js`, `styles.css`, and the vendored Inter font.

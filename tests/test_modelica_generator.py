@@ -13,6 +13,8 @@ from app.modelica_generator import (
     generate_modelica_stack,
     modelica_generation_payload,
     modelica_stack_status_payload,
+    plan_modelica_stack,
+    write_modelica_plan,
 )
 
 BOBLIB_PACKAGE_MO = "within ;\npackage BobLib\nend BobLib;\n"
@@ -377,6 +379,57 @@ def test_generator_refuses_to_write_outside_the_boblib_root(tmp_path: Path) -> N
         generate_modelica_stack(vehicle_path, root=tmp_path)
     assert list(outside.iterdir()) == []
     assert not (tmp_path / BUILD_BOBLIB / "Experiments").exists()
+
+
+def test_plan_writes_into_a_staged_boblib_copy_and_leaves_the_planned_package_alone(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    order = tmp_path / BUILD_BOBLIB / "Records/VehicleDefn/package.order"
+    order.parent.mkdir(parents=True)
+    order.write_text("ExistingRecord\n", encoding="utf-8")
+    stage = tmp_path / "stage/BobLib"
+    shutil.copytree(tmp_path / BUILD_BOBLIB, stage)
+    planned_before = _tree(tmp_path / BUILD_BOBLIB)
+
+    plan = plan_modelica_stack(vehicle_path, root=tmp_path)
+    result = write_modelica_plan(plan, boblib_root=stage)
+    write_modelica_plan(plan, boblib_root=stage)
+
+    assert result == plan.result
+    assert _tree(tmp_path / BUILD_BOBLIB) == planned_before
+    staged = _tree(stage)
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert staged == _tree(tmp_path / BUILD_BOBLIB)
+    assert (stage / "Records/VehicleDefn/package.order").read_text(encoding="utf-8").splitlines() == [
+        "ExistingRecord",
+        result.record_name,
+    ]
+
+
+def test_plan_refuses_a_staged_directory_that_is_not_a_boblib_package(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    stage = tmp_path / "stage"
+    stage.mkdir()
+
+    with pytest.raises(BobLibRootError, match="not a BobLib package"):
+        write_modelica_plan(plan_modelica_stack(vehicle_path, root=tmp_path), boblib_root=stage)
+    assert list(stage.iterdir()) == []
+
+
+def test_plan_refuses_to_write_outside_a_staged_boblib_copy(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    stage = tmp_path / "stage/BobLib"
+    _write_boblib_package(stage)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (stage / "Records").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(BobLibRootError, match="outside the BobLib package root"):
+        write_modelica_plan(plan_modelica_stack(vehicle_path, root=tmp_path), boblib_root=stage)
+    assert list(outside.iterdir()) == []
+    assert not (stage / "Experiments").exists()
 
 
 def _vehicle_template_text(plan) -> str:

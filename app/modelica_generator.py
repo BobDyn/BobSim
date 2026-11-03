@@ -349,16 +349,48 @@ TARGET_SIGNATURE_KINDS: dict[str, tuple[str, ...]] = {
 
 
 def generate_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = None) -> ModelicaGenerationResult:
-    plan = plan_modelica_stack(vehicle_path, root=root)
+    return write_modelica_plan(plan_modelica_stack(vehicle_path, root=root))
+
+
+def write_modelica_plan(
+    plan: ModelicaStackPlan, *, boblib_root: str | Path | None = None
+) -> ModelicaGenerationResult:
+    """Write a planned Modelica stack into its BobLib package or into a copy of it.
+
+    Parameters
+    ----------
+    plan : ModelicaStackPlan
+        Plan from `plan_modelica_stack`.
+    boblib_root : str | Path | None
+        BobLib package directory that receives the files. ``None`` writes into
+        ``plan.boblib_root``. Another directory, such as a staged copy of BobLib
+        for an FMU export, gets every file at the same path relative to the
+        package root, and ``plan.boblib_root`` stays unchanged.
+
+    Returns
+    -------
+    ModelicaGenerationResult
+        ``plan.result``. Its paths name ``plan.boblib_root``, not ``boblib_root``.
+    """
     if plan.initialization_error:
         raise ValueError(plan.initialization_error)
-    _require_inside_boblib_root(
-        plan.boblib_root, [path for path, _ in plan.contents] + [path for path, _ in plan.result.package_orders]
-    )
+    planned = [path for path, _ in plan.contents] + [path for path, _ in plan.result.package_orders]
+    _require_inside_boblib_root(plan.boblib_root, planned)
+    target = plan.boblib_root if boblib_root is None else Path(boblib_root)
+    if not (target / "package.mo").is_file():
+        raise BobLibRootError(
+            f"{target} has no package.mo, so it is not a BobLib package. No Modelica files were written."
+        )
+    source = plan.boblib_root.resolve()
+
+    def relocated(path: Path) -> Path:
+        return target / path.resolve().relative_to(source)
+
+    _require_inside_boblib_root(target, [relocated(path) for path in planned])
     for path, text in plan.contents:
-        _write_text(path, text)
+        _write_text(relocated(path), text)
     for path, entry in plan.result.package_orders:
-        _ensure_package_order_entry(path, entry)
+        _ensure_package_order_entry(relocated(path), entry)
     return plan.result
 
 
