@@ -495,6 +495,10 @@ def _corner_fraction_from_cg(
 def _side_table(axle_name: str, side: dict[str, Any], key: str) -> FloatArray:
     actuation = require_section(side, axle_name, "actuation")
     shock = require_section(actuation, f"{axle_name}.actuation", "shock")
+    if key == "damper_table":
+        from common.damper_curves import resolve_damper_curve
+
+        return _table_array(resolve_damper_curve(shock).table)
     table = shock.get(key)
     if isinstance(table, dict):
         table = table.get("table")

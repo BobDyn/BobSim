@@ -2,8 +2,8 @@ schema: bobsim.regression.baseline.v1
 name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
-  boblib_commit: 75b6e031d8f9cb49acdb62b536c41c22e566a020
-  simulation_inputs_digest: d1334b638beb0ee24a773ceb23514db89d8271153cba21868e487424a5ba579f
+  boblib_commit: 604391fd76751cdbe0b1ba7fe60630a0e7c06276
+  simulation_inputs_digest: b8ecf2f5181ec821a17a1cb69cb94574d6280b2befaabeba4f5bd4842ee030bb
 refresh:
   make_targets:
   - standard-build
@@ -351,7 +351,7 @@ workflows:
         value: 1.0
         abs_tol: 0.001
       frequency.ay_phase_1hz:
-        value: -0.36249900058976436
+        value: -0.5282227457570627
         abs_tol: 0.15
       frequency.yaw_phase_1hz:
         value: -8.230165016359507
@@ -381,7 +381,7 @@ workflows:
         value: 0.0038859057934499605
         abs_tol: 0.02
       step.roll_overshoot_pct:
-        value: 35.50341390010604
+        value: 28.685521090316257
         abs_tol: 2.505245
       step.sideslip_ss:
         value: 0.00404188217234151

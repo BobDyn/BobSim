@@ -20,7 +20,8 @@ import yaml
 from common.vehicle_io import dump_vehicle
 
 from common import config_io
-from common.vehicle_io import parse_tir, tire_template_name
+from common.damper_curves import resolve_damper_curve, vehicle_damper_provenance
+from common.vehicle_io import load_yaml, parse_tir, tire_template_name
 from app import registry as app_registry
 from app import storage as app_storage
 from app import tire_eval as tire_eval_core
@@ -563,6 +564,10 @@ def _get_nested(data: Any, path: tuple[PathPart, ...]) -> Any:
 
 def _deep_merge_missing(target: dict[str, Any], defaults: dict[str, Any]) -> None:
     for key, value in defaults.items():
+        if key == "damper_table" and "damper" in target:
+            # Named dampers own their curve; architecture defaults must not add
+            # a second, conflicting linear source during load/save or switching.
+            continue
         if isinstance(value, dict):
             current = target.get(key)
             if not isinstance(current, dict):
@@ -901,12 +906,26 @@ def config_payload(config_id: str) -> dict[str, Any]:
     if spec.id == "vehicle":
         data = _vehicle_with_powertrain_defaults(data)
         data = _vehicle_with_architecture_defaults(data)
+    resolved_dampers: dict[str, Any] = {}
+    if spec.id == "vehicle":
+        for axle in ("front", "rear"):
+            shock = data.get(axle, {}).get("actuation", {}).get("shock", {})
+            if "damper" in shock:
+                try:
+                    curve = resolve_damper_curve(shock)
+                    resolved_dampers[axle] = {
+                        "configuration": shock["damper"], "table": curve.table,
+                        "provenance": curve.provenance,
+                    }
+                except ValueError as error:
+                    resolved_dampers[axle] = {"error": str(error)}
     return {
         **config_summary(spec),
         "modified": path.stat().st_mtime,
         "raw": raw,
         "data": data,
         "fields": _config_fields(spec, data),
+        "resolved_dampers": resolved_dampers,
     }
 
 
@@ -2233,6 +2252,17 @@ def save_active_results(
         snapshot = result_dir / "vehicle.yml"
         snapshot.write_text(vehicle_text, encoding="utf-8")
         vehicle_snapshot = snapshot.relative_to(ROOT).as_posix()
+        snapshot_data = load_yaml(snapshot)
+        if all(snapshot_data.get(axle, {}).get("actuation", {}).get("shock") for axle in ("front", "rear")):
+            damper_snapshot = files_dir / "damper_curves.json"
+            damper_snapshot.write_text(
+                json.dumps(vehicle_damper_provenance(snapshot_data), indent=2) + "\n",
+                encoding="utf-8",
+            )
+            file_entries.append({
+                "label": "Resolved damper curves", "kind": "json", "source_path": "",
+                "path": damper_snapshot.relative_to(ROOT).as_posix(),
+            })
 
     for axle, text in inputs.get("tire_texts", {}).items():
         if axle not in ("front", "rear"):

@@ -123,3 +123,12 @@ common/deploy/dist/
 
 simulations/lap/results/
 simulations/reduced/results/
+
+# Local outputs and the preserved submodule checkout from the numbered layout.
+# Keep these ignored while users migrate; the active source paths are above.
+/_3_StandardSim/Build/
+/_3_StandardSim/BuildBobLib/
+/_3_StandardSim/generated_results/
+/_3_StandardSim/results/
+/_5_App/user_data/
+/_0_Utils/external/BobLib/

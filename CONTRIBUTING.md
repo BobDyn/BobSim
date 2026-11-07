@@ -40,6 +40,9 @@ The baseline records the BobLib pin and a digest of every result-affecting input
 every PR and needs no OpenModelica, so a stale baseline fails in seconds instead
 of going unnoticed.
 
+Resolved damper tables are included in the input digest: editing the TTX25
+dataset can change the simulated forces without changing `vehicle.yml`.
+
 `execution`, `report`, and `plots` are excluded from the digest: worker counts and
 plot titles cannot move a simulated number.
 
