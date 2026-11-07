@@ -181,6 +181,17 @@ class ModelicaRunner:
         rejections: list[OverrideRejection] = []
         for index, case in enumerate(cases, start=1):
             try:
+                if self._uses_runtime_damper_tables():
+                    conflicts = [
+                        OverrideRejection(
+                            key, key, "conflicting_aliases", case[key],
+                            "Automatic vehicle.yml damper tables own this parameter. Set "
+                            "simulation.runtime_damper_tables=false to supply manual table overrides.",
+                        )
+                        for key in ("useRuntimeDamperTables", "damperTableFile") if key in case
+                    ]
+                    if conflicts:
+                        raise OverrideError(conflicts)
                 plans.append(plan_overrides(case, init_variables))
             except OverrideError as exc:
                 where = f"case {index} ({case.get('_case_label') or self._case_label(case)})"

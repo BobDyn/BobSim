@@ -66,7 +66,7 @@ python -m common.damper_curves vehicle.yml --output resolved_dampers.json
 make standard-eval-transient
 ```
 
-Standard VehicleSim and FourPostSim studies resolve the active `vehicle.yml`
+Standard VehicleSim studies resolve the active `vehicle.yml`
 damper settings at launch. Each simulation case receives its own
 `damper_tables.txt` and `damper_curves.json` under its ignored run directory.
 BobLib reads the named front and rear tables during simulation initialization.
@@ -74,6 +74,8 @@ After one initial build with runtime-table support, changing supported damper
 settings reuses the same executable. No record write, submodule commit, or
 rebuild is needed for a damper-only change. Changes apply to the next study;
 a launched batch of cases keeps its settings snapshot.
+FourPostSim retains the quasi-static rig on main: damping is disabled and no
+runtime damper file is loaded. Use VehicleSim's transient study to check damping.
 Transient damper plots use the captured curves returned with the results, including
 after temporary run-file cleanup. They do not reread the current vehicle settings.
 Results without captured curves omit the reference overlay and issue a warning;
@@ -84,6 +86,9 @@ BobLib simulations retain their record-based defaults; BobSim explicitly enables
 runtime tables and passes each case's file path. Unsupported settings fail
 before cases are queued. Geometry and other compiled vehicle changes still
 require the normal Modelica generation/build workflow.
+Automatic table loading owns `useRuntimeDamperTables` and `damperTableFile`;
+conflicting per-case overrides fail before dispatch. Set
+`simulation.runtime_damper_tables: false` to supply those overrides manually.
 The resolved JSON records dataset SHA-256, settings, contributing curves,
 interpolation weights, and limitations. Result archives include
 `damper_curves.json`; packaged builds include only the runtime TTX25 dataset JSON.
@@ -137,7 +142,8 @@ python common/damper_data/digitize_ttx25.py "path/to/_TTX25 MkII Dyno N vs mmps.
 
 Inspect both generated trace overlays before replacing a dataset. Add new
 calibrations under a new dataset version and extend the resolver's explicit
-registry. Default vehicle settings are not automatically converted to TTX25.
+registry. The bundled `vehicle.yml` explicitly selects C6/R10 at HS4.3 on both
+axles; other vehicles retain their explicitly configured tables or settings.
 
 ## Mirroring and hardpoint naming
 
