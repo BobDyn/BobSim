@@ -86,8 +86,9 @@ def _branch(dataset: Mapping[str, Any], settings: Any, direction: str) -> tuple[
     if not candidates:
         raise ValueError(f"Unsupported {direction} valve {valve!r} in {dataset['id']}")
     # Only interpolate along an actually measured sweep, never across its missing interior.
-    if hs == 4.3:
-        candidates = [c for c in candidates if c["high_speed_turns_from_open"] == hs]
+    # Compare turns with a tolerance: the app and computed configs may not round-trip 4.3 exactly.
+    if math.isclose(hs, 4.3):
+        candidates = [c for c in candidates if math.isclose(c["high_speed_turns_from_open"], 4.3)]
         axis, target = "low_speed_clicks_from_closed", ls
     elif ls == 0:
         candidates = [c for c in candidates if c["low_speed_clicks_from_closed"] == 0]

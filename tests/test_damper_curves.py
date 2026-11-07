@@ -188,3 +188,9 @@ def test_app_architecture_defaults_preserve_named_damper_and_explicit_conflicts(
     _vehicle_with_architecture_defaults(data)
     with pytest.raises(ValueError, match="exactly one"):
         resolve_damper_curve(shock)
+
+
+def test_high_speed_turns_tolerate_float_round_off():
+    exact = resolve_damper_curve(ttx(hs=4.3))
+    computed = resolve_damper_curve(ttx(hs=4.3 + 1e-12))
+    assert computed.table == exact.table
