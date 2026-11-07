@@ -10,12 +10,14 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any, Mapping, cast
+from typing import Any, Iterable, Mapping, cast
 
 import pytest
 import yaml
 
 from common import config_io
+from common.damper_curves import resolve_damper_curve
+from common.metrics_csv import read_metric_status
 from simulations.response.mbd.four_post.four_post_eval_sim import FOUR_POST_SIMULATION, FourPostEvalSim
 
 
@@ -108,6 +110,12 @@ def simulation_inputs_digest() -> str:
             if section in config
         }
     payload["vehicle"] = yaml.safe_load((ROOT / "vehicle.yml").read_text(encoding="utf-8"))
+    # Named settings reference external data. Hash their numeric result so a
+    # dataset edit is detected, while platform line endings remain irrelevant.
+    payload["damper_tables"] = {
+        axle: resolve_damper_curve(payload["vehicle"][axle]["actuation"]["shock"]).table
+        for axle in ("front", "rear")
+    }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -193,6 +201,14 @@ def _metric_key(row: Mapping[str, str | None]) -> str:
     if group:
         return f"{group}.{metric_name}"
     return metric_name
+
+
+def _status_failures(metrics_csv: Path, names: Iterable[str]) -> list[str]:
+    """Baselined metrics whose status column is present and not ok."""
+    statuses = {name: status for name, (_value, status) in read_metric_status(metrics_csv).items()}
+    return [
+        f"  {name}: status {statuses[name]}" for name in names if statuses.get(name, "unknown") not in {"ok", "unknown"}
+    ]
 
 
 def _load_metrics_csv(path: Path) -> dict[str, MetricValue]:
@@ -459,6 +475,21 @@ def test_transient_regression_metrics_remain_physically_consistent(
     assert 0.0 <= _numeric_metric(metrics, "quality.yaw_fit_error") <= 0.05
 
 
+def test_baseline_gate_rejects_a_baselined_metric_whose_status_is_not_ok(tmp_path: Path) -> None:
+    metrics_csv = tmp_path / "metrics.csv"
+    metrics_csv.write_text(
+        "metric,value,status\navg_anti_dive_pct,-2.8,partial\navg_anti_squat_pct,-4.7,ok\nother,1.0,invalid\n",
+        encoding="utf-8",
+    )
+    legacy_csv = tmp_path / "legacy.csv"
+    legacy_csv.write_text("metric,value\navg_anti_dive_pct,-2.8\n", encoding="utf-8")
+
+    assert _status_failures(metrics_csv, ["avg_anti_dive_pct", "avg_anti_squat_pct"]) == [
+        "  avg_anti_dive_pct: status partial"
+    ]
+    assert _status_failures(legacy_csv, ["avg_anti_dive_pct"]) == []
+
+
 def test_baseline_provenance_matches_simulation_inputs() -> None:
     """Fail fast when the baseline no longer describes the current inputs.
 
@@ -554,7 +585,7 @@ def test_resolve_prefers_the_active_copy_until_seeds_are_pinned(
 )
 def test_default_vehicle_standard_metrics_match_baseline(workflow_data: WorkflowData) -> None:
     # Check every metric before failing, because a refresh takes about 12 min.
-    failures: list[str] = []
+    failures = _status_failures(workflow_data.metrics_csv, _metric_baselines(workflow_data.spec))
 
     for metric, spec in _metric_baselines(workflow_data.spec).items():
         assert "value" in spec, f"{workflow_data.name}.{metric} baseline must define value"
@@ -596,4 +627,19 @@ def test_default_vehicle_standard_metrics_match_baseline(workflow_data: Workflow
 def test_provenance_includes_internal_four_post_solver_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     original = simulation_inputs_digest()
     monkeypatch.setitem(FOUR_POST_SIMULATION, "stepSize", 0.25)
+    assert simulation_inputs_digest() != original
+
+
+def test_provenance_tracks_resolved_damper_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = simulation_inputs_digest()
+    dataset_path = ROOT / "common/damper_data/ttx25_mkii_c12_r12_pdf_v1.json"
+    raw = dataset_path.read_bytes()
+    read_bytes = Path.read_bytes
+    replacement = raw + b"\n"
+    monkeypatch.setattr(Path, "read_bytes", lambda path: replacement if path == dataset_path else read_bytes(path))
+    assert simulation_inputs_digest() == original
+    dataset = json.loads(raw)
+    curve = next(row for row in dataset["curves"] if row["id"] == "C12_LS6_HS4.3")
+    curve["force_n"][1] += 1
+    replacement = json.dumps(dataset).encode("utf-8")
     assert simulation_inputs_digest() != original

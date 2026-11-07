@@ -9,7 +9,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import uuid
 from typing import Any, Mapping, Sequence
 
@@ -166,7 +165,7 @@ def vehicle_damper_provenance(data: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def write_runtime_damper_file(data: Mapping[str, Any], build_dir: Path) -> Path:
-    """Write MSL named tables loaded by VehicleSim and FourPostSim at startup."""
+    """Write MSL named tables loaded by the dynamic VehicleSim at startup."""
     sections = ["#1"]
     for axle in ("front", "rear"):
         table = resolve_damper_curve(data[axle]["actuation"]["shock"]).table
@@ -183,27 +182,6 @@ def write_runtime_damper_file(data: Mapping[str, Any], build_dir: Path) -> Path:
     return destination
 
 
-def write_modelica_damper_tables(data: Mapping[str, Any], record_path: Path) -> bool:
-    """Update only the two damper tables in an existing BobLib vehicle record."""
-    source = record_path.read_bytes()
-    text = source.decode("utf-8")
-    for axle, prefix in (("front", "Fr"), ("rear", "Rr")):
-        curve = resolve_damper_curve(data[axle]["actuation"]["shock"])
-        table = "[" + "; ".join(f"{v:.15g}, {f:.15g}" for v, f in curve.table) + "]"
-        pattern = re.compile(
-            rf"(parameter\s+Axle\.\w+Record\s+p{prefix}AxleDW\([\s\S]*?damperTable\s*=\s*)"
-            r"\[[^\]]+\]"
-        )
-        text, count = pattern.subn(lambda match: match.group(1) + table, text)
-        if count != 1:
-            raise ValueError(f"Expected one {axle} damperTable in {record_path}; found {count}")
-    updated = text.encode("utf-8")
-    if updated == source:
-        return False
-    record_path.write_bytes(updated)
-    return True
-
-
 def main() -> None:
     """Inspect resolved curves and provenance without modifying the vehicle."""
     import argparse
@@ -213,23 +191,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=main.__doc__)
     parser.add_argument("vehicle", type=Path)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--write-modelica", action="store_true",
-                        help="Update only the two damper tables in the existing BobLib vehicle record")
     args = parser.parse_args()
     data = load_yaml(args.vehicle)
-    if args.write_modelica:
-        if args.output:
-            parser.error("--output and --write-modelica cannot be combined")
-        name = data["vehicle"]["name"]
-        if re.fullmatch(r"[A-Za-z_]\w*", name) is None:
-            parser.error("vehicle.name must be a Modelica identifier")
-        boblib = Path(data["paths"]["boblib"])
-        if not boblib.is_absolute():
-            boblib = args.vehicle.resolve().parent / boblib
-        record = boblib / "Records/VehicleDefn" / f"{name}Record.mo"
-        changed = write_modelica_damper_tables(data, record)
-        print(f"{'Updated' if changed else 'Already current'}: {record}")
-        return
     payload = json.dumps(vehicle_damper_provenance(data), indent=2) + "\n"
     if args.output:
         args.output.write_text(payload, encoding="utf-8")

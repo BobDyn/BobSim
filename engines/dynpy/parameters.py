@@ -84,11 +84,11 @@ class ReducedVehicleParameters:
     maximum_drive_speed_mps: float
     drive_distribution_front: float
     brake_distribution_front: float
+    aero: AeroMap | None = None
     # Motion ratio convention: wheel travel / shock compression. Static projection,
     # consistent with the spring-rate projection; not a travel-dependent ratio.
     damper_curves: tuple[ResolvedDamperCurve, ...] = ()
     damper_motion_ratios: tuple[float, ...] = ()
-    aero: AeroMap | None = None
 
     @property
     def tires(self) -> tuple[MF52Tire, MF52Tire, MF52Tire, MF52Tire]:

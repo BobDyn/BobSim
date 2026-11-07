@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from common.damper_curves import (
-    resolve_damper_curve, write_modelica_damper_tables, write_runtime_damper_file,
+    resolve_damper_curve, write_runtime_damper_file,
 )
 from engines.dynpy import create_model, load_reduced_vehicle_parameters
 from common.vehicle_io import load_yaml, repo_root
@@ -76,25 +76,6 @@ def test_legacy_linear_table_and_extrapolation():
         assert curve.force(v) == pytest.approx(850 * v)
 
 
-def test_modelica_damper_sync_preserves_other_record_content(tmp_path):
-    data = load_yaml(repo_root() / "vehicle.yml")
-    record = tmp_path / "VehicleRecord.mo"
-    original = (
-        "parameter Axle.AxleDW_BC_StabarRecord pFrAxleDW(\n"
-        "  springFreeLength = 0.2, damperTable = [-1, -850; 0, 0; 1, 850]);\n"
-        "parameter Axle.AxleDW_BC_StabarRecord pRrAxleDW(\n"
-        "  springFreeLength = 0.3, damperTable = [-1, -1300; 0, 0; 1, 1300]);\n"
-        "parameter QSSInitializationRecord pQSSInitialization(referenceVelocity = 15);\n"
-    )
-    record.write_text(original, encoding="utf-8")
-
-    assert write_modelica_damper_tables(data, record)
-    changed = record.read_text(encoding="utf-8")
-    assert "springFreeLength = 0.2" in changed
-    assert "springFreeLength = 0.3" in changed
-    assert "pQSSInitialization(referenceVelocity = 15)" in changed
-    assert "-0.25, -324.8" in changed
-    assert not write_modelica_damper_tables(data, record)
 
 
 def test_runtime_table_file_reflects_settings_without_modelica_record_edit(tmp_path):

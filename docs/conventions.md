@@ -89,8 +89,8 @@ interpolation weights, and limitations. Result archives include
 `damper_curves.json`; packaged builds include only the runtime TTX25 dataset JSON.
 The existing full-stack `make sync-vehicle-write` and app **Write to MBD** actions
 rewrite other Modelica files, so do not use them for a damper-only settings change.
-The optional `--write-modelica` command remains available for updating the
-record fallback used by standalone BobLib simulations.
+For a standalone BobLib fallback, use the normal record generator with an explicitly
+selected vehicle and initialization; the obsolete flat-record patch command has been removed.
 
 Curve generation works with the existing BobLib tabular component. The additional
 table validation and diagnostic outputs require the updated BobLib checkout.

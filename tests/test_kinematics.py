@@ -670,43 +670,6 @@ def test_four_post_kinematic_curves_match_unit_validated_frontend_calcs(
         assert summary[metric] == pytest.approx(expected, abs=1e-8), metric
 
 
-def test_four_post_static_setup_uses_computed_contact_load_when_fixture_fz_is_zero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    vehicle = _four_post_unit_vehicle()
-    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
-    heave_sweep = np.linspace(
-        -0.03,
-        0.03,
-        four_post_eval.FOUR_POST_HEAVE_POSE_COUNT,
-    )
-    roll_sweep_deg = np.linspace(
-        -1.25,
-        1.25,
-        four_post_eval.FOUR_POST_ROLL_POSE_COUNT,
-    )
-    result = _four_post_result_from_kinematics(vehicle, heave_sweep, roll_sweep_deg)
-    for key in (
-        "frKnC.leftFz",
-        "frKnC.rightFz",
-        "rrKnC.leftFz",
-        "rrKnC.rightFz",
-    ):
-        result[key] = np.zeros_like(result[key])
-
-    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
-    summary, series = sim.summarize(result)
-    setup = sim.build_setup(summary, series)
-
-    front_left = setup["front"]["left"]
-    expected_static_fz = front_left["sprung_load_N"] + (front_left["unsprung_mass_kg"] * four_post_eval.GRAVITY_MPS2)
-    assert front_left["static_fixture_fz_N"] == pytest.approx(0.0)
-    assert front_left["static_fz_N"] == pytest.approx(expected_static_fz)
-    assert front_left["static_fz_error_N"] == pytest.approx(0.0, abs=1e-9)
-    assert front_left["static_balance_ok"] is True
-
-
 def test_four_post_summary_filters_implausible_samples(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -731,14 +694,16 @@ def test_four_post_summary_filters_implausible_samples(
     result["frKnC.jackingForce"][heave_jack_index] = 1e292
     result["frKnC.leftFz"][roll_index] = 1e292
 
-    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
+    assert sim.metric_status["avg_anti_dive_pct"] == "partial"
     assert abs(summary["avg_anti_dive_pct"]) <= four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT
     assert not np.any(np.abs(series["fr_anti_vs_heave"]) > four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT)
     assert not np.any(np.abs(series["front_load_transfer_vs_roll"]) > four_post_eval.FOUR_POST_SIGNAL_ABS_LIMIT)
 
 
-def test_four_post_anti_roll_uses_commanded_force_when_measured_fy_is_bad(
+def test_four_post_anti_roll_does_not_replace_a_bad_measured_force_with_the_commanded_force(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -760,11 +725,12 @@ def test_four_post_anti_roll_uses_commanded_force_when_measured_fy_is_bad(
     result["frKnC.fy"][roll_jack_index] = 1e-12
     result["frKnC.jackingForce"][roll_jack_index] = -50.0
 
-    summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
     assert np.isfinite(summary["avg_anti_roll_front_pct"])
-    assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT
-    assert not np.any(np.abs(series["fr_anti_vs_roll"]) > four_post_eval.FOUR_POST_PERCENT_ABS_LIMIT)
+    assert sim.metric_status["avg_anti_roll_front_pct"] == "partial"
+    assert len(series["fr_anti_vs_roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT - 1
 
 
 def test_four_post_anti_roll_samples_offset_force_pulses(
@@ -899,7 +865,7 @@ def test_four_post_fbrc_uses_differential_wheel_load_and_axle_track(
         assert summary[f"avg_fbrc_equivalent_height_{axle}_m"] == pytest.approx(expected_height)
 
 
-def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
+def test_four_post_anti_roll_does_not_switch_to_the_contact_load_sum_when_jacking_force_is_bad(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -936,10 +902,13 @@ def test_four_post_anti_roll_falls_back_to_measured_fz_delta(
                 tail_fz = float(result[f"{prefix}.{side}Fz"][tail_index])
                 result[f"{prefix}.{side}Fz"][jack_index] = tail_fz + 0.5 * fz_delta
 
-    _summary, series = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).summarize(result)
+    sim = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path))
+    summary, series = sim.summarize(result)
 
-    assert np.ptp(series["fr_anti_vs_roll"]) > 0.1
-    assert np.ptp(series["rr_anti_vs_roll"]) > 0.1
+    assert len(series["fr_anti_vs_roll"]) == 0
+    assert np.isnan(summary["avg_anti_roll_front_pct"])
+    assert sim.metric_status["avg_anti_roll_front_pct"] == "invalid"
+    assert sim.metric_status["avg_lateral_jacking_coeff_rear"] == "invalid"
 
 
 def test_four_post_lltd_uses_spring_roll_stiffness_when_arb_is_absent(
@@ -1146,3 +1115,310 @@ def test_four_post_preserves_vehicle_spring_curves_without_rate_overrides(
     })
     np.testing.assert_array_equal(overridden["front_spring_table"][:, 1], np.asarray(tables["front"])[:, 0] * 10000.0)
     np.testing.assert_array_equal(overridden["rear_spring_table"], tables["rear"])
+
+
+def test_four_post_sends_bar_rates_only_to_the_rig_bars_that_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vehicle = _four_post_unit_vehicle()
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    front["actuation"].pop("stabar")
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+
+    overrides = four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)).build_model_setup_overrides()
+
+    assert not [key for key in overrides if key.startswith("pVehicle.") and "Stabar" in key]
+    assert "pFrStabar.barRate" not in overrides
+    assert overrides["pRrStabar.barRate"] == 0.0
+
+
+def _four_post_unit_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[four_post_eval.FourPostEvalSim, dict[str, np.ndarray], dict[str, object]]:
+    vehicle = _four_post_unit_vehicle()
+    monkeypatch.setattr(four_post_eval, "_load_active_vehicle_yaml", lambda: vehicle)
+    result = _four_post_result_from_kinematics(
+        vehicle,
+        np.linspace(-0.03, 0.03, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT),
+        np.linspace(-1.25, 1.25, four_post_eval.FOUR_POST_ROLL_POSE_COUNT),
+    )
+    return four_post_eval.FourPostEvalSim(_four_post_unit_config(tmp_path)), result, vehicle
+
+
+def _pose_indices(result: dict[str, np.ndarray], start_s: float, count: int) -> list[tuple[int, int]]:
+    """(pulse row, tail row) per pose."""
+    return [
+        (int(np.argmin(np.abs(result["time"] - jack))), int(np.argmin(np.abs(result["time"] - tail))))
+        for jack, tail in zip(_jack_times(start_s, count), _pose_sample_times(start_s, count), strict=True)
+    ]
+
+
+def _roll_poses(result: dict[str, np.ndarray]) -> list[tuple[int, int]]:
+    return _pose_indices(result, four_post_eval.FOUR_POST_ROLL_START_S, four_post_eval.FOUR_POST_ROLL_POSE_COUNT)
+
+
+def _set_roll_pulse_loads(
+    result: dict[str, np.ndarray],
+    left_delta_n: float,
+    right_delta_n: float,
+    jacking_delta_n: float,
+) -> None:
+    for pulse, tail in _roll_poses(result):
+        for prefix in ("frKnC", "rrKnC"):
+            result[f"{prefix}.leftFz"][pulse] = result[f"{prefix}.leftFz"][tail] + left_delta_n
+            result[f"{prefix}.rightFz"][pulse] = result[f"{prefix}.rightFz"][tail] + right_delta_n
+            # The fixture reaction signal is opposite to the chassis jacking response.
+            result[f"{prefix}.jackingForce"][pulse] = result[f"{prefix}.jackingForce"][tail] - jacking_delta_n
+
+
+def test_four_post_anti_roll_key_is_net_jacking_with_zero_net_and_nonzero_differential(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _set_roll_pulse_loads(result, left_delta_n=40.0, right_delta_n=-40.0, jacking_delta_n=0.0)
+
+    summary, _series = sim.summarize(result)
+
+    assert summary["avg_anti_roll_front_pct"] == pytest.approx(0.0, abs=1e-12)
+    assert summary["avg_lateral_jacking_coeff_front"] == pytest.approx(0.0, abs=1e-12)
+    assert summary["avg_fbrc_differential_jacking_ratio_front"] == pytest.approx(-0.08)
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    half_track = float(front["suspension"]["wheel_center_m"][1])
+    assert summary["avg_fbrc_equivalent_height_front_m"] == pytest.approx(-0.08 * half_track)
+    plots = four_post_eval._normalize_four_post_report_config({})["plots"]
+    assert "Anti-Roll" not in plots["jacking_roll"]["title"]
+    assert "Net Axle Jacking" in plots["jacking_roll"]["title"]
+
+
+def test_four_post_fbrc_height_is_set_by_the_differential_and_not_by_net_jacking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _set_roll_pulse_loads(result, left_delta_n=70.0, right_delta_n=-10.0, jacking_delta_n=60.0)
+
+    summary, series = sim.summarize(result)
+
+    front = vehicle["front"]
+    assert isinstance(front, dict)
+    half_track = float(front["suspension"]["wheel_center_m"][1])
+    assert summary["avg_lateral_jacking_coeff_front"] == pytest.approx(0.06)
+    np.testing.assert_allclose(series["fr_fbrc_height_vs_roll"], -0.08 * half_track)
+    assert summary["avg_fbrc_equivalent_height_front_m"] == pytest.approx(-0.08 * half_track)
+
+
+def test_four_post_pose_without_a_sample_in_its_window_is_not_filled_from_outside(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _pulse, tail = _roll_poses(result)[3]
+    keep = np.arange(result["time"].size) != tail
+    result = {key: values[keep] for key, values in result.items()}
+
+    summary, series = sim.summarize(result)
+
+    assert len(series["roll"]) == four_post_eval.FOUR_POST_ROLL_POSE_COUNT - 1
+    assert sim.metric_status["camber_gain_roll_rad_per_rad"] == "partial"
+    assert np.isfinite(summary["camber_gain_roll_rad_per_rad"])
+
+
+def test_four_post_elastic_share_does_not_fill_a_bad_pose_from_its_neighbors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _pulse, tail = _roll_poses(result)[2]
+    result["frKnC.leftFz"][tail] = 1e292
+
+    summary, series = sim.summarize(result)
+
+    # The bad pose and the zero-roll pose, where the share is 0/0.
+    assert np.count_nonzero(np.isnan(series["lltd_contact_force_vs_roll"])) == 2
+    assert sim.metric_status["avg_lltd_front_pct"] == "partial"
+    assert np.isfinite(summary["avg_lltd_front_pct"])
+
+
+def test_four_post_elastic_share_keeps_the_sign_of_each_axle_transfer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    for _pulse, tail in _roll_poses(result):
+        roll_rad = float(result["rrKnC.roll"][tail])
+        result["rrKnC.leftFz"][tail] = 1000.0 - 300.0 * roll_rad
+        result["rrKnC.rightFz"][tail] = 1000.0 + 300.0 * roll_rad
+
+    summary, _series = sim.summarize(result)
+
+    assert np.isnan(summary["avg_lltd_front_pct"])
+    assert sim.metric_status["avg_lltd_front_pct"] == "invalid"
+
+
+def test_four_post_heave_poses_in_tension_are_flagged_and_anti_records_kept(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    poses = _pose_indices(result, four_post_eval.FOUR_POST_HEAVE_START_S, four_post_eval.FOUR_POST_HEAVE_POSE_COUNT)
+    for index, (pulse, tail) in enumerate(poses):
+        for prefix in ("frKnC", "rrKnC"):
+            if prefix == "frKnC" and index in (0, 1):
+                result[f"{prefix}.leftFz"][[pulse, tail]] = 0.0
+                result[f"{prefix}.rightFz"][[pulse, tail]] = 0.0
+                result[f"{prefix}.jackingForce"][[pulse, tail]] = 300.0
+            else:
+                total = result[f"{prefix}.leftFz"][tail] + result[f"{prefix}.rightFz"][tail]
+                result[f"{prefix}.jackingForce"][[pulse, tail]] = -total
+
+    summary, series = sim.summarize(result)
+
+    assert summary["heave_cp_tension_points"] == 2
+    residual = series["fr_tension_residual_vs_heave"]
+    assert np.count_nonzero(np.isclose(residual, 300.0)) == 2
+    assert np.count_nonzero(np.isclose(residual, 0.0)) == four_post_eval.FOUR_POST_HEAVE_POSE_COUNT - 2
+    assert np.count_nonzero(np.isnan(series["fr_l_fz_vs_heave"])) == 2
+    assert sim.metric_status["avg_anti_dive_pct"] == "ok"
+    assert summary["avg_anti_dive_pct"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_four_post_anti_outputs_state_their_force_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+
+    summary, _series = sim.summarize(result)
+
+    assert summary["anti_force_path"] == "contact_patch_upright_reacted"
+    assert "avg_longitudinal_jacking_coeff_front" in summary
+    plots = four_post_eval._normalize_four_post_report_config({})["plots"]
+    assert "upright" in plots["jacking_heave"]["title"]
+    assert "LLTD" not in plots["lltd_roll"]["title"]
+
+
+def test_four_post_metrics_csv_carries_a_status_column(tmp_path: Path) -> None:
+    from common.metrics_csv import read_metric_status, read_metrics
+
+    path = four_post_eval.write_metrics_csv(
+        {"a": 1.0, "b": 2.0, "c": float("nan"), "d": True},
+        tmp_path / "metrics.csv",
+        status={"b": "partial"},
+    )
+
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    assert rows == [
+        ["metric", "value", "status"],
+        ["a", "1.0", "ok"],
+        ["b", "2.0", "partial"],
+        ["c", "", "invalid"],
+        ["d", "True", "ok"],
+    ]
+    assert read_metric_status(path)["b"] == (2.0, "partial")
+    assert np.isnan(read_metrics(path)["b"])
+    assert read_metrics(path, accept=frozenset({"ok", "partial"}))["b"] == 2.0
+
+    legacy = tmp_path / "legacy.csv"
+    legacy.write_text("metric,value\na,1.0\n", encoding="utf-8")
+    assert read_metric_status(legacy)["a"] == (1.0, "unknown")
+    assert np.isnan(read_metrics(legacy)["a"])
+
+
+def _trailing_arm_x(cp_rise_m: np.ndarray, pivot_xz: tuple[float, float], point_z_m: float) -> np.ndarray:
+    """Side-view x of a point at height point_z_m above the CP on an arm that pivots at pivot_xz."""
+    theta = np.linspace(-0.3, 0.3, 20001)
+    rx, rz = -pivot_xz[0], point_z_m - pivot_xz[1]
+    cp_rz = -pivot_xz[1]
+    cp_rise = -pivot_xz[0] * np.sin(theta) + cp_rz * np.cos(theta) - cp_rz
+    x = pivot_xz[0] + rx * np.cos(theta) - rz * np.sin(theta) - (pivot_xz[0] + rx)
+    order = np.argsort(cp_rise)
+    return np.interp(cp_rise_m, cp_rise[order], x[order])
+
+
+def test_design_pose_jacking_coefficients_match_a_trailing_arm_instant_center() -> None:
+    pivot = (0.5, 0.40)
+    wheel_radius = 0.25
+    jounce = np.linspace(-0.03, 0.03, 11)
+
+    cp_coeff, wc_coeff = four_post_eval._design_pose_jacking_coefficients(
+        jounce,
+        _trailing_arm_x(jounce, pivot, 0.0),
+        _trailing_arm_x(jounce, pivot, wheel_radius),
+    )
+
+    assert cp_coeff == pytest.approx(pivot[1] / pivot[0], rel=1e-3)
+    assert wc_coeff == pytest.approx((pivot[1] - wheel_radius) / pivot[0], rel=1e-3)
+
+
+def _add_trailing_arm_path_signals(
+    result: dict[str, np.ndarray],
+    pivots: dict[str, tuple[float, float]],
+    wheel_radius_m: float,
+) -> None:
+    jounce = -result["frKnC.heave"]
+    for axle, pivot in pivots.items():
+        for side in ("left", "right"):
+            result[f"{axle}.{side}CP.r_0[1]"] = _trailing_arm_x(jounce, pivot, 0.0)
+            result[f"{axle}.{side}Tire.chassisFrame.r_0[1]"] = _trailing_arm_x(jounce, pivot, wheel_radius_m)
+
+
+def test_four_post_reports_anti_on_both_force_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sim, result, vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    summary, _series = sim.summarize(result)
+    assert np.isnan(summary["anti_squat_wheel_center_path_pct"])
+    assert sim.metric_status["anti_squat_wheel_center_path_pct"] == "unavailable"
+
+    # Front pivot behind and rear pivot ahead of the wheel, both above it.
+    _add_trailing_arm_path_signals(result, {"frAxleDW": (-0.5, 0.40), "rrAxleDW": (0.5, 0.40)}, 0.25)
+    summary, _series = sim.summarize(result)
+
+    front = CornerKinematics.from_vehicle(vehicle, "front").wheel_center_initial
+    rear = CornerKinematics.from_vehicle(vehicle, "rear").wheel_center_initial
+    ref_long = 0.35 / abs(front[0] - rear[0])
+    expected = {
+        ("front", "contact_patch"): -0.8,
+        ("front", "wheel_center"): -0.3,
+        ("rear", "contact_patch"): 0.8,
+        ("rear", "wheel_center"): 0.3,
+    }
+    for (axle, path), coeff in expected.items():
+        assert summary[f"longitudinal_jacking_coeff_{axle}_{path}_path"] == pytest.approx(coeff, rel=1e-3)
+        assert sim.metric_status[f"longitudinal_jacking_coeff_{axle}_{path}_path"] == "ok"
+    # Braking Fx is negative, so a negative front coefficient lifts the front under braking.
+    assert summary["anti_dive_contact_patch_path_pct"] == pytest.approx(80.0 / ref_long, rel=1e-3)
+    assert summary["anti_dive_wheel_center_path_pct"] == pytest.approx(30.0 / ref_long, rel=1e-3)
+    assert summary["anti_squat_contact_patch_path_pct"] == pytest.approx(80.0 / ref_long, rel=1e-3)
+    assert summary["anti_squat_wheel_center_path_pct"] == pytest.approx(30.0 / ref_long, rel=1e-3)
+
+
+def test_four_post_reaction_path_change_leaves_the_contact_patch_anti_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sim, result, _vehicle = _four_post_unit_run(tmp_path, monkeypatch)
+    _add_trailing_arm_path_signals(result, {"frAxleDW": (-0.5, 0.40), "rrAxleDW": (0.5, 0.40)}, 0.25)
+    before, _series = sim.summarize(result)
+
+    # Only the wheel-center path changes: the wheel center now moves with the CP.
+    for axle in ("frAxleDW", "rrAxleDW"):
+        for side in ("left", "right"):
+            result[f"{axle}.{side}Tire.chassisFrame.r_0[1]"] = result[f"{axle}.{side}CP.r_0[1]"].copy()
+    after, _series = sim.summarize(result)
+
+    for key in (
+        "anti_dive_contact_patch_path_pct",
+        "anti_squat_contact_patch_path_pct",
+        "avg_anti_dive_pct",
+        "avg_anti_squat_pct",
+        "avg_longitudinal_jacking_coeff_front",
+        "avg_longitudinal_jacking_coeff_rear",
+    ):
+        assert after[key] == pytest.approx(before[key], nan_ok=True)
+    assert after["anti_squat_wheel_center_path_pct"] == pytest.approx(after["anti_squat_contact_patch_path_pct"])
+    assert after["anti_squat_wheel_center_path_pct"] != pytest.approx(before["anti_squat_wheel_center_path_pct"])

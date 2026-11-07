@@ -320,7 +320,7 @@ typecheck:
 		--exclude '(^|/)($(BOBLIB_PATH)|common/deploy/(build|dist))/'
 
 test:
-	$(RUN) $(PYTHON) -m pytest tests
+	$(RUN) $(PYTHON) -m pytest -n auto tests
 
 regression-invariants:
 	$(RUN) $(PYTHON) -m pytest tests/test_simulation_regression.py
@@ -356,9 +356,7 @@ sync-vehicle-write:
 
 # Records and templates hold the hardpoints. Without them, make misses geometry changes.
 GENERATED_RECORDS := $(wildcard $(BOBLIB_PACKAGE_PATH)/Records/VehicleDefn/*.mo)
-GENERATED_TEMPLATES := \
-	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/Vehicle/*.mo) \
-	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/FourPost/*.mo)
+GENERATED_TEMPLATES := $(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/BobSimTemplates/*.mo)
 
 # BOBSIM_NATIVE_CFLAGS is computed inside the container so it reflects the
 # container's actual architecture, not the host `make` runs on -- clang on

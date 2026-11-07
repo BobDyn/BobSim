@@ -187,6 +187,7 @@ class ReportEngine:
                     result["summary"],
                     title=page_title,
                     unit_overrides=summary_units,
+                    status=result.get("metric_status"),
                 )
 
             else:

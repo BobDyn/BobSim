@@ -23,8 +23,6 @@ from simulations.response.mbd.four_post.four_post_eval_sim import (
     FOUR_POST_STOP_TIME_S,
     FourPostEvalSim,
     _normalize_four_post_report_config,
-    _static_balance_iterations,
-    _static_balance_convergence_n,
 )
 from simulations.response.mbd._modelica_runner import ModelicaRunner
 from simulations.response.mbd.ramp_steer.ramp_steer_eval_sim import RampSteerEvalSim
@@ -56,15 +54,20 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+FOUR_POST_BASE_CLASSES = ROOT / "engines/boblib/BobLib/Experiments/Standards/BaseClasses"
+
+
 def _four_post_model_text() -> str:
-    return (
-        ROOT / "engines/boblib/BobLib/Experiments/Standards/Templates/FourPost/BaseFourPostSim.mo"
-    ).read_text(encoding="utf-8")
+    # PartialFourPostRig binds its schedule tables to the KnCInputs constants.
+    return "\n".join(
+        (FOUR_POST_BASE_CLASSES / name).read_text(encoding="utf-8")
+        for name in ("PartialFourPostRig.mo", "KnCInputs.mo")
+    )
 
 
 def _four_post_table(name: str) -> list[tuple[float, float]]:
     match = re.search(
-        rf"final parameter Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
+        rf"constant Real {re.escape(name)}\[:, 2\] = \[(.*?)\];",
         _four_post_model_text(),
         flags=re.S,
     )
@@ -106,10 +109,13 @@ def test_bobsim_sources_do_not_reference_legacy_boblib_generation_layout() -> No
             ":(exclude)engines/boblib/**",
         ],
         cwd=ROOT,
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
+    if completed.returncode != 0:
+        pytest.skip(f"git cannot list the sources here: {completed.stderr.strip()}")
     searchable_suffixes = {".md", ".mo", ".mos", ".py", ".toml", ".yaml", ".yml"}
     searchable_names = {"Dockerfile", "makefile"}
     legacy = "BobLib"
@@ -227,7 +233,7 @@ def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:
 def test_four_post_model_tables_match_report_sampling_schedule() -> None:
     text = _four_post_model_text()
     assert "heaveCommandTable" not in text
-    assert "heaveSource(table = heaveTable)" in text
+    assert re.search(r"heaveSource\(\s*table = heaveTable,", text)
 
     heave_table = dict(_four_post_table("heaveTable"))
     roll_table = dict(_four_post_table("rollTable"))
@@ -273,7 +279,7 @@ def test_four_post_report_uses_jacking_antiroll_plot_without_raw_appendix() -> N
         assert config["report"]["raw_time_series_appendix"] is False
 
         jacking_roll = config["plots"]["jacking_roll"]
-        assert jacking_roll["title"] == "Geometric Anti-Roll vs Roll"
+        assert jacking_roll["title"] == "Net Axle Jacking vs Roll"
         assert [subplot["x"]["key"] for subplot in jacking_roll["subplots"]] == [
             "fr_jacking_vs_roll_x",
             "rr_jacking_vs_roll_x",
@@ -320,17 +326,19 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
                         },
                     },
                 ],
-            }
+            },
+            "lltd_roll": {"title": "Load-Transfer LLTD vs Roll: Measured vs Roll-Rate Distribution"},
         },
     }
 
     normalized = _normalize_four_post_report_config(config)
     jacking_roll = normalized["plots"]["jacking_roll"]
     fbrc_roll = normalized["plots"]["fbrc_roll"]
+    assert "LLTD" not in normalized["plots"]["lltd_roll"]["title"]
 
     assert normalized["report"]["raw_time_series_appendix"] is False
     assert normalized["procedure"]["rollMagnitude"] == pytest.approx(FOUR_POST_DEFAULT_ROLL_MAGNITUDE_RAD)
-    assert jacking_roll["title"] == "Geometric Anti-Roll vs Roll"
+    assert jacking_roll["title"] == "Net Axle Jacking vs Roll"
     assert [subplot["x"]["key"] for subplot in jacking_roll["subplots"]] == [
         "fr_jacking_vs_roll_x",
         "rr_jacking_vs_roll_x",
@@ -345,10 +353,11 @@ def test_four_post_report_normalizer_disables_raw_appendix_for_legacy_app_data_c
     ]
 
 
-def test_four_post_eval_passes_static_balanced_spring_free_lengths(
+def test_four_post_eval_spring_free_lengths_ignore_a_previous_metrics_csv(
     tmp_path: Path,
 ) -> None:
     config = _load_yaml(Path("simulations/response/mbd/four_post/four_post_eval_config.yml"))
+    vehicle = _load_yaml(Path("vehicle.yml"))
     metrics_path = tmp_path / "four_post_metrics.csv"
     metrics_path.write_text(
         "metric,value\nstatic_motion_ratio_front,1.0053063275855492\nstatic_motion_ratio_rear,1.2386785254222528\n",
@@ -358,10 +367,9 @@ def test_four_post_eval_passes_static_balanced_spring_free_lengths(
 
     overrides = FourPostEvalSim(config).build_model_setup_overrides()
 
-    assert _static_balance_iterations(config) == 4
-    assert _static_balance_convergence_n(config) == pytest.approx(0.01)
-    assert overrides["pVehicle.pFrAxleDW.springFreeLength"] == pytest.approx(0.199700878416)
-    assert overrides["pVehicle.pRrAxleDW.springFreeLength"] == pytest.approx(0.263423049137)
+    for axle in ("front", "rear"):
+        name = f"pVehicle.chassis.{axle}Axle.actuation.springFreeLength"
+        assert overrides[name] == vehicle[axle]["actuation"]["shock"]["free_length_m"]
 
 
 def test_signal_plots_filter_implausible_numeric_spikes() -> None:
@@ -436,35 +444,57 @@ def test_ramp_steer_eval_uses_open_loop_ramp_mode() -> None:
 def test_modelica_runner_maps_standard_sim_shorthand_to_changeable_parameters(
     tmp_path: Path,
 ) -> None:
-    runner = ModelicaRunner.__new__(ModelicaRunner)
+    exec_name = "Model"
+    names = (
+        "initialVel",
+        "driver.targetAy",
+        "driver.useMode",
+        "driver.steerStart",
+        "driver.handwheelRampRate",
+        "driver.velGain",
+        "driver.velTi",
+    )
+    (tmp_path / exec_name).write_text("exe", encoding="utf-8")
+    (tmp_path / f"{exec_name}_init.xml").write_text(
+        "<fmiModelDescription><ModelVariables>"
+        + "".join(
+            f'<ScalarVariable name="{name}" isValueChangeable="true"><Real start="-1.0"/></ScalarVariable>'
+            for name in names
+        )
+        + "</ModelVariables></fmiModelDescription>",
+        encoding="utf-8",
+    )
+    runner = ModelicaRunner(build_dir=tmp_path, exec_name=exec_name, simulation={})
     override_path = tmp_path / "case.override"
 
-    runner._write_override_file(
-        override_path,
-        {
-            "_testVel": 12.5,
-            "targetVel": 12.5,
-            "targetAy": 18.0,
-            "useMode": 0,
-            "steerStart": 2.0,
-            "handwheelRampRate": 0.06,
-            "velGain": 100.0,
-            "velTi": 2.0,
-            "startTime": 0.0,
-            "stopTime": 45.0,
-        },
+    (plan,) = runner.plan_cases(
+        [
+            {
+                "_testVel": 12.5,
+                "targetVel": 12.5,
+                "targetAy": 18.0,
+                "useMode": 0,
+                "steerStart": 2.0,
+                "handwheelRampRate": 0.06,
+                "velGain": 100.0,
+                "velTi": 2.0,
+                "startTime": 0.0,
+                "stopTime": 45.0,
+            }
+        ]
     )
+    runner._write_override_file(override_path, plan)
 
     lines = set(override_path.read_text(encoding="utf-8").splitlines())
 
     assert "initialVel=12.5" in lines
-    assert "vcu.targetVel=12.5" not in lines
-    assert "vcu.targetAy=18.0" in lines
-    assert "vcu.useMode=0" in lines
-    assert "vcu.steerStart=2.0" in lines
-    assert "vcu.handwheelRampRate=0.06" in lines
-    assert "vcu.velGain=100.0" in lines
-    assert "vcu.velTi=2.0" in lines
+    assert "driver.targetVel=12.5" not in lines
+    assert "driver.targetAy=18.0" in lines
+    assert "driver.useMode=0" in lines
+    assert "driver.steerStart=2.0" in lines
+    assert "driver.handwheelRampRate=0.06" in lines
+    assert "driver.velGain=100.0" in lines
+    assert "driver.velTi=2.0" in lines
     assert not any(line.startswith("_") for line in lines)
     assert not any(line.startswith("startTime=") for line in lines)
     assert not any(line.startswith("stopTime=") for line in lines)

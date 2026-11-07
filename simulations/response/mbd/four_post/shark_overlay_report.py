@@ -818,12 +818,12 @@ BOBLIB_PACKAGE = ROOT / "engines/boblib/BobLib"
 # Generated areas inside BobLib. Whole directories are snapshotted to catch created files.
 BOBLIB_GENERATED_DIRS = (
     "Records/VehicleDefn",
-    "Experiments/Standards/Templates/Vehicle",
-    "Experiments/Standards/Templates/FourPost",
+    "Experiments/Standards/BobSimTemplates",
 )
 BOBLIB_GENERATED_FILES = (
     "Experiments/Standards/VehicleSim.mo",
     "Experiments/Standards/FourPostSim.mo",
+    "Experiments/Standards/package.order",
 )
 
 
@@ -973,7 +973,7 @@ def run_four_post(vehicle_path: Path, label: str, *, skip_build: bool) -> dict[s
         config = fp.load_config(fp.DEFAULT_CONFIG_PATH)
         report_cfg = config.setdefault("report", {})
         report_cfg["enabled"] = False
-        # Separate CSV: the canonical one is the regression baseline and seeds spring free lengths.
+        # Separate CSV: the canonical one is the regression baseline.
         slug = "baseline" if label == BASELINE_LABEL else "variant"
         report_cfg["metrics_csv_path"] = str(OUT_DIR / f"shark_overlay_metrics_{slug}.csv")
         result = fp.FourPostEvalSim(config).run()
@@ -982,10 +982,10 @@ def run_four_post(vehicle_path: Path, label: str, *, skip_build: bool) -> dict[s
 
 # Jacking-geometry percentages: load transfer reacted through the links. Not roll stiffness.
 SCALAR_METRICS = (
-    ("avg_anti_dive_pct", "Front anti-dive geometry (%)"),
-    ("avg_anti_squat_pct", "Rear anti-squat geometry (%)"),
-    ("avg_anti_roll_front_pct", "Front geometric anti-roll / lateral jacking (%)"),
-    ("avg_anti_roll_rear_pct", "Rear geometric anti-roll / lateral jacking (%)"),
+    ("avg_anti_dive_pct", "Front anti-dive, CP Fx upright-reacted (%)"),
+    ("avg_anti_squat_pct", "Rear anti-squat, CP Fx upright-reacted (%)"),
+    ("avg_anti_roll_front_pct", "Front net axle jacking, legacy anti-roll key (%)"),
+    ("avg_anti_roll_rear_pct", "Rear net axle jacking, legacy anti-roll key (%)"),
 )
 
 _MISSING = object()

@@ -72,22 +72,22 @@ def _case_overrides(
 
     overrides.update(
         _indexed_table_overrides(
-            "pVehicle.pFrAxleDW.springTable",
+            "pVehicle.chassis.frontAxle.actuation.springTable",
             _scaled_force_column(front_spring_table, case.front_spring_scale),
         )
     )
     overrides.update(
         _indexed_table_overrides(
-            "pVehicle.pRrAxleDW.springTable",
+            "pVehicle.chassis.rearAxle.actuation.springTable",
             _scaled_force_column(rear_spring_table, case.rear_spring_scale),
         )
     )
 
     scaled_front_bar = front_bar_rate * case.front_bar_scale
     scaled_rear_bar = rear_bar_rate * case.rear_bar_scale
-    overrides["pVehicle.pFrStabar.barRate"] = scaled_front_bar
+    overrides["pVehicle.chassis.frontAxle.stabilizer.barRate"] = scaled_front_bar
     overrides["pFrStabar.barRate"] = scaled_front_bar
-    overrides["pVehicle.pRrStabar.barRate"] = scaled_rear_bar
+    overrides["pVehicle.chassis.rearAxle.stabilizer.barRate"] = scaled_rear_bar
     overrides["pRrStabar.barRate"] = scaled_rear_bar
 
     return overrides

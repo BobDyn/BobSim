@@ -2,8 +2,8 @@ schema: bobsim.regression.baseline.v1
 name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
-  boblib_commit: 1bd6d78c271d2e2fe86a2d4cdc1471bd7d46c1b5
-  simulation_inputs_digest: 543642bbe8cf33f4a029eccdb5ab503d13a3aa9080c2f71d25e9e252b6cec68f
+  boblib_commit: 75b6e031d8f9cb49acdb62b536c41c22e566a020
+  simulation_inputs_digest: d1334b638beb0ee24a773ceb23514db89d8271153cba21868e487424a5ba579f
 refresh:
   make_targets:
   - standard-build
@@ -23,106 +23,106 @@ workflows:
       static_balance_pass:
         value: true
       static_balance_max_abs_fz_error_n:
-        value: 0.0
+        value: 0.8957242722603951
         abs_tol: 0.5
       static_motion_ratio_front:
-        value: 1.0053063275855492
+        value: 1.0053063275855445
         abs_tol: 0.050265
       static_motion_ratio_rear:
-        value: 1.2386785254222457
+        value: 1.2386785254222492
         abs_tol: 0.061934
       avg_motion_ratio_front:
-        value: 0.9871844690290896
+        value: 0.9871844690290932
         abs_tol: 0.049359
       avg_motion_ratio_rear:
-        value: 1.2527535862365946
+        value: 1.2527535862365913
         abs_tol: 0.062638
       avg_stabar_motion_ratio_front:
-        value: 0.1289655116065913
+        value: 0.12896551160659028
         abs_tol: 0.01
       avg_stabar_motion_ratio_rear:
-        value: 0.15454905294416443
+        value: 0.15454905294417973
         abs_tol: 0.01
       spring_roll_stiffness_front_Nm_per_rad:
-        value: 19805.295373212488
+        value: 19805.295373212346
         abs_tol: 990.264769
       spring_roll_stiffness_rear_Nm_per_rad:
-        value: 20497.24046267744
+        value: 20497.24046267755
         abs_tol: 1024.862023
       arb_roll_stiffness_front_Nm_per_rad:
-        value: 23448.866980767067
+        value: 15489.770211563342
         abs_tol: 1172.443349
       arb_roll_stiffness_rear_Nm_per_rad:
-        value: 21979.975534879937
+        value: 22418.44543120245
         abs_tol: 1098.998777
       elastic_roll_stiffness_front_Nm_per_rad:
-        value: 43254.162353979555
+        value: 35295.065584775686
         abs_tol: 2162.708118
       elastic_roll_stiffness_rear_Nm_per_rad:
-        value: 42477.215997557374
+        value: 42915.68589388
         abs_tol: 2120.84437
       avg_roll_rate_distribution_front_pct:
-        value: 50.453083665238466
+        value: 45.12813069982223
         abs_tol: 2.0
       avg_lltd_front_pct:
-        value: 49.24725767683801
+        value: 43.686320161843675
         abs_tol: 3.0
       avg_antiroll_geometry_lltd_delta_pct:
-        value: -1.2058259884004507
+        value: -1.4483314918188412
         abs_tol: 1.5
       static_balance_max_abs_fz_error_pct:
-        value: 0.0
+        value: 0.1543068745139613
         abs_tol: 1.5
       avg_anti_dive_pct:
-        value: -2.7836804948009437
+        value: -2.7363657558857244
         abs_tol: 1.5
       avg_anti_squat_pct:
-        value: -4.6717280901850184
+        value: -4.722991638846226
         abs_tol: 1.5
       avg_anti_roll_front_pct:
-        value: 0.03204847913199476
+        value: -5.228141152325737e-13
         abs_tol: 1.5
       avg_anti_roll_rear_pct:
-        value: 0.03435787882239438
+        value: 2.742049012092387e-13
         abs_tol: 1.5
       camber_gain_roll_rad_per_rad:
-        value: 0.7246800600232047
+        value: 0.7246800600231923
         abs_tol: 0.036234
       camber_gain_heave_rad_per_m:
-        value: 0.4554328759268783
+        value: 0.45543287592688303
         abs_tol: 0.022772
       toe_gain_roll_rad_per_rad:
-        value: 0.0013980746669765396
+        value: 0.001398074667137409
         abs_tol: 0.002
       toe_gain_heave_rad_per_m:
-        value: -0.0017603118728074193
+        value: -0.0017603118728647708
         abs_tol: 0.002
       caster_gain_heave_rad_per_m:
         value: -0.03892428471995731
         abs_tol: 0.002
       kpi_gain_heave_rad_per_m:
-        value: 0.4548244081786759
+        value: 0.45482440817867525
         abs_tol: 0.022741
       scrub_gain_heave_m_per_m:
-        value: 0.0017784109296655171
+        value: 0.0017784109296678878
         abs_tol: 0.002
       scrub_gain_roll_m_per_rad:
-        value: 0.0026000823767532645
+        value: 0.002600082376748716
         abs_tol: 0.002
       avg_lateral_jacking_coeff_front:
-        value: 7.729059380337522e-05
+        value: -1.2613016691693185e-15
         abs_tol: 0.02
       avg_lateral_jacking_coeff_rear:
-        value: 8.286012091463651e-05
+        value: 6.614027507497026e-16
         abs_tol: 0.02
       avg_fbrc_equivalent_height_front_m:
-        value: -0.02731256936558998
+        value: -0.027318515391490904
         abs_tol: 0.002
       avg_fbrc_equivalent_height_rear_m:
-        value: -0.014723757941138987
+        value: -0.01473096242839964
         abs_tol: 0.002
       minimum_roll_pulse_contact_fz_n:
-        value: 44.68139175776817
+        value: 88.40338472694975
         abs_tol: 0.893628
       roll_contact_valid_points:
         value: 11
@@ -148,67 +148,67 @@ workflows:
         value: 15.0
         abs_tol: 0.001
       ay_max:
-        value: 21.25590934824502
+        value: 16.56107737025309
         abs_tol: 0.637677
       limit_ay_mps2:
-        value: 21.25590934824502
+        value: 16.56107737025309
         abs_tol: 0.637677
       sideslip_gradient_deg_per_g:
-        value: -0.9508051255625672
+        value: 0.39833878537634504
         abs_tol: 0.15
       understeer_gradient_deg_per_g:
-        value: -0.09860995733873554
+        value: 0.14294032655024322
         abs_tol: 0.15
       handwheel_angle_gradient_deg_per_g:
-        value: 14.205578074025594
+        value: 16.73871137880465
         abs_tol: 1.420558
       roll_gradient_deg_per_g:
-        value: 0.8861232068791398
+        value: 0.9010157598274984
         abs_tol: 0.08
       peak_handwheel_torque_Nm:
-        value: -22.10361299836064
+        value: -21.94265969387915
         abs_tol: 1.0
       roadwheel_fit_nrmse:
-        value: 0.013484086854845843
+        value: 0.001824500192398389
         abs_tol: 0.02
       steer_excess_fit_nrmse:
-        value: 0.18652926851924925
+        value: 0.0533201890320344
         abs_tol: 0.046632
       ay_min:
-        value: 1.027048285794186
+        value: 1.002268121575188
         abs_tol: 0.15
       handwheel_fit_nrmse:
-        value: 0.013478107218142315
+        value: 0.0018250736708335124
         abs_tol: 0.02
       roll_fit_nrmse:
-        value: 0.000502674332670868
+        value: 0.00020441033314907894
         abs_tol: 0.02
       sideslip_fit_nrmse:
-        value: 0.09258651132554618
+        value: 0.02166547041739116
         abs_tol: 0.023147
       limit_understeer_gradient_deg_per_g:
-        value: -10.217035996837994
+        value: 0.3792376217209716
         abs_tol: 1.021704
       limit_sideslip_gradient_deg_per_g:
-        value: -10.279152360880131
+        value: -1.7823645208561767
         abs_tol: 1.027915
       limit_roll_gradient_deg_per_g:
-        value: 1.0281649910583401
+        value: 0.9805358596245151
         abs_tol: 0.15
       limit_handwheel_gradient_deg_per_g:
-        value: 11.288975683285711
+        value: 19.661543631835652
         abs_tol: 1.128898
       understeer_gradient_velocity_slope_deg_per_g_per_mps:
-        value: 0.008019699734307465
+        value: 0.038841780991552645
         abs_tol: 0.05
       sideslip_gradient_velocity_slope_deg_per_g_per_mps:
-        value: -0.16098335194529886
+        value: -0.0637679497851181
         abs_tol: 0.05
       roll_gradient_velocity_slope_deg_per_g_per_mps:
-        value: 0.0008208783229513173
+        value: 0.003828392929499795
         abs_tol: 0.05
       handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps:
-        value: -1.660140605364727
+        value: -1.2017609459738463
         abs_tol: 0.249021
   steady_state:
     standard: SteadyStateEval
@@ -232,72 +232,72 @@ workflows:
         value: 15.0
         abs_tol: 0.001
       ay_max:
-        value: 9.956334586448763
+        value: 9.932406844456244
         abs_tol: 0.29869
       limit_ay_mps2:
-        value: 9.956334586448763
+        value: 9.932406844456244
         abs_tol: 0.29869
       sideslip_gradient_deg_per_g:
-        value: 0.5437340636915493
+        value: 0.4183704161427037
         abs_tol: 0.15
       understeer_gradient_deg_per_g:
-        value: 0.2864395224748146
+        value: 0.05534716660362201
         abs_tol: 0.15
       handwheel_angle_gradient_deg_per_g:
-        value: 17.103505463888748
+        value: 16.146893572150695
         abs_tol: 0.5
       limit_handwheel_gradient_deg_per_g:
-        value: 16.0679386221397
+        value: 16.176071948214943
         abs_tol: 1.0
       roll_gradient_deg_per_g:
-        value: 0.8860068639091917
+        value: 0.900229236971255
         abs_tol: 0.05
       peak_handwheel_torque_Nm:
-        value: -14.04622445056779
+        value: -14.47573960604221
         abs_tol: 0.702311
       roadwheel_fit_nrmse:
-        value: 0.00034491652511408493
+        value: 3.398508993726015e-05
         abs_tol: 0.02
       steer_excess_fit_nrmse:
-        value: 0.012874699767449864
+        value: 0.0021131224602352248
         abs_tol: 0.02
       ay_min:
-        value: 1.946075688364675
+        value: 1.93132785507972
         abs_tol: 0.15
       handwheel_fit_nrmse:
-        value: 0.0003050318984122639
+        value: 3.408328626147615e-05
         abs_tol: 0.02
       roll_fit_nrmse:
-        value: 1.390805616589895e-05
+        value: 4.07321626022176e-06
         abs_tol: 0.02
       sideslip_fit_nrmse:
-        value: 0.0031745040404058816
+        value: 0.0010328328391869398
         abs_tol: 0.02
       limit_nonlinearity_reached:
         value: 0
       limit_nonlinearity_fraction:
-        value: 0.06716117539835265
+        value: 0.002875620019028746
         abs_tol: 0.02
       limit_understeer_gradient_deg_per_g:
-        value: 0.021027840774669748
+        value: 0.05999820249621601
         abs_tol: 0.15
       limit_sideslip_gradient_deg_per_g:
-        value: -0.1329694481731232
+        value: -0.1458607364439738
         abs_tol: 0.15
       limit_roll_gradient_deg_per_g:
-        value: 0.9037270965528206
+        value: 0.9230501399504797
         abs_tol: 0.15
       understeer_gradient_velocity_slope_deg_per_g_per_mps:
-        value: 0.0061457912586598005
+        value: 0.027313531907139827
         abs_tol: 0.05
       sideslip_gradient_velocity_slope_deg_per_g_per_mps:
-        value: -0.18578528535818034
+        value: -0.1743033363448195
         abs_tol: 0.05
       roll_gradient_velocity_slope_deg_per_g_per_mps:
-        value: 0.0012202122482967762
+        value: 0.0021246976451559864
         abs_tol: 0.05
       handwheel_angle_gradient_velocity_slope_deg_per_g_per_mps:
-        value: -1.8157426718270522
+        value: -1.7313353239899112
         abs_tol: 0.272361
   transient:
     standard: TransientEval
@@ -318,82 +318,82 @@ workflows:
       general.n_velocity_groups:
         value: 2
       step.ay_peak:
-        value: 3.194047806237279
+        value: 2.943279507219523
         abs_tol: 0.15
       step.ay_ss:
-        value: 2.695128723450577
+        value: 2.440877578453902
         abs_tol: 0.15
       step.ay_gain_dc:
-        value: 31.77118975460902
+        value: 27.776681080138843
         abs_tol: 0.953136
       step.ay_overshoot_pct:
-        value: 18.511883252386365
+        value: 20.582840089991386
         abs_tol: 1.851188
       step.yaw_gain_dc:
-        value: 2.098711393321364
+        value: 1.8339673869909552
         abs_tol: 0.125923
       step.yaw_overshoot_pct:
-        value: 16.586972638098718
+        value: 14.426185767009864
         abs_tol: 1.658697
       step.roll_gain_dc:
-        value: 0.04732358140416472
+        value: 0.04452920031002382
         abs_tol: 0.004022
       step.settling_time_s:
-        value: 1.29539485049491
+        value: 1.300719268089169
         abs_tol: 0.129539
       frequency.ay_gain_peak:
-        value: 32.912601440793615
+        value: 29.206577532663513
         abs_tol: 0.987378
       frequency.yaw_gain_peak:
-        value: 2.122300524719062
+        value: 1.8603906660666116
         abs_tol: 0.127338
       frequency.bandwidth_hz:
         value: 1.0
         abs_tol: 0.001
       frequency.ay_phase_1hz:
-        value: -3.265909723991257
+        value: -0.36249900058976436
         abs_tol: 0.15
       frequency.yaw_phase_1hz:
-        value: -9.009322361708058
+        value: -8.230165016359507
         abs_tol: 0.900932
       frequency.lag_steer_to_ay:
-        value: 0.009071971455531269
+        value: 0.001006941668304901
         abs_tol: 0.005
       frequency.lag_steer_to_yaw:
-        value: 0.02502589544918905
+        value: 0.02286156948988752
         abs_tol: 0.005
       quality.ay_fit_error:
-        value: 0.00838710523611872
+        value: 0.05893795859928135
         abs_tol: 0.02
       quality.yaw_fit_error:
-        value: 0.006292928191741431
+        value: 0.055472813652635344
         abs_tol: 0.02
       step.ay_rise_time_s:
-        value: 0.04866803075090509
+        value: 0.03716790094604794
         abs_tol: 0.15
       step.yaw_rise_time_s:
-        value: 0.05501276804386701
+        value: 0.05223038001021996
         abs_tol: 0.05
       step.roll_peak:
-        value: 0.0051643680598995
+        value: 0.0052655350110667
         abs_tol: 0.02
       step.roll_ss:
-        value: 0.004129761546691175
+        value: 0.0038859057934499605
         abs_tol: 0.02
       step.roll_overshoot_pct:
-        value: 25.052451612787834
+        value: 35.50341390010604
         abs_tol: 2.505245
       step.sideslip_ss:
-        value: 0.003413631475499065
+        value: 0.00404188217234151
         abs_tol: 0.02
       step.sideslip_gain_dc:
-        value: 0.03911733527182249
+        value: 0.04631655795286767
         abs_tol: 0.02
       step.yaw_peak:
-        value: 0.2108563616699966
+        value: 0.1875386212852193
         abs_tol: 0.02
       step.yaw_ss:
-        value: 0.18085756658638222
+        value: 0.16389484629600268
         abs_tol: 0.02
       frequency.ay_gain_peak_freq:
         value: 1.0
@@ -402,11 +402,11 @@ workflows:
         value: 1.0
         abs_tol: 0.05
       frequency.ay_phase_0p5hz:
-        value: -1.2446737653719993
+        value: 0.393660830390246
         abs_tol: 0.15
       frequency.yaw_phase_0p5hz:
-        value: -4.421617935404697
+        value: -4.055913659340774
         abs_tol: 0.442162
       frequency.gain_variation_pct:
-        value: 3.5318885929050134
+        value: 5.0206235437261295
         abs_tol: 1.5

@@ -55,6 +55,7 @@ PIPELINE_TOOLING_INPUTS = (
     DEFAULT_STEADY_STATE_SIM,
     DEFAULT_STEADY_STATE_CONFIG,
     DEFAULT_MODELICA_RUNNER,
+    REPO_ROOT / "simulations/response/mbd/modelica_overrides.py",
     STANDARD_DIR / "pipeline/generator.py",
     STANDARD_DIR / "pipeline/modelica_params.py",
     STANDARD_DIR / "pipeline/compiler.py",

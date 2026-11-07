@@ -382,10 +382,8 @@ def add_review_suspension_page(pdf, review: dict[str, Any]) -> None:
         ("Scrub gain roll", suspension["scrub_gain_roll_m_per_rad"], "m/rad", "{:.4f}", 1.0),
         ("Anti-dive", suspension["avg_anti_dive_pct"], "%", "{:.1f}", 1.0),
         ("Anti-squat", suspension["avg_anti_squat_pct"], "%", "{:.1f}", 1.0),
-        ("Front anti-roll", suspension["avg_anti_roll_front_pct"], "%", "{:.1f}", 1.0),
-        ("Rear anti-roll", suspension["avg_anti_roll_rear_pct"], "%", "{:.1f}", 1.0),
-        ("Front jacking coeff", suspension["avg_lateral_jacking_coeff_front"], "-", "{:.3e}", 1.0),
-        ("Rear jacking coeff", suspension["avg_lateral_jacking_coeff_rear"], "-", "{:.3e}", 1.0),
+        ("Front net jacking", suspension["avg_lateral_jacking_coeff_front"], "N/N", "{:.3e}", 1.0),
+        ("Rear net jacking", suspension["avg_lateral_jacking_coeff_rear"], "N/N", "{:.3e}", 1.0),
         ("Body torsional stiffness", vehicle["body_torsional_stiffness_n_m_per_rad"], "N·m/rad", "{:.0f}", 1.0),
     ]
 
