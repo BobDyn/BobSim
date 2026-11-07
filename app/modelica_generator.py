@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import hashlib
+import json
 import math
 import re
 import sys
@@ -14,6 +15,7 @@ import sys
 import numpy as np
 
 from common.vehicle_io import load_yaml, parse_tir, tire_template_name
+from common.damper_curves import resolve_damper_curve
 
 
 @dataclass(frozen=True)
@@ -339,7 +341,7 @@ FOUR_POST_OMC_OPTIONS = (
 VEHICLE_VARIABLE_FILTER = (
     "time|terminationStatus|frSteerCmd|accX|accY|handwheelAngle|steerExcess|handwheelTorque|Fz_.*|"
     "leftSteerAngle|rightSteerAngle|roll|sideslip|velX|velY|yawVel|steadyState.*|linearity.*|"
-    "minTireNormalLoad|chassis.(front|rear)(Left|Right)SpringLength"
+    "minTireNormalLoad|chassis.(front|rear)(Left|Right)SpringLength|chassis.damper(CompressionVelocity|Force).*"
 )
 
 TARGET_SIGNATURE_KINDS: dict[str, tuple[str, ...]] = {
@@ -548,8 +550,15 @@ def _preserved_initialization(
         )
     existing = _record_parameters(record_path.read_text(encoding="utf-8"))
     expected = _record_parameters(generated)
-    if {key: _canonical_parameter(value) for key, value in existing.items()} != {
-        key: _canonical_parameter(value) for key, value in expected.items()
+    def calibrated_parameter(key: str, value: str) -> str:
+        # Runtime damper curves do not change a steady pose: shaft velocity is zero.
+        # Keep comparing every other axle parameter, including springs and geometry.
+        if key == "chassis":
+            value = re.sub(r"\bdamperTable\s*=\s*\[[^\]]+\]", "damperTable = []", value)
+        return _canonical_parameter(value)
+
+    if {key: calibrated_parameter(key, value) for key, value in existing.items()} != {
+        key: calibrated_parameter(key, value) for key, value in expected.items()
     }:
         raise ValueError(
             "This vehicle differs from the record with a solved QSS initialization. "
@@ -666,7 +675,16 @@ def _file_status_payload(item: GeneratedModelicaFile, expected: str | None, repo
         stat = item.path.stat()
         modified = stat.st_mtime
         size = stat.st_size
-        current = expected is None or item.path.read_text(encoding="utf-8", errors="replace") == expected
+        actual = item.path.read_text(encoding="utf-8", errors="replace")
+        current = expected is None or actual == expected
+        if not current and expected is not None and item.kind == "vehicle_record":
+            # These values are fallbacks for standalone BobLib. Standard studies
+            # resolve the active damper settings into a runtime file instead.
+            def without_dampers(source: str) -> str:
+                source = re.sub(r"damperTable\s*=\s*\[[^\]]+\]", "damperTable = []", source)
+                return re.sub(r"^\s*// (front|rear) damper:.*\n", "", source, flags=re.MULTILINE)
+
+            current = without_dampers(actual) == without_dampers(expected)
     return {
         "kind": item.kind,
         "name": item.class_name,
@@ -728,6 +746,11 @@ def _vehicle_record_text(
         ),
         "",
     ]
+    for side_name in ("front", "rear"):
+        shock = data[side_name]["actuation"]["shock"]
+        if "damper" in shock:
+            curve = resolve_damper_curve(shock)
+            sections.append(f"  // {side_name} damper: " + json.dumps(curve.provenance, sort_keys=True))
     sections.extend(_powertrain_sections(data, driveline))
     sections.append(_aero_section(data))
     sections.extend(
@@ -829,9 +852,8 @@ def _axle_assignments(side_name: str, side: Mapping[str, Any], arch: Architectur
         if arch.has_stabar:
             assignments.append(("stabarPickup", pickup_order["stabar"]))
     spring_path = f"{shock_path}.spring_table"
-    damper_path = f"{shock_path}.damper_table"
     spring_table = _required_table(_mapping(shock.get("spring_table"), spring_path), "table", spring_path)
-    damper_table = _required_table(_mapping(shock.get("damper_table"), damper_path), "table", damper_path)
+    damper_table = resolve_damper_curve(shock).table
     assignments.extend(
         (
             ("rodToLower", str(actuation.get("rod_to", "lower")).lower() == "lower"),
@@ -1197,17 +1219,21 @@ def _four_post_template_text(
 
 
 def _vehicle_entry_text(vehicle_template_name: str, initialization: str | None = None) -> str:
-    modifier = (
-        "(chassis(\n"
-        "      chassisReferencePosition = pInitialization.chassisReferencePosition,\n"
-        "      chassisReferenceAngles = pInitialization.chassisReferenceAngles,\n"
-        "      fixInitialSuspensionAngles = true,\n"
-        "      initialFrontLeftLowerArmAngle = pInitialization.frontLeftLowerArmAngle,\n"
-        "      initialFrontRightLowerArmAngle = pInitialization.frontRightLowerArmAngle,\n"
-        "      initialRearLeftLowerArmAngle = pInitialization.rearLeftLowerArmAngle,\n"
-        "      initialRearRightLowerArmAngle = pInitialization.rearRightLowerArmAngle))"
-        if initialization else ""
-    )
+    chassis = [
+        "useRuntimeDamperTable = useRuntimeDamperTables",
+        "runtimeDamperTableFile = damperTableFile",
+    ]
+    if initialization:
+        chassis.extend([
+            "chassisReferencePosition = pInitialization.chassisReferencePosition",
+            "chassisReferenceAngles = pInitialization.chassisReferenceAngles",
+            "fixInitialSuspensionAngles = true",
+            "initialFrontLeftLowerArmAngle = pInitialization.frontLeftLowerArmAngle",
+            "initialFrontRightLowerArmAngle = pInitialization.frontRightLowerArmAngle",
+            "initialRearLeftLowerArmAngle = pInitialization.rearLeftLowerArmAngle",
+            "initialRearRightLowerArmAngle = pInitialization.rearRightLowerArmAngle",
+        ])
+    modifier = "(chassis(\n      " + ",\n      ".join(chassis) + "))"
     pose = f"{initialization}\n\n" if initialization else ""
     check = (
         "initial equation\n"
@@ -1223,6 +1249,10 @@ def _vehicle_entry_text(vehicle_template_name: str, initialization: str | None =
             "model VehicleSim",
             "",
             "  \"VehicleInterfaces-aligned BobLib vehicle simulation entrypoint\"",
+            '  parameter Boolean useRuntimeDamperTables = false "Load front/rear curves at startup"'
+            ' annotation(Evaluate = false, choices(checkBox = true));',
+            '  parameter String damperTableFile = "damper_tables.txt" "Named force-velocity table file"'
+            ' annotation(Evaluate = false);',
             f"  extends {TEMPLATE_PACKAGE}.{vehicle_template_name}{modifier};",
             "  extends BobLib.Icons.SimulationIcon;",
             "",

@@ -10358,6 +10358,15 @@ function drawReadinessCard(ctx, x, y, width, height, check) {
   drawCanvasText(ctx, check.detail, x + 12, y + 68, { size: 10, weight: 650, color: palette.muted });
 }
 
+function resolvedDamperTable(data, axle) {
+  const shock = nestedValue(data, [axle, "actuation", "shock"]) || {};
+  if (!shock.damper) return shock.damper_table?.table;
+  const resolved = state.vehiclePayload?.resolved_dampers?.[axle];
+  // Never display a curve for stale, unsaved adjuster settings.
+  if (JSON.stringify(resolved?.configuration) !== JSON.stringify(shock.damper)) return undefined;
+  return resolved?.table;
+}
+
 function mbdReadinessChecks(data) {
   const repo = state.status?.repo || {};
   const model = buildVehicleGeometry(data);
@@ -10365,9 +10374,9 @@ function mbdReadinessChecks(data) {
   const massBlocks = massPropertyBlocks(data);
   const suspensionTables = [
     nestedValue(data, ["front", "actuation", "shock", "spring_table", "table"]),
-    nestedValue(data, ["front", "actuation", "shock", "damper_table", "table"]),
+    resolvedDamperTable(data, "front"),
     nestedValue(data, ["rear", "actuation", "shock", "spring_table", "table"]),
-    nestedValue(data, ["rear", "actuation", "shock", "damper_table", "table"]),
+    resolvedDamperTable(data, "rear"),
   ];
   const aero = data.aero || {};
   const aeroMapCount = [
@@ -12362,13 +12371,15 @@ function drawSuspensionPreview(ctx, width, height, data) {
   const component = state.suspensionComponent;
   const title = `${humanizeToken(axle)} ${component === "stabar" ? "anti-roll bar" : component}`;
   drawCanvasText(ctx, title, 28, 30, { size: 18, weight: 780 });
-  let table = nestedValue(data, [axle, "actuation", "shock", `${component}_table`, "table"]);
+  let table = component === "damper"
+    ? resolvedDamperTable(data, axle)
+    : nestedValue(data, [axle, "actuation", "shock", `${component}_table`, "table"]);
   if (component === "stabar") {
     const rate = Number(nestedValue(data, [axle, "actuation", "stabar", "rate_n_m_per_rad"]));
     table = Number.isFinite(rate) ? [[-0.1, -0.1 * rate], [0, 0], [0.1, 0.1 * rate]] : [];
   }
   const chart = drawLinePanel(ctx, 28, 62, width - 56, height - 90, title, table,
-    component === "spring" ? "Deflection" : component === "damper" ? "Shaft velocity" : "Twist",
+    component === "spring" ? "Deflection" : component === "damper" ? "Compression velocity" : "Twist",
     component === "spring" ? "m" : component === "damper" ? "m/s" : "rad",
     component === "stabar" ? "Torque" : "Force", component === "stabar" ? "N·m" : "N",
     { key: `${axle}-${component}` });
