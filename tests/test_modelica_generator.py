@@ -129,7 +129,9 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
     assert ("barRate = 0" in four_post_template_text) is (front_arch.has_stabar or rear_arch.has_stabar)
 
     vehicle_entry_text = (tmp_path / BUILD_BOBLIB / "Experiments/Standards/VehicleSim.mo").read_text(encoding="utf-8")
-    assert "extends BobSimTemplates.VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar;" in vehicle_entry_text
+    assert "extends BobSimTemplates.VehicleSim_EVBatInvMotDiff_DWBCStabar_DWBCStabar(chassis(" in vehicle_entry_text
+    assert "useRuntimeDamperTable = useRuntimeDamperTables" in vehicle_entry_text
+    assert "runtimeDamperTableFile = damperTableFile" in vehicle_entry_text
     four_post_entry_text = (tmp_path / BUILD_BOBLIB / "Experiments/Standards/FourPostSim.mo").read_text(
         encoding="utf-8"
     )
@@ -138,6 +140,76 @@ def test_modelica_generator_writes_full_boblib_stack(tmp_path: Path) -> None:
         encoding="utf-8"
     )
     assert "package BobSimTemplates" in package_text
+    assert "useRuntimeDamperTables" not in four_post_entry_text
+
+
+def test_runtime_damper_changes_do_not_hide_other_pending_vehicle_changes(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
+    data = load_yaml(vehicle_path)
+    shock = data["front"]["actuation"]["shock"]
+    shock["damper_table"]["table"][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    status = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert status["written_to_boblib"] is True
+    assert len(status["warnings"]) == 1
+    assert "Embedded damper tables differ" in status["warnings"][0]
+    from app.modelica_generator import _cli_status_lines
+
+    assert any(line.startswith("warning:  Embedded damper tables differ") for line in _cli_status_lines(status))
+    shock["spring_table"]["table"][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["written_to_boblib"] is False
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
+
+
+@pytest.mark.parametrize("change", ["front", "rear", "roundoff"])
+def test_named_damper_warnings_preserve_runtime_and_pending_updates(tmp_path: Path, change: str, capsys) -> None:
+    from app.modelica_generator import main
+
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path, brake=True)
+    data = load_yaml(vehicle_path)
+    active = load_yaml(repo_root / "vehicle.yml")
+    for axle in ("front", "rear"):
+        shock = data[axle]["actuation"]["shock"]
+        shock.pop("damper_table")
+        shock["damper"] = active[axle]["actuation"]["shock"]["damper"]
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    before = _tree(tmp_path / BUILD_BOBLIB)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
+
+    if change == "roundoff":
+        data["front"]["actuation"]["shock"]["damper"]["compression"]["high_speed_turns_from_open"] += 1e-12
+    else:
+        branch, clicks = ("compression", 10) if change == "front" else ("rebound", 15)
+        data[change]["actuation"]["shock"]["damper"][branch]["low_speed_clicks_from_closed"] = clicks
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    status = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert status["written_to_boblib"] is True
+    assert len(status["warnings"]) == (0 if change == "roundoff" else 1)
+    argv = [str(vehicle_path), "--root", str(tmp_path)]
+    assert main(argv) == 0
+    assert ("warning:  Embedded damper tables differ" in capsys.readouterr().out) is (change != "roundoff")
+    assert _tree(tmp_path / BUILD_BOBLIB) == before
+
+    # Brake bias changes the wrapper, not the damper record. Its pending state
+    # must still block build reuse even when a damper warning also exists.
+    data["brake"]["front_bias"] = 0.63
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    pending = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert pending["state"] == "stale"
+    assert pending["written_to_boblib"] is False
+    assert pending["warnings"] == status["warnings"]
+    assert main(argv) == 1
+    assert "Records are stale" in capsys.readouterr().out
+    assert _tree(tmp_path / BUILD_BOBLIB) == before
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
 
 
 def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: Path) -> None:
@@ -231,6 +303,15 @@ def test_calibrated_initialization_survives_generation_and_rejects_changed_input
     assert 'initialRearRightLowerArmAngle = pInitialization.rearRightLowerArmAngle' in entry
     assert 'abs(initialVel - pInitialization.referenceVelocity)' in entry
     assert 'pInitialization' not in record.read_text()
+    assert 'useRuntimeDamperTables = false' in entry
+    assert 'runtimeDamperTableFile = damperTableFile' in entry
+    data = load_yaml(vehicle_path)
+    data['front']['actuation']['shock']['damper_table']['table'][-1][1] *= 1.5
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False))
+    assert plan_modelica_stack(vehicle_path, root=tmp_path).initialization_error is None
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)['written_to_boblib'] is True
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert calibration in entry_path.read_text()
     before = {item.path: item.path.read_bytes() for item in result.files}
     data = load_yaml(vehicle_path)
     data['sprung_mass']['mass_kg'] += 10

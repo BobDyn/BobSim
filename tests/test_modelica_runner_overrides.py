@@ -135,6 +135,32 @@ def _manifests(build_dir: Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text(encoding="utf-8")) for path in build_dir.glob("results/run_*/manifest.json")]
 
 
+@pytest.mark.parametrize("case", [{"useRuntimeDamperTables": False}, {"damperTableFile": "manual.txt"}])
+def test_automatic_tables_reject_manual_overrides_before_dispatch(
+    runner: ModelicaRunner, build_dir: Path, monkeypatch: pytest.MonkeyPatch, case: dict[str, Any],
+) -> None:
+    runner.simulation["runtime_damper_tables"] = True
+    monkeypatch.setattr(_modelica_runner, "ProcessPoolExecutor", _never)
+    with pytest.raises(OverrideError, match="runtime_damper_tables=false") as excinfo:
+        runner.run_cases_parallel(signals=["sig"], mode="last", cases=[case])
+    assert _reasons(excinfo.value) == [(next(iter(case)), "conflicting_aliases")]
+    assert not (build_dir / "results").exists()
+
+
+def test_manual_table_mode_preserves_requested_overrides(build_dir: Path) -> None:
+    xml = INIT_XML.replace(
+        "  </ModelVariables>",
+        _scalar("useRuntimeDamperTables", "false", kind="Boolean")
+        + _scalar("damperTableFile", "", kind="String") + "  </ModelVariables>",
+    )
+    (build_dir / f"{EXEC_NAME}_init.xml").write_text(xml, encoding="utf-8")
+    runner = ModelicaRunner(build_dir, EXEC_NAME, {"runtime_damper_tables": False})
+    (plan,) = runner.plan_cases([{"useRuntimeDamperTables": True, "damperTableFile": "manual.txt"}])
+    assert plan.written == {
+        "useRuntimeDamperTables": "true", "damperTableFile": "manual.txt",
+    }
+
+
 def test_load_init_variables_reads_the_start_value_from_the_child_element(build_dir: Path) -> None:
     variables = load_init_variables(build_dir / f"{EXEC_NAME}_init.xml")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import sys
+import warnings
 from pathlib import Path
 
 import matplotlib as mpl
@@ -43,6 +44,18 @@ TransientEval_SIGNALS = [
     "roll",
     "handwheelTorque",
 ]
+
+DAMPER_CHANNELS = {
+    "fl": 1,
+    "fr": 2,
+    "rl": 3,
+    "rr": 4,
+}
+for index in DAMPER_CHANNELS.values():
+    TransientEval_SIGNALS.extend((
+        f"chassis.damperCompressionVelocity[{index}]",
+        f"chassis.damperForce[{index}]",
+    ))
 
 
 # Report metadata. These keys do not go to Modelica as overrides.
@@ -377,6 +390,9 @@ class TransientEvalSim:
             "ay_fit_error": np.array([], dtype=float),
             "yaw_fit_error": np.array([], dtype=float),
         }
+        for corner in DAMPER_CHANNELS:
+            plot_series[f"damper_speed_{corner}"] = np.array([], dtype=float)
+            plot_series[f"damper_force_{corner}"] = np.array([], dtype=float)
 
         step_result = next(
             (r for r in group_results if self._is_representative_step(r)),
@@ -408,6 +424,13 @@ class TransientEvalSim:
             plot_series["step_sideslip"] = self._signal(step_result, "sideslip")
             plot_series["step_yaw"] = self._signal(step_result, "yawVel")
             plot_series["step_roll"] = self._signal(step_result, "roll")
+            for corner, index in DAMPER_CHANNELS.items():
+                plot_series[f"damper_speed_{corner}"] = self._signal(
+                    step_result, f"chassis.damperCompressionVelocity[{index}]"
+                )
+                plot_series[f"damper_force_{corner}"] = self._signal(
+                    step_result, f"chassis.damperForce[{index}]"
+                )
 
             t = plot_series["step_time"]
             ay = plot_series["step_ay"]
@@ -1023,6 +1046,33 @@ class TransientEvalSim:
             "ay_fit_error": {},
             "yaw_fit_error": {},
         }
+        for corner in DAMPER_CHANNELS:
+            series[f"damper_speed_{corner}"] = {}
+            series[f"damper_force_{corner}"] = {}
+
+        damper_reference_notes = []
+        for axle in ("front", "rear"):
+            tables = [
+                (result.get("_damper_curves") or {}).get(axle, {}).get("table")
+                for result in successful_results
+            ]
+            reference = np.empty((0, 2), dtype=float)
+            if any(table is None for table in tables):
+                damper_reference_notes.append(f"{axle} captured damper curves are unavailable")
+            elif any(not np.array_equal(table, tables[0]) for table in tables[1:]):
+                damper_reference_notes.append(f"{axle} cases used different damper curves")
+            else:
+                reference = np.asarray(tables[0], dtype=float)
+            series[f"damper_reference_speed_{axle}"] = reference[:, 0]
+            series[f"damper_reference_force_{axle}"] = reference[:, 1]
+
+        if damper_reference_notes:
+            warnings.warn(
+                "Damper reference overlays omitted where " + "; ".join(damper_reference_notes)
+                + ". Simulated damper samples are still shown.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         velocity_summaries = []
 
@@ -1573,6 +1623,7 @@ class TransientEvalSim:
             "metrics": metrics,
             "metrics_csv_path": metrics_csv_path,
             "series": series,
+            "damper_reference_notes": damper_reference_notes,
         }
 
     def _continuous_metrics(self, r):

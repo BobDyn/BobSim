@@ -17,6 +17,9 @@ import traceback
 import numpy as np
 import pandas as pd
 
+from common.damper_curves import vehicle_damper_provenance, write_runtime_damper_file
+from common.vehicle_io import load_yaml, vehicle_yaml_path
+
 from simulations.response.mbd.modelica_overrides import (
     MODELICA_OVERRIDE_ALIASES,
     InitVariable,
@@ -178,6 +181,17 @@ class ModelicaRunner:
         rejections: list[OverrideRejection] = []
         for index, case in enumerate(cases, start=1):
             try:
+                if self._uses_runtime_damper_tables():
+                    conflicts = [
+                        OverrideRejection(
+                            key, key, "conflicting_aliases", case[key],
+                            "Automatic vehicle.yml damper tables own this parameter. Set "
+                            "simulation.runtime_damper_tables=false to supply manual table overrides.",
+                        )
+                        for key in ("useRuntimeDamperTables", "damperTableFile") if key in case
+                    ]
+                    if conflicts:
+                        raise OverrideError(conflicts)
                 plans.append(plan_overrides(case, init_variables))
             except OverrideError as exc:
                 where = f"case {index} ({case.get('_case_label') or self._case_label(case)})"
@@ -190,6 +204,10 @@ class ModelicaRunner:
         return plans
 
     def run(self, signals, mode, cases, execution=None):
+        if self._uses_runtime_damper_tables():
+            data = load_yaml(vehicle_yaml_path())
+            vehicle_damper_provenance(data)  # Reject unsupported settings before queueing cases.
+            self.simulation = {**self.simulation, "_runtime_damper_data": data}
         execution = execution or {}
 
         cleanup = bool(execution.get("cleanup", False))
@@ -215,6 +233,12 @@ class ModelicaRunner:
             stream_logs=stream_logs,
             fail_fast=fail_fast,
         )
+
+    def _uses_runtime_damper_tables(self) -> bool:
+        default = self.exec_name in {
+            "BobLib.Experiments.Standards.VehicleSim",
+        }
+        return bool(self.simulation.get("runtime_damper_tables", default))
 
     def run_cases(self, signals, mode, cases, cleanup=False, stream_logs=False, fail_fast=False):
         plans = self.plan_cases(cases)
@@ -373,6 +397,23 @@ class ModelicaRunner:
         log_file = run_dir / "run.log"
         manifest_file = run_dir / "manifest.json"
 
+        overrides = dict(case)
+        damper_provenance = None
+        if self._uses_runtime_damper_tables():
+            defaults = self.init_variables()
+            if not {"useRuntimeDamperTables", "damperTableFile"} <= defaults.keys():
+                raise RuntimeError(
+                    "This executable predates runtime damper tables. Rebuild it once with the updated BobLib."
+                )
+            data = self.simulation.get("_runtime_damper_data") or load_yaml(vehicle_yaml_path())
+            table_file = write_runtime_damper_file(data, run_dir)
+            damper_provenance = vehicle_damper_provenance(data)
+            (run_dir / "damper_curves.json").write_text(
+                json.dumps(damper_provenance, indent=2) + "\n", encoding="utf-8"
+            )
+            overrides.update(useRuntimeDamperTables=True, damperTableFile=table_file.as_posix())
+        if self._uses_runtime_damper_tables():
+            plan = plan_overrides(overrides, self.init_variables())
         override_sha256 = self._write_override_file(override_file, plan)
         cmd = self._build_command(
             override_file=override_file,
@@ -394,6 +435,7 @@ class ModelicaRunner:
             "mode": mode,
             "signals": list(signals or []),
             "case": case,
+            "damper_curves": damper_provenance,
         }
         self._write_run_manifest(
             manifest_file,
@@ -492,6 +534,7 @@ class ModelicaRunner:
         extracted["_run_dir"] = str(run_dir)
         extracted["_result_file"] = str(result_file)
         extracted["_log_file"] = str(log_file)
+        extracted["_damper_curves"] = damper_provenance
         self._write_run_manifest(
             manifest_file,
             {
@@ -499,6 +542,7 @@ class ModelicaRunner:
                 "status": "succeeded",
                 "ended_at": time.time(),
                 "overrides": plan.manifest(override_sha256, readback),
+                "damper_curves": damper_provenance,
             },
         )
 

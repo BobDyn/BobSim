@@ -35,6 +35,7 @@ DEPLOY_REQUIREMENTS = DEPLOY_ROOT / "requirements.txt"
 
 DATA_PATHS = (
     "vehicle.yml",
+    "common/damper_data/ttx25_mkii_c12_r12_pdf_v1.json",
     "engines/boblib/BobLib",
     "common/plotting",
     "common/reporting",
