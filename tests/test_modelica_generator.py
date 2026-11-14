@@ -147,14 +147,23 @@ def test_runtime_damper_changes_do_not_hide_other_pending_vehicle_changes(tmp_pa
     repo_root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path)
     generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
     data = load_yaml(vehicle_path)
     shock = data["front"]["actuation"]["shock"]
     shock["damper_table"]["table"][-1][1] *= 1.5
     vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    assert modelica_stack_status_payload(vehicle_path, tmp_path)["written_to_boblib"] is True
+    status = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert status["written_to_boblib"] is True
+    assert len(status["warnings"]) == 1
+    assert "Embedded damper tables differ" in status["warnings"][0]
+    from app.modelica_generator import _cli_status_lines
+
+    assert any(line.startswith("warning:  Embedded damper tables differ") for line in _cli_status_lines(status))
     shock["spring_table"]["table"][-1][1] *= 1.5
     vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     assert modelica_stack_status_payload(vehicle_path, tmp_path)["written_to_boblib"] is False
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
 
 
 def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: Path) -> None:

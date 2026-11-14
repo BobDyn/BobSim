@@ -74,6 +74,10 @@ After one initial build with runtime-table support, changing supported damper
 settings reuses the same executable. No record write, submodule commit, or
 rebuild is needed for a damper-only change. Changes apply to the next study;
 a launched batch of cases keeps its settings snapshot.
+When only the damper curves differ, the status check keeps the runtime build
+usable and warns that its embedded fallback tables are older. The CLI prints
+the warning; the app marks the MBD Vehicle Definition status amber and explains
+the difference in its tooltip. Runs without runtime loading use the embedded curves.
 FourPostSim retains the quasi-static rig on main: damping is disabled and no
 runtime damper file is loaded. Use VehicleSim's transient study to check damping.
 Transient damper plots use the captured curves returned with the results, including

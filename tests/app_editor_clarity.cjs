@@ -795,6 +795,20 @@ vm.runInContext(`
   `,menuContext);
 }
 
+vm.runInContext(`
+state.vehiclePayload = {};
+state.dirtyVehicle = false;
+state.vehicleDefinitionState = 'current';
+const damperWarning = 'Embedded damper tables differ from the saved vehicle settings.';
+assert.equal(modelicaDefinitionTone({warnings:[damperWarning]}), 'warn');
+assert.equal(modelicaDefinitionTitle({warnings:[damperWarning]}), damperWarning);
+assert.equal(modelicaDefinitionTone({warnings:[]}), 'ok');
+assert.equal(modelicaDefinitionTitle({warnings:[]}), 'Vehicle definition is current in MBD');
+state.dirtyVehicle = true;
+assert.equal(modelicaDefinitionTone({warnings:[damperWarning]}), 'error');
+assert.match(modelicaDefinitionTitle({warnings:[damperWarning]}), /Save the vehicle/);
+`,ctx);
+
 (async () => {
   const dragContext=vm.createContext({localStorage:{getItem:()=>null},console,assert,document:{compatMode:"CSS1Compat",body:{classList:{toggle(){}}}}});
   vm.runInContext(source,dragContext);

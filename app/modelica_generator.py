@@ -627,6 +627,7 @@ def modelica_stack_status_payload(vehicle_path: str | Path, repo_root: str | Pat
             "note": BRAKE_PLACEMENT_NOTE,
         },
         "unbound_inputs": [{"path": item.path, "reason": item.reason} for item in plan.unbound],
+        "warnings": [item["warning"] for item in files if item["warning"]],
         "files": files,
         "package_orders": list(package_orders),
     }
@@ -671,6 +672,7 @@ def _file_status_payload(item: GeneratedModelicaFile, expected: str | None, repo
     current = False
     modified: float | None = None
     size: int | None = None
+    warning: str | None = None
     if exists:
         stat = item.path.stat()
         modified = stat.st_mtime
@@ -685,6 +687,15 @@ def _file_status_payload(item: GeneratedModelicaFile, expected: str | None, repo
                 return re.sub(r"^\s*// (front|rear) damper:.*\n", "", source, flags=re.MULTILINE)
 
             current = without_dampers(actual) == without_dampers(expected)
+            table_pattern = r"\bdamperTable\s*=\s*\[[^\]]+\]"
+            actual_tables = [_canonical_parameter(table) for table in re.findall(table_pattern, actual)]
+            expected_tables = [_canonical_parameter(table) for table in re.findall(table_pattern, expected)]
+            if current and actual_tables != expected_tables:
+                warning = (
+                    "Embedded damper tables differ from the saved vehicle settings. "
+                    "BobSim VehicleSim studies load the saved curves at startup; "
+                    "runs without runtime tables still use the older embedded curves."
+                )
     return {
         "kind": item.kind,
         "name": item.class_name,
@@ -692,6 +703,7 @@ def _file_status_payload(item: GeneratedModelicaFile, expected: str | None, repo
         "path": _display_path(item.path, repo_root),
         "exists": exists,
         "current": current,
+        "warning": warning,
         "modified": modified,
         "size": size,
     }
@@ -1602,6 +1614,7 @@ def _cli_status_lines(status: Mapping[str, Any]) -> list[str]:
         f"brakes:   {status['brake_placement']['note']}",
     ]
     lines.extend(f"unbound:  {item['path']}. {item['reason']}" for item in status["unbound_inputs"])
+    lines.extend(f"warning:  {warning}" for warning in status.get("warnings", []))
     lines.append("")
     for item in status["files"]:
         if not item["exists"]:
