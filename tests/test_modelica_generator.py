@@ -166,6 +166,52 @@ def test_runtime_damper_changes_do_not_hide_other_pending_vehicle_changes(tmp_pa
     assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
 
 
+@pytest.mark.parametrize("change", ["front", "rear", "roundoff"])
+def test_named_damper_warnings_preserve_runtime_and_pending_updates(tmp_path: Path, change: str, capsys) -> None:
+    from app.modelica_generator import main
+
+    repo_root = Path(__file__).resolve().parents[1]
+    vehicle_path = _write_temp_vehicle(repo_root, tmp_path, brake=True)
+    data = load_yaml(vehicle_path)
+    active = load_yaml(repo_root / "vehicle.yml")
+    for axle in ("front", "rear"):
+        shock = data[axle]["actuation"]["shock"]
+        shock.pop("damper_table")
+        shock["damper"] = active[axle]["actuation"]["shock"]["damper"]
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    before = _tree(tmp_path / BUILD_BOBLIB)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
+
+    if change == "roundoff":
+        data["front"]["actuation"]["shock"]["damper"]["compression"]["high_speed_turns_from_open"] += 1e-12
+    else:
+        branch, clicks = ("compression", 10) if change == "front" else ("rebound", 15)
+        data[change]["actuation"]["shock"]["damper"][branch]["low_speed_clicks_from_closed"] = clicks
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    status = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert status["written_to_boblib"] is True
+    assert len(status["warnings"]) == (0 if change == "roundoff" else 1)
+    argv = [str(vehicle_path), "--root", str(tmp_path)]
+    assert main(argv) == 0
+    assert ("warning:  Embedded damper tables differ" in capsys.readouterr().out) is (change != "roundoff")
+    assert _tree(tmp_path / BUILD_BOBLIB) == before
+
+    # Brake bias changes the wrapper, not the damper record. Its pending state
+    # must still block build reuse even when a damper warning also exists.
+    data["brake"]["front_bias"] = 0.63
+    vehicle_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    pending = modelica_stack_status_payload(vehicle_path, tmp_path)
+    assert pending["state"] == "stale"
+    assert pending["written_to_boblib"] is False
+    assert pending["warnings"] == status["warnings"]
+    assert main(argv) == 1
+    assert "Records are stale" in capsys.readouterr().out
+    assert _tree(tmp_path / BUILD_BOBLIB) == before
+    generate_modelica_stack(vehicle_path, root=tmp_path)
+    assert modelica_stack_status_payload(vehicle_path, tmp_path)["warnings"] == []
+
+
 def test_modelica_generator_updates_package_order_without_duplicates(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     vehicle_path = _write_temp_vehicle(repo_root, tmp_path)

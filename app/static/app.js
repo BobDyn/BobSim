@@ -940,11 +940,15 @@ function setModelicaStep(stepId, title, tone) {
 }
 
 function modelicaDefinitionTitle(stack) {
-  if (state.dirtyVehicle) return "Save the vehicle before writing the vehicle definition to MBD";
+  if (state.dirtyVehicle || state.vehicleDefinitionState === "invalid") {
+    return "Save the vehicle before writing the vehicle definition to MBD";
+  }
   if (stack.state === "error") return stack.error || "Vehicle definition status unavailable";
+  if (state.vehicleDefinitionState === "pending") {
+    return ["Vehicle definition is saved and ready to write to MBD", ...(stack.warnings || [])].join("\n");
+  }
   if (stack.warnings?.length) return stack.warnings.join("\n");
   if (state.vehicleDefinitionState === "current") return "Vehicle definition is current in MBD";
-  if (state.vehicleDefinitionState === "pending") return "Vehicle definition is saved and ready to write to MBD";
   return "Save the vehicle before writing to MBD";
 }
 
