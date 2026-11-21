@@ -21,6 +21,7 @@ import yaml
 from scipy.optimize import minimize
 
 from engines.dynpy.models import DOFModel, ModelInputs, ModelOutput, ReducedVehicleModel
+from engines.dynpy.vector import cross
 from engines.dynpy.qss import (
     QSSResult, solve_acceleration_trim, _algebraic_residual, _trim_state_and_inputs,
     _generalized_acceleration_target, _residual_scales,
@@ -497,7 +498,7 @@ def _actuator_margins(
         Nonnegative margins satisfy each finite actuator limit.
     """
     _, velocity = model._body_state(state[:model.dof], state[model.dof:])
-    corner_velocity = velocity[:3] + np.cross(velocity[3:6], output.contact_patch_positions_body_m)
+    corner_velocity = velocity[:3] + cross(velocity[3:6], output.contact_patch_positions_body_m)
     corner_velocity += output.contact_patch_tangents * output.jounce_speed_mps[:, None]
     longitudinal = (corner_velocity[:, 0] * np.cos(output.toe_rad)
                     + corner_velocity[:, 1] * np.sin(output.toe_rad))

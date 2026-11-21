@@ -8,6 +8,8 @@ from typing import Any, Mapping
 import numpy as np
 from numpy.typing import NDArray
 
+from engines.dynpy.vector import cross
+
 FloatArray = NDArray[np.float64]
 
 
@@ -129,5 +131,5 @@ class AeroMap:
             speed / self.reference_speed_mps
         )**2
         force = -drag * velocity / max(speed, 1e-6) + np.array([0., 0., -downforce])
-        moment = np.array([mx, my, mz]) + np.cross(self.reference_m, force)
+        moment = np.array([mx, my, mz]) + cross(self.reference_m, force)
         return force, moment

@@ -80,7 +80,9 @@ def generate_ggv_from_vehicle(vehicle_path: Path, config: GGVConfig) -> list[GGV
     path = vehicle_path.resolve().as_posix()
     projection = project_vehicle_yaml(load_vehicle_yaml(Path(path)))
     config = replace(config, speeds=automatic_vehicle_speed_grid(projection.ggv.max_drive_speed))
-    workers = min(4, len(config.speeds), os.cpu_count() or 1)
+    # One worker per slice, up to the core count. Slices are independent and
+    # the grid always has nine, so a fixed cap only idles cores.
+    workers = min(len(config.speeds), os.cpu_count() or 1)
     if workers <= 1:
         return _generate_speed(path, asdict(config))
     if config.verbose:
