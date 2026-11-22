@@ -6,6 +6,7 @@ simulation:
   start_time: 0.0
   solver: dassl
   output_format: csv
+  measurement_window_s: 0.1
   log_level: LOG_STATS
   extra_args:
   - -jacobian=internalNumerical

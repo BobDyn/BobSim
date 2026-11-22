@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
+import hashlib
+import re
 import os
 from pathlib import Path
 import time
@@ -325,12 +327,21 @@ class ModelicaRunner:
         return results
 
     def run_case(self, signals, mode, case, cleanup=False, stream_logs=False):
-        run_id = str(uuid.uuid4())[:8]
-        case_label = self._case_label(case)
-
-        results_root = self._resolve_run_root()
-        run_dir = results_root / f"run_{run_id}"
+        """Run one case, retaining failure provenance alongside successful runs."""
+        run_dir = self._resolve_run_root() / f"run_{str(uuid.uuid4())[:8]}"
         run_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            return self._run_case(signals, mode, case, cleanup, stream_logs, run_dir)
+        except Exception as exc:
+            self._write_run_manifest(run_dir / "manifest.json", {
+                "status": "failed", "ended_at": time.time(), "error": str(exc),
+                "case": case,
+            })
+            raise
+
+    def _run_case(self, signals, mode, case, cleanup, stream_logs, run_dir):
+        run_id = run_dir.name.removeprefix("run_")
+        case_label = self._case_label(case)
 
         override_file = run_dir / "overrides.txt"
         result_file = run_dir / f"{self.exec_name}_res.csv"
@@ -367,6 +378,16 @@ class ModelicaRunner:
         )
         env = self._build_environment()
         timeout_s = self._timeout_seconds(case)
+        effective = dict(self._init_parameter_defaults() or {})
+        effective.update(dict(line.split("=", 1) for line in
+                              override_file.read_text().splitlines() if "=" in line))
+        self._write_run_manifest(manifest_file, {
+            "command": cmd, "working_directory": self.build_dir.as_posix(),
+            "simulation_settings": self.simulation, "timeout_s": timeout_s,
+            "effective_parameters": effective,
+            "input_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                             for path in (self.exe_path, self.init_xml, override_file)},
+        })
 
         if stream_logs:
             returncode = self._run_subprocess_streamed(
@@ -427,6 +448,9 @@ class ModelicaRunner:
             mode=mode,
         )
 
+        termination = self._termination_details(log_file)
+        extracted.update(termination)
+
         # Keep "_" metadata keys in the result. They do not go to the override file.
         for key, value in case.items():
             if key.startswith("_"):
@@ -444,6 +468,8 @@ class ModelicaRunner:
                 "workflow_id": os.environ.get("BOBSIM_WORKFLOW_ID"),
                 "case_label": case_label,
                 "status": "succeeded",
+                "termination": termination,
+                "measurement": extracted.get("_measurement"),
                 "ended_at": time.time(),
                 "build_dir": str(self.build_dir),
                 "executable": str(self.exe_path),
@@ -463,7 +489,11 @@ class ModelicaRunner:
         return extracted
 
     def _write_run_manifest(self, path: Path, manifest: dict[str, Any]) -> None:
-        path.write_text(json.dumps(_json_ready(manifest), indent=2), encoding="utf-8")
+        previous = json.loads(path.read_text()) if path.exists() else {}
+        previous.update(_json_ready(manifest))
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(previous, indent=2), encoding="utf-8")
+        temporary.replace(path)
 
     def _resolve_run_root(self) -> Path:
         results_root = self.build_dir / "results"
@@ -581,6 +611,33 @@ class ModelicaRunner:
                 f"{stdout_tail}"
             )
 
+    @staticmethod
+    def _termination_details(log_file: Path) -> dict[str, Any]:
+        """Read the final explicit Modelica termination event.
+
+        Parameters
+        ----------
+        log_file : Path
+            Captured native runtime output.
+
+        Returns
+        -------
+        dict
+            Event time and message, or an empty mapping for an ordinary stop.
+        """
+        text = Path(log_file).read_text(errors="replace")
+        events = re.findall(
+            r"Simulation call terminate\(\) at time ([^\s]+)\s*\n"
+            r"[^\n]*?Message\s*:\s*([^\n]*)", text,
+        )
+        if not events:
+            return {}
+        time_text, message = events[-1]
+        event_time = float(time_text)
+        if not np.isfinite(event_time):
+            raise ValueError("Non-finite Modelica termination time.")
+        return {"_termination_time": event_time, "_termination_message": message.strip()}
+
     def _extract_signals(self, data, signals, mode):
         out = {}
 
@@ -609,7 +666,23 @@ class ModelicaRunner:
 
             return out
 
-        if mode in {"steady", "last"}:
+        if mode == "steady":
+            from simulations.response.mbd.measurement import window_statistics
+            duration = float(self.simulation.get("measurement_window_s", 0.5))
+            diagnostics = {}
+            for signal in signals:
+                stats = window_statistics(time, data[signal].to_numpy(), duration)
+                diagnostics[signal] = stats
+                out[signal] = (float(data[signal].iloc[-1]) if
+                               signal.startswith("steadyState") or signal == "terminationStatus"
+                               else stats["mean"])
+            if "steadyStateConditionsMet" in data:
+                out["steadyStateConditionsMet"] = diagnostics["steadyStateConditionsMet"]["minimum"]
+            out["_measurement"] = {"duration_s": duration, "end_time": float(time[-1]),
+                                   "signals": diagnostics}
+            return out
+
+        if mode == "last":
             for signal in signals:
                 if signal not in data.columns:
                     raise KeyError(f"Signal not found in result CSV: {signal}")

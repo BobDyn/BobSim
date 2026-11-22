@@ -201,10 +201,12 @@ class TransientEvalSim:
                 "overshoot_pct": np.nan,
             }
 
-        n_tail = min(20, len(t))
-
-        steer_ss = np.mean(steer[-n_tail:])
-        response_ss = np.mean(response[-n_tail:])
+        from simulations.response.mbd.measurement import window_statistics
+        duration = float(self.config.get("simulation", {}).get("measurement_window_s", 0.1))
+        steer_stats = window_statistics(t, steer, duration)
+        response_stats = window_statistics(t, response, duration)
+        steer_ss = steer_stats["mean"]
+        response_ss = response_stats["mean"]
 
         steer_50_time = self._first_threshold_time(t, steer, 0.5 * steer_ss)
         response_90_time = self._first_threshold_time(t, response, 0.9 * response_ss)
@@ -243,6 +245,9 @@ class TransientEvalSim:
         )
 
         return {
+            "measurement_duration_s": duration,
+            "response_std": response_stats["std"],
+            "response_drift_per_s": response_stats["slope"],
             "steer_ss": float(steer_ss),
             "response_ss": float(response_ss),
             "response_peak": response_peak,

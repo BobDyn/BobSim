@@ -403,7 +403,7 @@ class SteadyStateEvalSim:
 
         results = self.runner.run(
             signals=STEADY_STATE_EVAL_SIGNALS,
-            mode="last",
+            mode="steady",
             cases=cases,
             execution=self.config.get("execution", {}),
         )
@@ -417,8 +417,7 @@ class SteadyStateEvalSim:
             if result.get("_status") == "failed":
                 continue
 
-            settled = _float_or_nan(result.get("steadyStateConditionsMet", 1.0))
-            if np.isfinite(settled) and settled < 0.5:
+            if self._settling_error(result):
                 continue
 
             vel = _float_or_nan(_first_not_none(result.get("_testVel"), result.get("targetVel")))
@@ -485,6 +484,29 @@ class SteadyStateEvalSim:
 
         return rows
 
+    @staticmethod
+    def _settling_error(result: dict[str, Any]) -> str:
+        """Return why a point lacks confirmed steady-state acceptance.
+
+        Parameters
+        ----------
+        result : dict
+            Final sampled signals and the native termination event.
+
+        Returns
+        -------
+        str
+            Failure reason, or an empty string for an accepted point.
+        """
+        settled = _float_or_nan(result.get("steadyStateConditionsMet"))
+        if not np.isfinite(settled) or settled < 0.5:
+            return "closed-loop steady-state conditions were not met"
+        if result.get("_termination_message") != (
+            "Reached closed-loop steady-state lateral-acceleration target"
+        ):
+            return "closed-loop steady-state hold was not confirmed by the Modelica termination event"
+        return ""
+
     def _successful_and_failed(
         self,
         results: list[dict[str, Any]],
@@ -497,11 +519,11 @@ class SteadyStateEvalSim:
                 failed.append(result)
                 continue
 
-            settled = _float_or_nan(result.get("steadyStateConditionsMet", 1.0))
-            if np.isfinite(settled) and settled < 0.5:
+            settling_error = self._settling_error(result)
+            if settling_error:
                 skipped = dict(result)
                 skipped["_status"] = "failed"
-                skipped["_error"] = "closed-loop steady-state conditions were not met"
+                skipped["_error"] = settling_error
                 failed.append(skipped)
                 continue
 

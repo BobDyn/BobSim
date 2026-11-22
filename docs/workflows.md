@@ -239,3 +239,20 @@ binary's validated setter contract. Derived values and structural choices are
 not independent setters. Spring/damper tables retain the existing 64-point
 capacity; increasing capacity or changing suspension/brake topology requires a
 new build. Quasi-static rigs intentionally omit dynamic inertia/damping effects.
+
+### VehicleSim measurement and replay provenance
+
+Steady-state reports use a complete physical-time window (default 0.5 s), with
+piecewise-linear time integration for means, variation and drift. Acceptance
+requires the explicit closed-loop Modelica settling event and a settled flag
+throughout that measurement window. Step-response endpoints use a 0.1 s window,
+not a count of adaptive solver samples. Set `simulation.measurement_window_s`
+explicitly when matching a physical test; insufficient output history is an
+error, not a shorter measurement. Event duplicates use the post-event value.
+Raw transient histories remain available.
+
+Each response run manifest retains its start/end timestamps, exact command,
+effective parameter defaults plus overrides, simulation settings, input hashes,
+termination event and measurement statistics. Failed runs retain the same
+provenance and an error. Closed-loop settling uses `steadyStateHoldDuration`;
+`steadyHoldDuration` belongs to the open-loop ramp monitor.
