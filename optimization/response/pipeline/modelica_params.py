@@ -6,6 +6,24 @@ import re
 from typing import Any
 
 
+# Existing DOE files use the former flat names. Resolve those names against
+# domain-owned records without changing the sweep's physical parameter paths.
+_DOMAIN_BLOCKS = {
+    "pBaseSprungMass": ("chassis", "frame", "baseMass"),
+    "pDriverMass": ("chassis", "frame", "driverMass"),
+    "pTorsionalStiff": ("chassis", "frame", "torsionalStiffness"),
+    "pAero": ("aero",),
+}
+for _prefix, _axle in (("pFr", "frontAxle"), ("pRr", "rearAxle")):
+    for _suffix, _fields in {
+        "PartialWheel": ("tire", "wheel", "geometry"),
+        "AxleDW": ("actuation",),
+        "Stabar": ("stabilizer",),
+        "AxleMass": ("masses",),
+    }.items():
+        _DOMAIN_BLOCKS[_prefix + _suffix] = ("chassis", _axle, *_fields)
+
+
 def parse_float(raw: str) -> float:
     raw = raw.strip()
     if any((c.isalpha() and c not in "eE") or c in "{}[]" for c in raw):
@@ -37,11 +55,24 @@ def locate_value_span(text: str, spec: dict[str, Any]) -> tuple[int, int]:
     block = str(spec["block"])
     param = spec.get("param")
 
-    if param is None:
-        start, end = _locate_scalar_parameter_value(text, block)
+    try:
+        _locate_parameter_statement(text, block)
+    except ValueError:
+        if block not in _DOMAIN_BLOCKS:
+            raise
+        root, *fields = _DOMAIN_BLOCKS[block]
+        start, end = _locate_parameter_call_body(text, root)
+        for field in fields:
+            start, end = _locate_named_value(text, start, end, field)
+            start, end = _maybe_call_body(text, start, end)
+        if param is not None:
+            start, end = _locate_named_value(text, start, end, str(param))
     else:
-        block_start, block_end = _locate_parameter_call_body(text, block)
-        start, end = _locate_named_value(text, block_start, block_end, str(param))
+        if param is None:
+            start, end = _locate_scalar_parameter_value(text, block)
+        else:
+            block_start, block_end = _locate_parameter_call_body(text, block)
+            start, end = _locate_named_value(text, block_start, block_end, str(param))
 
     for field in spec.get("field_path", []):
         start, end = _maybe_call_body(text, start, end)
@@ -104,6 +135,11 @@ def _locate_named_value(
     for item_start, item_end in _split_top_level(text, body_start, body_end, ","):
         eq = _find_top_level_char(text, item_start, item_end, "=")
         if eq == -1:
+            # Modelica record modifications use field(subfield=value), without
+            # an equals sign at this level. Return the whole call for traversal.
+            start, end = _trim_span(text, item_start, item_end)
+            if re.match(rf"{re.escape(name)}\s*\(", text[start:end]):
+                return start, end
             continue
         key_start, key_end = _trim_span(text, item_start, eq)
         if text[key_start:key_end] == name:

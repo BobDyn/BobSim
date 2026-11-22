@@ -634,3 +634,30 @@ def test_soft_compile_failure_cannot_reuse_old_variant(tmp_path, monkeypatch):
                             returncode=0, stdout='Error: translation failed', stderr=''))
     assert not compiler.compile_variant(tmp_path, 'SteadyStateEval', {'model': 'VehicleSim'}, tmp_path / 'package.mo')
     assert not (build / 'VehicleSim').exists()
+
+
+def test_domain_record_substitution_preserves_other_axle() -> None:
+    """Legacy sweep names resolve nested modifiers without touching siblings."""
+    from optimization.response.pipeline.modelica_params import read_value, replace_value
+
+    text = ('parameter ChassisRecord chassis('
+            'frontAxle(tire(wheel(geometry(staticAlpha=0.1)))), '
+            'rearAxle(tire(wheel(geometry(staticAlpha=0.2)))));')
+    front = {'block': 'pFrPartialWheel', 'param': 'staticAlpha'}
+    rear = {'block': 'pRrPartialWheel', 'param': 'staticAlpha'}
+    changed = replace_value(text, front, -0.3)
+    assert read_value(changed, front) == pytest.approx(-0.3)
+    assert read_value(changed, rear) == pytest.approx(0.2)
+    with pytest.raises(ValueError, match='not found'):
+        read_value(text, {'block': 'pUnknown', 'param': 'staticAlpha'})
+
+
+def test_flat_record_substitution_keeps_existing_contract() -> None:
+    """Existing generated flat records retain their explicit bindings."""
+    from optimization.response.pipeline.modelica_params import read_value, replace_value
+
+    text = 'parameter MassRecord pBaseSprungMass(m=160, rCM={-0.9,0,0.2});'
+    spec = {'block': 'pBaseSprungMass', 'param': 'rCM', 'index': [2]}
+    changed = replace_value(text, spec, 0.25)
+    assert read_value(changed, spec) == pytest.approx(0.25)
+    assert 'm=160' in changed
