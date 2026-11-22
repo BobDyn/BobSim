@@ -308,9 +308,9 @@ def test_desktop_reports_missing_openmodelica_without_running_builds(monkeypatch
     workflow = next(workflow for workflow in app.WORKFLOWS if workflow.id == "ramp-steer")
     workflow_json = app.workflow_payload(workflow)
     assert workflow_json["available"] is False
-    assert workflow_json["unavailable_reason"] == payload["reason"]
+    assert "maneuver binary" in workflow_json["unavailable_reason"]
 
-    with pytest.raises(RuntimeError, match="OpenModelica was not auto-detected"):
+    with pytest.raises(RuntimeError, match="maneuver binary"):
         app.start_workflow("ramp-steer")
 
 
@@ -382,6 +382,12 @@ def test_frozen_desktop_uses_local_openmodelica_when_available(
     assert app.action_available(app.ACTION_SPECS["build-vehicle"]) is True
 
     workflow = next(workflow for workflow in app.WORKFLOWS if workflow.id == "ramp-steer")
+    from app import native_response
+    monkeypatch.setattr(native_response, "unavailable_reason", lambda vehicle: "Missing maneuver binary")
+    workflow_json = app.workflow_payload(workflow)
+    assert workflow_json["available"] is False
+    assert workflow_json["unavailable_reason"] == "Missing maneuver binary"
+    monkeypatch.setattr(native_response, "unavailable_reason", lambda vehicle: "")
     workflow_json = app.workflow_payload(workflow)
     assert workflow_json["available"] is True
     assert workflow_json["unavailable_reason"] == ""
@@ -876,8 +882,8 @@ def test_standard_run_action_fails_cleanly_when_vehicle_sim_is_missing(
     job_state = app.JOBS.get(job["id"])
     assert job_state is not None
     log = job_state["log"]
-    assert "VehicleSim is not built yet" in log
-    assert "simulations/mbd/BuildBobLib/VehicleSim" in log
+    assert "maneuver binary" in log
+    assert "Architecture" in log
 
 
 def test_modelica_runner_accepts_exe_suffix(tmp_path: Path) -> None:
@@ -1073,13 +1079,14 @@ def test_frontend_powertrain_subsystem_tabs_wrap_before_clipping() -> None:
     assert ".workflow-guide {\n  position: static;" in styles
 
 
-def test_frontend_gates_workflow_runner_on_toolchain_availability() -> None:
+def test_frontend_gates_workflow_runner_on_native_availability() -> None:
     app_js = (app.ROOT / "app/static/app.js").read_text(encoding="utf-8")
 
     assert "function externalToolchainAvailable" in app_js
     assert "function workflowAvailable" in app_js
     assert "function canRunStandardWorkflow" in app_js
-    assert "return externalToolchainAvailable() && vehicleDefinitionCurrent()" in app_js
+    assert "return workflowAvailable(workflow);" in app_js
+    assert "workflow.available !== false" in app_js
     assert "startSelectedStudyWorkflow" in app_js
 
 

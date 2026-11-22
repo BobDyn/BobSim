@@ -6,6 +6,7 @@ simulation:
   start_time: 0.0
   solver: dassl
   output_format: csv
+  measurement_window_s: 0.1
   log_level: LOG_STATS
   extra_args:
   - -jacobian=internalNumerical
@@ -13,7 +14,7 @@ simulation:
   no_event_emit: true
 execution:
   parallel: true
-  max_workers: 8
+  max_workers: 2
   cleanup: false
   stream_logs: false
 test:

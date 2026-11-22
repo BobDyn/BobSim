@@ -1145,10 +1145,33 @@ def test_moment_solver_keeps_real_slip_limit_rejections(parameters):
     assert 'Outside tire slip fit' in result.message
 
 
-def test_moment_solver_uses_neutral_pose_to_escape_invalid_slip_branch(parameters):
+def test_moment_solver_resolves_high_speed_operating_point(parameters):
     model = create_model(14, parameters)
     result = solve_moment_state(model, speed_mps=42.05399833619569,
                                 beta_rad=np.deg2rad(-8.), steering_rad=np.deg2rad(-5.5), tolerance=1e-8)
     assert result.success, result.message
-    assert result.solver_attempts == 3  # cold target, neutral seed, seeded target
+    assert result.solver_attempts in (1, 3)  # A cold solve may converge directly across SciPy builds.
     assert result.equilibrium_converged and result.tire_state_valid
+
+
+def test_moment_solver_uses_neutral_pose_after_rejection(parameters, monkeypatch):
+    """Exercise fallback deterministically rather than relying on optimizer noise."""
+    from engines.dynpy import qss
+
+    model = create_model(14, parameters)
+    neutral = solve_moment_state(model, speed_mps=15., beta_rad=0., steering_rad=0.)
+    assert neutral.success, neutral.message
+    rejected = replace(neutral, success=False, tire_state_valid=False)
+    outcomes = iter([rejected, neutral, neutral])
+    calls = []
+
+    def solve_once(_model, **kwargs):
+        calls.append(kwargs)
+        return next(outcomes)
+
+    monkeypatch.setattr(qss, "_solve_moment_state_once", solve_once)
+    result = qss.solve_moment_state(model, speed_mps=15., beta_rad=-.1, steering_rad=-.05)
+    assert result.success and result.solver_attempts == 3
+    assert [(call["beta_rad"], call["steering_rad"]) for call in calls] == [
+        (-.1, -.05), (0., 0.), (-.1, -.05)]
+    assert calls[2]["initial_unknowns"] is neutral.unknowns
