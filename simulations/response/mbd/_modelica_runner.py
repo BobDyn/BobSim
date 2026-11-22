@@ -644,6 +644,8 @@ class ModelicaRunner:
         if "time" in data.columns:
             time = np.asarray(data["time"].to_numpy(), dtype=float)
         else:
+            if mode == "steady":
+                raise ValueError("A physical-time measurement requires a time column.")
             time = np.arange(len(data), dtype=float)
 
         if not np.all(np.isfinite(time)):

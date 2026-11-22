@@ -76,3 +76,12 @@ def test_current_driver_alias_and_empty_override_file(tmp_path):
     runner._write_override_file(overrides, {'useMode': 0})
     command = runner._build_command(overrides, tmp_path / 'result.csv')
     assert not any(arg.startswith('-overrideFile=') for arg in command)
+
+
+def test_steady_window_requires_physical_time():
+    import pandas as pd
+    from simulations.response.mbd._modelica_runner import ModelicaRunner
+    runner = ModelicaRunner.__new__(ModelicaRunner)
+    runner.simulation = {}
+    with pytest.raises(ValueError, match='time column'):
+        runner._extract_signals(pd.DataFrame({'x': [1, 2, 3]}), ['x'], 'steady')
