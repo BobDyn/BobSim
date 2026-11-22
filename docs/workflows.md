@@ -278,3 +278,10 @@ events are retained in `sequence_points.json` beside the raw run. Old binaries
 without the sequence contract are rejected before execution. This mode remains
 opt-in pending comparisons against independent starts, reverse target orders,
 and measured vehicle tests; continuation can follow a different hysteresis branch.
+
+VehicleSim builds default to two compiler workers; use
+`make standard-build MODELICA_BUILD_JOBS=1` on memory-constrained hosts. Steady
+and transient seed studies default to two concurrent cases. Increase
+`execution.max_workers` only after measuring memory and wall-time contention;
+use serial execution for per-case performance benchmarks. These resource limits
+do not change solver or physical settling tolerances.
