@@ -53,8 +53,8 @@ simulation:
 
 execution:
   parallel: true
-  # Below the host core count so solvers do not compete against case_timeout_s.
-  max_workers: 8
+  # Conservative default for MBD memory use; raise only after measuring host capacity.
+  max_workers: 2
   cleanup: false
   stream_logs: false
   fail_fast: false

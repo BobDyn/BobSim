@@ -370,17 +370,20 @@ GENERATED_TEMPLATES := \
 	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/Vehicle/*.mo) \
 	$(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/Templates/FourPost/*.mo)
 
+# Bound compiler memory; override explicitly on larger build hosts.
+MODELICA_BUILD_JOBS ?= 2
+
 # BOBSIM_NATIVE_CFLAGS is computed inside the container so it reflects the
 # container's actual architecture, not the host `make` runs on -- clang on
 # AArch64 (e.g. Apple Silicon under Docker Desktop) rejects -march=native,
 # an x86-ism, and needs -mcpu=native instead.
 $(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
 		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"'
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"; omc --numProcs=$(MODELICA_BUILD_JOBS) "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"'
 
 $(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
 		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"'
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"; omc --numProcs=$(MODELICA_BUILD_JOBS) "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"'
 
 # SHARK is optional. Without it, the already-imported variant is overlaid.
 # Runs in the container because ARGS=--four-post needs the container-built simulator.

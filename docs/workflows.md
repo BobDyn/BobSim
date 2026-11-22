@@ -256,3 +256,10 @@ effective parameter defaults plus overrides, simulation settings, input hashes,
 termination event and measurement statistics. Failed runs retain the same
 provenance and an error. Closed-loop settling uses `steadyStateHoldDuration`;
 `steadyHoldDuration` belongs to the open-loop ramp monitor.
+
+VehicleSim builds default to two compiler workers; use
+`make standard-build MODELICA_BUILD_JOBS=1` on memory-constrained hosts. Steady
+and transient seed studies default to two concurrent cases. Increase
+`execution.max_workers` only after measuring memory and wall-time contention;
+use serial execution for per-case performance benchmarks. These resource limits
+do not change solver or physical settling tolerances.
