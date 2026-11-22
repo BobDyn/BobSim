@@ -67,6 +67,14 @@ def run(workflow: str, config_path: Path | None = None) -> None:
     result = classes[workflow](config).run()
     if config.get('report', {}).get('enabled', True):
         ReportEngine(config).build(result)
+    summary = result.get('summary', {})
+    failed = int(result.get('n_failed_cases', summary.get('n_failed_cases', 0)))
+    if failed:
+        total = int(result.get('n_cases', summary.get('n_cases', failed)))
+        raise RuntimeError(
+            f'{workflow}: {failed} of {total} simulation cases failed. '
+            'Partial results are retained; this study is incomplete.'
+        )
 
 
 if __name__ == '__main__':

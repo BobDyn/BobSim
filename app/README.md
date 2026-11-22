@@ -106,7 +106,8 @@ Removing a simulation keeps its saved runs.
 
 ## Native architecture workflow
 
-This integration branch pins BobLib PR #58 (`f35fa2f`) before merge. Select front
+This integration branch pins BobLib’s VehicleSim steering and continuation updates.
+Rebuild native bundles when the pin changes. Select front
 and rear suspension, differential, brake placement, and spatial rotor mechanics
 in Architecture. Each supported combination has separate front KnC, rear braking KnC, rear traction,
 and maneuver executables. Rear traction uses the existing static differential-input
@@ -373,3 +374,9 @@ case. Native driver aliases map legacy report settings onto the current `driver`
 parameters. Unknown or frozen overrides fail rather than being silently ignored.
 Reports and captured Modelica signals retain the existing processing paths. The
 standalone CLI standard-study commands retain their explicit build workflow.
+
+Named MBD response studies retain available reports and raw data when some cases
+fail, but finish with an error so the app marks the study incomplete. Steady-state
+continuation remains opt-in through `simulation.steady_state_strategy`; see
+[workflows](../docs/workflows.md#opt-in-steady-state-continuation) for its acceptance
+and measurement contract.
