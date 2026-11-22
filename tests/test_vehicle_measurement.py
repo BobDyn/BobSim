@@ -61,3 +61,18 @@ print('| | | Message : Reached closed-loop steady-state lateral-acceleration tar
               if json.loads(p.read_text())['status'] == 'failed']
     assert len(failed) == 1
     assert failed[0]['command'] and failed[0]['ended_at']
+
+
+def test_current_driver_alias_and_empty_override_file(tmp_path):
+    from simulations.response.mbd._modelica_runner import ModelicaRunner
+    (tmp_path / 'Native').touch()
+    (tmp_path / 'Native_init.xml').write_text('''<fmiModelDescription><ModelVariables>
+    <ScalarVariable name="driver.useMode" causality="parameter"><Integer start="0"/></ScalarVariable>
+    </ModelVariables></fmiModelDescription>''')
+    runner = ModelicaRunner(tmp_path, 'Native', {})
+    overrides = tmp_path / 'overrides.txt'
+    runner._write_override_file(overrides, {'useMode': 3})
+    assert overrides.read_text() == 'driver.useMode=3\n'
+    runner._write_override_file(overrides, {'useMode': 0})
+    command = runner._build_command(overrides, tmp_path / 'result.csv')
+    assert not any(arg.startswith('-overrideFile=') for arg in command)

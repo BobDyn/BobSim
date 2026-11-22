@@ -794,7 +794,15 @@ class ModelicaRunner:
     def _write_override_file(self, path, case):
         init_defaults = self._init_parameter_defaults()
         simulation = getattr(self, "simulation", {})
-        aliases = simulation.get("override_aliases", MODELICA_OVERRIDE_ALIASES)
+        aliases = simulation.get("override_aliases")
+        if aliases is None:
+            aliases = dict(MODELICA_OVERRIDE_ALIASES)
+            for key, legacy in aliases.items():
+                current = legacy.replace("vcu.", "driver.")
+                if key == "frRampSteerDuration":
+                    current = "driver.stepDuration"
+                if init_defaults is not None and current in init_defaults:
+                    aliases[key] = current
         case = {aliases.get(key, key): value
                 for key, value in {**simulation.get("runtime_overrides", {}), **case}.items()}
         editable = None
@@ -879,11 +887,10 @@ class ModelicaRunner:
         case = case or {}
 
         # OM executables read *_init.xml from the working directory, so run from build_dir.
-        cmd = [
-            str(self.exe_path),
-            f"-overrideFile={override_file}",
-            f"-r={result_file}",
-        ]
+        cmd = [str(self.exe_path), f"-r={result_file}"]
+        override_path = Path(override_file)
+        if not override_path.exists() or override_path.stat().st_size:
+            cmd.append(f"-overrideFile={override_file}")
 
         start_time = _first_not_none(
             case.get("_startTime"),
