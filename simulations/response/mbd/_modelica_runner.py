@@ -358,12 +358,12 @@ class ModelicaRunner:
                 "case_label": case_label,
                 "status": "running",
                 "started_at": time.time(),
-                "build_dir": str(self.build_dir),
-                "executable": str(self.exe_path),
-                "run_dir": str(run_dir),
-                "override_file": str(override_file),
-                "result_file": str(result_file),
-                "log_file": str(log_file),
+                "build_dir": self.build_dir.as_posix(),
+                "executable": self.exe_path.as_posix(),
+                "run_dir": run_dir.as_posix(),
+                "override_file": override_file.as_posix(),
+                "result_file": result_file.as_posix(),
+                "log_file": log_file.as_posix(),
                 "mode": mode,
                 "signals": list(signals or []),
                 "case": case,
@@ -457,9 +457,9 @@ class ModelicaRunner:
                 extracted[key] = value
 
         extracted["_case_label"] = self._case_label(case)
-        extracted["_run_dir"] = str(run_dir)
-        extracted["_result_file"] = str(result_file)
-        extracted["_log_file"] = str(log_file)
+        extracted["_run_dir"] = run_dir.as_posix()
+        extracted["_result_file"] = result_file.as_posix()
+        extracted["_log_file"] = log_file.as_posix()
         self._write_run_manifest(
             manifest_file,
             {
@@ -471,12 +471,12 @@ class ModelicaRunner:
                 "termination": termination,
                 "measurement": extracted.get("_measurement"),
                 "ended_at": time.time(),
-                "build_dir": str(self.build_dir),
-                "executable": str(self.exe_path),
-                "run_dir": str(run_dir),
-                "override_file": str(override_file),
-                "result_file": str(result_file),
-                "log_file": str(log_file),
+                "build_dir": self.build_dir.as_posix(),
+                "executable": self.exe_path.as_posix(),
+                "run_dir": run_dir.as_posix(),
+                "override_file": override_file.as_posix(),
+                "result_file": result_file.as_posix(),
+                "log_file": log_file.as_posix(),
                 "mode": mode,
                 "signals": list(signals or []),
                 "case": case,
