@@ -257,6 +257,28 @@ termination event and measurement statistics. Failed runs retain the same
 provenance and an error. Closed-loop settling uses `steadyStateHoldDuration`;
 `steadyHoldDuration` belongs to the open-loop ramp monitor.
 
+### Opt-in steady-state continuation
+
+After rebuilding against BobLib's sequence contract, set
+`simulation.steady_state_strategy: continuation` in the steady-state study.
+`independent` remains the default. Continuation runs one process per speed,
+first conditioning at zero Ay, then visiting requested targets in their configured
+order. It retains all mechanical and controller states between points. Each run
+supports 63 requested points plus conditioning. `simulation.sequence_timeout_s`
+can set a wall-clock limit for the whole sequence; otherwise the ordinary case
+wall limit applies. The physical stop time is expanded for all sequence points,
+while Modelica's settling timeout resets for each target transition.
+
+The continuation adapter captures a regular 2 ms (or finer) output grid so the
+measurement window ends close to the exact acceptance event. Each point requires
+an ordered `BOBLIB_STEADY_POINT` log record matching its requested target and a
+complete settled measurement window. Limit exits retain accepted points and
+mark all remaining requested points failed. Per-point measurements and acceptance
+events are retained in `sequence_points.json` beside the raw run. Old binaries
+without the sequence contract are rejected before execution. This mode remains
+opt-in pending comparisons against independent starts, reverse target orders,
+and measured vehicle tests; continuation can follow a different hysteresis branch.
+
 VehicleSim builds default to two compiler workers; use
 `make standard-build MODELICA_BUILD_JOBS=1` on memory-constrained hosts. Steady
 and transient seed studies default to two concurrent cases. Increase

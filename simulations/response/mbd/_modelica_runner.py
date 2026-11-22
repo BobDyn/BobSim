@@ -33,6 +33,7 @@ MODELICA_OVERRIDE_ALIASES = {
     "tireNormalLoadMin": "vcu.tireNormalLoadMin",
     "steadyStateAyRampRate": "vcu.steadyStateAyRampRate",
     "steadyStateMaxHandwheel": "vcu.steadyStateMaxHandwheel",
+    "steadyStateMaxHandwheelRate": "vcu.steadyStateMaxHandwheelRate",
     "steadyStateAyGain": "vcu.steadyStateAyGain",
     "steadyStateAyTi": "vcu.steadyStateAyTi",
     "steadyStateSteerTimeConstant": "vcu.steadyStateSteerTimeConstant",

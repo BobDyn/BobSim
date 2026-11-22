@@ -60,6 +60,7 @@ STEADY_STATE_EVAL_SIGNALS = [
     "steadyStateAyCommand",
     "steadyStateAyError",
     "steadyStateSpeedError",
+    "steadyStateSpeedRate",
     "steadyStateSteerCmd",
     "steadyStateConditionsMet",
     "steadyStateAyRate",
@@ -401,12 +402,31 @@ class SteadyStateEvalSim:
     def run(self) -> dict[str, Any]:
         cases = self.build_cases()
 
-        results = self.runner.run(
-            signals=STEADY_STATE_EVAL_SIGNALS,
-            mode="steady",
-            cases=cases,
-            execution=self.config.get("execution", {}),
-        )
+        strategy = self.config.get("simulation", {}).get("steady_state_strategy", "independent")
+        if strategy == "continuation":
+            from simulations.response.mbd.steady_state.continuation import sequence_cases, extract_points
+            simulation = self.config["simulation"]
+            sequences = sequence_cases(cases, simulation, self.runner._init_parameter_defaults() or {})
+            execution = dict(self.config.get("execution", {}), cleanup=False)
+            # A regular output grid bounds the gap before each acceptance event.
+            capture = dict(self.runner.simulation, no_grid=False, no_event_emit=False,
+                           step_size=min(0.002, float(simulation.get("measurement_window_s", 0.5))/100))
+            capture["extra_args"] = [arg for arg in capture.get("extra_args", [])
+                                     if not str(arg).startswith(("-noEquidistantTimeGrid", "-noEventEmit"))]
+            runner = ModelicaRunner(self.runner.build_dir, self.runner.exec_name, capture)
+            runs = runner.run(signals=STEADY_STATE_EVAL_SIGNALS, mode="raw",
+                              cases=sequences, execution=execution)
+            results = []
+            for sequence, run in zip(sequences, runs, strict=True):
+                results.extend(extract_points(sequence, run, STEADY_STATE_EVAL_SIGNALS,
+                                              float(simulation.get("measurement_window_s", 0.5))))
+        elif strategy == "independent":
+            results = self.runner.run(
+                signals=STEADY_STATE_EVAL_SIGNALS, mode="steady", cases=cases,
+                execution=self.config.get("execution", {}),
+            )
+        else:
+            raise ValueError("steady_state_strategy must be independent or continuation.")
 
         return self.summarize(results)
 
@@ -501,7 +521,10 @@ class SteadyStateEvalSim:
         settled = _float_or_nan(result.get("steadyStateConditionsMet"))
         if not np.isfinite(settled) or settled < 0.5:
             return "closed-loop steady-state conditions were not met"
-        if result.get("_termination_message") != (
+        point = result.get("_acceptance_event", {})
+        accepted_point = (point.get("kind") == "sequence_point" and
+                          np.isfinite(_float_or_nan(point.get("time"))))
+        if not accepted_point and result.get("_termination_message") != (
             "Reached closed-loop steady-state lateral-acceleration target"
         ):
             return "closed-loop steady-state hold was not confirmed by the Modelica termination event"
