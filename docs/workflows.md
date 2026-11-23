@@ -173,6 +173,23 @@ limits. Run `make regression-baseline` locally before trusting a physics change.
 Only update a baseline when behavior changed *intentionally* and you have
 reviewed the regenerated reports — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
+Two tests guard the reduced models against bugs that their own closure tests
+cannot see, and both run in `make test`:
+
+- `tests/test_dyn_py_invariants.py` checks answers that hold for any car:
+  left/right mirror symmetry, the static lever rule computed from `vehicle.yml`
+  by hand, `m * ay * h` roll and `m * ax * h` pitch transfer, LLTD moving toward
+  the stiffer end, more grip holding more `ay`, contact-patch moment closure,
+  and a trimmed state staying on the same loads when the integrator evaluates it.
+- `tests/test_vehicle_input_coverage.py` perturbs every numeric `vehicle.yml`
+  input one at a time and requires each to change the generated Modelica stack
+  (or be reported unbound) and the reduced projection (or be listed as ignored,
+  with a reason).
+
+Reverting past fixes #122 (lateral CG corner loads) and #136 (planar moments
+at KinPy contact patches) fails these tests, as does the 14DOF sprung-weight
+bug they found.
+
 For a fast check of the DOE pipeline with no OpenModelica toolchain:
 
 ```bash
