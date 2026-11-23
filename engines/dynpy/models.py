@@ -330,7 +330,9 @@ class VehicleDynamicsSystem(ABC):
         )
         body_force = np.sum(body_wheel_forces, axis=0) + gravity_body + aero_force
         body_moment = (
-            np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
+            np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0)
+            + aero_moment
+            + self._gravity_moment_body(rotation)
         )
 
         if self.dof >= 10:
@@ -688,6 +690,12 @@ class VehicleDynamicsSystem(ABC):
         """Use total vehicle properties until unsprung masses become independent."""
 
         return self.parameters.mass_kg, self.parameters.inertia
+
+    def _gravity_moment_body(self, rotation: FloatArray) -> FloatArray:
+        """Gravity acts at the origin when the body carries the whole car."""
+
+        del rotation
+        return np.zeros(3)
 
     def _body_translational_masses(self, body_mass: float) -> FloatArray:
         """Effective masses for body-frame x/y/z translation."""
@@ -1298,6 +1306,15 @@ class VehicleModel14DOF(VehicleModel10DOF):
             [0.0, 0.0, -self.parameters.sprung_mass_kg * G]
         )
         return np.array([total_gravity[0], total_gravity[1], sprung_gravity[2]])
+
+    def _gravity_moment_body(self, rotation: FloatArray) -> FloatArray:
+        """Sprung weight hangs at the sprung CG, not at the total-CG origin."""
+
+        sprung_gravity = rotation.T @ np.array(
+            [0.0, 0.0, -self.parameters.sprung_mass_kg * G]
+        )
+        offset = np.asarray(self.parameters.sprung_cg_offset_m, dtype=float)
+        return np.cross(offset, sprung_gravity)
 
     def _forces_transmitted_to_body(
         self,

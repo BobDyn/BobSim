@@ -89,6 +89,10 @@ class ReducedVehicleParameters:
     # consistent with the spring-rate projection; not a travel-dependent ratio.
     damper_curves: tuple[ResolvedDamperCurve, ...] = ()
     damper_motion_ratios: tuple[float, ...] = ()
+    # Sprung-mass CG relative to the total CG (the body origin). Models that
+    # carry the unsprung masses separately must hang sprung weight here, not
+    # at the origin, or the static axle split drifts toward the heavier end.
+    sprung_cg_offset_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     @property
     def tires(self) -> tuple[MF52Tire, MF52Tire, MF52Tire, MF52Tire]:
@@ -152,10 +156,11 @@ def load_reduced_vehicle_parameters(
     unsprung_components = [item for item in components if item[0].endswith(".unsprung")]
     unsprung_mass_total = sum(item[1] for item in unsprung_components)
     sprung_components = [item for item in components if not item[0].endswith(".unsprung")]
-    sprung_mass, _sprung_cg, sprung_inertia = _combine_mass_properties(
+    sprung_mass, _, sprung_inertia = _combine_mass_properties(
         sprung_components,
         reference_cg=total_cg,
     )
+    _, sprung_cg, _ = _combine_mass_properties(sprung_components)
 
     front_wc = _vec3(data["front"]["suspension"]["wheel_center_m"])
     rear_wc = _vec3(data["rear"]["suspension"]["wheel_center_m"])
@@ -244,6 +249,11 @@ def load_reduced_vehicle_parameters(
             float(data["rear"]["tire"]["wheel_inertia_kg_m2"]),
         ),
         unsprung_mass_kg=(front_unsprung, front_unsprung, rear_unsprung, rear_unsprung),
+        sprung_cg_offset_m=(
+            sprung_cg[0] - total_cg[0],
+            sprung_cg[1] - total_cg[1],
+            sprung_cg[2] - total_cg[2],
+        ),
         suspension_stiffness_n_per_m=(
             front_spring_rate,
             front_spring_rate,

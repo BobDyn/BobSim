@@ -75,6 +75,9 @@ acceleration therefore gives each wheel the corresponding rolling angular
 acceleration rather than incorrectly imposing zero wheel acceleration. In the
 14DOF equations, longitudinal and lateral translation use total vehicle mass;
 sprung mass is used only for the independently released chassis heave equation.
+The body origin stays at the total CG, so 14DOF hangs sprung weight at the
+sprung CG offset from it. Hanging it at the origin moved about 10 N of static
+load onto the front axle, because the unsprung masses already sit at the wheels.
 
 DynPy interpolates drag, downforce and all three CFD moments at the current
 front and rear axle ride heights. Heights come from the chassis-mounted
