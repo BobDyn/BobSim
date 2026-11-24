@@ -189,6 +189,14 @@ These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
 each boundary with the same equations and retains the trim search as a fallback.
 File-backed GGV runs solve speed slices in up to four separate processes.
 Lateral samples within each slice retain their continuation order.
+SLSQP's finite-difference Jacobians dominate a GGV solve, so the constraint
+Jacobians are built by `engines/dynpy/jacobian.py` with the same steps and
+quotients SciPy uses, but every column point is handed to
+`model.evaluate_batch` first. The 3DOF model evaluates those rows as arrays,
+including the tire calls, and the scalar `evaluate` reads them from a cache.
+Batch rows match row-by-row evaluation to rounding, so the solve follows the
+same path. Other fidelities batch by looping rows until they get their own
+vectorized path.
 GGV checks independent tire-force inversion at the solved loads, then verifies
 load and wheel-torque balance. Near tire peaks, transient evaluation starting
 from static loads can select a different saturated branch. A valid QSS point

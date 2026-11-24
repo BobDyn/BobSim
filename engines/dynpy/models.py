@@ -19,6 +19,7 @@ previous one instead of duplicating a second force implementation.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar, Literal
 
@@ -405,6 +406,50 @@ class VehicleDynamicsSystem(ABC):
                 output = self._solve_algebraic_forces(x, inputs, output, algebraic_slips)
         self._last_output = output
         return output
+
+    def evaluate_batch(
+        self, states: ArrayLike, inputs: Sequence[ModelInputs], *,
+        normal_loads_n: ArrayLike | None = None,
+        algebraic_slips: ArrayLike | None = None,
+    ) -> list[ModelOutput]:
+        """## Batched Force Evaluation
+
+        Evaluate many independent points, such as the columns of a
+        finite-difference Jacobian, in one call. Fidelities that vectorize a
+        case override this; the rest evaluate each point in turn.
+
+        Parameters
+        ----------
+        states : ArrayLike
+            One state per row, shape ``(n, state_size)``.
+        inputs : Sequence[ModelInputs]
+            One input set per row.
+        normal_loads_n, algebraic_slips : ArrayLike or None
+            Trial loads and slips per row, shape ``(n, 4)``, as in ``evaluate``.
+
+        Returns
+        -------
+        list[ModelOutput]
+            ``[evaluate(state, inputs, ...) for each row]``, to rounding.
+
+        Raises
+        ------
+        ValueError, RuntimeError
+            Any row that ``evaluate`` would reject.
+        """
+        x = np.asarray(states, dtype=float)
+        if x.ndim != 2 or len(inputs) != len(x):
+            raise ValueError("Batched states need shape (n, state_size) and one ModelInputs per row.")
+        loads = None if normal_loads_n is None else np.asarray(normal_loads_n, dtype=float)
+        slips = None if algebraic_slips is None else np.asarray(algebraic_slips, dtype=float)
+        return [
+            self.evaluate(
+                state, row_inputs,
+                normal_loads_n=None if loads is None else loads[row],
+                algebraic_slips=None if slips is None else slips[row],
+            )
+            for row, (state, row_inputs) in enumerate(zip(x, inputs, strict=True))
+        ]
 
     def algebraic_residual(self, inputs: ModelInputs, output: ModelOutput) -> FloatArray:
         """## Algebraic Force Balance
@@ -835,6 +880,203 @@ class VehicleModel3DOF(VehicleDynamicsSystem):
             dtype=float,
         )
         return body_coordinates, body_velocities
+
+    def evaluate_batch(
+        self, states: ArrayLike, inputs: Sequence[ModelInputs], *,
+        normal_loads_n: ArrayLike | None = None,
+        algebraic_slips: ArrayLike | None = None,
+    ) -> list[ModelOutput]:
+        """## Batched Planar QSS Evaluation
+
+        Vectorizes the QSS case, where trial loads and slips are both given and
+        no inner load or slip iteration runs. Every other case, and the 6DOF
+        and higher subclasses, evaluate row by row. See the base method.
+        """
+        if self.dof != 3 or normal_loads_n is None or algebraic_slips is None:
+            return VehicleDynamicsSystem.evaluate_batch(
+                self, states, inputs, normal_loads_n=normal_loads_n, algebraic_slips=algebraic_slips,
+            )
+        return self._evaluate_planar_qss_batch(
+            np.asarray(states, dtype=float), inputs,
+            np.asarray(normal_loads_n, dtype=float), np.asarray(algebraic_slips, dtype=float),
+        )
+
+    def _evaluate_planar_qss_batch(
+        self, x: FloatArray, inputs: Sequence[ModelInputs], loads: FloatArray, slips: FloatArray,
+    ) -> list[ModelOutput]:
+        """Row-for-row vectorization of ``evaluate`` with trial loads and slips.
+
+        Each step mirrors the scalar path and its 3DOF hooks; the batch test
+        holds the two together.
+        """
+        rows = len(x)
+        if (x.shape != (rows, self.state_size) or len(inputs) != rows
+                or loads.shape != (rows, 4) or slips.shape != (rows, 4)):
+            raise ValueError("Batched 3DOF QSS needs (n, 6) states, n inputs and (n, 4) loads and slips.")
+        if not np.all(np.isfinite(x)):
+            raise ValueError("Vehicle state contains non-finite values.")
+        if not np.all(np.isfinite(loads)) or np.any(loads < 0.0):
+            raise ValueError("Trial loads require four nonnegative finite values in 3/6/10 DOF.")
+        if not np.all(np.isfinite(slips)):
+            raise ValueError("Trial slips require four finite values in 3/6 DOF.")
+        p = self.parameters
+        coordinates, velocities = x[:, :3], x[:, 3:]
+        zeros = np.zeros(rows)
+        body_coordinates = np.column_stack((coordinates[:, 0], coordinates[:, 1], zeros, zeros, zeros,
+                                            coordinates[:, 2]))
+        body_velocities = np.column_stack((velocities[:, 0], velocities[:, 1], zeros, zeros, zeros,
+                                           velocities[:, 2]))
+        rotation = _body_to_world_rotation_batch(body_coordinates[:, 3:6])
+
+        # _vertical_forces: weight, the aero wrench and its off-centerline roll moment.
+        aero_force, aero_moment = self._aero_load_batch(body_velocities, body_coordinates, rotation)
+        positions = p.corner_positions
+        front_x = float(np.mean(positions[:2, 0]))
+        rear_x = float(np.mean(positions[2:, 0]))
+        downforce = -aero_force[:, 2]
+        front_aero = (-rear_x * downforce + aero_moment[:, 1]) / (front_x - rear_x)
+        rear_aero = downforce - front_aero
+        suspension_forces = np.asarray(p.static_wheel_loads_n, dtype=float) + np.column_stack(
+            (front_aero / 2.0, front_aero / 2.0, rear_aero / 2.0, rear_aero / 2.0)
+        )
+        front_share = self._front_roll_stiffness_fraction()
+        # Stacked matmul reproduces the scalar path's BLAS dot products bit for bit.
+        roll = aero_moment[:, 0] + (positions[:, 1] @ suspension_forces[:, :, None])[:, 0]
+        front_left = -front_share * roll / p.track_front_m
+        rear_left = -(1.0 - front_share) * roll / p.track_rear_m
+        suspension_forces += np.column_stack((front_left, -front_left, rear_left, -rear_left))
+        roll_basis = self._roll_moment_load_transfer(1.0, front_share)
+
+        evaluator = p.kinematics
+        states_by_rack: dict[float, VehicleKinematicState] = {}
+        kinematics = []
+        for row_inputs in inputs:
+            rack = row_inputs.rack_displacement_m
+            if rack is None:
+                rack = evaluator.rack_from_steering(row_inputs.steering_rad)
+            if rack not in states_by_rack:
+                states_by_rack[rack] = evaluator.at(np.zeros(4), rack)
+            kinematics.append(states_by_rack[rack])
+        offsets = np.stack([k.contact_patch_offsets_m for k in kinematics])
+        steering = np.stack([k.toe_rad for k in kinematics])
+        camber = np.stack([k.camber_rad for k in kinematics])
+        corner_positions = positions + offsets
+        # 3DOF jounce speed is zero, so articulation adds no contact-patch velocity.
+        corner_velocities = body_velocities[:, None, :3] + np.cross(body_velocities[:, None, 3:6], corner_positions)
+        cos_delta, sin_delta = np.cos(steering), np.sin(steering)
+        wheel_longitudinal_speed = corner_velocities[..., 0] * cos_delta + corner_velocities[..., 1] * sin_delta
+        wheel_lateral_speed = -corner_velocities[..., 0] * sin_delta + corner_velocities[..., 1] * cos_delta
+        slip_angles = -np.arctan2(wheel_lateral_speed, np.maximum(np.abs(wheel_longitudinal_speed), 0.25))
+
+        # _tire_wrench with prescribed slip.
+        fx_tire, fy_tire = np.empty((rows, 4)), np.empty((rows, 4))
+        tire_moments = np.empty((rows, 4, 3))
+        radii = np.asarray(p.wheel_radius_m, dtype=float)
+        for axle, tire in enumerate((p.front_tire, p.rear_tire)):
+            corners = slice(2 * axle, 2 * axle + 2)
+            speed = wheel_longitudinal_speed[:, corners]
+            my_zero = tire.rolling_moment(loads[:, corners], 0.0, speed)
+            my_slope = tire.rolling_moment(loads[:, corners], 1.0, speed) - my_zero
+            if np.any(radii[corners] - my_slope <= 0):
+                raise ValueError("Tire rolling moment gives a nonpositive wheel torque lever.")
+            fx_tire[:, corners], fy_tire[:, corners], mx, my, mz = tire.evaluate(
+                loads[:, corners], slip_angles[:, corners], slips[:, corners], camber[:, corners], speed,
+            )
+            tire_moments[:, corners] = np.stack((mx, my, mz), axis=-1)
+        wheel_moments_body = np.stack((
+            tire_moments[..., 0] * cos_delta - tire_moments[..., 1] * sin_delta,
+            tire_moments[..., 0] * sin_delta + tire_moments[..., 1] * cos_delta,
+            tire_moments[..., 2],
+        ), axis=-1)
+        fx_body = fx_tire * cos_delta - fy_tire * sin_delta
+        fy_body = fx_tire * sin_delta + fy_tire * cos_delta
+
+        # _algebraic_load_transfer: planar pitch and roll closure at the moved contact patches.
+        wheelbase = np.mean(corner_positions[:, :2, 0], axis=1) - np.mean(corner_positions[:, 2:, 0], axis=1)
+        pitch_moment = np.sum(corner_positions[..., 2] * fx_body + wheel_moments_body[..., 1], axis=1)
+        roll_moment = np.sum(-corner_positions[..., 2] * fy_body + wheel_moments_body[..., 0], axis=1)
+        offset = corner_positions - positions
+        pitch_moment -= (offset[:, None, :, 0] @ suspension_forces[:, :, None])[:, 0, 0]
+        roll_moment += (offset[:, None, :, 1] @ suspension_forces[:, :, None])[:, 0, 0]
+        pitch_basis = np.array([0.5, 0.5, -0.5, -0.5]) / wheelbase[:, None]
+        roll_bases = np.tile(roll_basis, (rows, 1))
+        roll_bases[:, :2] *= (p.track_front_m / (corner_positions[:, 0, 1] - corner_positions[:, 1, 1]))[:, None]
+        roll_bases[:, 2:] *= (p.track_rear_m / (corner_positions[:, 2, 1] - corner_positions[:, 3, 1]))[:, None]
+        basis = np.stack((pitch_basis, roll_bases), axis=-1)
+        moments = np.concatenate((
+            corner_positions[:, None, :, 1] @ basis, -corner_positions[:, None, :, 0] @ basis,
+        ), axis=1)
+        reactions = np.linalg.solve(moments, np.column_stack((-roll_moment, -pitch_moment))[..., None])
+        algebraic_load_transfer = (basis @ reactions)[..., 0]
+
+        wheel_forces_body = np.stack((fx_body, fy_body, loads), axis=-1)
+        gravity_body = (rotation.transpose(0, 2, 1) @ np.array([0.0, 0.0, -p.mass_kg * G]))
+        body_force = np.sum(wheel_forces_body, axis=1) + gravity_body + aero_force
+        body_moment = (
+            np.sum(np.cross(corner_positions, wheel_forces_body) + wheel_moments_body, axis=1) + aero_moment
+        )
+        omega = body_velocities[:, 3:6]
+        body_linear_accel = body_force / p.mass_kg - np.cross(omega, body_velocities[:, :3])
+        inertia = p.inertia
+        body_angular_accel = np.linalg.solve(
+            inertia, (body_moment - np.cross(omega, (inertia @ omega[..., None])[..., 0]))[..., None],
+        )[..., 0]
+        generalized_acceleration = np.column_stack((
+            body_linear_accel[:, 0], body_linear_accel[:, 1], body_angular_accel[:, 2],
+        ))
+        yaw = coordinates[:, 2]
+        coordinate_derivative = np.column_stack((
+            np.cos(yaw) * velocities[:, 0] - np.sin(yaw) * velocities[:, 1],
+            np.sin(yaw) * velocities[:, 0] + np.cos(yaw) * velocities[:, 1],
+            velocities[:, 2],
+        ))
+        derivative = np.concatenate((coordinate_derivative, generalized_acceleration), axis=1)
+        zero_corners = np.zeros(4)
+        outputs = [
+            ModelOutput(
+                derivative=derivative[row],
+                generalized_acceleration=generalized_acceleration[row],
+                body_force_n=body_force[row],
+                body_moment_nm=body_moment[row],
+                wheel_forces_body_n=wheel_forces_body[row],
+                wheel_moments_tire_nm=tire_moments[row],
+                wheel_moments_body_nm=wheel_moments_body[row],
+                normal_loads_n=loads[row].copy(),
+                slip_angles_rad=slip_angles[row],
+                slip_ratios=slips[row].copy(),
+                suspension_forces_n=suspension_forces[row],
+                geometric_vertical_forces_n=zero_corners.copy(),
+                algebraic_load_transfer_n=algebraic_load_transfer[row],
+                jounce_m=state.jounce_m,
+                jounce_speed_mps=zero_corners.copy(),
+                contact_patch_positions_body_m=corner_positions[row],
+                contact_patch_tangents=state.contact_patch_tangents,
+                wheel_center_offsets_m=state.wheel_center_offsets_m,
+                camber_rad=state.camber_rad,
+                toe_rad=state.toe_rad,
+                caster_rad=state.caster_rad,
+                kpi_rad=state.kpi_rad,
+                mechanical_trail_m=state.mechanical_trail_m,
+                scrub_radius_m=state.scrub_radius_m,
+                instant_link_coefficients=state.instant_links.coefficient_matrix,
+            )
+            for row, state in enumerate(kinematics)
+        ]
+        if outputs:
+            self._last_output = outputs[-1]
+        return outputs
+
+    def _aero_load_batch(
+        self, body_velocities: FloatArray, body_coordinates: FloatArray, rotation: FloatArray,
+    ) -> tuple[FloatArray, FloatArray]:
+        """Row-wise ``_aero_load`` for stacked states and their rotations."""
+        aero = self.parameters.aero
+        rows = len(body_velocities)
+        if aero is None:
+            return np.zeros((rows, 3)), np.zeros((rows, 3))
+        heights = (aero.nominal_cg_height_m + body_coordinates[:, 2:3]
+                   + (rotation @ aero.height_points_m.T)[:, 2])
+        return aero.wrench_batch(heights, body_velocities[:, :3], self.parameters.rho_air_kg_m3)
 
 
     def _vertical_forces(
@@ -1409,3 +1651,16 @@ def _euler_rates(roll: float, pitch: float, body_rates: FloatArray) -> FloatArra
         ]
     )
     return transform @ body_rates
+
+
+def _body_to_world_rotation_batch(euler_rad: FloatArray) -> FloatArray:
+    """Row-wise ``_body_to_world_rotation`` for an ``(n, 3)`` array of roll, pitch, yaw."""
+    roll, pitch, yaw = euler_rad[:, 0], euler_rad[:, 1], euler_rad[:, 2]
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.stack((
+        np.stack((cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr), axis=-1),
+        np.stack((sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr), axis=-1),
+        np.stack((-sp, cp * sr, cp * cr), axis=-1),
+    ), axis=1)
