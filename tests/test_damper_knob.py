@@ -10,6 +10,7 @@ column scales with it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -32,10 +33,10 @@ RECORD_TEXT = (
     + "])));\nend R;\n"
 )
 TARGET = {"block": BLOCK, "param": "damperTable", "operation": "scale_column", "column": 1}
-VARIABLE = {"path": "front.actuation.damper_rate_n_s_per_m", "range": [480.0, 720.0]}
+VARIABLE: dict[str, Any] = {"path": "front.actuation.damper_rate_n_s_per_m", "range": [480.0, 720.0]}
 
 
-def _spec() -> dict:
+def _spec() -> dict[str, Any]:
     return {**VARIABLE, "targets": generate_configs.expand_scale_column(TARGET, RECORD_TEXT, VARIABLE)}
 
 
