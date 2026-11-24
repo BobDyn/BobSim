@@ -3,6 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # main publishes the image with its layer cache (.github/workflows/image.yml).
+      # Unchanged layers come from there instead of rebuilding OpenModelica's
+      # libraries; a changed Dockerfile or requirements.txt rebuilds from that
+      # layer on. If the registry is unreachable the build runs from scratch.
+      cache_from:
+        - ghcr.io/bobdyn/bobsim:latest
     image: bobdyn/bobsim:latest
     volumes:
       - .:/workspace
