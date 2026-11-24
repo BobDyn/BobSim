@@ -418,22 +418,31 @@ initialisation. So the solver applies them to one cached executable with
 `-override`. An override run of those six knobs matches a recompiled run to
 2.5e-5 deg/g on understeer gradient and 5e-6 deg/g on roll gradient.
 
-Static toe and camber do not work that way, and the failure is silent. They
-build the wheel's `toHub.R_rel` rotation matrix. OpenModelica evaluates that
-matrix at compile time and stores it in the executable. The toe parameter still
-reports `isValueChangeable="true"`. The runner accepts the override without a
-warning, and every bound copy of the angle updates. But the matrix that the
-wheel actually uses does not change. Every mass and CG value has the same
-problem through `combineMassRecords`.
+The failure mode is silent. OpenModelica accepts an override of a parameter it
+evaluated at compile time and keeps the compiled value. Up to BobLib #71 that
+was static toe and camber, which built the wheel's `toHub.R_rel` rotation
+matrix, and every mass and CG value through `combineMassRecords`. #71 builds
+both at initialisation. On that build an override of toe, camber, the frame and
+driver masses, CGs and inertias and the frame's torsional stiffness matched a
+separately compiled variant exactly, on every signal that moves in VehicleSim.
 
 So `RUNTIME_SAFE_PATHS` in `pipeline/overrides.py` is an allow-list. The solver
-compiles each path that is not in it. Each distinct toe or camber value costs
-its own executable, and that includes each verification. `opt-solve` names any
-compile-only knobs before it starts. The list is a fact about the model, not a
-setting. So it is in code next to the evidence for it, and it is tied to a
-BobLib pin. To check a new candidate, compile two variants that differ only in
-it and compare their `*_init.xml`. A non-changeable parameter whose `start`
-differs was evaluated at compile time. It will not follow an override.
+compiles each path that is not in it: today the unsprung masses and the aero
+load scale. `opt-solve` names any compile-only knobs before it starts. The list
+is a fact about the model, not a setting. So it is in code next to the evidence
+for it, it is tied to a BobLib pin, and a test fails if the pin predates #71.
+To re-check it after a pin move, build the executable and run
+
+```
+python -m optimization.response.pipeline.vet_runtime \
+    --build-dir simulations/mbd/BuildBobLib/VehicleSim \
+    --exec-name BobLib.Experiments.Standards.VehicleSim --jobs 4 --check
+```
+
+It moves each DOE knob to the edge of its range on the one executable and
+reports `live`, `no effect`, `run failed` or `rejected`. `live` means the
+result moved, not that it moved correctly, so a new entry also needs one
+override run compared with a compiled variant that differs only in it.
 
 **It uses its own test matrix, not the standard's.** The standard runs four
 isolines (22 cases). But every exported metric except the velocity slopes comes

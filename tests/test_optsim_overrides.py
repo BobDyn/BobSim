@@ -120,15 +120,29 @@ def test_writing_a_variant_and_overriding_one_agree_on_the_value() -> None:
 
 
 def test_runtime_safe_knobs_share_one_executable_and_the_rest_do_not() -> None:
-    bar, toe = "rear.stabar.rate_n_m_per_rad", "front.wheel.toe_deg"
-    assert bar in overrides.RUNTIME_SAFE_PATHS
-    assert toe not in overrides.RUNTIME_SAFE_PATHS, "toe is baked into the wheel rotation matrix"
-    baseline = {bar: 535.0, toe: 0.0}
-    soft = evaluator.compiled_part({bar: 400.0, toe: 0.0}, baseline)
-    stiff = evaluator.compiled_part({bar: 900.0, toe: 0.0}, baseline)
-    toed = evaluator.compiled_part({bar: 900.0, toe: 0.1}, baseline)
-    assert soft == stiff == {}, "bar changes must reuse the baseline executable"
-    assert toed == {toe: 0.1}, "a toe change must get its own executable"
+    bar, toe, aero = "rear.stabar.rate_n_m_per_rad", "front.wheel.toe_deg", "aero.load_scale"
+    assert {bar, toe} <= overrides.RUNTIME_SAFE_PATHS
+    assert aero not in overrides.RUNTIME_SAFE_PATHS, "a scaled aero table is compiled into the executable"
+    baseline = {bar: 535.0, toe: 0.0, aero: 1.0}
+    soft = evaluator.compiled_part({bar: 400.0, toe: 0.0, aero: 1.0}, baseline)
+    toed = evaluator.compiled_part({bar: 900.0, toe: 0.1, aero: 1.0}, baseline)
+    loaded = evaluator.compiled_part({bar: 900.0, toe: 0.1, aero: 1.2}, baseline)
+    assert soft == toed == {}, "bar and toe changes must reuse the baseline executable"
+    assert loaded == {aero: 1.2}, "an aero scale change must get its own executable"
+
+
+def test_runtime_safe_list_matches_the_pinned_boblib() -> None:
+    """Toe, camber and frame masses only follow an override from BobLib #71 on.
+
+    On an older pin the list would reuse one executable for them and every
+    variant would silently simulate the baseline car.
+    """
+    root = Path(__file__).resolve().parents[1]
+    if not (root / "engines/boblib/BobLib/package.mo").is_file():
+        pytest.skip("BobLib submodule is not checked out")
+    assert (root / overrides.RUNTIME_SETUP_MARKER).is_file(), (
+        "RUNTIME_SAFE_PATHS lists toe, camber and frame-mass knobs, which need BobLib #71 or later"
+    )
 
 
 def test_command_line_targets_replace_the_configured_ones() -> None:

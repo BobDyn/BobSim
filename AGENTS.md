@@ -80,15 +80,17 @@ above. Keep the set small; a stale doc is worse than no doc.
   [`docs/conventions.md`](docs/conventions.md#vertical-datum-z) and
   [`skills/shark-import/SKILL.md`](skills/shark-import/SKILL.md).
 
-- **An OpenModelica `-override` can be accepted and do nothing.** Static toe and
-  camber feed the wheel's `toHub.R_rel` rotation matrix. OpenModelica evaluates
-  that matrix at compile time. Every mass and CG value fails in the same way
-  through `combineMassRecords`. The parameter still reports
+- **An OpenModelica `-override` can be accepted and do nothing.** A parameter
+  that OpenModelica folds into the executable still reports
   `isValueChangeable="true"`, the override gives no warning, and the simulated
-  car does not change. Only the variables in `RUNTIME_SAFE_PATHS`
+  car does not change. Before BobLib #71 that was static toe and camber (the
+  wheel's `toHub.R_rel`) and every mass and CG (`combineMassRecords`); #71
+  builds both at initialisation. Only the variables in `RUNTIME_SAFE_PATHS`
   (`optimization/response/pipeline/overrides.py`) are proven to follow an
-  override. Compile every other variable. Before you trust a new override,
-  read the comment in that file on how to check one. The runner catches the
+  override. Compile every other variable. When the BobLib pin moves, run
+  `python -m optimization.response.pipeline.vet_runtime --check` against the new
+  build, and before adding a knob compare an override run with a compiled
+  variant, as the comment in that file says. The runner catches the
   other failures. Before any case runs, it rejects a name that is not in the
   init XML, a parameter that is not changeable, a name with no start value, and
   a value of the wrong kind. After each run, it fails unless `run.log` reads
