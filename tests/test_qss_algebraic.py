@@ -5,7 +5,13 @@ import pytest
 
 from engines.dynpy import Vehicle, solve_acceleration_trim
 from engines.dynpy.qss import _algebraic_residual, _algebraic_slip_slopes, _generalized_acceleration_target
-from simulations.envelope.ggv.ggv_generation import _solve_envelope_limit, _solve_racing_trim, solve_ax_limit
+import simulations.envelope.ggv.ggv_generation as ggv_generation
+from simulations.envelope.ggv.ggv_generation import (
+    _polish_equality,
+    _solve_envelope_limit,
+    _solve_racing_trim,
+    solve_ax_limit,
+)
 from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
 
@@ -217,3 +223,58 @@ def test_trim_forward_jacobian_matches_centered_reference(vehicle, monkeypatch, 
     assert actual.residual_norm < 1e-6
     np.testing.assert_allclose(actual.state, reference.state, atol=1e-6, rtol=0)
     np.testing.assert_allclose(actual.output.normal_loads_n, reference.output.normal_loads_n, atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("seed", (0, 2))
+def test_lateral_limit_closes_equations_whatever_the_rounding(vehicle, seed, monkeypatch):
+    """The lateral limit coasts on the drive/brake torque split with the inside rear nearly lifted.
+
+    A 1e-12 nudge to every SLSQP start stands in for another CPU's rounding.
+    Without the polish these seeds leave 3e-5 and 1.2e-5 rad/s^2 on that
+    wheel's spin balance, which is how CI failed while local runs passed.
+    """
+    model = vehicle.model(10)
+    projection = project_vehicle_yaml(load_vehicle_yaml()).ggv
+    rng = np.random.default_rng(seed)
+    minimize = ggv_generation.minimize
+
+    def nudged(fun, x0, *args, **kwargs):
+        x0 = np.asarray(x0, dtype=float)
+        return minimize(fun, x0 * (1. + 1e-12 * rng.standard_normal(x0.shape)), *args, **kwargs)
+
+    monkeypatch.setattr(ggv_generation, "minimize", nudged)
+    result = _solve_envelope_limit(
+        projection, model, speed=10., ay=30., ax_bounds=(-31.4, 27.5), mode="lateral",
+        max_abs_beta_rad=.25, max_abs_steering_rad=.5, enforce_tire_load_range=True,
+    )
+    assert result is not None
+    target = _generalized_acceleration_target(
+        model, result.state, result.output,
+        longitudinal_mps2=result.path_longitudinal_acceleration_mps2,
+        lateral_mps2=result.path_lateral_acceleration_mps2,
+        acceleration_frame="path",
+    )
+    np.testing.assert_allclose(result.output.generalized_acceleration, target, atol=1e-7)
+
+
+def _kinked(values):
+    torque, boundary = values
+    # Drive and brake distributions meet at zero torque with different slopes, and only drive has a root.
+    split = 6. * torque if torque >= 0. else torque
+    return np.array([split - 5e-8, boundary - 1.])
+
+
+def test_polish_solves_on_the_side_of_the_torque_kink_that_has_a_root():
+    start = np.array([-1e-9, 1.])
+    polished = _polish_equality(start, _kinked, lambda v: np.array([1.]), [(-1., 1.)] * 2, torque_index=0)
+    assert np.linalg.norm(_kinked(polished)) < 1e-10
+    assert polished[0] == pytest.approx(5e-8 / 6., rel=1e-6)
+
+
+def test_polish_never_returns_a_point_that_breaks_an_inequality():
+    start = np.array([-1e-9, 1.])
+    polished = _polish_equality(
+        start, _kinked, lambda v: np.array([1. if np.array_equal(v, start) else -1.]), [(-1., 1.)] * 2,
+        torque_index=0,
+    )
+    np.testing.assert_array_equal(polished, start)
