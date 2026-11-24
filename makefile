@@ -354,21 +354,24 @@ sync-vehicle:
 sync-vehicle-write:
 	$(PYTHON) -m app.modelica_generator --write
 
-# Records and templates hold the hardpoints. Without them, make misses geometry changes.
-GENERATED_RECORDS := $(wildcard $(BOBLIB_PACKAGE_PATH)/Records/VehicleDefn/*.mo)
-GENERATED_TEMPLATES := $(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/BobSimTemplates/*.mo)
+# common/model_cache.py keys each build on every BobLib file, the build script,
+# the C flags and the omc version, so a BobLib change anywhere rebuilds and a
+# source state built before (another branch, a fresh clone) is restored from
+# .cache/bobsim/models instead of recompiled. It runs in the container so its
+# host-tuned flags match the container's architecture. FORCE because the key,
+# not file mtimes, decides. BOBSIM_CFLAGS_PROFILE=portable drops -march=native
+# so the build can be shared between machines.
+BOBSIM_CFLAGS_PROFILE ?= native
+MODEL_CACHE = $(RUN) env BOBSIM_CFLAGS_PROFILE=$(BOBSIM_CFLAGS_PROFILE) $(PYTHON) -m common.model_cache build
 
-# BOBSIM_NATIVE_CFLAGS is computed inside the container so it reflects the
-# container's actual architecture, not the host `make` runs on -- clang on
-# AArch64 (e.g. Apple Silicon under Docker Desktop) rejects -march=native,
-# an x86-ism, and needs -mcpu=native instead.
-$(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
-		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"'
+$(VEHICLE_SIM_EXE): FORCE
+	$(MODEL_CACHE) --mos $(BUILD_VEHICLE_MOS) --exe $(VEHICLE_SIM_EXE)
 
-$(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
-		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"'
+$(FOUR_POST_SIM_EXE): FORCE
+	$(MODEL_CACHE) --mos $(BUILD_FOUR_POST_MOS) --exe $(FOUR_POST_SIM_EXE)
+
+.PHONY: FORCE
+FORCE:
 
 # SHARK is optional. Without it, the already-imported variant is overlaid.
 # Runs in the container because ARGS=--four-post needs the container-built simulator.

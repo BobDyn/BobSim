@@ -56,11 +56,15 @@ See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity and use-
 make standard-eval-all      # ramp steer + steady state + transient + four post
 ```
 
-Builds are incremental: `standard-build` and `standard-build-four-post` are
-file targets that only recompile when the corresponding `.mo` model, the `.mos`
-build script, or `BobLib/package.mo` changes. If a build seems stale after
-editing something else in BobLib, that dependency list is why — touch the model
-or run `make clean-standard`.
+Builds are keyed on content (`common/model_cache.py`): `standard-build` and
+`standard-build-four-post` recompile when any file under BobLib, the `.mos`
+build script, the C flags or the omc version changes, and do nothing when only
+mtimes moved. Each build is kept in `.cache/bobsim/models` (the five newest
+per simulator), so switching back to a branch, or a fresh clone at a commit
+built before, restores the executable in about a second instead of
+recompiling. Set `BOBSIM_MODEL_CACHE` to move the cache, for example to a CI
+cache path. `BOBSIM_CFLAGS_PROFILE=portable` builds with `-O3` and no
+`-march=native`, so one build works on any machine of the same architecture.
 
 Individual studies:
 
