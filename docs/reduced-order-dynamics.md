@@ -187,7 +187,8 @@ and massless-wheel slips are algebraic unknowns solved alongside body equilibriu
 MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
 These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
 each boundary with the same equations and retains the trim search as a fallback.
-File-backed GGV runs solve speed slices in up to four separate processes.
+File-backed GGV runs, and GGVs that lap evaluation generates, solve speed slices
+in up to four separate processes.
 Lateral samples within each slice retain their continuation order.
 GGV checks independent tire-force inversion at the solved loads, then verifies
 load and wheel-torque balance. Near tire peaks, transient evaluation starting

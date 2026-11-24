@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
-from engines.dynpy import DOFModel, Vehicle, VehicleDynamicsSystem
+from engines.dynpy import DOFModel, Vehicle
 from simulations.lap.core import (
     GGVMap,
     TrackCorridor,
@@ -96,9 +96,11 @@ def run_lap_time_evaluation(
         ggv_path,
         vehicle_path=vehicle_path,
         model_dof=model_dof,
-        model=vehicle.model(model_dof),
         qss_config=qss_config,
         effective_power_limit_w=vehicle.parameters.peak_drive_power_w,
+        event_power_limit_w=(
+            float(configured_power_limit) if configured_power_limit is not None else None
+        ),
     )
     if config.get("linked_racing_line"):
         from simulations.lap.core.qss import solve_qss_lap
@@ -204,10 +206,33 @@ def _load_or_generate_ggv(
     *,
     vehicle_path: Path,
     model_dof: DOFModel,
-    model: VehicleDynamicsSystem,
     qss_config: dict[str, Any],
     effective_power_limit_w: float,
+    event_power_limit_w: float | None = None,
 ) -> tuple[GGVMap, dict[str, Any]]:
+    """Reuse a matching GGV cache or generate one across worker processes.
+
+    Parameters
+    ----------
+    path : Path
+        GGV CSV to read or write. Its provenance sits beside it.
+    vehicle_path : Path
+        Vehicle definition for the envelope and the reduced model.
+    model_dof : DOFModel
+        Reduced-model fidelity.
+    qss_config : dict
+        ``qss`` section of the lap config.
+    effective_power_limit_w : float
+        Drive power after the event cap, applied to the envelope parameters.
+    event_power_limit_w : float, optional
+        Configured event cap, applied to the DynPy vehicle in each worker as
+        ``run_lap_time_evaluation`` applies it to its own vehicle.
+
+    Returns
+    -------
+    tuple[GGVMap, dict]
+        Envelope map and its provenance with a cache status.
+    """
     expected_provenance = _ggv_provenance(
         vehicle_path=vehicle_path,
         model_dof=model_dof,
@@ -257,8 +282,8 @@ def _load_or_generate_ggv(
         )
 
     # This layer may compose EnvelopeSim and dyn_py; neither lower layer imports it.
-    from simulations.envelope.ggv.ggv_generation import config_to_ggv_config, generate_ggv, save_ggv_csv
-    from simulations.envelope.ggv.parallel import automatic_vehicle_speed_grid
+    from simulations.envelope.ggv.ggv_generation import config_to_ggv_config, save_ggv_csv
+    from simulations.envelope.ggv.parallel import automatic_vehicle_speed_grid, generate_ggv_speeds
     from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
 
     ggv_vehicle = project_vehicle_yaml(load_vehicle_yaml(vehicle_path)).ggv
@@ -271,7 +296,10 @@ def _load_or_generate_ggv(
         speeds=automatic_vehicle_speed_grid(ggv_vehicle.max_drive_speed),
         verbose=True, progress_every=1, warn_tire_load_range=False,
     )
-    envelopes = generate_ggv(ggv_vehicle, generation, reduced_model=model)
+    # Speed slices are independent, so workers reproduce the serial solve.
+    envelopes = generate_ggv_speeds(
+        vehicle_path, generation, vehicle=ggv_vehicle, drive_power_limit_w=event_power_limit_w,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     save_ggv_csv(envelopes, path)
     metadata_path.write_text(
