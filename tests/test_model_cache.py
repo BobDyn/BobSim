@@ -146,3 +146,44 @@ def test_git_and_pycache_are_ignored(repo):
     (repo / "engines/boblib/BobLib/__pycache__").mkdir()
     (repo / "engines/boblib/BobLib/__pycache__/x.pyc").write_bytes(b"junk")
     assert mc.source_digest(repo, src) == before
+
+
+def test_the_operating_system_is_part_of_the_key(repo, monkeypatch):
+    src = ["engines/boblib/BobLib"]
+    monkeypatch.setattr(mc.platform, "system", lambda: "Linux")
+    linux = mc.build_key(repo, src, "-O3", "v")
+    monkeypatch.setattr(mc.platform, "system", lambda: "Darwin")
+    assert mc.build_key(repo, src, "-O3", "v") != linux
+
+
+def _fake_run(outputs, seen):
+    def run(cmd, **kwargs):
+        seen.append(cmd[0])
+        out = outputs[cmd[0]]
+        if isinstance(out, Exception):
+            raise out
+        return mc.subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+    return run
+
+
+def test_toolchain_names_the_compiler_omc_uses(monkeypatch):
+    seen = []
+    outputs = {"omc": '"clang"\n', "clang": "clang version 18.1.3\nTarget: x86_64\n"}
+    monkeypatch.setattr(mc.subprocess, "run", _fake_run(outputs, seen))
+    assert mc.c_compiler_version() == "clang version 18.1.3"
+    assert seen == ["omc", "clang"]
+
+
+def test_a_compiler_upgrade_changes_the_toolchain(monkeypatch):
+    outputs = {"omc": "OpenModelica 1.27.1\n", "cc": "gcc 13.2.0\n"}
+    monkeypatch.setattr(mc.subprocess, "run", _fake_run(outputs, []))
+    before = mc.toolchain_version()
+    outputs["cc"] = "gcc 14.1.0\n"
+    assert mc.toolchain_version() != before
+    assert before.startswith("OpenModelica 1.27.1")
+
+
+def test_an_unreadable_compiler_still_gives_a_stable_toolchain(monkeypatch):
+    outputs = {"omc": "", "cc": FileNotFoundError("cc")}
+    monkeypatch.setattr(mc.subprocess, "run", _fake_run(outputs, []))
+    assert mc.c_compiler_version() == "cc (version unknown)"

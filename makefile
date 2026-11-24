@@ -355,7 +355,7 @@ sync-vehicle-write:
 	$(PYTHON) -m app.modelica_generator --write
 
 # common/model_cache.py keys each build on every BobLib file, the build script,
-# the C flags and the omc version, so a BobLib change anywhere rebuilds and a
+# the C flags, omc and its C compiler, so a BobLib change anywhere rebuilds and a
 # source state built before (another branch, a fresh clone) is restored from
 # .cache/bobsim/models instead of recompiled. It runs in the container so its
 # host-tuned flags match the container's architecture. FORCE because the key,

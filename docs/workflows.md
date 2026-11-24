@@ -58,8 +58,13 @@ make standard-eval-all      # ramp steer + steady state + transient + four post
 
 Builds are keyed on content (`common/model_cache.py`): `standard-build` and
 `standard-build-four-post` recompile when any file under BobLib, the `.mos`
-build script, the C flags or the omc version changes, and do nothing when only
-mtimes moved. Each build is kept in `.cache/bobsim/models` (the five newest
+build script, the C flags, the omc version, the C compiler omc calls or the
+operating system changes (and, for the default host-tuned flags, the CPU), and
+do nothing when only mtimes moved. Parameters OpenModelica folds into the
+binary (static toe, for one) come from BobLib records, which are in the key;
+a runtime override of one is refused rather than run on the old value. The Modelica Standard Library and
+VehicleInterfaces are pinned to exact versions in the `.mos` scripts, so they
+are covered by the script. Each build is kept in `.cache/bobsim/models` (the five newest
 per simulator), so switching back to a branch, or a fresh clone at a commit
 built before, restores the executable in about a second instead of
 recompiling. Set `BOBSIM_MODEL_CACHE` to move the cache, for example to a CI

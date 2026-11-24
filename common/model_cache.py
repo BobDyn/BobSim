@@ -6,9 +6,10 @@ touched a suspension model kept the stale executable) and rebuilt after any
 branch switch that bumped mtimes without changing content.
 
 This keys each build on what actually goes into it: every file under the BobLib
-package, the build script, the C flags, the omc version and, for host-tuned
-flags, the CPU. A key that was built before is restored from the cache in about
-a second instead of recompiling for minutes.
+package, the build script, the C flags, the omc version, the C compiler omc
+calls, the operating system and, for host-tuned flags, the CPU. A key that
+was built before is restored from the cache in about a second instead of
+recompiling for minutes.
 
 ``BOBSIM_CFLAGS_PROFILE=portable`` builds without ``-march=native``, so the key
 no longer depends on the CPU and one build can be shared between machines and
@@ -30,7 +31,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 # Bump when the key's inputs or the cached file set change.
-SCHEMA = 1
+SCHEMA = 2
 DEFAULT_CACHE_DIR = Path(".cache/bobsim/models")
 DEFAULT_KEEP = 5
 SKIPPED_DIRS = {".git", "__pycache__"}
@@ -100,6 +101,8 @@ def build_key(
         "sources": source_digest(root, sources),
         "cflags": flags,
         "omc": omc_version.strip(),
+        # A portable build is still a Linux or macOS binary.
+        "system": platform.system(),
         # Only host-tuned code is tied to the CPU it was built on.
         "cpu": (cpu or cpu_fingerprint()) if "native" in flags else {"machine": platform.machine()},
     }
@@ -177,6 +180,35 @@ def omc_version() -> str:
     return subprocess.run(["omc", "--version"], check=True, capture_output=True, text=True).stdout
 
 
+def c_compiler_version() -> str:
+    """First line of ``--version`` from the C compiler omc builds simulators with.
+
+    omc only generates C; a compiler upgrade changes the binary (and its
+    floating-point results at -O3) without changing ``omc --version``.
+    """
+    compiler = "cc"
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "compiler.mos"
+        script.write_text("getCompiler();\n", encoding="utf-8")
+        try:
+            out = subprocess.run(["omc", str(script)], capture_output=True, text=True, cwd=tmp).stdout
+        except OSError:
+            out = ""
+    named = out.strip().strip('"')
+    if named and "\n" not in named and " " not in named:
+        compiler = named
+    try:
+        version = subprocess.run([compiler, "--version"], check=True, capture_output=True, text=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return f"{compiler} (version unknown)"
+    return version.strip().splitlines()[0] if version.strip() else f"{compiler} (version unknown)"
+
+
+def toolchain_version() -> str:
+    """Everything outside the sources that turns them into a binary: omc and its C compiler."""
+    return f"{omc_version().strip()}\n{c_compiler_version()}"
+
+
 def compile_with_omc(mos: Path, exe: Path, flags: str) -> None:
     for item in (exe, exe.with_name(exe.name + "_init.xml")):
         item.unlink(missing_ok=True)
@@ -196,7 +228,7 @@ def build(
     profile: str,
     keep: int = DEFAULT_KEEP,
     compile_fn: Callable[[Path, Path, str], None] = compile_with_omc,
-    version_fn: Callable[[], str] = omc_version,
+    version_fn: Callable[[], str] = toolchain_version,
 ) -> str:
     """Make ``exe`` current for ``sources``. Returns ``fresh``, ``restored`` or ``built``."""
     flags = cflags(profile)
@@ -240,7 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cache_dir = Path(os.environ.get("BOBSIM_MODEL_CACHE") or DEFAULT_CACHE_DIR)
     profile = os.environ.get("BOBSIM_CFLAGS_PROFILE") or "native"
     if args.command == "key":
-        print(build_key(root, [*sources, args.mos], cflags(profile), omc_version()))
+        print(build_key(root, [*sources, args.mos], cflags(profile), toolchain_version()))
         return 0
     outcome = build(root, args.mos, args.exe, sources, cache_dir, profile)
     print(f"{args.exe}: {outcome} ({profile} C flags)", file=sys.stderr)
