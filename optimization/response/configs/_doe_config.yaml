@@ -140,8 +140,8 @@ variables:
     axle: front
 - path: front.actuation.damper_rate_n_s_per_m
   range:
-  - 680
-  - 1020
+  - 876.8
+  - 1315.2
   label: front damper rate
   targets:
   - block: chassis.frontAxle.actuation
@@ -149,12 +149,157 @@ variables:
     index:
     - 0
     - 1
-    scale: -1
+    scale: -0.2963503649635037
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 1
+    - 1
+    scale: -0.2589416058394161
   - block: chassis.frontAxle.actuation
     param: damperTable
     index:
     - 2
     - 1
+    scale: -0.2214416058394161
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 3
+    - 1
+    scale: -0.18248175182481755
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 4
+    - 1
+    scale: -0.1466240875912409
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 5
+    - 1
+    scale: -0.11386861313868615
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 6
+    - 1
+    scale: -0.0811131386861314
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 7
+    - 1
+    scale: -0.05766423357664235
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 8
+    - 1
+    scale: -0.03585766423357665
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 9
+    - 1
+    scale: -0.026551094890510957
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 10
+    - 1
+    scale: -0.0187043795620438
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 11
+    - 1
+    scale: -0.015602189781021902
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 12
+    - 1
+    scale: -0.012500000000000002
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 14
+    - 1
+    scale: 0.026551094890510957
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 15
+    - 1
+    scale: 0.03585766423357665
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 16
+    - 1
+    scale: 0.0405109489051095
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 17
+    - 1
+    scale: 0.06240875912408761
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 18
+    - 1
+    scale: 0.0842153284671533
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 19
+    - 1
+    scale: 0.1497262773722628
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 20
+    - 1
+    scale: 0.21523722627737232
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 21
+    - 1
+    scale: 0.2822992700729927
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 22
+    - 1
+    scale: 0.34781021897810227
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 23
+    - 1
+    scale: 0.3915145985401461
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 24
+    - 1
+    scale: 0.4335766423357665
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 25
+    - 1
+    scale: 0.47417883211678846
+  - block: chassis.frontAxle.actuation
+    param: damperTable
+    index:
+    - 26
+    - 1
+    scale: 0.5162408759124089
 - path: front.stabar.rate_n_m_per_rad
   range:
   - 205.376938
@@ -193,8 +338,8 @@ variables:
     axle: rear
 - path: rear.actuation.damper_rate_n_s_per_m
   range:
-  - 1040
-  - 1560
+  - 876.8
+  - 1315.2
   label: rear damper rate
   targets:
   - block: chassis.rearAxle.actuation
@@ -202,12 +347,157 @@ variables:
     index:
     - 0
     - 1
-    scale: -1
+    scale: -0.2963503649635037
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 1
+    - 1
+    scale: -0.2589416058394161
   - block: chassis.rearAxle.actuation
     param: damperTable
     index:
     - 2
     - 1
+    scale: -0.2214416058394161
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 3
+    - 1
+    scale: -0.18248175182481755
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 4
+    - 1
+    scale: -0.1466240875912409
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 5
+    - 1
+    scale: -0.11386861313868615
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 6
+    - 1
+    scale: -0.0811131386861314
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 7
+    - 1
+    scale: -0.05766423357664235
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 8
+    - 1
+    scale: -0.03585766423357665
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 9
+    - 1
+    scale: -0.026551094890510957
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 10
+    - 1
+    scale: -0.0187043795620438
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 11
+    - 1
+    scale: -0.015602189781021902
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 12
+    - 1
+    scale: -0.012500000000000002
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 14
+    - 1
+    scale: 0.026551094890510957
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 15
+    - 1
+    scale: 0.03585766423357665
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 16
+    - 1
+    scale: 0.0405109489051095
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 17
+    - 1
+    scale: 0.06240875912408761
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 18
+    - 1
+    scale: 0.0842153284671533
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 19
+    - 1
+    scale: 0.1497262773722628
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 20
+    - 1
+    scale: 0.21523722627737232
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 21
+    - 1
+    scale: 0.2822992700729927
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 22
+    - 1
+    scale: 0.34781021897810227
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 23
+    - 1
+    scale: 0.3915145985401461
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 24
+    - 1
+    scale: 0.4335766423357665
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 25
+    - 1
+    scale: 0.47417883211678846
+  - block: chassis.rearAxle.actuation
+    param: damperTable
+    index:
+    - 26
+    - 1
+    scale: 0.5162408759124089
 - path: rear.stabar.rate_n_m_per_rad
   range:
   - 360.052058
