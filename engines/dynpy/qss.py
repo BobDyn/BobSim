@@ -13,6 +13,7 @@ from engines.dynpy.models import (
     ModelInputs, ModelOutput, ReducedVehicleModel, _body_to_world_rotation,
 )
 from engines.dynpy.parameters import G
+from engines.dynpy.vector import cross
 
 
 FloatArray = NDArray[np.float64]
@@ -85,7 +86,7 @@ def _physical_body_acceleration(state: FloatArray, output: ModelOutput) -> Float
         return output.generalized_acceleration[:2] + np.array(
             [-velocity[2] * velocity[1], velocity[2] * velocity[0]]
         )
-    return output.generalized_acceleration[:3] + np.cross(velocity[3:6], velocity[:3])
+    return output.generalized_acceleration[:3] + cross(velocity[3:6], velocity[:3])
 
 
 def steady_state_residual(
@@ -494,8 +495,7 @@ def _trim_state_and_inputs(
         positions = model.parameters.corner_positions
         body_velocity = velocities[:3]
         body_omega = velocities[3:6]
-        corner_velocity = body_velocity + np.cross(
-            np.broadcast_to(body_omega, positions.shape), positions
+        corner_velocity = body_velocity + cross(body_omega, positions
         )
         steering_angles = np.array([steering, steering, 0.0, 0.0])
         longitudinal_speed = (
@@ -574,7 +574,7 @@ def _generalized_acceleration_target(
         vertical = -(rotation[2, 0] * longitudinal_mps2
                      + rotation[2, 1] * lateral_mps2) / rotation[2, 2]
         physical = np.array([longitudinal_mps2, lateral_mps2, vertical])
-    linear_target = physical - np.cross(omega, body_velocity)
+    linear_target = physical - cross(omega, body_velocity)
     target = np.zeros(model.dof, dtype=float)
     target[:2 if model.dof == 3 else 3] = linear_target[:2 if model.dof == 3 else 3]
     if model.dof >= 10:
@@ -587,7 +587,7 @@ def _generalized_acceleration_target(
             + target[1] * np.sin(steering)
         )
         if acceleration_frame == "path":
-            corner_velocity = body_velocity + np.cross(omega, output.contact_patch_positions_body_m)
+            corner_velocity = body_velocity + cross(omega, output.contact_patch_positions_body_m)
             longitudinal_speed = (corner_velocity[:, 0] * np.cos(steering)
                                   + corner_velocity[:, 1] * np.sin(steering))
             # Hold the fitted slip ratio fixed as rolling speed changes.

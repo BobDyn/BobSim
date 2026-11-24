@@ -187,7 +187,14 @@ and massless-wheel slips are algebraic unknowns solved alongside body equilibriu
 MF5.2 is evaluated directly at those slips, without nested tire-force inversion.
 These algebraic unknowns do not add dynamic DOFs. The GGV solver maximizes
 each boundary with the same equations and retains the trim search as a fallback.
-File-backed GGV runs solve speed slices in up to four separate processes.
+Each accepted boundary is then polished with a few Newton steps until the
+equations close to about 1e-10 in scaled units. SLSQP alone only meets them to
+its own tolerance, and at the lateral limit the coasting torque sits on the
+drive/brake distribution switch, so the leftover error depended on float
+rounding and differed between CPUs. The polish works on each side of that
+switch separately and moves the boundary value only by about the residual.
+File-backed GGV runs, and GGVs that lap evaluation generates, solve speed slices
+in separate processes, one per slice up to the CPU count.
 Lateral samples within each slice retain their continuation order.
 SLSQP's finite-difference Jacobians dominate a GGV solve, so the constraint
 Jacobians are built by `engines/dynpy/jacobian.py` with the same steps and

@@ -23,6 +23,7 @@ from scipy.optimize import minimize
 
 from engines.dynpy.models import DOFModel, ModelInputs, ModelOutput, ReducedVehicleModel
 from engines.dynpy.jacobian import forward_difference_jacobian
+from engines.dynpy.vector import cross
 from engines.dynpy.qss import (
     QSSResult, solve_acceleration_trim, _algebraic_residual, _trim_state_and_inputs,
     _generalized_acceleration_target, _residual_scales,
@@ -499,7 +500,7 @@ def _actuator_margins(
         Nonnegative margins satisfy each finite actuator limit.
     """
     _, velocity = model._body_state(state[:model.dof], state[model.dof:])
-    corner_velocity = velocity[:3] + np.cross(velocity[3:6], output.contact_patch_positions_body_m)
+    corner_velocity = velocity[:3] + cross(velocity[3:6], output.contact_patch_positions_body_m)
     corner_velocity += output.contact_patch_tangents * output.jounce_speed_mps[:, None]
     longitudinal = (corner_velocity[:, 0] * np.cos(output.toe_rad)
                     + corner_velocity[:, 1] * np.sin(output.toe_rad))
@@ -517,6 +518,147 @@ def _actuator_margins(
     if np.isfinite(vehicle.max_drive_power):
         margins.append((vehicle.max_drive_power - power) / (vehicle.mass * G * max(speed, 1.0)))
     return np.asarray(margins)
+
+
+def _polish_equality(
+    values: FloatArray,
+    equality: Callable[[FloatArray], FloatArray],
+    inequality: Callable[[FloatArray], FloatArray],
+    bounds: Sequence[tuple[float, float]],
+    *,
+    torque_index: int,
+    tolerance: float = 1e-10,
+    max_steps: int = 8,
+) -> FloatArray:
+    """## Equation Polish
+
+    SLSQP stops on the objective, and its equality constraints only have to sit
+    inside its own tolerance. At the pure-lateral limit the car coasts, so the
+    total wheel torque sits next to zero, which is where the drive and brake
+    distributions switch: the equations have a kink there. SLSQP's finite
+    differences straddle it, and float rounding decides how. A nearly lifted
+    wheel turns that into up to 5e-5 rad/s^2 of spin-balance error, so the same
+    point passed on one CPU and failed on another.
+
+    The polish runs minimum-norm Newton steps on the equations, separately on
+    each side of the kink the torque can be on, with the torque's finite
+    difference taken away from zero so it never mixes the two distributions.
+    The boundary value is an unknown too: it is the maximum of the solve, a
+    fold where the other unknowns alone can't close the equations, so it moves
+    by about as much as the residual (1e-8 m/s^2 at the lateral limit).
+
+    Parameters
+    ----------
+    values : FloatArray
+        Accepted SLSQP unknowns, scaled, with the boundary value last.
+    equality, inequality : Callable[[FloatArray], FloatArray]
+        The scaled equations and the nonnegative margins SLSQP solved with.
+    bounds : Sequence[tuple[float, float]]
+        Scaled bounds on every unknown.
+    torque_index : int
+        Position of the total wheel torque, whose sign picks the distribution.
+    tolerance : float
+        Scaled equation norm at which Newton stops.
+    max_steps : int
+        Newton steps per side of the kink.
+
+    Returns
+    -------
+    FloatArray
+        The best side's unknowns if they improve the equations and keep every
+        margin nonnegative, else ``values`` unchanged. It never returns a worse
+        point.
+    """
+    start = np.asarray(values, dtype=float)
+    lower, upper = np.array(bounds, dtype=float).T
+    before = float(np.linalg.norm(equality(start)))
+    torque = float(start[torque_index])
+    sides = (float(np.sign(torque)),) if abs(torque) > 1e-6 else (-1., 1.)
+    best, best_norm = start, before
+    for side in sides:
+        # Keep the torque on this side of the kink (zero itself belongs to both).
+        low, high = lower.copy(), upper.copy()
+        if side > 0:
+            low[torque_index] = max(low[torque_index], 0.)
+        else:
+            high[torque_index] = min(high[torque_index], 0.)
+        if low[torque_index] > high[torque_index]:
+            continue
+        point, norm = _newton_on_equations(
+            np.clip(start, low, high), equality, low, high,
+            torque_index=torque_index, side=side, tolerance=tolerance, max_steps=max_steps,
+        )
+        if norm < best_norm:
+            best, best_norm = point, norm
+    if best_norm < before and float(np.min(inequality(best))) >= -1e-7:
+        return best
+    return start
+
+
+def _newton_on_equations(
+    point: FloatArray,
+    equality: Callable[[FloatArray], FloatArray],
+    lower: FloatArray,
+    upper: FloatArray,
+    *,
+    torque_index: int,
+    side: float,
+    tolerance: float,
+    max_steps: int,
+) -> tuple[FloatArray, float]:
+    """## Bounded Newton
+
+    Parameters
+    ----------
+    point : FloatArray
+        Scaled start, already inside ``[lower, upper]``.
+    equality : Callable[[FloatArray], FloatArray]
+        Scaled equations.
+    lower, upper : FloatArray
+        Scaled bounds, with the torque confined to one side of zero.
+    torque_index : int
+        Position of the total wheel torque.
+    side : float
+        Sign of the torque side, so its finite difference steps away from zero.
+    tolerance : float
+        Scaled equation norm at which Newton stops.
+    max_steps : int
+        Maximum Newton steps.
+
+    Returns
+    -------
+    tuple[FloatArray, float]
+        The last improving point and its scaled equation norm.
+    """
+    free = np.arange(point.size)
+    residual = np.asarray(equality(point), dtype=float)
+    norm = float(np.linalg.norm(residual))
+    for _ in range(max_steps):
+        if not np.isfinite(norm) or norm <= tolerance:
+            break
+        # Forward differences on O(1) scaled unknowns, stepping back from any upper bound,
+        # and stepping the torque away from the kink.
+        steps = np.sqrt(np.finfo(float).eps) * np.maximum(1., np.abs(point[free]))
+        steps = np.where(point[free] + steps > upper[free], -steps, steps)
+        steps[torque_index] = side * abs(steps[torque_index])
+        jacobian = np.empty((residual.size, free.size))
+        for index, step in zip(free, steps):
+            shifted = point.copy()
+            shifted[index] += step
+            jacobian[:, index] = (np.asarray(equality(shifted), dtype=float) - residual) / step
+        delta = np.linalg.lstsq(jacobian, -residual, rcond=None)[0]
+        # A step that runs into the kink or a bound can overshoot, so halve it until the equations improve.
+        for fraction in 0.5 ** np.arange(6):
+            trial = point.copy()
+            trial[free] = np.clip(point[free] + fraction * delta, lower[free], upper[free])
+            trial_residual = np.asarray(equality(trial), dtype=float)
+            trial_norm = float(np.linalg.norm(trial_residual))
+            if trial_norm < norm:
+                break
+        else:
+            break
+        point, residual, norm = trial, trial_residual, trial_norm
+    return point, norm
 
 
 def _solve_envelope_limit(
@@ -748,8 +890,11 @@ def _solve_envelope_limit(
             break
     else:
         return None
-    state, inputs, output = evaluate(tuple(result.x))
-    physical = result.x * scale_array
+    values = _polish_equality(
+        result.x, equality, inequality, bounds, torque_index=names.index("total_wheel_torque_nm"),
+    )
+    state, inputs, output = evaluate(tuple(values))
+    physical = values * scale_array
     steering = float(np.mean(kinematics.at(np.zeros(4), float(physical[1])).toe_rad[:2]))
     inputs = replace(inputs, steering_rad=steering)
     if np.any(output.normal_loads_n <= 0.) or _tire_state_error(model, inputs, output):
@@ -775,7 +920,7 @@ def _solve_envelope_limit(
             )
     return QSSResult(
         success=True, message=str(result.message),
-        residual_norm=float(np.linalg.norm(equality(result.x))),
+        residual_norm=float(np.linalg.norm(equality(values))),
         state=state, inputs=inputs, output=output,
         unknowns=unknowns,
         speed_mps=speed, yaw_rate_radps=(float(physical[-1]) if mode == "lateral" else ay) / speed,
