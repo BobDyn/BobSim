@@ -67,7 +67,8 @@ VehicleInterfaces are pinned to exact versions in the `.mos` scripts, so they
 are covered by the script. Each build is kept in `.cache/bobsim/models` (the five newest
 per simulator), so switching back to a branch, or a fresh clone at a commit
 built before, restores the executable in about a second instead of
-recompiling. Set `BOBSIM_MODEL_CACHE` to move the cache, for example to a CI
+recompiling. A build missing its executable or `_init.xml` is never taken as
+current, and a cache entry missing either is rebuilt. Set `BOBSIM_MODEL_CACHE` to move the cache, for example to a CI
 cache path. `BOBSIM_CFLAGS_PROFILE=portable` builds with `-O3` and no
 `-march=native`, so one build works on any machine of the same architecture.
 

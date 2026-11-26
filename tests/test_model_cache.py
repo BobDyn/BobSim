@@ -96,6 +96,27 @@ def test_deleted_build_is_restored_from_cache(repo):
     assert omc.calls == 1
 
 
+def test_missing_init_xml_is_not_fresh(repo):
+    omc = FakeOmc()
+    _build(repo, omc)
+    init_xml = repo / (EXE + "_init.xml")
+    init_xml.unlink()
+    assert _build(repo, omc) == "restored"
+    assert init_xml.is_file()
+    assert omc.calls == 1
+
+
+def test_cache_entry_without_init_xml_rebuilds(repo):
+    omc = FakeOmc()
+    _build(repo, omc)
+    (entry,) = (repo / ".cache/models" / Path(EXE).name).iterdir()
+    (entry / (Path(EXE).name + "_init.xml")).unlink()
+    (repo / EXE).unlink()
+    assert _build(repo, omc) == "built"
+    assert (repo / (EXE + "_init.xml")).is_file()
+    assert omc.calls == 2
+
+
 def test_flags_and_omc_version_are_part_of_the_key(repo):
     src = ["engines/boblib/BobLib", MOS]
     base = mc.build_key(repo, src, "-O3", "1.27.1")

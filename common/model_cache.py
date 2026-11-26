@@ -130,8 +130,13 @@ def stamp_path(exe: Path) -> Path:
     return exe.with_name(exe.name + ".bobsim-key")
 
 
+def required_outputs(exe: Path) -> tuple[Path, Path]:
+    """What a build must leave behind: the simulator can't start without its init XML."""
+    return exe, exe.with_name(exe.name + "_init.xml")
+
+
 def restore(entry: Path, exe: Path) -> bool:
-    if not (entry / exe.name).is_file():
+    if not all((entry / item.name).is_file() for item in required_outputs(exe)):
         return False
     exe.parent.mkdir(parents=True, exist_ok=True)
     for item in entry.iterdir():
@@ -210,11 +215,11 @@ def toolchain_version() -> str:
 
 
 def compile_with_omc(mos: Path, exe: Path, flags: str) -> None:
-    for item in (exe, exe.with_name(exe.name + "_init.xml")):
+    for item in required_outputs(exe):
         item.unlink(missing_ok=True)
     env = {**os.environ, "BOBSIM_NATIVE_CFLAGS": flags}
     subprocess.run(["omc", str(mos)], check=True, env=env)
-    missing = [p.name for p in (exe, exe.with_name(exe.name + "_init.xml")) if not p.is_file()]
+    missing = [p.name for p in required_outputs(exe) if not p.is_file()]
     if missing:
         raise RuntimeError(f"omc {mos} finished without producing {', '.join(missing)}")
 
@@ -235,7 +240,10 @@ def build(
     key = build_key(root, [*sources, mos], flags, version_fn())
     exe_path = root / exe
     stamp = stamp_path(exe_path)
-    if exe_path.is_file() and stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == key:
+    # A matching stamp only counts if every required output is still there; a
+    # half-deleted build falls through to restore or rebuild.
+    outputs_present = all(item.is_file() for item in required_outputs(exe_path))
+    if outputs_present and stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == key:
         return "fresh"
 
     target_dir = (cache_dir if cache_dir.is_absolute() else root / cache_dir) / exe_path.name
