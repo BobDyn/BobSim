@@ -193,7 +193,8 @@ its own tolerance, and at the lateral limit the coasting torque sits on the
 drive/brake distribution switch, so the leftover error depended on float
 rounding and differed between CPUs. The polish works on each side of that
 switch separately and moves the boundary value only by about the residual.
-File-backed GGV runs solve speed slices in up to four separate processes.
+File-backed GGV runs, and GGVs that lap evaluation generates, solve speed slices
+in up to four separate processes.
 Lateral samples within each slice retain their continuation order.
 GGV checks independent tire-force inversion at the solved loads, then verifies
 load and wheel-torque balance. Near tire peaks, transient evaluation starting

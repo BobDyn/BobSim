@@ -82,7 +82,7 @@ def test_file_workflow_ignores_saved_speed_grid(monkeypatch):
     set_projected_limit(monkeypatch, 45.)
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
     captured = []
-    monkeypatch.setattr(parallel, "_generate_speed", lambda path, config: captured.append(config) or [])
+    monkeypatch.setattr(parallel, "_generate_speed", lambda path, config, *_: captured.append(config) or [])
     for speeds in ((5., 10.), (100.,), ()):
         parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", GGVConfig(speeds=speeds))
     assert all(config["speeds"] == (5., 10., 15., 20., 25., 30., 35., 40., 45.) for config in captured)
@@ -97,3 +97,79 @@ def test_app_envelope_settings_only_expose_model_choice():
     assert [field.path for field in BASE_CONFIG_SPECS["lap-transient"].fields if field.path[0] == "qss"] == [
         ("qss", "regenerate"),
     ]
+
+
+def test_lap_slices_match_serial_lap_solve_exactly(monkeypatch):
+    from dataclasses import replace
+
+    from engines.dynpy import Vehicle
+    from simulations.envelope.ggv.ggv_generation import generate_ggv
+    from simulations.envelope.vehicle_yaml import load_vehicle_yaml, project_vehicle_yaml
+
+    # The lap caps both the envelope parameters and the DynPy vehicle at the event power.
+    path = ROOT / "vehicle.yml"
+    capped = Vehicle.from_yaml(path).with_power_limit(32000.)
+    projected = project_vehicle_yaml(load_vehicle_yaml(path)).ggv
+    vehicle = replace(projected, max_drive_power=min(projected.max_drive_power,
+                                                     capped.parameters.peak_drive_power_w))
+    config = GGVConfig(
+        speeds=(12., 5.), ay_points=3, ay_max_g=4.5,
+        trim_multistart=False, verbose=False, warn_tire_load_range=False,
+    )
+    serial = generate_ggv(vehicle, config, reduced_model=capped.model(config.model_dof))
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 2)
+    spawned = parallel.generate_ggv_speeds(path, config, vehicle=vehicle, drive_power_limit_w=32000.)
+    assert [envelope.speed for envelope in spawned] == list(config.speeds)
+    for actual, expected in zip(spawned, serial, strict=True):
+        for field in ("ay", "ax_accel", "ax_brake"):
+            np.testing.assert_array_equal(getattr(actual, field), getattr(expected, field))
+
+
+@pytest.mark.parametrize(("cpus", "speeds", "expected"), [
+    (4, 9, 4), (8, 9, 4), (2, 9, 2), (None, 9, 1), (4, 3, 3), (4, 1, 1), (4, 0, 1),
+])
+def test_worker_count_caps_at_slices_cpus_and_four(monkeypatch, cpus, speeds, expected):
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: cpus)
+    assert parallel.ggv_worker_count(speeds) == expected
+
+
+def test_slices_reach_pool_with_worker_count_and_lap_inputs(monkeypatch):
+    pools = []
+
+    class Pool:
+        def __init__(self, max_workers, mp_context):
+            pools.append((max_workers, mp_context.get_start_method()))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        map = staticmethod(map)
+
+    calls = []
+
+    def solve(path, config, vehicle, limit):
+        calls.append((path, config["speeds"], vehicle, limit))
+        return [SimpleNamespace(speed=speed) for speed in config["speeds"]]
+
+    monkeypatch.setattr(parallel, "ProcessPoolExecutor", Pool)
+    monkeypatch.setattr(parallel, "_generate_speed", solve)
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 3)
+    marker = object()
+    speeds = (20., 5., 15., 10.)
+    result = parallel.generate_ggv_speeds(
+        ROOT / "vehicle.yml", GGVConfig(speeds=speeds, verbose=False),
+        vehicle=marker, drive_power_limit_w=32000.,
+    )
+    assert pools == [(3, "spawn")]
+    assert [envelope.speed for envelope in result] == list(speeds)
+    assert calls == [((ROOT / "vehicle.yml").resolve().as_posix(), (speed,), marker, 32000.) for speed in speeds]
+
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: 1)
+    calls.clear()
+    parallel.generate_ggv_speeds(ROOT / "vehicle.yml", GGVConfig(speeds=speeds, verbose=False),
+                                 vehicle=marker, drive_power_limit_w=None)
+    assert pools == [(3, "spawn")]
+    assert calls == [((ROOT / "vehicle.yml").resolve().as_posix(), speeds, marker, None)]
