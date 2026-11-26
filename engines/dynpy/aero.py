@@ -133,3 +133,34 @@ class AeroMap:
         force = -drag * velocity / max(speed, 1e-6) + np.array([0., 0., -downforce])
         moment = np.array([mx, my, mz]) + cross(self.reference_m, force)
         return force, moment
+
+    def wrench_batch(
+        self, heights: FloatArray, velocity: FloatArray, density: float,
+    ) -> tuple[FloatArray, FloatArray]:
+        """## Batched Aero Wrench
+
+        Row-wise ``wrench`` for ``(n, 4)`` heights and ``(n, 3)`` velocities.
+
+        Returns
+        -------
+        tuple[FloatArray, FloatArray]
+            ``(n, 3)`` body-frame forces and moments about the CG.
+        """
+        def bracket(grid: FloatArray, height: FloatArray) -> tuple[NDArray[np.intp], FloatArray]:
+            index = np.clip(np.searchsorted(grid, height) - 1, 0, len(grid) - 2)
+            return index, np.clip((height - grid[index]) / (grid[index + 1] - grid[index]), 0, 1)
+
+        i, x = bracket(self.front_grid, np.mean(heights[:, :2], axis=1))
+        j, y = bracket(self.rear_grid, np.mean(heights[:, 2:], axis=1))
+        x, y = x[:, None], y[:, None]
+        raw = ((1-x)*(1-y)*self.loads[:, i, j].T + x*(1-y)*self.loads[:, i+1, j].T
+               + (1-x)*y*self.loads[:, i, j+1].T + x*y*self.loads[:, i+1, j+1].T)
+        # sqrt of a stacked dot matches np.linalg.norm on each row bit for bit.
+        speed = np.sqrt((velocity[:, None, :] @ velocity[:, :, None])[:, 0, 0])
+        drag, downforce, mx, my, mz = (raw * max(density, 0) / self.reference_density_kg_m3 * (
+            speed / self.reference_speed_mps
+        )[:, None]**2).T
+        force = -drag[:, None] * velocity / np.maximum(speed, 1e-6)[:, None]
+        force[:, 2] -= downforce
+        moment = np.column_stack((mx, my, mz)) + np.cross(self.reference_m, force)
+        return force, moment

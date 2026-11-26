@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import csv
+from collections import OrderedDict
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from functools import lru_cache
 from datetime import datetime
 import os
 from common.vehicle_io import repo_root
 from pathlib import Path
-from collections.abc import Callable, Sequence
 from typing import Any, Literal, Mapping, cast
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
@@ -22,11 +22,12 @@ import yaml
 from scipy.optimize import minimize
 
 from engines.dynpy.models import DOFModel, ModelInputs, ModelOutput, ReducedVehicleModel
+from engines.dynpy.jacobian import forward_difference_jacobian
 from engines.dynpy.vector import cross
 from engines.dynpy.qss import (
     QSSResult, solve_acceleration_trim, _algebraic_residual, _trim_state_and_inputs,
     _generalized_acceleration_target, _residual_scales,
-    _tire_state_error, _algebraic_slip_slopes,
+    _tire_state_error, _algebraic_slip_slopes, _algebraic_slip_slopes_batch,
 )
 
 
@@ -757,19 +758,51 @@ def _solve_envelope_limit(
     guess = np.array([seed.get(name, coast if name == "path_ax_mps2" else 0.) for name in names]) / scale_array
     guess = np.clip(guess, np.array(bounds)[:, 0], np.array(bounds)[:, 1])
 
-    @lru_cache(maxsize=256)
-    def evaluate(values: tuple[float, ...]):
+    def trial(values: tuple[float, ...]) -> tuple[FloatArray, ModelInputs, FloatArray | None, FloatArray | None]:
         physical = np.asarray(values) * scale_array
         lateral = float(physical[-1]) if mode == "lateral" else ay
         state, inputs = _trim_state_and_inputs(
             model, physical[:model.dof], speed_mps=speed, yaw_rate_radps=lateral / speed, rack_input=True,
         )
-        output = model.evaluate(
-            state, inputs,
-            normal_loads_n=physical[model.dof:model.dof + 4] if model.dof < 14 else None,
-            algebraic_slips=physical[model.dof + 4:model.dof + 8] if model.dof < 10 else None,
-        )
-        return state, inputs, output
+        return (state, inputs, physical[model.dof:model.dof + 4] if model.dof < 14 else None,
+                physical[model.dof + 4:model.dof + 8] if model.dof < 10 else None)
+
+    # Model evaluations shared by the objective, both constraints and their Jacobians.
+    evaluated: OrderedDict[tuple[float, ...], tuple[FloatArray, ModelInputs, ModelOutput]] = OrderedDict()
+    batched_slopes: dict[tuple[float, ...], FloatArray] = {}
+
+    def remember(key: tuple[float, ...], value: tuple[FloatArray, ModelInputs, ModelOutput]) -> None:
+        evaluated[key] = value
+        if len(evaluated) > 256:
+            batched_slopes.pop(evaluated.popitem(last=False)[0], None)
+
+    def evaluate(values: tuple[float, ...]) -> tuple[FloatArray, ModelInputs, ModelOutput]:
+        if values in evaluated:
+            evaluated.move_to_end(values)
+            return evaluated[values]
+        state, inputs, loads, slips = trial(values)
+        result = state, inputs, model.evaluate(state, inputs, normal_loads_n=loads, algebraic_slips=slips)
+        remember(values, result)
+        return result
+
+    def prefetch(points: Sequence[FloatArray]) -> None:
+        # Evaluate a Jacobian's columns in one batch; constraints then read them from the cache.
+        keys = list(dict.fromkeys(key for key in map(tuple, points) if key not in evaluated))
+        if len(keys) < 2:
+            return
+        trials = [trial(key) for key in keys]
+        try:
+            outputs = model.evaluate_batch(
+                np.array([row[0] for row in trials]), [row[1] for row in trials],
+                normal_loads_n=None if trials[0][2] is None else np.array([row[2] for row in trials]),
+                algebraic_slips=None if trials[0][3] is None else np.array([row[3] for row in trials]),
+            )
+        except (ValueError, RuntimeError):
+            return  # The scalar path reports the rejected point when the solver reaches it.
+        for key, row, output in zip(keys, trials, outputs, strict=True):
+            remember(key, (row[0], row[1], output))
+        if model.dof < 10:
+            batched_slopes.update(zip(keys, _algebraic_slip_slopes_batch(model, outputs)))
 
     def equality(values: FloatArray) -> FloatArray:
         state, inputs, output = evaluate(tuple(values))
@@ -796,7 +829,8 @@ def _solve_envelope_limit(
                                 slip - tire.coefficients["KPUMIN"] - 1e-9,
                                 tire.coefficients["KPUMAX"] - slip - 1e-9))
         if model.dof < 10:
-            constraints.extend(_algebraic_slip_slopes(model, output) / force_scale)
+            slopes = batched_slopes.get(tuple(values))
+            constraints.extend((_algebraic_slip_slopes(model, output) if slopes is None else slopes) / force_scale)
         if model.dof == 14:
             for load, tire in zip(output.normal_loads_n, model.parameters.tires):
                 constraints.append((load - max(1e-6, load_fraction * tire.fz_min_n)) / force_scale)
@@ -807,6 +841,16 @@ def _solve_envelope_limit(
     def objective(values: FloatArray) -> float:
         return float(values[-1]) * (1. if mode == "brake" else -np.sign(ay) if mode == "lateral" else -1.)
 
+    def constraint_specs(active_bounds: Sequence[tuple[float, float]]) -> list[dict[str, Any]]:
+        # SLSQP's own finite differences, with each Jacobian's model calls batched.
+        lower, upper = np.asarray(active_bounds, dtype=float).T
+
+        def jacobian(fun: Callable[[FloatArray], FloatArray]) -> Callable[[FloatArray], FloatArray]:
+            return lambda values: forward_difference_jacobian(fun, values, lower, upper, prefetch=prefetch)
+
+        return [{"type": "eq", "fun": equality, "jac": jacobian(equality)},
+                {"type": "ineq", "fun": inequality, "jac": jacobian(inequality)}]
+
     for attempt in range(2 if initial_unknowns is not None else 1):
         if attempt:
             # Back off a tire peak only when direct continuation fails.
@@ -815,8 +859,7 @@ def _solve_envelope_limit(
                 if name.startswith("slip_"):
                     guess[index] *= .9
         result = minimize(  # type: ignore[call-overload]
-            objective, guess, method="SLSQP", bounds=bounds,
-            constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
+            objective, guess, method="SLSQP", bounds=bounds, constraints=constraint_specs(bounds),
             options={"ftol": 1e-9, "maxiter": 100},
         )
         if not result.success and mode == "lateral" and initial_unknowns is None:
@@ -832,8 +875,7 @@ def _solve_envelope_limit(
                 # Avoid zero-load stagnation while retaining strict equilibrium checks.
                 interior = minimize(  # type: ignore[call-overload]
                     objective, load_guess, method="SLSQP", bounds=seed_bounds,
-                    constraints=[{"type": "eq", "fun": equality}, {"type": "ineq", "fun": inequality}],
-                    options={"ftol": 1e-7, "maxiter": 100},
+                    constraints=constraint_specs(seed_bounds), options={"ftol": 1e-7, "maxiter": 100},
                 )
                 if (not interior.success or not np.all(np.isfinite(interior.x))
                         or not np.linalg.norm(equality(interior.x)) <= 1e-5

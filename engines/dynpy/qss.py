@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Literal, Mapping
+from typing import Literal, Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -655,6 +655,23 @@ def _algebraic_slip_slopes(model: ReducedVehicleModel, output: ModelOutput) -> F
         slopes[corners] = (fx[:, 1] - fx[:, 0]) / 2e-5
     return slopes
 
+
+
+def _algebraic_slip_slopes_batch(model: ReducedVehicleModel, outputs: Sequence[ModelOutput]) -> FloatArray:
+    """Row-wise ``_algebraic_slip_slopes`` for many outputs in one tire call per axle."""
+    loads = np.array([output.normal_loads_n for output in outputs])
+    alphas = np.array([output.slip_angles_rad for output in outputs])
+    slips = np.array([output.slip_ratios for output in outputs])
+    cambers = np.array([output.camber_rad for output in outputs])
+    slopes = np.empty((len(outputs), 4))
+    for axle, tire in enumerate((model.parameters.front_tire, model.parameters.rear_tire)):
+        corners = slice(2 * axle, 2 * axle + 2)
+        fx = tire.forces(
+            loads[:, corners, None], alphas[:, corners, None],
+            slips[:, corners, None] + np.array([-1e-5, 1e-5]), cambers[:, corners, None],
+        )[0]
+        slopes[:, corners] = (fx[..., 1] - fx[..., 0]) / 2e-5
+    return slopes
 
 def _tire_state_error(
     model: ReducedVehicleModel, inputs: ModelInputs, output: ModelOutput,
