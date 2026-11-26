@@ -41,7 +41,10 @@ make help
 ```
 
 The Docker image is based on OpenModelica and installs the Python dependencies
-from `requirements.txt`.
+from `requirements.txt`. Every push to `main` that changes the `Dockerfile` or
+`requirements.txt` publishes the image to `ghcr.io/bobdyn/bobsim`, and
+`make docker-build` reuses its layers, so a first build downloads the image
+instead of rebuilding it. A change to either file rebuilds from that layer on.
 
 Start the BobSim app:
 
