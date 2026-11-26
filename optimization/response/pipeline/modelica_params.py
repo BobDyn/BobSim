@@ -33,6 +33,16 @@ def scale_value(text: str, spec: dict[str, Any], factor: float) -> str:
     return text[:start] + scaled + text[end:]
 
 
+def read_table(text: str, spec: dict[str, Any]) -> list[list[float]]:
+    """Read a matrix parameter such as a damper table as rows of floats."""
+    start, end = locate_value_span(text, spec)
+    inner_start, inner_end = _collection_inner_span(text, start, end)
+    return [
+        [parse_float(text[a:b]) for a, b in _split_top_level(text, row_start, row_end, ",")]
+        for row_start, row_end in _split_top_level(text, inner_start, inner_end, ";")
+    ]
+
+
 def locate_value_span(text: str, spec: dict[str, Any]) -> tuple[int, int]:
     # A dotted block such as chassis.frontAxle.actuation names nested record modifications.
     record, *nested = str(spec["block"]).split(".")

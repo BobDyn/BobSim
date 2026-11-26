@@ -135,18 +135,18 @@ sweep:
           axle: front
       range: [21015.2202, 31522.8303]
 
+    # Damper rate at zero velocity, as the vehicle review reports it. The whole
+    # measured force curve scales with it, so its shape is kept. The range is
+    # the baseline curve's rate +-20%; generation fails if the curve moves out of it.
     - path: front.actuation.damper_rate_n_s_per_m
       label: front damper rate
       scope: setup
       targets:
         - block: chassis.frontAxle.actuation
           param: damperTable
-          index: [0, 1]
-          scale: -1
-        - block: chassis.frontAxle.actuation
-          param: damperTable
-          index: [2, 1]
-      range: [680, 1020]
+          operation: scale_column
+          column: 1
+      range: [876.8, 1315.2]
 
     - path: front.stabar.rate_n_m_per_rad
       label: front anti-roll bar rate
@@ -177,18 +177,18 @@ sweep:
           axle: rear
       range: [35025.367, 52538.0505]
 
+    # Damper rate at zero velocity, as the vehicle review reports it. The whole
+    # measured force curve scales with it, so its shape is kept. The range is
+    # the baseline curve's rate +-20%; generation fails if the curve moves out of it.
     - path: rear.actuation.damper_rate_n_s_per_m
       label: rear damper rate
       scope: setup
       targets:
         - block: chassis.rearAxle.actuation
           param: damperTable
-          index: [0, 1]
-          scale: -1
-        - block: chassis.rearAxle.actuation
-          param: damperTable
-          index: [2, 1]
-      range: [1040, 1560]
+          operation: scale_column
+          column: 1
+      range: [876.8, 1315.2]
 
     - path: rear.stabar.rate_n_m_per_rad
       label: rear anti-roll bar rate

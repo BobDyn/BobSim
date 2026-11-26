@@ -66,6 +66,18 @@ much slower than later ones. If you invoke the Python entry point directly and
 skip that step, variant generation aborts before anything is compiled, and the
 error names the paths it searched.
 
+### Damper knobs
+
+`front/rear.actuation.damper_rate_n_s_per_m` is the damper's rate just below
+zero velocity, the number the vehicle review reports. BobLib's dampers are
+measured force curves, so the knob does not write a rate into the table. Its
+`scale_column` target is expanded by `generate_configs.py` into one scaled
+target per entry of the force column, and the whole curve scales with the
+swept rate, so its shape is kept. The sweep range is the baseline rate +-20%.
+If the curve in the record moves out of that range (new click settings, say),
+generation fails and names the new rate, so re-centre the range on it in
+`vehicle_architecture.yaml`.
+
 ## The forward pipeline
 
 `pre_screen_sensitivities.py` runs the whole thing end to end in five stages:
