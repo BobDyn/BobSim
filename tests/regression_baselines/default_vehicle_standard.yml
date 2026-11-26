@@ -2,7 +2,7 @@ schema: bobsim.regression.baseline.v1
 name: default_vehicle_standard
 description: Default vehicle StandardSim baseline metrics from fresh Docker-generated reports.
 provenance:
-  boblib_commit: 293595542a62746cd38881e1e937895757a11b05
+  boblib_commit: 282cffd561e70595cb1d2b0a13d7308a014ceedf
   simulation_inputs_digest: b8ecf2f5181ec821a17a1cb69cb94574d6280b2befaabeba4f5bd4842ee030bb
 refresh:
   make_targets:
@@ -318,82 +318,82 @@ workflows:
       general.n_velocity_groups:
         value: 2
       step.ay_peak:
-        value: 2.943279507219523
+        value: 2.914122566274682
         abs_tol: 0.15
       step.ay_ss:
-        value: 2.440877578453902
+        value: 2.441488405305331
         abs_tol: 0.15
       step.ay_gain_dc:
-        value: 27.776681080138843
+        value: 27.84765985216847
         abs_tol: 0.953136
       step.ay_overshoot_pct:
-        value: 20.582840089991386
+        value: 19.3584438059309
         abs_tol: 1.851188
       step.yaw_gain_dc:
-        value: 1.8339673869909552
+        value: 1.8393872784923788
         abs_tol: 0.125923
       step.yaw_overshoot_pct:
-        value: 14.426185767009864
+        value: 14.361139483355942
         abs_tol: 1.658697
       step.roll_gain_dc:
-        value: 0.04452920031002382
+        value: 0.044575611389656516
         abs_tol: 0.004022
       step.settling_time_s:
-        value: 1.300719268089169
+        value: 1.29395153762683
         abs_tol: 0.129539
       frequency.ay_gain_peak:
-        value: 29.206577532663513
+        value: 29.225519478493393
         abs_tol: 0.987378
       frequency.yaw_gain_peak:
-        value: 1.8603906660666116
+        value: 1.8613130275617082
         abs_tol: 0.127338
       frequency.bandwidth_hz:
         value: 1.0
         abs_tol: 0.001
       frequency.ay_phase_1hz:
-        value: -0.5282227457570627
+        value: -0.5282220943108769
         abs_tol: 0.15
       frequency.yaw_phase_1hz:
-        value: -8.230165016359507
+        value: -8.178025654380406
         abs_tol: 0.900932
       frequency.lag_steer_to_ay:
-        value: 0.001006941668304901
+        value: 0.0014672835953079913
         abs_tol: 0.005
       frequency.lag_steer_to_yaw:
-        value: 0.02286156948988752
+        value: 0.02271673792883446
         abs_tol: 0.005
       quality.ay_fit_error:
-        value: 0.05893795859928135
+        value: 0.05865239977105615
         abs_tol: 0.02
       quality.yaw_fit_error:
-        value: 0.055472813652635344
+        value: 0.05522740303357946
         abs_tol: 0.02
       step.ay_rise_time_s:
-        value: 0.03716790094604794
+        value: 0.03633141505642401
         abs_tol: 0.15
       step.yaw_rise_time_s:
-        value: 0.05223038001021996
+        value: 0.0517986226982341
         abs_tol: 0.05
       step.roll_peak:
-        value: 0.0052655350110667
+        value: 0.0050058100492561
         abs_tol: 0.02
       step.roll_ss:
-        value: 0.0038859057934499605
+        value: 0.00388995592419494
         abs_tol: 0.02
       step.roll_overshoot_pct:
-        value: 28.685521090316257
+        value: 28.68552103947286
         abs_tol: 2.505245
       step.sideslip_ss:
-        value: 0.00404188217234151
+        value: 0.00404351388409599
         abs_tol: 0.02
       step.sideslip_gain_dc:
-        value: 0.04631655795286767
+        value: 0.046335255992250385
         abs_tol: 0.02
       step.yaw_peak:
-        value: 0.1875386212852193
+        value: 0.1874224575475627
         abs_tol: 0.02
       step.yaw_ss:
-        value: 0.16389484629600268
+        value: 0.16388649010867898
         abs_tol: 0.02
       frequency.ay_gain_peak_freq:
         value: 1.0
@@ -402,11 +402,11 @@ workflows:
         value: 1.0
         abs_tol: 0.05
       frequency.ay_phase_0p5hz:
-        value: 0.393660830390246
+        value: 0.21375861239710048
         abs_tol: 0.15
       frequency.yaw_phase_0p5hz:
-        value: -4.055913659340774
+        value: -4.239333077764968
         abs_tol: 0.442162
       frequency.gain_variation_pct:
-        value: 5.0206235437261295
+        value: 4.828686192041617
         abs_tol: 1.5

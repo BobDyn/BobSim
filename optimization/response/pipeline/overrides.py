@@ -26,11 +26,21 @@ from simulations.response.mbd.modelica_overrides import load_init_variables
 VEHICLE_RECORD = "pVehicle"
 
 # Variables read at initialisation, so an override reaches the physics.
-# isValueChangeable="true" is not enough. Toe, camber, mass and CG are evaluated
-# at compile time. To vet a candidate, compile two variants that differ only in
-# it and diff their *_init.xml. A changed non-changeable start value identifies
-# a compiled dependency. Compare override results with the separately compiled
-# variant. Re-check this list when the BobLib pin moves.
+# isValueChangeable="true" is not enough: OpenModelica accepts an override of a
+# parameter it folded into the executable and silently ignores it.
+#
+# Toe, camber, the frame and driver masses, their CGs and inertias and the
+# frame's torsional stiffness only follow an override from BobLib #71 on, which
+# builds the wheel rotation and the combined frame mass at initialisation. On
+# that build an override of each matched a separately compiled variant exactly
+# (every moving VehicleSim signal identical). test_optsim_overrides checks the
+# pin is new enough.
+#
+# Re-check this list whenever the BobLib pin moves:
+#   python -m optimization.response.pipeline.vet_runtime --build-dir <dir> --exec-name <exe> --check
+# It probes each DOE knob at the edge of its range on one compiled executable.
+# "live" is necessary, not sufficient: before adding a knob here, also compare
+# an override run with a compiled variant that differs only in that knob.
 RUNTIME_SAFE_PATHS = frozenset(
     {
         "front.stabar.rate_n_m_per_rad",
@@ -39,8 +49,25 @@ RUNTIME_SAFE_PATHS = frozenset(
         "rear.actuation.spring_rate_n_per_m",
         "front.actuation.damper_rate_n_s_per_m",
         "rear.actuation.damper_rate_n_s_per_m",
+        "front.wheel.toe_deg",
+        "rear.wheel.toe_deg",
+        "front.wheel.camber_deg",
+        "rear.wheel.camber_deg",
+        "sprung_mass.mass_kg",
+        "sprung_mass.cg_m.x",
+        "sprung_mass.cg_m.z",
+        "driver_mass.mass_kg",
+        "driver_mass.cg_m.x",
+        "driver_mass.cg_m.z",
+        "driver_mass.inertia_kg_m2.ixx",
+        "driver_mass.inertia_kg_m2.iyy",
+        "driver_mass.inertia_kg_m2.izz",
+        "body.torsional_stiff_n_m_per_rad",
     }
 )
+
+# BobLib file that #71 added; its presence marks a pin with runtime toe and mass.
+RUNTIME_SETUP_MARKER = Path("engines/boblib/BobLib/Utilities/Mechanics/MultiBody/TunableFixedRotation.mo")
 
 
 @dataclass(frozen=True)

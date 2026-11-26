@@ -126,7 +126,7 @@ manifest records the command line as `argv`. It also has an `overrides` block:
 | `file_sha256` | The SHA-256 of `overrides.txt`. |
 
 The check cannot see a changeable parameter that OpenModelica evaluates at
-compile time, such as static toe. The override then applies and reads back,
+compile time, such as static toe before BobLib #71. The override then applies and reads back,
 but the physics does not change. Only an achieved signal shows that a change
 took effect. See `RUNTIME_SAFE_PATHS` in
 `optimization/response/pipeline/overrides.py`.
