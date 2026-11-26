@@ -119,7 +119,8 @@ common/deploy/dist/
 *.gif
 *.mp4
 
-*.claude/
+*.claude/*
+!.claude/settings.json
 
 simulations/lap/results/
 simulations/reduced/results/
