@@ -27,6 +27,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import least_squares
 
 from engines.dynpy.parameters import G, ReducedVehicleParameters
+from engines.dynpy.vector import cross
 from engines.kinpy import VehicleKinematicState
 
 
@@ -197,8 +198,8 @@ class VehicleDynamicsSystem(ABC):
         corner_positions = (
             self.parameters.corner_positions + kinematics.contact_patch_offsets_m
         )
-        rigid_corner_velocities = body_velocities[:3] + np.cross(
-            np.broadcast_to(body_velocities[3:6], corner_positions.shape),
+        rigid_corner_velocities = body_velocities[:3] + cross(
+            body_velocities[3:6],
             corner_positions,
         )
         articulation_velocities = (
@@ -330,7 +331,7 @@ class VehicleDynamicsSystem(ABC):
         )
         body_force = np.sum(body_wheel_forces, axis=0) + gravity_body + aero_force
         body_moment = (
-            np.sum(np.cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
+            np.sum(cross(corner_positions, body_wheel_forces) + wheel_moments_body, axis=0) + aero_moment
         )
 
         if self.dof >= 10:
@@ -344,11 +345,11 @@ class VehicleDynamicsSystem(ABC):
         omega = body_velocities[3:6]
         body_linear_accel = (
             body_force / self._body_translational_masses(body_mass)
-            - np.cross(omega, body_velocities[:3])
+            - cross(omega, body_velocities[:3])
         )
         body_angular_accel = np.linalg.solve(
             body_inertia,
-            body_moment - np.cross(omega, body_inertia @ omega),
+            body_moment - cross(omega, body_inertia @ omega),
         )
         body_accel = np.concatenate((body_linear_accel, body_angular_accel))
 
@@ -650,8 +651,8 @@ class VehicleDynamicsSystem(ABC):
         corner_world_z = body_coordinates[2] + rotated_positions[:, 2]
         nominal_corner_z = corner_positions[:, 2]
         corner_vertical_displacement = corner_world_z - nominal_corner_z
-        corner_velocity_body = body_velocities[:3] + np.cross(
-            np.broadcast_to(body_velocities[3:6], corner_positions.shape),
+        corner_velocity_body = body_velocities[:3] + cross(
+            body_velocities[3:6],
             corner_positions,
         )
         corner_vertical_speed = (rotation @ corner_velocity_body.T).T[:, 2]

@@ -21,7 +21,7 @@ make lap-validation-visuals  # quick acceptance matrix across all DOFs
 
 **GGV behavior:**
 - Generated envelopes use nine speed slices through the vehicle's drivetrain limit and automatically expand acceleration search bounds. Linked and supplied envelopes retain their original range.
-- Generation solves the speed slices in parallel through `simulations/envelope/ggv/parallel.py`, the same code `make envelope-ggv` uses: one process per slice, at most four and at most the CPU count, with no setting to change it. Slices share no solver state, so the CSV is bit-identical to a serial solve. One CPU solves in-process. Each worker applies the event power cap to its own DynPy vehicle.
+- Generation solves the speed slices in parallel through `simulations/envelope/ggv/parallel.py`, the same code `make envelope-ggv` uses: one process per slice, up to the CPU count, with no setting to change it. Slices share no solver state, so the CSV is bit-identical to a serial solve. One CPU solves in-process. Each worker applies the event power cap to its own DynPy vehicle.
 - The lap summary and report show the GGV speed range and whether its upper edge limits the lap.
 - Cached GGV files are reused only when the model, settings, and physical inputs match. Otherwise they are regenerated.
 - With `generate_if_missing: false`, an external CSV without provenance is explicitly unverified. Known older BobSim envelopes are rejected. A missing CSV fails.

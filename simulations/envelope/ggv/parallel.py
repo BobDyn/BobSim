@@ -15,8 +15,6 @@ if TYPE_CHECKING:
     from simulations.envelope.ggv.ggv_generation import GGVConfig, GGVEnvelope, VehicleParams
 
 
-MAX_GGV_WORKERS = 4
-
 
 def automatic_vehicle_speed_grid(maximum_speed_mps: float) -> tuple[float, ...]:
     """Sample the vehicle's positive speed range at nine uniform intervals.
@@ -48,10 +46,11 @@ def ggv_worker_count(speed_count: int) -> int:
     Returns
     -------
     int
-        One process per slice, capped at ``MAX_GGV_WORKERS`` and the CPU count.
+        One process per slice, up to the CPU count. Slices are independent
+        and the grid has nine, so a fixed cap would only idle cores.
         A result of one means the caller should solve in-process.
     """
-    return max(1, min(MAX_GGV_WORKERS, speed_count, os.cpu_count() or 1))
+    return max(1, min(speed_count, os.cpu_count() or 1))
 
 
 def _generate_speed(

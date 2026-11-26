@@ -51,6 +51,30 @@ def test_single_cpu_does_not_spawn(monkeypatch):
     assert parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", GGVConfig(speeds=(5.,))) is expected
 
 
+
+@pytest.mark.parametrize(("cpus", "expected"), [(2, 2), (4, 4), (9, 9), (32, 9)])
+def test_workers_scale_with_cores_up_to_one_per_slice(monkeypatch, cpus, expected):
+    set_projected_limit(monkeypatch, 45.)
+    monkeypatch.setattr(parallel.os, "cpu_count", lambda: cpus)
+    requested = []
+
+    class Pool:
+        def __init__(self, max_workers, mp_context):
+            requested.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def map(self, function, *iterables):
+            return [[] for _ in zip(*iterables)]
+
+    monkeypatch.setattr(parallel, "ProcessPoolExecutor", Pool)
+    parallel.generate_ggv_from_vehicle(ROOT / "vehicle.yml", GGVConfig(verbose=False))
+    assert requested == [expected]
+
 def test_worker_failure_propagates(tmp_path, monkeypatch):
     from simulations.envelope import vehicle_yaml
 
@@ -126,9 +150,9 @@ def test_lap_slices_match_serial_lap_solve_exactly(monkeypatch):
 
 
 @pytest.mark.parametrize(("cpus", "speeds", "expected"), [
-    (4, 9, 4), (8, 9, 4), (2, 9, 2), (None, 9, 1), (4, 3, 3), (4, 1, 1), (4, 0, 1),
+    (4, 9, 4), (8, 9, 8), (32, 9, 9), (2, 9, 2), (None, 9, 1), (4, 3, 3), (4, 1, 1), (4, 0, 1),
 ])
-def test_worker_count_caps_at_slices_cpus_and_four(monkeypatch, cpus, speeds, expected):
+def test_worker_count_caps_at_slices_and_cpus(monkeypatch, cpus, speeds, expected):
     monkeypatch.setattr(parallel.os, "cpu_count", lambda: cpus)
     assert parallel.ggv_worker_count(speeds) == expected
 
