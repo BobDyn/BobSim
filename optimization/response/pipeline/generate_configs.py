@@ -22,6 +22,8 @@ from typing import Any
 
 import yaml
 
+from optimization.response.pipeline.modelica_params import read_table
+
 
 STANDARD_DIR = repo_root() / "optimization/response"
 OPTSIM_DIR = STANDARD_DIR.parent
@@ -155,6 +157,51 @@ def _record_binding_present(boblib_root: Path, source_path: Path, record_name: s
     return False
 
 
+def rate_at_zero(rows: list[list[float]], column: int = 1) -> float:
+    """Slope of a force table just below zero velocity, as the vehicle review reports it."""
+    points = sorted((row[0], row[column]) for row in rows)
+    if len(points) < 2:
+        raise ValueError("A rate needs a table with at least two rows")
+    upper = next((i for i, (x, _) in enumerate(points) if x >= 0.0), len(points))
+    lower = min(max(upper - 1, 0), len(points) - 2)
+    (x0, y0), (x1, y1) = points[lower], points[lower + 1]
+    return (y1 - y0) / (x1 - x0)
+
+
+def expand_scale_column(
+    target: dict[str, Any], record_text: str, variable: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Turn one `scale_column` target into a scaled target per table entry.
+
+    A damper knob is a rate in N*s/m, but the record holds a measured curve.
+    Each entry of the force column gets the swept rate times its own share of
+    the baseline rate, so the curve keeps its shape and the rate at zero equals
+    the swept value. Plain indexed targets let a compiled executable take the
+    knob through -override, and read_baseline gets the baseline rate back from
+    the first one. Writing two entries of a 3-row linear table, as this knob did
+    before, broke the measured curves and crashed the simulator.
+    """
+    column = int(target.get("column", 1))
+    rows = read_table(record_text, target)
+    rate = rate_at_zero(rows, column)
+    lo, hi = (float(x) for x in variable["range"])
+    if not lo <= rate <= hi:
+        raise ValueError(
+            f"{variable['path']}: the baseline {target['param']} rate is {rate:.6g}, "
+            f"outside the sweep range [{lo:.6g}, {hi:.6g}]. Re-centre the range on it."
+        )
+    return [
+        {
+            "block": target["block"],
+            "param": target["param"],
+            "index": [i, column],
+            "scale": row[column] / rate,
+        }
+        for i, row in enumerate(rows)
+        if row[column] != 0.0
+    ]
+
+
 def build_doe_config(
     *,
     template_cfg: dict[str, Any],
@@ -227,13 +274,19 @@ def build_doe_config(
         if "scale" in spec:
             variable["scale"] = float(spec["scale"])
         if "targets" in spec:
-            variable["targets"] = [
-                {
-                    key: list(value) if key in {"field_path", "index"} else value
-                    for key, value in target.items()
-                }
-                for target in spec["targets"]
-            ]
+            variable["targets"] = []
+            for target in spec["targets"]:
+                if target.get("operation") == "scale_column":
+                    variable["targets"] += expand_scale_column(
+                        target, record_path.read_text(encoding="utf-8"), variable
+                    )
+                    continue
+                variable["targets"].append(
+                    {
+                        key: list(value) if key in {"field_path", "index"} else value
+                        for key, value in target.items()
+                    }
+                )
         if "intervals" in spec:
             variable["intervals"] = int(spec["intervals"])
         variables.append(variable)
