@@ -124,3 +124,6 @@ common/deploy/dist/
 
 simulations/lap/results/
 simulations/reduced/results/
+
+# Compiled simulator cache (common/model_cache.py)
+.cache/

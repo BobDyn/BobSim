@@ -56,11 +56,21 @@ See [simulation-entrypoints.md](simulation-entrypoints.md) for fidelity and use-
 make standard-eval-all      # ramp steer + steady state + transient + four post
 ```
 
-Builds are incremental: `standard-build` and `standard-build-four-post` are
-file targets that only recompile when the corresponding `.mo` model, the `.mos`
-build script, or `BobLib/package.mo` changes. If a build seems stale after
-editing something else in BobLib, that dependency list is why — touch the model
-or run `make clean-standard`.
+Builds are keyed on content (`common/model_cache.py`): `standard-build` and
+`standard-build-four-post` recompile when any file under BobLib, the `.mos`
+build script, the C flags, the omc version, the C compiler omc calls or the
+operating system changes (and, for the default host-tuned flags, the CPU), and
+do nothing when only mtimes moved. Parameters OpenModelica folds into the
+binary (static toe, for one) come from BobLib records, which are in the key;
+a runtime override of one is refused rather than run on the old value. The Modelica Standard Library and
+VehicleInterfaces are pinned to exact versions in the `.mos` scripts, so they
+are covered by the script. Each build is kept in `.cache/bobsim/models` (the five newest
+per simulator), so switching back to a branch, or a fresh clone at a commit
+built before, restores the executable in about a second instead of
+recompiling. A build missing its executable or `_init.xml` is never taken as
+current, and a cache entry missing either is rebuilt. Set `BOBSIM_MODEL_CACHE` to move the cache, for example to a CI
+cache path. `BOBSIM_CFLAGS_PROFILE=portable` builds with `-O3` and no
+`-march=native`, so one build works on any machine of the same architecture.
 
 Individual studies:
 
