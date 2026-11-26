@@ -36,3 +36,14 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"engines/kinpy/misc_math.py" = ["E501"]
+"engines/kinpy/suspension_model/**/*.py" = ["E501", "E711", "E722", "F841"]
+"tests/kin_py/**/*.py" = ["E501", "F841"]

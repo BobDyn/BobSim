@@ -97,19 +97,21 @@ COMPOSE ?= docker compose
 else
 COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then printf "docker-compose"; else printf "docker compose"; fi)
 endif
-RUN := $(COMPOSE) run --rm -T bobsim
-DOCKER_BUILD_CMD := $(COMPOSE) build
-DOCKER_REBUILD_CMD := $(COMPOSE) build --no-cache
-SHELL_BOBSIM_CMD := $(COMPOSE) run --rm bobsim bash
-SHELL_STANDARD_CMD := $(COMPOSE) run --rm standard bash
-SHELL_ENVELOPE_CMD := $(COMPOSE) run --rm envelope bash
-SHELL_OPT_CMD := $(COMPOSE) run --rm opt bash
+COMPOSE_FILE ?= common/deploy/docker/compose.yml
+COMPOSE_RUN = $(COMPOSE) -f $(COMPOSE_FILE) -p bobsim
+RUN := $(COMPOSE_RUN) run --rm -T bobsim
+DOCKER_BUILD_CMD := $(COMPOSE_RUN) build
+DOCKER_REBUILD_CMD := $(COMPOSE_RUN) build --no-cache
+SHELL_BOBSIM_CMD := $(COMPOSE_RUN) run --rm bobsim bash
+SHELL_STANDARD_CMD := $(COMPOSE_RUN) run --rm standard bash
+SHELL_ENVELOPE_CMD := $(COMPOSE_RUN) run --rm envelope bash
+SHELL_OPT_CMD := $(COMPOSE_RUN) run --rm opt bash
 endif
 
 # The app needs a network to publish its port, so it uses the app service, not
 # bobsim. Recursive so that `make app RUN=` also runs the app on the host.
 APP_PORT ?= 8765
-APP_RUN = $(if $(RUN),$(COMPOSE) run --rm -p 127.0.0.1:$(APP_PORT):8765 app,)
+APP_RUN = $(if $(RUN),$(COMPOSE_RUN) run --rm -p 127.0.0.1:$(APP_PORT):8765 app,)
 
 WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
 CLEAN_WORKSPACE ?= $(CURDIR)

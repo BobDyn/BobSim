@@ -1,9 +1,0 @@
-line-length = 120
-
-[lint]
-select = ["E", "F"]
-
-[lint.per-file-ignores]
-"engines/kinpy/misc_math.py" = ["E501"]
-"engines/kinpy/suspension_model/**/*.py" = ["E501", "E711", "E722", "F841"]
-"tests/kin_py/**/*.py" = ["E501", "F841"]

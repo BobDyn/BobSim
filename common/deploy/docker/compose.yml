@@ -1,11 +1,11 @@
 services:
   bobsim: &bobsim-base
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: common/deploy/docker/Dockerfile
     image: bobdyn/bobsim:latest
     volumes:
-      - .:/workspace
+      - ../../..:/workspace
     working_dir: /workspace
     network_mode: none
     environment:

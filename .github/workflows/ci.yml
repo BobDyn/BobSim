@@ -91,10 +91,10 @@ jobs:
           submodules: recursive
 
       - name: Build BobSim image
-        run: docker compose build bobsim
+        run: make docker-build
 
       - name: Verify OpenModelica toolchain
-        run: docker compose run --rm -T bobsim omc --version
+        run: docker compose -f common/deploy/docker/compose.yml -p bobsim run --rm -T bobsim omc --version
 
       - name: Check DOE pipeline in-image
         run: make opt-doe-smoke
