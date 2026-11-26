@@ -209,7 +209,7 @@ def test_make_help_uses_intentional_target_language() -> None:
 
 
 def test_compose_services_match_workflow_language() -> None:
-    compose = _load_yaml(Path("docker-compose.yml"))
+    compose = _load_yaml(Path("common/deploy/docker/compose.yml"))
     services = compose.get("services")
 
     assert isinstance(services, dict)
@@ -220,6 +220,12 @@ def test_compose_services_match_workflow_language() -> None:
     assert services["opt"]["working_dir"] == "/workspace/optimization"
     assert services["app"]["working_dir"] == "/workspace"
     assert services["app"]["network_mode"] == "bridge"
+    compose_dir = ROOT / "common/deploy/docker"
+    build = services["bobsim"]["build"]
+    assert (compose_dir / build["context"]).resolve() == ROOT.resolve()
+    assert (ROOT / build["dockerfile"]).is_file()
+    mount = services["bobsim"]["volumes"][0].split(":")[0]
+    assert (compose_dir / mount).resolve() == ROOT.resolve()
 
 
 def test_four_post_eval_uses_full_symmetric_pose_schedule() -> None:

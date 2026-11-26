@@ -80,3 +80,11 @@ The response source move retains build and result paths under `simulations/mbd`
 and `simulations/reduced` for existing consumers. Optimization assets now live
 under `optimization`. Existing make commands and app workflow IDs are unchanged.
 Direct Python imports must use the new package paths.
+
+## Repository tooling
+
+Python lint, type-check and pytest settings live in `pyproject.toml`.
+Container definitions live under `common/deploy/docker/`; the make targets and
+CI select that Compose file explicitly. The Docker build context and `/workspace`
+bind mount remain the repository root. Desktop deployment tooling remains in
+`common/deploy/`. See [workflows](workflows.md) for execution and packaging commands.
