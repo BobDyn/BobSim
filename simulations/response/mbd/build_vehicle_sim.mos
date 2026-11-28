@@ -1,8 +1,14 @@
 clear();
 
 root := OpenModelica.Scripting.cd();
-boblibDir := root + "/engines/boblib/BobLib";
-buildDir := root + "/simulations/mbd/BuildBobLib/VehicleSim";
+// BOBSIM_BOBLIB names a staged BobLib copy that holds an outside vehicle's
+// records (app.modelica_generator --stage). BOBSIM_OUT moves the build out of
+// the checkout. Unset, both keep the in-repo defaults.
+stagedBoblib := OpenModelica.Scripting.getEnvironmentVar("BOBSIM_BOBLIB");
+boblibDir := if stagedBoblib == "" then root + "/engines/boblib/BobLib" else stagedBoblib;
+outRoot := OpenModelica.Scripting.getEnvironmentVar("BOBSIM_OUT");
+buildRoot := if outRoot == "" then root + "/simulations/mbd/BuildBobLib" else outRoot + "/BuildBobLib";
+buildDir := buildRoot + "/VehicleSim";
 
 OpenModelica.Scripting.setCommandLineOptions("--simCodeTarget=C");
 
@@ -21,7 +27,7 @@ loadModel(VehicleInterfaces, {"2.0.2"});
 
 loadFile(boblibDir + "/package.mo");
 
-mkdir(root + "/simulations/mbd/BuildBobLib");
+mkdir(buildRoot);
 mkdir(buildDir);
 
 cd(buildDir);

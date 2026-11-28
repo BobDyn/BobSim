@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from common.damper_curves import vehicle_damper_provenance, write_runtime_damper_file
-from common.vehicle_io import load_yaml, vehicle_yaml_path
+from common.vehicle_io import load_yaml, output_path, vehicle_yaml_path
 
 from simulations.response.mbd.modelica_overrides import (
     MODELICA_OVERRIDE_ALIASES,
@@ -133,7 +133,8 @@ def _json_ready(value: Any) -> Any:
 
 class ModelicaRunner:
     def __init__(self, build_dir, exec_name, simulation):
-        self.build_dir = Path(build_dir).resolve()
+        # BOBSIM_OUT moves the default simulations/mbd/BuildBobLib builds out of the checkout.
+        self.build_dir = output_path(build_dir).resolve()
         self.exec_name = _modelica_exec_base_name(str(exec_name))
         self.simulation = simulation or {}
 

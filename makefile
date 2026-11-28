@@ -11,8 +11,21 @@ FOUR_POST_SIM_CLASS := BobLib.Experiments.Standards.FourPostSim
 
 VEHICLE_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/VehicleSim.mo
 FOUR_POST_SIM_MODEL := $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/FourPostSim.mo
-VEHICLE_SIM_EXE := simulations/mbd/BuildBobLib/VehicleSim/$(VEHICLE_SIM_CLASS)
-FOUR_POST_SIM_EXE := simulations/mbd/BuildBobLib/FourPostSim/$(FOUR_POST_SIM_CLASS)
+
+# Bring your own car and output folder. BOBSIM_VEHICLE replaces vehicle.yml for
+# every workflow, and its records go into a staged BobLib copy instead of the
+# submodule. BOBSIM_OUT takes everything simulations/mbd/ would hold (builds,
+# results, reports). Both unset is the in-repo behaviour. Under Docker, name
+# paths inside this checkout, since only it is mounted.
+BOBSIM_VEHICLE ?=
+BOBSIM_OUT ?=
+export BOBSIM_VEHICLE BOBSIM_OUT
+GENERATED_ROOT := $(if $(BOBSIM_OUT),$(BOBSIM_OUT),simulations/mbd)
+BUILD_ROOT := $(GENERATED_ROOT)/BuildBobLib
+STAGED_BOBLIB := $(BUILD_ROOT)/BobLib
+STAGED_BOBLIB_STAMP := $(STAGED_BOBLIB).stamp
+VEHICLE_SIM_EXE := $(BUILD_ROOT)/VehicleSim/$(VEHICLE_SIM_CLASS)
+FOUR_POST_SIM_EXE := $(BUILD_ROOT)/FourPostSim/$(FOUR_POST_SIM_CLASS)
 
 BUILD_VEHICLE_MOS := simulations/response/mbd/build_vehicle_sim.mos
 BUILD_FOUR_POST_MOS := simulations/response/mbd/build_four_post_sim.mos
@@ -97,7 +110,7 @@ COMPOSE ?= docker compose
 else
 COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf "docker compose"; elif command -v docker-compose >/dev/null 2>&1; then printf "docker-compose"; else printf "docker compose"; fi)
 endif
-RUN := $(COMPOSE) run --rm -T bobsim
+RUN := $(COMPOSE) run --rm -T $(if $(BOBSIM_VEHICLE),-e BOBSIM_VEHICLE=$(BOBSIM_VEHICLE) )$(if $(BOBSIM_OUT),-e BOBSIM_OUT=$(BOBSIM_OUT) )bobsim
 DOCKER_BUILD_CMD := $(COMPOSE) build
 DOCKER_REBUILD_CMD := $(COMPOSE) build --no-cache
 SHELL_BOBSIM_CMD := $(COMPOSE) run --rm bobsim bash
@@ -112,6 +125,8 @@ APP_PORT ?= 8765
 APP_RUN = $(if $(RUN),$(COMPOSE) run --rm -p 127.0.0.1:$(APP_PORT):8765 app,)
 
 WORKSPACE ?= $(if $(RUN),/workspace,$(CURDIR))
+# A path as the build container sees it: absolute paths as given, others under WORKSPACE.
+in_workspace = $(if $(filter /%,$(1)),$(1),$(WORKSPACE)/$(1))
 CLEAN_WORKSPACE ?= $(CURDIR)
 CLEAN_DOCKER_IMAGE ?= bobdyn/bobsim:latest
 
@@ -194,6 +209,7 @@ help:
 		'  standard-eval-transient    Run TransientEval' \
 		'  standard-eval-four-post    Run FourPostEval' \
 		'  standard-eval-all          Run all standard evaluations' \
+		'    BOBSIM_VEHICLE=<car.yml> BOBSIM_OUT=<dir>  run your own car, results in <dir>' \
 		'  reduced-eval               Run N-DOF step steer; optionally compare BobLib CSV' \
 		'    REDUCED_DOF=3|6|10|14 REDUCED_KINEMATICS=lookup|nonlinear' \
 		'  reduced-fidelity-suite     Overlay 3/6/10/14DOF discriminating maneuvers' \
@@ -358,17 +374,34 @@ sync-vehicle-write:
 GENERATED_RECORDS := $(wildcard $(BOBLIB_PACKAGE_PATH)/Records/VehicleDefn/*.mo)
 GENERATED_TEMPLATES := $(wildcard $(BOBLIB_PACKAGE_PATH)/Experiments/Standards/BobSimTemplates/*.mo)
 
+# An outside vehicle builds against a staged BobLib copy. The stager runs every
+# time but only touches the stamp when a staged file changed, so an unchanged
+# car does not recompile.
+ifneq ($(strip $(BOBSIM_VEHICLE)),)
+VEHICLE_SIM_DEPS := $(STAGED_BOBLIB_STAMP)
+FOUR_POST_SIM_DEPS := $(STAGED_BOBLIB_STAMP)
+BUILD_BOBLIB_ENV := export BOBSIM_BOBLIB="$(call in_workspace,$(STAGED_BOBLIB))";
+.PHONY: stage-boblib
+stage-boblib:
+	$(RUN) $(PYTHON) -m app.modelica_generator "$(BOBSIM_VEHICLE)" --stage "$(call in_workspace,$(STAGED_BOBLIB))"
+
+$(STAGED_BOBLIB_STAMP): stage-boblib ;
+else
+VEHICLE_SIM_DEPS := $(VEHICLE_SIM_MODEL) $(BOBLIB_PACKAGE_PATH)/package.mo $(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
+FOUR_POST_SIM_DEPS := $(FOUR_POST_SIM_MODEL) $(BOBLIB_PACKAGE_PATH)/package.mo $(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
+BUILD_BOBLIB_ENV :=
+endif
+BUILD_OUT_ENV := $(if $(BOBSIM_OUT),export BOBSIM_OUT="$(call in_workspace,$(BOBSIM_OUT))";,)
+
 # BOBSIM_NATIVE_CFLAGS is computed inside the container so it reflects the
 # container's actual architecture, not the host `make` runs on -- clang on
 # AArch64 (e.g. Apple Silicon under Docker Desktop) rejects -march=native,
 # an x86-ism, and needs -mcpu=native instead.
-$(VEHICLE_SIM_EXE): $(VEHICLE_SIM_MODEL) $(BUILD_VEHICLE_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
-		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)" && test -f "$(WORKSPACE)/$(VEHICLE_SIM_EXE)_init.xml"'
+$(VEHICLE_SIM_EXE): $(BUILD_VEHICLE_MOS) $(VEHICLE_SIM_DEPS)
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; $(BUILD_BOBLIB_ENV) $(BUILD_OUT_ENV) mkdir -p "$$(dirname "$(call in_workspace,$(VEHICLE_SIM_EXE))")"; rm -f "$(call in_workspace,$(VEHICLE_SIM_EXE))" "$(call in_workspace,$(VEHICLE_SIM_EXE))_init.xml"; omc "$(WORKSPACE)/$(BUILD_VEHICLE_MOS)" && test -f "$(call in_workspace,$(VEHICLE_SIM_EXE))" && test -f "$(call in_workspace,$(VEHICLE_SIM_EXE))_init.xml"'
 
-$(FOUR_POST_SIM_EXE): $(FOUR_POST_SIM_MODEL) $(BUILD_FOUR_POST_MOS) $(BOBLIB_PACKAGE_PATH)/package.mo \
-		$(GENERATED_RECORDS) $(GENERATED_TEMPLATES)
-	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; rm -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"; omc "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)" && test -f "$(WORKSPACE)/$(FOUR_POST_SIM_EXE)_init.xml"'
+$(FOUR_POST_SIM_EXE): $(BUILD_FOUR_POST_MOS) $(FOUR_POST_SIM_DEPS)
+	$(RUN) bash -lc 'BOBSIM_NATIVE_CFLAGS="-O3 -march=native -mtune=native"; case "$$(uname -m)" in aarch64|arm64) BOBSIM_NATIVE_CFLAGS="-O3 -mcpu=native -mtune=native";; esac; export BOBSIM_NATIVE_CFLAGS; $(BUILD_BOBLIB_ENV) $(BUILD_OUT_ENV) mkdir -p "$$(dirname "$(call in_workspace,$(FOUR_POST_SIM_EXE))")"; rm -f "$(call in_workspace,$(FOUR_POST_SIM_EXE))" "$(call in_workspace,$(FOUR_POST_SIM_EXE))_init.xml"; omc "$(WORKSPACE)/$(BUILD_FOUR_POST_MOS)" && test -f "$(call in_workspace,$(FOUR_POST_SIM_EXE))" && test -f "$(call in_workspace,$(FOUR_POST_SIM_EXE))_init.xml"'
 
 # SHARK is optional. Without it, the already-imported variant is overlaid.
 # Runs in the container because ARGS=--four-post needs the container-built simulator.

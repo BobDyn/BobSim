@@ -59,7 +59,10 @@ above. Keep the set small; a stale doc is worse than no doc.
   If simulated numbers disagree with `vehicle.yml`, suspect an unregenerated
   record before suspecting physics.
 - **Use `common/vehicle_io.py` for paths** (`repo_root()`, `vehicle_yaml_path()`)
-  instead of new `Path(__file__).parents[n]` chains.
+  instead of new `Path(__file__).parents[n]` chains. Read the vehicle through
+  `vehicle_yaml_path()` (or `active_vehicle()` for a config's path) and write
+  generated files through `output_path()`, so `BOBSIM_VEHICLE` and `BOBSIM_OUT`
+  keep working. See [Bring your own car](docs/workflows.md#bring-your-own-car-and-output-folder).
 - **BobLib changes are a separate repo.** They need a PR in `BobDyn/BobLib` plus
   a pin bump here — not an edit committed from inside the submodule directory.
 

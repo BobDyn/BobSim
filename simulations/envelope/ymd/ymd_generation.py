@@ -29,7 +29,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime
 import os
-from common.vehicle_io import repo_root
+from common.vehicle_io import active_vehicle, repo_root
 from pathlib import Path
 from typing import Any, Mapping, cast
 
@@ -2775,7 +2775,7 @@ def main() -> None:
     config_path = DEFAULT_YMD_CONFIG
     ymd_report_config = load_ymd_config(config_path)
     vehicle_template = ymd_report_config.get("vehicle_template", "../../vehicle.yml")
-    vehicle_path = resolve_ymd_output_path(config_path, vehicle_template)
+    vehicle_path = active_vehicle(resolve_ymd_output_path(config_path, vehicle_template))
     projection = project_vehicle_yaml(
         load_vehicle_yaml(vehicle_path),
         repo_root=repo_root,

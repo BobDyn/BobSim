@@ -27,7 +27,7 @@ from simulations.lap.core import (
 )
 from simulations.lap.core.racing_line import LineMode
 from common.plotting.plot_engine import PlotEngine
-from common.vehicle_io import load_yaml, repo_root
+from common.vehicle_io import active_vehicle, load_yaml, repo_root
 from simulations.envelope.ggv.ggv_generation import (
     GGVConfig,
     GGVEnvelope,
@@ -66,7 +66,7 @@ def generate_validation_visuals(
     output = _root_path(root, config["output_directory"])
     output.mkdir(parents=True, exist_ok=True)
     _write_reference_track_figures(output, root, _mapping(config, "reference_tracks"))
-    vehicle_path = _root_path(root, config.get("vehicle", "vehicle.yml"))
+    vehicle_path = active_vehicle(_root_path(root, config.get("vehicle", "vehicle.yml")))
     validation_fingerprint = _validation_fingerprint(
         root,
         _root_path(root, config_path),

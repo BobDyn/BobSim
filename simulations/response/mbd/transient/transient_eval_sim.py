@@ -87,7 +87,8 @@ def load_config(path):
     path = Path(path)
 
     with path.open("r") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    return config_io.relocate_outputs(config) if isinstance(config, dict) else config
 
 
 class TransientEvalSim:

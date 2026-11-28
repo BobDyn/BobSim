@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 import os
-from common.vehicle_io import repo_root
+from common.vehicle_io import active_vehicle, repo_root
 from pathlib import Path
 from typing import Any, Literal, Mapping, cast
 
@@ -3359,7 +3359,7 @@ def main() -> None:
     config_path = DEFAULT_GGV_CONFIG
     ggv_report_config = load_ggv_config(config_path)
     vehicle_template = ggv_report_config.get("vehicle_template", "../../vehicle.yml")
-    vehicle_path = resolve_ggv_output_path(config_path, vehicle_template)
+    vehicle_path = active_vehicle(resolve_ggv_output_path(config_path, vehicle_template))
     projection = project_vehicle_yaml(
         load_vehicle_yaml(vehicle_path),
         repo_root=repo_root,

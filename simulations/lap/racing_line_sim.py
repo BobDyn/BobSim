@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from common.vehicle_io import load_yaml, parse_tir, repo_root, tire_template_name
+from common.vehicle_io import active_vehicle, load_yaml, parse_tir, repo_root, tire_template_name
 from simulations.lap.core.racing_line import minimize_curvature
 from simulations.lap.core.track import RacingLine, TrackCorridor
 
@@ -82,7 +82,7 @@ def line_signature(config: dict[str, Any], root: Path) -> str:
         Digest of the track, derived width, clearance and generation method.
     """
     track = config["track"]
-    vehicle = load_yaml(root / "vehicle.yml")
+    vehicle = load_yaml(active_vehicle(root / "vehicle.yml"))
     values = {"method": "sparse-curvature-width-gates-v3", "gate_spacing": vehicle_wheelbase_m(vehicle),
               "width": vehicle_width_m(vehicle, root),
               "track": hashlib.sha256((root / track["boundary_csv"]).read_bytes()).hexdigest(),
@@ -110,7 +110,7 @@ def run(config: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
     signature = line_signature(config, root)
     track = config["track"]
     corridor = TrackCorridor.from_csv(root / track["boundary_csv"])
-    vehicle = load_yaml(root / "vehicle.yml")
+    vehicle = load_yaml(active_vehicle(root / "vehicle.yml"))
     width = vehicle_width_m(vehicle, root)
     spacing = vehicle_wheelbase_m(vehicle)
     left, right = corridor.interpolated_boundaries()

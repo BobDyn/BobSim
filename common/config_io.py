@@ -19,11 +19,13 @@ resolve ``../`` paths against their own directory and stay where they are.
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 import shutil
+from typing import Any
 
-from common.vehicle_io import repo_root
+from common.vehicle_io import output_path, output_root, repo_root
 
 ACTIVE_CONFIG_ROOT = Path("app/user_data/config/active")
 
@@ -82,3 +84,29 @@ def ensure_active(seed_path: str | Path, *, root: str | Path | None = None) -> P
         active.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(seed, active)
     return active
+
+
+# The config keys that name generated files. BOBSIM_OUT moves each of them.
+OUTPUT_KEYS = (
+    ("simulation", "build_dir"),
+    ("report", "output_path"),
+    ("report", "metrics_csv_path"),
+)
+
+
+def relocate_outputs(config: dict[str, Any]) -> dict[str, Any]:
+    """Return ``config`` with its generated paths under ``BOBSIM_OUT``.
+
+    The seed configs name ``simulations/mbd/...`` paths. With ``BOBSIM_OUT``
+    unset this returns ``config`` itself; with it set, a copy whose
+    ``OUTPUT_KEYS`` point under the output folder (see
+    ``common.vehicle_io.output_path``). Calling it twice changes nothing more.
+    """
+    if output_root() is None:
+        return config
+    relocated = copy.deepcopy(config)
+    for section, key in OUTPUT_KEYS:
+        block = relocated.get(section)
+        if isinstance(block, dict) and block.get(key):
+            block[key] = str(output_path(block[key]))
+    return relocated

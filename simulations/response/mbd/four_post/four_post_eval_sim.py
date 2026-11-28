@@ -11,7 +11,7 @@ import numpy as np
 import yaml
 
 from common import config_io
-from common.vehicle_io import repo_root
+from common.vehicle_io import output_path, repo_root, vehicle_yaml_path
 from common.reporting.report_engine import ReportEngine
 from simulations.response.mbd._modelica_runner import ModelicaRunner
 from simulations.response.mbd.four_post import static_balance
@@ -34,7 +34,6 @@ FOUR_POST_SIMULATION = {
 }
 DEFAULT_METRICS_CSV_PATH = "simulations/mbd/results/four_post_eval_report_metrics.csv"
 REPO_ROOT = repo_root()
-ACTIVE_VEHICLE_YAML_CANDIDATES = (REPO_ROOT / "vehicle.yml",)
 GRAVITY_MPS2 = 9.80665
 FOUR_POST_POSE_STEP_S = 5.0
 FOUR_POST_HEAVE_START_S = 2.0
@@ -140,7 +139,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if not isinstance(config, dict):
         raise TypeError(f"Expected YAML config to contain a mapping at top level: {path}")
 
-    return cast(dict[str, Any], config)
+    return config_io.relocate_outputs(cast(dict[str, Any], config))
 
 
 def _seed_plot_configs() -> dict[str, Any]:
@@ -208,7 +207,9 @@ def _worst_status(*statuses: str) -> str:
 
 
 def _load_active_vehicle_yaml() -> dict[str, Any]:
-    for path in ACTIVE_VEHICLE_YAML_CANDIDATES:
+    # Read at call time, not import time, so BOBSIM_VEHICLE set by the caller counts.
+    candidates = (vehicle_yaml_path(),)
+    for path in candidates:
         if not path.exists():
             continue
         with path.open("r", encoding="utf-8") as f:
@@ -220,7 +221,7 @@ def _load_active_vehicle_yaml() -> dict[str, Any]:
         return cast(dict[str, Any], data)
     raise FileNotFoundError(
         "Missing active vehicle.yml. Expected one of: "
-        + ", ".join(str(path) for path in ACTIVE_VEHICLE_YAML_CANDIDATES)
+        + ", ".join(str(path) for path in candidates)
     )
 
 
@@ -987,7 +988,7 @@ class FourPostEvalSim:
 
         metrics_csv_path = write_metrics_csv(
             summary,
-            report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH),
+            output_path(report_cfg.get("metrics_csv_path", DEFAULT_METRICS_CSV_PATH)),
             self.metric_status,
         )
 

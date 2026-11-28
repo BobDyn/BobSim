@@ -10,7 +10,9 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import sys
+import tempfile
 
 import numpy as np
 
@@ -394,6 +396,83 @@ def write_modelica_plan(
     for path, entry in plan.result.package_orders:
         _ensure_package_order_entry(relocated(path), entry)
     return plan.result
+
+
+@dataclass(frozen=True)
+class StagedBobLib:
+    result: ModelicaGenerationResult
+    package: Path
+    changed: bool
+
+
+def stage_modelica_stack(
+    vehicle_path: str | Path, stage_dir: str | Path, *, root: str | Path | None = None
+) -> StagedBobLib:
+    """Copy BobLib to ``stage_dir`` and write a vehicle's Modelica stack into the copy.
+
+    This is how a vehicle from outside the checkout reaches a Modelica build: the
+    BobLib submodule stays exactly as pinned, and ``BOBSIM_BOBLIB`` points the
+    build scripts at the copy instead.
+
+    Parameters
+    ----------
+    vehicle_path : str | Path
+        Vehicle YAML. ``paths.boblib`` must still name the pinned package, as
+        for `plan_modelica_stack`.
+    stage_dir : str | Path
+        Directory that becomes the staged ``BobLib`` package. It must not be
+        inside the pinned package.
+    root : str | Path | None
+        BobSim checkout that relative paths in the vehicle resolve against.
+
+    Returns
+    -------
+    StagedBobLib
+        The generation result, the staged package path, and whether any staged
+        file changed. Unchanged files keep their timestamps, so ``make`` only
+        rebuilds an executable whose inputs really changed.
+    """
+    plan = plan_modelica_stack(vehicle_path, root=root)
+    if plan.initialization_error:
+        raise ValueError(plan.initialization_error)
+    stage = Path(stage_dir).resolve()
+    source = plan.boblib_root.resolve()
+    if stage == source or stage.is_relative_to(source) or source.is_relative_to(stage):
+        raise BobLibRootError(
+            f"Refusing to stage BobLib at {stage}. It overlaps the pinned package {source}. "
+            "No Modelica files were written."
+        )
+    stage.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=stage.parent, prefix=f".{stage.name}-") as scratch_root:
+        scratch = Path(scratch_root) / "BobLib"
+        shutil.copytree(source, scratch, ignore=shutil.ignore_patterns(".git"))
+        result = write_modelica_plan(plan, boblib_root=scratch)
+        changed = _sync_tree(scratch, stage)
+    return StagedBobLib(result=result, package=stage, changed=changed)
+
+
+def _sync_tree(source: Path, target: Path) -> bool:
+    """Make ``target`` hold exactly the files of ``source``, rewriting only what differs."""
+    target.mkdir(parents=True, exist_ok=True)
+    wanted = {path.relative_to(source) for path in source.rglob("*") if path.is_file()}
+    changed = False
+    for relative in sorted(wanted):
+        data = (source / relative).read_bytes()
+        destination = target / relative
+        if destination.is_file() and destination.read_bytes() == data:
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        changed = True
+    for path in sorted(target.rglob("*"), reverse=True):
+        relative = path.relative_to(target)
+        if path.is_file() or path.is_symlink():
+            if relative not in wanted:
+                path.unlink()
+                changed = True
+        elif path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+    return changed
 
 
 def plan_modelica_stack(vehicle_path: str | Path, *, root: str | Path | None = None) -> ModelicaStackPlan:
@@ -1673,14 +1752,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("vehicle", nargs="?", default="vehicle.yml", help="Vehicle YAML (default: vehicle.yml)")
     parser.add_argument("--root", default=".", help="Repository root (default: the current directory)")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--write",
         action="store_true",
         help="Regenerate the records instead of only reporting what is stale.",
     )
+    mode.add_argument(
+        "--stage",
+        metavar="DIR",
+        help=(
+            "Write the records into a copy of BobLib at DIR and leave the submodule alone. "
+            "DIR.stamp changes only when a staged file does."
+        ),
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
+    if args.stage:
+        try:
+            staged = stage_modelica_stack(args.vehicle, args.stage, root=root)
+        except ValueError as exc:  # BobLibRootError, or a blocked initialization.
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        stamp = staged.package.with_name(f"{staged.package.name}.stamp")
+        if staged.changed or not stamp.is_file():
+            stamp.write_text(f"{staged.result.vehicle_name}\n", encoding="utf-8")
+        state = "updated" if staged.changed else "unchanged"
+        print(f"Staged BobLib for {staged.result.vehicle_name} at {staged.package} ({state}).")
+        return 0
     try:
         status = modelica_stack_status_payload(args.vehicle, root)
     except BobLibRootError as exc:

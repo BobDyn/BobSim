@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from common.vehicle_io import repo_root
+from common.vehicle_io import active_vehicle, repo_root
 from pathlib import Path
 from typing import Any, cast
 
@@ -930,7 +930,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def _resolve_vehicle_path(config: dict[str, Any], config_path: Path) -> Path:
     template = config.get("vehicle_template", "../../vehicle.yml")
-    path = (config_path.parent / str(template)).resolve()
+    path = active_vehicle((config_path.parent / str(template)).resolve())
     if not path.exists():
         raise FileNotFoundError(f"vehicle_template not found: {path}")
     return path
