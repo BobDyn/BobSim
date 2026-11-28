@@ -23,7 +23,7 @@ from engines.dynpy.parameters import project_powertrain_limits
 
 
 from common.metrics_csv import read_metrics
-from common.vehicle_io import repo_root, tire_template_name
+from common.vehicle_io import repo_root, tire_template_name, vehicle_yaml_path
 
 REPO_ROOT = repo_root()
 DEFAULT_VEHICLE_YAML = REPO_ROOT / "vehicle.yml"
@@ -46,7 +46,9 @@ class EnvelopeVehicleProjection:
     summary: dict[str, float | str]
 
 
-def load_vehicle_yaml(path: Path = DEFAULT_VEHICLE_YAML) -> dict[str, Any]:
+def load_vehicle_yaml(path: Path | None = None) -> dict[str, Any]:
+    # No path means the active vehicle, which BOBSIM_VEHICLE can replace.
+    path = vehicle_yaml_path() if path is None else path
     with path.open() as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 import math
 
-from common.vehicle_io import repo_root
+from common.vehicle_io import active_vehicle, repo_root
 from simulations.envelope.vehicle_yaml import (
     DEFAULT_VEHICLE_YAML,
     load_vehicle_yaml,
@@ -41,6 +41,7 @@ def load_active_vehicle_yaml(path: str | Path | None = None) -> tuple[dict[str, 
     source = Path(path) if path is not None else DEFAULT_VEHICLE_YAML
     if not source.is_absolute():
         source = repo_root() / source
+    source = active_vehicle(source)
     return load_vehicle_yaml(source), source
 
 

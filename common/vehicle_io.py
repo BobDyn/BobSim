@@ -54,8 +54,103 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def vehicle_yaml_path() -> Path:
+# A consumer brings its own car and its own output folder through these, so a
+# run never has to copy a vehicle into this checkout or write results into it.
+VEHICLE_ENV = "BOBSIM_VEHICLE"
+OUTPUT_ENV = "BOBSIM_OUT"
+# Generated paths are written as repo-relative strings under this prefix. With
+# BOBSIM_OUT set, the part after it moves under the output folder.
+GENERATED_PREFIX = Path("simulations/mbd")
+
+
+def _env_path(name: str) -> Path | None:
+    raw = os.environ.get(name, "").strip()
+    return Path(raw).expanduser().resolve() if raw else None
+
+
+def repo_vehicle_yaml_path() -> Path:
+    """## Checked-in Vehicle
+
+    Returns
+    -------
+    Path
+        The ``vehicle.yml`` in this checkout, whatever ``BOBSIM_VEHICLE`` says.
+    """
     return repo_root() / "vehicle.yml"
+
+
+def vehicle_yaml_path() -> Path:
+    """## Active Vehicle
+
+    Returns
+    -------
+    Path
+        ``BOBSIM_VEHICLE`` when set (relative paths resolve against the current
+        directory), otherwise the checked-in ``vehicle.yml``. Relative paths
+        *inside* the file still resolve against the BobSim checkout.
+    """
+    return _env_path(VEHICLE_ENV) or repo_vehicle_yaml_path()
+
+
+def external_vehicle() -> bool:
+    """True when ``BOBSIM_VEHICLE`` names a file other than the checked-in one."""
+    override = _env_path(VEHICLE_ENV)
+    return override is not None and override != repo_vehicle_yaml_path().resolve()
+
+
+def active_vehicle(path: str | Path) -> Path:
+    """## Swap The Checked-in Vehicle
+
+    Parameters
+    ----------
+    path : str | Path
+        A vehicle path a workflow was about to read, usually from its config.
+
+    Returns
+    -------
+    Path
+        ``BOBSIM_VEHICLE`` when it is set and ``path`` is the checked-in ``vehicle.yml``,
+        otherwise ``path`` unchanged. A config that names some other vehicle on
+        purpose keeps it.
+    """
+    candidate = Path(path)
+    override = _env_path(VEHICLE_ENV)
+    if override is not None and candidate.resolve() == repo_vehicle_yaml_path().resolve():
+        return override
+    return candidate
+
+
+def output_root() -> Path | None:
+    """``BOBSIM_OUT`` as an absolute path, or None when results stay in the checkout."""
+    return _env_path(OUTPUT_ENV)
+
+
+def output_path(path: str | Path) -> Path:
+    """## Generated Output Location
+
+    Parameters
+    ----------
+    path : str | Path
+        A generated path as the configs write it, such as
+        ``simulations/mbd/generated_results/x.pdf``, or the same path made
+        absolute under this checkout.
+
+    Returns
+    -------
+    Path
+        With ``BOBSIM_OUT`` unset, ``path`` unchanged. With it set, a path under
+        ``simulations/mbd/`` moves to the same place under ``BOBSIM_OUT``
+        (``$BOBSIM_OUT/generated_results/x.pdf``). Other paths are unchanged.
+    """
+    candidate = Path(path)
+    out = output_root()
+    if out is None:
+        return candidate
+    prefixes = (GENERATED_PREFIX, repo_root() / GENERATED_PREFIX)
+    for prefix in prefixes:
+        if candidate.is_relative_to(prefix):
+            return out / candidate.relative_to(prefix)
+    return candidate
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:

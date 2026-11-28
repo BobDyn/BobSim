@@ -19,7 +19,7 @@ Usage:
 from __future__ import annotations
 import argparse
 import sys
-from common.vehicle_io import repo_root
+from common.vehicle_io import repo_root, vehicle_yaml_path
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -231,7 +231,7 @@ def _warn_if_results_are_stale(results_path: Path, doe_config_path: Path) -> boo
         doe_config_path.parent / "vehicle_architecture.yaml",
         doe_config_path.parent / "compiler_config.yaml",
         doe_config_path.parent / "aggregator_config.yaml",
-        repo_root() / "vehicle.yml",
+        vehicle_yaml_path(),
     ]
     for candidate in candidates:
         if candidate.exists() and candidate.stat().st_mtime > results_mtime:

@@ -73,6 +73,32 @@ make standard-eval-four-post   # uses the separate FourPostSim executable
 
 Output: `simulations/mbd/generated_results/` (`*_report_metrics.csv`, `*_report.pdf`).
 
+### Bring your own car and output folder
+
+A team that keeps its car in its own repo runs BobSim on it without copying the
+file in or regenerating records inside the BobLib submodule:
+
+```bash
+make standard-eval-all BOBSIM_VEHICLE=/path/to/vehicle.yml BOBSIM_OUT=/path/to/out
+```
+
+- `BOBSIM_VEHICLE` replaces `vehicle.yml` for every workflow that would have
+  read it, through `vehicle_yaml_path()` and `active_vehicle()` in
+  `common/vehicle_io.py`. Relative paths *inside* the file (`paths.boblib`,
+  `paths.tire_templates`) still resolve against this checkout, and
+  `paths.boblib` must still name `engines/boblib/BobLib`.
+- With `BOBSIM_VEHICLE` set, the Modelica builds first run
+  `python -m app.modelica_generator <car> --stage <dir>`. That copies BobLib to
+  `BuildBobLib/BobLib`, writes the car's records into the copy, and points the
+  `.mos` scripts at it through `BOBSIM_BOBLIB`. The submodule stays as pinned.
+  The stager rewrites only files that changed, so an unchanged car does not
+  recompile.
+- `BOBSIM_OUT` takes everything `simulations/mbd/` would hold: `BuildBobLib/`,
+  `generated_results/`, `results/`. Config paths under `simulations/mbd/` move
+  with it (`common/config_io.relocate_outputs`); other paths stay as written.
+- Unset or empty, both keep the in-repo behaviour. Under Docker
+  (`RUN` not empty) only this checkout is mounted, so name paths inside it.
+
 ## Lap-time simulation
 
 ```bash

@@ -71,7 +71,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if not isinstance(config, dict):
         raise TypeError(f"Expected YAML config to contain a mapping at top level: {path}")
 
-    return cast(dict[str, Any], config)
+    return config_io.relocate_outputs(cast(dict[str, Any], config))
 
 
 def _as_override_dict(value: Any, *, name: str) -> dict[str, Any]:

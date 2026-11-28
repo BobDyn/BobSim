@@ -446,7 +446,8 @@ def test_build_scripts_load_the_package_the_generator_writes() -> None:
     assert BUILD_BOBLIB_DIR == BUILD_BOBLIB
     for script in ("build_vehicle_sim.mos", "build_four_post_sim.mos"):
         text = (repo_root / "simulations/response/mbd" / script).read_text(encoding="utf-8")
-        assert f'boblibDir := root + "/{BUILD_BOBLIB_DIR}";' in text, script
+        default = f'boblibDir := if stagedBoblib == "" then root + "/{BUILD_BOBLIB_DIR}" else stagedBoblib;'
+        assert default in text, script
 
 
 def test_generator_refuses_to_write_outside_the_boblib_root(tmp_path: Path) -> None:

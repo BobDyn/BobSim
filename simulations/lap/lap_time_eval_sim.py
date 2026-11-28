@@ -24,7 +24,7 @@ from simulations.lap.core import (
 )
 from simulations.lap.core.racing_line import LineMode
 from common.physics_provenance import ggv_physics_sha256
-from common.vehicle_io import load_yaml, repo_root, tire_template_name, tire_templates_root
+from common.vehicle_io import active_vehicle, load_yaml, repo_root, tire_template_name, tire_templates_root
 
 
 DEFAULT_CONFIG = repo_root() / "simulations/lap/lap_time_eval_config.yml"
@@ -58,7 +58,7 @@ def run_lap_time_evaluation(
         raise ValueError("model_dof must be 3, 6, 10, or 14.")
     model_dof = cast(DOFModel, model_dof_value)
     format_values = {"model_dof": model_dof_value}
-    vehicle_path = _root_path(root, config.get("vehicle", "vehicle.yml"))
+    vehicle_path = active_vehicle(_root_path(root, config.get("vehicle", "vehicle.yml")))
     from simulations.lap.racing_line_sim import load_line, vehicle_wheelbase_m, vehicle_width_m
 
     track_path = _root_path(root, track_config["boundary_csv"])
